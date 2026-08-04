@@ -4,7 +4,7 @@ AI Employee OS 是一个 Local-first 的 macOS AI 员工运行平台。MVP 以 A
 
 ## 当前状态
 
-项目已完成安全 Golden Path 和 Release 1 Decision Substrate：Runtime 能以 deterministic Provider 跑通 Task、版本化 Prompt、预算化 Context、带来源 Knowledge、Memory 读写、Python Worker、Rust ToolExecutor、PRD 产物、Evaluation 和终态持久化。macOS Client 仍未实现。
+项目已完成安全 Golden Path、Release 1 Decision Substrate 和 Release 2 Execution + Evidence：Runtime 能以 deterministic Provider 跑通版本锁定的 Skill DAG、Task/Action、版本化 Prompt、预算化 Context、带来源 Knowledge、Memory 读写、受限 Tool Loop、Rust ToolExecutor、PRD 产物、Evaluation 和终态持久化。macOS Client 仍未实现。
 
 ## 架构
 
@@ -85,6 +85,7 @@ mkdir -p /tmp/ai-employee-os/output
 - 架构决策：[ADR](./docs/AI%20Employee%20OS%20技术决策记录%20ADR（Architecture%20Decision%20Records）v1.0.md)
 - 协作与验收：[AGENTS.md](./AGENTS.md)
 - Release 1：[Decision Substrate](./docs/releases/Release%201%20Decision%20Substrate.md)
+- Release 2：[Execution and Evidence](./docs/releases/Release%202%20Execution%20and%20Evidence.md)
 
 ## 安全
 

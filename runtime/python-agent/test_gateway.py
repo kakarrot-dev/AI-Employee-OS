@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 from app.gateway import GatewayContext, SubprocessToolGateway, ToolRoute
-from app.loop import BoundedPlannerLoop, LoopLimits
+from app.loop import BoundedPlannerLoop, LoopLimits, ToolExecutionStopped
 from app.provider import DeterministicFakeProvider, ProviderResponse, ProviderRouter
 
 
@@ -94,14 +94,15 @@ class CrossProcessGatewayTests(unittest.TestCase):
                 )
             }
         )
-        result = BoundedPlannerLoop(
-            ProviderRouter(provider, DeterministicFakeProvider()),
-            LoopLimits(max_steps=2, max_tool_calls=1),
-        ).run_with_tools("write PRD", gateway)
+        with self.assertRaises(ToolExecutionStopped) as stopped:
+            BoundedPlannerLoop(
+                ProviderRouter(provider, DeterministicFakeProvider()),
+                LoopLimits(max_steps=2, max_tool_calls=1),
+            ).run_with_tools("write PRD", gateway)
 
-        self.assertEqual(result.output, "tool status: blocked")
-        self.assertEqual(provider.observation["status"], "blocked")
-        self.assertEqual(provider.observation["error"]["code"], "APPROVAL_REQUIRED")
+        self.assertEqual(stopped.exception.observation["status"], "blocked")
+        self.assertEqual(stopped.exception.observation["error"]["code"], "APPROVAL_REQUIRED")
+        self.assertIsNone(provider.observation)
         self.assertFalse((self.root / "prd.md").exists())
 
     def _gateway(self, routes):

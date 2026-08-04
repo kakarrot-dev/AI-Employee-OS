@@ -1101,6 +1101,18 @@ Accepted
 
 Knowledge 必须以 `untrusted_data` 进入 Context，读取时同时验证 Source 与 Chunk 的持久化 Hash。自动 Memory 必须绑定 Task、Trace 和 Extractor Version，并通过 `memory_provenance` 标记为 `untrusted_data`；缺少 Provenance 的旧记录同样默认按 `untrusted_data` 处理，禁止缺省提权。直接写入接口仅限 Runtime 内部 Bootstrap，外部调用必须经过候选门禁。自动候选与既有同 Owner/Type 的不同内容发生冲突时拒绝写入，禁止由调用者用空冲突字段绕过。数据库通过追加 Migration `006_memory_provenance.sql` 演进。
 
+# ADR-025：Skill Graph 复用 canonical Action 状态
+
+## 状态
+
+Accepted
+
+## 决策
+
+MVP Graph Engine 为 `runtime-dag-v1`，直接编译已安装且版本锁定的 Skill Manifest。每个 Workflow Step 物化为一条 canonical Action，Step ID、依赖、输出名、Timeout、Retry 和 Tool Route 保存于 Action `input_json`；禁止新增 Graph Node 状态表或第二套状态机。
+
+下游 Step 只有在全部依赖 Action 为 `succeeded` 时才能启动。Tool Node 的 Tool ID 与 Action 来自锁定 Manifest，Worker 不得改变；有副作用节点 `max_attempts` 必须为 1。Graph 初始化失败必须将已物化但未终结的 Action 与 Task 一并收敛为失败。运行 Evidence 从 canonical Action 状态读取，不把内存中的计划当作完成证据。
+
 # ADR 总结
 
 最终技术原则：

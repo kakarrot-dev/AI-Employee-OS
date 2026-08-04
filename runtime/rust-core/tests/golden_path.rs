@@ -3,6 +3,7 @@ use std::{
     os::unix::fs::PermissionsExt,
     path::PathBuf,
     process::Command,
+    sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -40,6 +41,15 @@ fn real_process_golden_path_persists_terminal_states_and_prd() {
                 .unwrap()
     );
     assert_eq!(response["memory_outcome"], "stored");
+    assert_eq!(response["graph"]["engine"], "runtime-dag-v1");
+    assert_eq!(response["graph"]["nodes"].as_array().unwrap().len(), 2);
+    assert!(
+        response["graph"]["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|node| node["status"] == "succeeded")
+    );
     assert_eq!(response["events"].as_array().unwrap().len(), 4);
     let artifact = PathBuf::from(response["artifact_path"].as_str().unwrap());
     let content = fs::read_to_string(artifact).unwrap();
@@ -96,7 +106,7 @@ fn real_process_golden_path_persists_terminal_states_and_prd() {
             },
         )
         .unwrap();
-    assert_eq!(statuses, (2, 2, 2, 0, 2, 1));
+    assert_eq!(statuses, (2, 4, 2, 0, 2, 1));
     let snapshot: String = connection
         .query_row(
             "SELECT context_policy_snapshot_json FROM task_execution_snapshots WHERE task_id=?1",
@@ -269,12 +279,16 @@ fn run_golden_with_python(
 }
 
 fn temporary_root() -> PathBuf {
+    static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(1);
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let root =
-        std::env::temp_dir().join(format!("ai-employee-golden-{}-{nonce}", std::process::id()));
+    let sequence = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!(
+        "ai-employee-golden-{}-{nonce}-{sequence}",
+        std::process::id()
+    ));
     fs::create_dir_all(&root).unwrap();
     root
 }

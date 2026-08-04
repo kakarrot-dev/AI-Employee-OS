@@ -5,6 +5,7 @@ pub mod decision_context;
 pub mod evaluation;
 pub mod event;
 pub mod golden_path;
+pub mod graph_runtime;
 pub mod knowledge;
 pub mod memory;
 pub mod observability;

@@ -20,6 +20,18 @@ class PlannerProtocolError(Exception):
     pass
 
 
+class ToolExecutionStopped(Exception):
+    def __init__(self, observation: dict):
+        super().__init__("tool execution did not succeed; planner continuation is forbidden")
+        self.observation = observation
+
+
+class ToolResultUnknown(ToolExecutionStopped):
+    def __init__(self, observation: dict):
+        super().__init__("tool result is unknown and requires human verification")
+        self.observation = observation
+
+
 @dataclass(frozen=True)
 class ToolRequest:
     call_id: str
@@ -86,6 +98,8 @@ class BoundedPlannerLoop:
         provider_calls: dict[str, int] = {}
         input_tokens = output_tokens = tool_calls = 0
         initial_fallbacks = len(self.provider.fallback_events)
+        seen_call_ids: set[str] = set()
+        seen_idempotency_keys: set[str] = set()
         for step in range(1, self.limits.max_steps + 1):
             response = self.provider.complete(messages)
             input_tokens += response.input_tokens
@@ -111,8 +125,17 @@ class BoundedPlannerLoop:
                 arguments=decision["arguments"],
                 idempotency_key=decision["idempotency_key"],
             )
+            if request.call_id in seen_call_ids or request.idempotency_key in seen_idempotency_keys:
+                raise PlannerProtocolError("planner repeated a ToolCall identity")
+            seen_call_ids.add(request.call_id)
+            seen_idempotency_keys.add(request.idempotency_key)
             observation = gateway.execute(request)
+            _validate_observation(observation, request.call_id)
             tool_calls += 1
+            if observation["status"] == "result_unknown":
+                raise ToolResultUnknown(observation)
+            if observation["status"] != "succeeded":
+                raise ToolExecutionStopped(observation)
             messages.extend(
                 [
                     {"role": "assistant", "content": response.content},
@@ -144,3 +167,19 @@ def _planner_decision(content: str) -> dict:
     if not isinstance(decision["arguments"], dict):
         raise PlannerProtocolError("tool_call arguments must be an object")
     return decision
+
+
+def _validate_observation(observation: object, call_id: str) -> None:
+    if not isinstance(observation, dict):
+        raise PlannerProtocolError("ToolResult must be an object")
+    if observation.get("schema_version") != "1.0" or observation.get("call_id") != call_id:
+        raise PlannerProtocolError("ToolResult identity does not match ToolCall")
+    if observation.get("status") not in {"succeeded", "failed", "blocked", "result_unknown"}:
+        raise PlannerProtocolError("ToolResult status is invalid")
+    if observation.get("side_effect_state") not in {"none", "not_started", "confirmed", "unknown"}:
+        raise PlannerProtocolError("ToolResult side_effect_state is invalid")
+    unknown = observation["side_effect_state"] == "unknown"
+    if unknown != (observation["status"] == "result_unknown"):
+        raise PlannerProtocolError("unknown side effect state must map exactly to result_unknown")
+    if observation["status"] == "succeeded" and observation["side_effect_state"] not in {"none", "confirmed"}:
+        raise PlannerProtocolError("succeeded requires a completed side effect state")

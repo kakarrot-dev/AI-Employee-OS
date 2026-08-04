@@ -105,6 +105,29 @@ def validate_skill_dag(payload: dict) -> None:
         raise AssertionError("workflow must be acyclic")
 
 
+def validate_eval_report(payload: dict) -> None:
+    summary = payload["summary"]
+    categories = payload["categories"]
+    failures = payload["failures"]
+    if summary["passed"] > summary["total"]:
+        raise AssertionError("eval passed exceeds total")
+    if sum(item["total"] for item in categories.values()) != summary["total"]:
+        raise AssertionError("eval category totals do not match summary")
+    if sum(item["passed"] for item in categories.values()) != summary["passed"]:
+        raise AssertionError("eval category passes do not match summary")
+    if any(item["passed"] > item["total"] for item in categories.values()):
+        raise AssertionError("eval category passed exceeds total")
+    if len(failures) != summary["total"] - summary["passed"]:
+        raise AssertionError("eval failures do not match summary")
+    if len({item["case_id"] for item in failures}) != len(failures):
+        raise AssertionError("eval failure case ids must be unique")
+    if any(item["score"] >= summary["threshold"] for item in failures):
+        raise AssertionError("eval failure score meets threshold")
+    expected_gate = summary["passed"] == summary["total"] and summary["average_score"] >= summary["threshold"]
+    if summary["gate_passed"] != expected_gate:
+        raise AssertionError("eval gate is inconsistent")
+
+
 def validate_contract(schema_name: str, payload_name: str) -> None:
     payload = load(f"contracts/{payload_name}")
     validate(load(f"contracts/{schema_name}"), payload)
@@ -132,6 +155,8 @@ def validate_contract(schema_name: str, payload_name: str) -> None:
         kinds = [section["kind"] for section in payload["sections"]]
         if len(kinds) != len(set(kinds)):
             raise AssertionError("decision context sections must be unique")
+    if schema_name == "eval-report.schema.json":
+        validate_eval_report(payload)
 
 
 VALID_CASES = (
@@ -140,6 +165,7 @@ VALID_CASES = (
     ("tool-manifest.schema.json", "examples/tool-manifest.valid.json"),
     ("skill-manifest.schema.json", "examples/skill-manifest.valid.json"),
     ("decision-context.schema.json", "examples/decision-context.valid.json"),
+    ("eval-report.schema.json", "examples/eval-report.valid.json"),
 )
 
 INVALID_CASES = (
@@ -149,6 +175,7 @@ INVALID_CASES = (
     ("tool-manifest.schema.json", "fixtures/tool-manifest.unsafe-retry.json"),
     ("skill-manifest.schema.json", "fixtures/skill-manifest.cyclic-workflow.json"),
     ("decision-context.schema.json", "fixtures/decision-context.invalid-budget.json"),
+    ("eval-report.schema.json", "fixtures/eval-report.invalid-score.json"),
 )
 
 for schema_name, payload_name in VALID_CASES:

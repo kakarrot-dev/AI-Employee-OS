@@ -1,11 +1,12 @@
 import json
+import hashlib
 from pathlib import Path
 import tempfile
 import unittest
 
 from app.eval_runner import evaluate_prd_artifact, load_cases, run_suite
 from app.gateway import GatewayContext, SubprocessToolGateway, ToolRoute
-from app.loop import BoundedPlannerLoop, LoopLimits
+from app.loop import BoundedPlannerLoop, LoopLimits, ToolExecutionStopped
 from app.provider import DeterministicFakeProvider, ProviderResponse, ProviderRouter
 from test_support.runtime_fixture import execution_count, seed_document_runtime
 
@@ -65,6 +66,17 @@ class RealRuntimeEvalSuiteTests(unittest.TestCase):
         self.assertEqual(len(suite.cases), 12)
         self.assertEqual(suite.average_score, 1.0)
         self.assertTrue(suite.passed)
+        report = suite.report({
+            "suite_id": "prd-generation", "suite_version": "1.0.0",
+            "dataset_sha256": hashlib.sha256(CASES_PATH.read_bytes()).hexdigest(),
+            "target_type": "skill", "target_id": "prd-generation", "target_version": "1.0.0",
+            "target_sha256": hashlib.sha256(b"rust-tool-executor").hexdigest(),
+        })
+        self.assertTrue(report["summary"]["gate_passed"])
+        self.assertEqual(set(report["categories"]), {
+            "standard", "missing_information", "conflicting_sources", "tool_failure", "memory_conflict"
+        })
+        self.assertEqual(report["failures"], [])
 
     def _run_case(self, case):
         with tempfile.TemporaryDirectory() as temporary:
@@ -107,11 +119,14 @@ class RealRuntimeEvalSuiteTests(unittest.TestCase):
                     },
                 ),
             )
-            BoundedPlannerLoop(
-                ProviderRouter(provider, DeterministicFakeProvider()),
-                LoopLimits(max_steps=2, max_tool_calls=1),
-            ).run_with_tools(case.input, gateway)
-            observation = provider.observation
+            try:
+                BoundedPlannerLoop(
+                    ProviderRouter(provider, DeterministicFakeProvider()),
+                    LoopLimits(max_steps=2, max_tool_calls=1),
+                ).run_with_tools(case.input, gateway)
+                observation = provider.observation
+            except ToolExecutionStopped as error:
+                observation = error.observation
             if observation["status"] == "succeeded":
                 return artifact.read_text(encoding="utf-8")
             return json.dumps(

@@ -1,4 +1,5 @@
 import unittest
+import hashlib
 from pathlib import Path
 
 from app.eval_runner import evaluate_prd_artifact, load_cases, run_suite
@@ -18,6 +19,15 @@ class EvalRunnerTests(unittest.TestCase):
         )
         self.assertEqual(len(result.cases), 12)
         self.assertTrue(result.passed)
+        report = result.report({
+            "suite_id": "prd-generation", "suite_version": "1.0.0",
+            "dataset_sha256": hashlib.sha256(b"dataset").hexdigest(),
+            "target_type": "skill", "target_id": "prd-generation",
+            "target_version": "1.0.0", "target_sha256": hashlib.sha256(b"target").hexdigest(),
+        })
+        self.assertEqual(report["summary"]["total"], 12)
+        self.assertEqual(report["categories"]["standard"]["passed"], 4)
+        self.assertEqual(report["failures"], [])
 
         first_id = self.cases[0].id
         blocked = run_suite(
@@ -26,6 +36,14 @@ class EvalRunnerTests(unittest.TestCase):
             lambda case, output: 0.75 if case.id == first_id else 1.0,
         )
         self.assertFalse(blocked.passed)
+
+        forged = type(result)(result.cases, 0.5, True, result.threshold)
+        with self.assertRaises(ValueError):
+            forged.report({
+                "suite_id": "prd-generation", "suite_version": "1.0.0", "dataset_sha256": "a" * 64,
+                "target_type": "skill", "target_id": "prd-generation", "target_version": "1.0.0",
+                "target_sha256": "b" * 64,
+            })
 
     def test_prd_rubric_is_structural_and_reports_missing_items(self):
         complete = """# 产品需求文档

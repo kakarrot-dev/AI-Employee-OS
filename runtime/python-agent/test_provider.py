@@ -1,7 +1,14 @@
 import unittest
 from unittest.mock import patch
 
-from app.loop import BoundedPlannerLoop, LoopLimitExceeded, LoopLimits, PlannerProtocolError
+from app.loop import (
+    BoundedPlannerLoop,
+    LoopLimitExceeded,
+    LoopLimits,
+    PlannerProtocolError,
+    ToolExecutionStopped,
+    ToolResultUnknown,
+)
 from app.provider import (
     DeterministicFakeProvider,
     ProviderErrorKind,
@@ -29,7 +36,13 @@ class FakeGateway:
 
     def execute(self, request):
         self.calls.append(request)
-        return {"status": "succeeded", "output": {"path": "/approved/prd.md"}}
+        return {
+            "schema_version": "1.0",
+            "call_id": request.call_id,
+            "status": "succeeded",
+            "side_effect_state": "confirmed",
+            "output": {"path": "/approved/prd.md"},
+        }
 
 
 class ProviderRouterTests(unittest.TestCase):
@@ -118,6 +131,81 @@ class ProviderRouterTests(unittest.TestCase):
         )
         with self.assertRaises(PlannerProtocolError):
             invalid.run_with_tools("task", gateway)
+
+    def test_tool_loop_stops_on_unknown_result_and_rejects_duplicate_identity(self):
+        class UnknownGateway:
+            def execute(self, request):
+                return {
+                    "schema_version": "1.0",
+                    "call_id": request.call_id,
+                    "status": "result_unknown",
+                    "side_effect_state": "unknown",
+                }
+
+        unknown = BoundedPlannerLoop(
+            ProviderRouter(
+                DeterministicFakeProvider([
+                    '{"type":"tool_call","call_id":"call-1","action":"write","arguments":{},"idempotency_key":"task:write:1"}',
+                    '{"type":"tool_call","call_id":"call-2","action":"write","arguments":{},"idempotency_key":"task:write:2"}',
+                ]),
+                DeterministicFakeProvider(),
+            ),
+            LoopLimits(max_steps=2, max_tool_calls=2),
+        )
+        with self.assertRaises(ToolResultUnknown):
+            unknown.run_with_tools("task", UnknownGateway())
+
+        class FailedAfterEffectGateway:
+            def __init__(self):
+                self.calls = 0
+
+            def execute(self, request):
+                self.calls += 1
+                return {
+                    "schema_version": "1.0",
+                    "call_id": request.call_id,
+                    "status": "failed",
+                    "side_effect_state": "confirmed",
+                }
+
+        failed_gateway = FailedAfterEffectGateway()
+        with self.assertRaises(ToolExecutionStopped):
+            unknown.run_with_tools("task", failed_gateway)
+        self.assertEqual(failed_gateway.calls, 1)
+
+        class InvalidUnknownGateway:
+            def execute(self, request):
+                return {
+                    "schema_version": "1.0",
+                    "call_id": request.call_id,
+                    "status": "failed",
+                    "side_effect_state": "unknown",
+                }
+
+        invalid_unknown = BoundedPlannerLoop(
+            ProviderRouter(
+                DeterministicFakeProvider([
+                    '{"type":"tool_call","call_id":"call-x","action":"write","arguments":{},"idempotency_key":"task:write:x"}'
+                ]),
+                DeterministicFakeProvider(),
+            ),
+            LoopLimits(max_steps=1, max_tool_calls=1),
+        )
+        with self.assertRaises(PlannerProtocolError):
+            invalid_unknown.run_with_tools("task", InvalidUnknownGateway())
+
+        duplicate = BoundedPlannerLoop(
+            ProviderRouter(
+                DeterministicFakeProvider([
+                    '{"type":"tool_call","call_id":"call-1","action":"write","arguments":{},"idempotency_key":"task:write:1"}',
+                    '{"type":"tool_call","call_id":"call-1","action":"write","arguments":{},"idempotency_key":"task:write:1"}',
+                ]),
+                DeterministicFakeProvider(),
+            ),
+            LoopLimits(max_steps=2, max_tool_calls=2),
+        )
+        with self.assertRaises(PlannerProtocolError):
+            duplicate.run_with_tools("task", FakeGateway())
 
 
 if __name__ == "__main__":

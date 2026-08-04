@@ -22,6 +22,7 @@ pub fn install_skill_package(
     let name = text(skill, "name")?;
     let version = text(skill, "version")?;
     validate_dag(&skill["workflow"]["steps"])?;
+    validate_workflow_routes(skill)?;
     for dependency in skill["required_tools"]
         .as_array()
         .ok_or("required_tools must be array")?
@@ -92,6 +93,37 @@ pub fn install_skill_package(
     Ok(())
 }
 
+fn validate_workflow_routes(skill: &Value) -> Result<(), String> {
+    let allowed: HashSet<(&str, &str)> = skill["required_tools"]
+        .as_array()
+        .ok_or("required_tools must be array")?
+        .iter()
+        .flat_map(|tool| {
+            let tool_id = tool["id"].as_str().unwrap_or_default();
+            tool["actions"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(move |action| action.as_str().map(|action| (tool_id, action)))
+        })
+        .collect();
+    for step in skill["workflow"]["steps"]
+        .as_array()
+        .ok_or("steps must be array")?
+    {
+        if let Some(tool) = step.get("tool") {
+            let route = (text(tool, "id")?, text(tool, "action")?);
+            if !allowed.contains(&route) {
+                return Err(format!(
+                    "workflow route is not declared: {}.{}",
+                    route.0, route.1
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn text<'a>(v: &'a Value, key: &str) -> Result<&'a str, String> {
     v[key]
         .as_str()
@@ -156,5 +188,17 @@ mod tests {
             .query_row("SELECT count(*) FROM skills", [], |r| r.get(0))
             .unwrap();
         assert_eq!(n, 2);
+    }
+
+    #[test]
+    fn rejects_workflow_route_outside_required_tools() {
+        let skill = serde_json::json!({
+            "required_tools": [{"id":"document-tool","actions":["create_markdown"]}],
+            "workflow": {"steps":[{
+                "id":"write","depends_on":[],
+                "tool":{"id":"file-tool","action":"read_file"}
+            }]}
+        });
+        assert!(validate_workflow_routes(&skill).is_err());
     }
 }

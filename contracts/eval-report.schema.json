@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-employee-os.local/contracts/eval-report.schema.json",
+  "title": "EvalReport",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "suite", "subject", "summary", "categories", "failures"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "suite": {
+      "type": "object", "additionalProperties": false,
+      "required": ["suite_id", "suite_version", "dataset_sha256"],
+      "properties": {
+        "suite_id": {"type": "string", "minLength": 1},
+        "suite_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+        "dataset_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "subject": {
+      "type": "object", "additionalProperties": false,
+      "required": ["target_type", "target_id", "target_version", "target_sha256"],
+      "properties": {
+        "target_type": {"enum": ["prompt", "skill", "agent", "runtime"]},
+        "target_id": {"type": "string", "minLength": 1},
+        "target_version": {"type": "string", "minLength": 1},
+        "target_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "summary": {
+      "type": "object", "additionalProperties": false,
+      "required": ["total", "passed", "average_score", "threshold", "gate_passed"],
+      "properties": {
+        "total": {"type": "integer", "minimum": 1},
+        "passed": {"type": "integer", "minimum": 0},
+        "average_score": {"type": "number", "minimum": 0, "maximum": 1},
+        "threshold": {"type": "number", "minimum": 0, "maximum": 1},
+        "gate_passed": {"type": "boolean"}
+      }
+    },
+    "categories": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object", "additionalProperties": false,
+        "required": ["total", "passed", "average_score"],
+        "properties": {
+          "total": {"type": "integer", "minimum": 1},
+          "passed": {"type": "integer", "minimum": 0},
+          "average_score": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    },
+    "failures": {
+      "type": "array", "uniqueItems": true,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["case_id", "category", "score"],
+        "properties": {
+          "case_id": {"type": "string", "minLength": 1},
+          "category": {"type": "string", "minLength": 1},
+          "score": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    }
+  }
+}

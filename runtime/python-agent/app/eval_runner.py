@@ -27,6 +27,43 @@ class EvalSuiteResult:
     cases: tuple[EvalCaseResult, ...]
     average_score: float
     passed: bool
+    threshold: float
+
+    def report(self, identity: dict[str, str]) -> dict:
+        case_ids = [result.case_id for result in self.cases]
+        if len(case_ids) != len(set(case_ids)):
+            raise ValueError("eval report contains duplicate case ids")
+        recomputed_average = sum(result.score for result in self.cases) / len(self.cases)
+        recomputed_passed = [result.score >= self.threshold for result in self.cases]
+        gate_passed = bool(self.cases) and all(recomputed_passed) and recomputed_average >= self.threshold
+        if abs(recomputed_average - self.average_score) > 1e-12 or gate_passed != self.passed:
+            raise ValueError("eval result summary is inconsistent with cases")
+        categories: dict[str, dict[str, float | int]] = {}
+        for result, passed in zip(self.cases, recomputed_passed, strict=True):
+            category = categories.setdefault(result.category, {"total": 0, "passed": 0, "average_score": 0.0})
+            category["total"] += 1
+            category["passed"] += int(passed)
+            category["average_score"] += result.score
+        for category in categories.values():
+            category["average_score"] /= category["total"]
+        return {
+            "schema_version": "1.0",
+            "suite": {key: identity[key] for key in ("suite_id", "suite_version", "dataset_sha256")},
+            "subject": {key: identity[key] for key in ("target_type", "target_id", "target_version", "target_sha256")},
+            "summary": {
+                "total": len(self.cases),
+                "passed": sum(recomputed_passed),
+                "average_score": recomputed_average,
+                "threshold": self.threshold,
+                "gate_passed": gate_passed,
+            },
+            "categories": categories,
+            "failures": [
+                {"case_id": result.case_id, "category": result.category, "score": result.score}
+                for result in self.cases
+                if result.score < self.threshold
+            ],
+        }
 
 
 @dataclass(frozen=True)
@@ -40,6 +77,17 @@ def load_cases(path: Path) -> tuple[EvalCase, ...]:
     cases = tuple(EvalCase(**item) for item in payload)
     if len(cases) < 12 or len({case.id for case in cases}) != len(cases):
         raise ValueError("eval suite requires at least 12 uniquely identified cases")
+    suite = json.loads(path.with_name("suite.json").read_text(encoding="utf-8"))
+    counts: dict[str, int] = {}
+    for case in cases:
+        counts[case.category] = counts.get(case.category, 0) + 1
+    missing = {
+        category: minimum
+        for category, minimum in suite["required_categories"].items()
+        if counts.get(category, 0) < minimum
+    }
+    if missing:
+        raise ValueError(f"eval suite category coverage is incomplete: {missing}")
     return cases
 
 
@@ -63,6 +111,7 @@ def run_suite(
         cases=tuple(results),
         average_score=average,
         passed=bool(results) and average >= threshold and all(result.passed for result in results),
+        threshold=threshold,
     )
 
 

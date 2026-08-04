@@ -20,6 +20,7 @@ use crate::{
     },
     evaluation::evaluate_prd_content,
     event::EventLog,
+    graph_runtime::GraphPlan,
     knowledge::{import_source, search},
     memory::{CandidateOutcome, MemoryCandidate, retrieve, save_untrusted_memory, store_candidate},
     skill_package::install_skill_package,
@@ -72,6 +73,9 @@ struct LockedExecution<'a> {
     trace_id: &'a str,
     deadline: &'a str,
     artifact: &'a Path,
+    tool_id: &'a str,
+    tool_action: &'a str,
+    tool_version: &'a str,
 }
 
 struct WorkerChild {
@@ -110,7 +114,6 @@ pub fn run(config: &GoldenPathConfig) -> Result<Value, String> {
     install_packages(&mut connection, &config.repository_root, &now)?;
 
     let task_id = generated_id(&connection, "task")?;
-    let action_id = generated_id(&connection, "action")?;
     let approval_id = generated_id(&connection, "approval")?;
     let permission_id = generated_id(&connection, "permission")?;
     let call_id = generated_id(&connection, "call")?;
@@ -126,6 +129,15 @@ pub fn run(config: &GoldenPathConfig) -> Result<Value, String> {
         &now,
     )?;
     let context_policy = context_policy_snapshot(&decision_context)?;
+    let graph = GraphPlan::load(
+        &connection,
+        "prd-generation",
+        &decision_context.prompt.version,
+    )?;
+    let (tool_id, tool_action, tool_version) = graph.tool_route("write")?;
+    let tool_id = tool_id.to_owned();
+    let tool_action = tool_action.to_owned();
+    let tool_version = tool_version.to_owned();
 
     let mut events = EventLog::default();
     start_task(
@@ -134,18 +146,50 @@ pub fn run(config: &GoldenPathConfig) -> Result<Value, String> {
         &task_id,
         &config.task_input,
         &context_policy,
+        &graph.skill_id,
+        &graph.skill_version,
+        &tool_id,
+        &tool_version,
         &now,
     )?;
-    seed_execution(&connection, &task_id, &action_id, &approval_id, &now)?;
-    ToolExecutor::new(&mut connection).grant_ephemeral(
-        &permission_id,
-        &task_id,
-        &action_id,
-        "ai-product-manager",
-        &output_dir,
-        "document.write",
-        &deadline,
-    )?;
+    let graph_setup = (|| -> Result<String, String> {
+        graph.materialize(&connection, &task_id, &now)?;
+        graph.start_step(&connection, &task_id, "analyze", &now)?;
+        graph.complete_step(
+            &connection,
+            &task_id,
+            "analyze",
+            &json!({
+                "analysis": {
+                    "task_input": config.task_input,
+                    "context_sha256": serde_json::from_str::<Value>(&context_policy)
+                        .ok()
+                        .and_then(|value| value["decision_context_sha256"].as_str().map(str::to_owned)),
+                    "unknowns_preserved": true
+                }
+            }),
+            &now,
+        )?;
+        let action_id = graph.start_step(&connection, &task_id, "write", &now)?;
+        seed_approval(&connection, &task_id, &approval_id, &now)?;
+        ToolExecutor::new(&mut connection).grant_ephemeral(
+            &permission_id,
+            &task_id,
+            &action_id,
+            "ai-product-manager",
+            &output_dir,
+            "document.write",
+            &deadline,
+        )?;
+        Ok(action_id)
+    })();
+    let action_id = match graph_setup {
+        Ok(action_id) => action_id,
+        Err(error) => {
+            fail_open_actions_and_task(&mut connection, &mut events, &task_id, &now)?;
+            return Err(format!("could not initialize graph execution: {error}"));
+        }
+    };
 
     let idempotency_key = format!("{task_id}:{action_id}:1");
     let worker_request = json!({
@@ -168,6 +212,9 @@ pub fn run(config: &GoldenPathConfig) -> Result<Value, String> {
         trace_id: &trace_id,
         deadline: &deadline,
         artifact: &artifact,
+        tool_id: &tool_id,
+        tool_action: &tool_action,
+        tool_version: &tool_version,
     };
     let worker_metrics =
         match invoke_worker(config, &worker_request, &locked, &mut connection, &now) {
@@ -227,6 +274,7 @@ pub fn run(config: &GoldenPathConfig) -> Result<Value, String> {
             })
         })
         .collect();
+    let graph_evidence = graph.evidence(&connection, &task_id)?;
     Ok(json!({
         "schema_version": "1.0",
         "task_id": task_id,
@@ -236,6 +284,12 @@ pub fn run(config: &GoldenPathConfig) -> Result<Value, String> {
         "worker_metrics": worker_metrics,
         "decision_context": decision_context,
         "memory_outcome": memory_outcome,
+        "graph": {
+            "engine": "runtime-dag-v1",
+            "skill_id": graph.skill_id,
+            "skill_version": graph.skill_version,
+            "nodes": graph_evidence,
+        },
         "events": event_values,
     }))
 }
@@ -401,14 +455,43 @@ fn fail_running_task(
     Ok(())
 }
 
+fn fail_open_actions_and_task(
+    connection: &mut Connection,
+    events: &mut EventLog,
+    task_id: &str,
+    now: &str,
+) -> Result<(), String> {
+    connection
+        .execute(
+            "UPDATE actions SET status='failed',updated_at=?1
+             WHERE task_id=?2 AND status='running'",
+            params![now, task_id],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "UPDATE actions SET status='cancelled',updated_at=?1
+             WHERE task_id=?2 AND status IN ('pending','blocked')",
+            params![now, task_id],
+        )
+        .map_err(|error| error.to_string())?;
+    fail_running_task(connection, events, task_id, now)
+}
+
 fn start_task(
     connection: &mut Connection,
     events: &mut EventLog,
     task_id: &str,
     task_input: &str,
     context_policy: &str,
+    skill_id: &str,
+    skill_version: &str,
+    tool_id: &str,
+    tool_version: &str,
     now: &str,
 ) -> Result<(), String> {
+    let skill_snapshot = json!({"id":skill_id,"version":skill_version}).to_string();
+    let toolset_snapshot = json!([{"id":tool_id,"version":tool_version}]).to_string();
     let mut tasks = TaskService::new(connection, events);
     tasks
         .create(task_id, "ai-product-manager", task_input, now)
@@ -417,8 +500,8 @@ fn start_task(
         .start_with_snapshot(
             task_id,
             ExecutionSnapshot {
-                skill: r#"{"id":"prd-generation","version":"1.0.0"}"#,
-                toolset: r#"[{"id":"document-tool","version":"1.0.0"}]"#,
+                skill: &skill_snapshot,
+                toolset: &toolset_snapshot,
                 persona: r#"{"agent_id":"ai-product-manager"}"#,
                 context_policy,
                 permissions: r#"["document.write"]"#,
@@ -499,9 +582,9 @@ fn invoke_worker(
         task_id: locked.task_id.to_owned(),
         action_id: locked.action_id.to_owned(),
         agent_id: "ai-product-manager".to_owned(),
-        tool_id: "document-tool".to_owned(),
-        tool_version: "1.0.0".to_owned(),
-        action: decision.action,
+        tool_id: locked.tool_id.to_owned(),
+        tool_version: locked.tool_version.to_owned(),
+        action: locked.tool_action.to_owned(),
         arguments: decision.arguments,
         idempotency_key: decision.idempotency_key,
         permission_context: PermissionContext {
@@ -610,7 +693,7 @@ fn validate_decision(
         || decision.kind != "tool_call"
         || decision.call_id != locked.call_id
         || decision.idempotency_key != locked.idempotency_key
-        || decision.action != "create_markdown"
+        || decision.action != locked.tool_action
     {
         return Err("Python worker returned a decision outside the locked route".to_owned());
     }
@@ -681,21 +764,14 @@ fn install_packages(connection: &mut Connection, root: &Path, now: &str) -> Resu
     Ok(())
 }
 
-fn seed_execution(
+fn seed_approval(
     connection: &Connection,
     task_id: &str,
-    action_id: &str,
     approval_id: &str,
     now: &str,
 ) -> Result<(), String> {
     let transaction = connection
         .unchecked_transaction()
-        .map_err(|error| error.to_string())?;
-    transaction
-        .execute(
-            "INSERT INTO actions VALUES (?1,?2,'document-tool','{}',NULL,'running',?3,?3)",
-            params![action_id, task_id, now],
-        )
         .map_err(|error| error.to_string())?;
     transaction
         .execute(
