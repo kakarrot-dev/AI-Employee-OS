@@ -28,7 +28,7 @@ struct CommandPaletteView: View {
         VStack(spacing: 0) {
             HStack(spacing: AppTheme.Spacing.sm) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("搜索命令", text: $query)
+                TextField("搜索或委派工作", text: $query)
                     .textFieldStyle(.plain)
                     .font(.title3)
                     .focused($searchFocused)
@@ -65,7 +65,8 @@ struct CommandPaletteView: View {
                 }
             }
         }
-        .frame(width: 560, height: 390)
+        .frame(width: 640, height: 420)
+        .background(.ultraThinMaterial)
         .task { searchFocused = true }
     }
 

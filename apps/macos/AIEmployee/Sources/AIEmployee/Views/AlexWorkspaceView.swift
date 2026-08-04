@@ -8,13 +8,14 @@ struct AlexWorkspaceView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
                 HStack(alignment: .center, spacing: AppTheme.Spacing.lg) {
-                    Image(systemName: "person.crop.circle.fill")
-                        .font(.system(size: 64))
-                        .foregroundStyle(palette.primary)
+                    ZStack {
+                        Circle().fill(palette.primary.opacity(0.14)).frame(width: 64, height: 64)
+                        Text("A").font(.largeTitle.weight(.semibold)).foregroundStyle(palette.primary)
+                    }
                     VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                         Text("Alex").font(.largeTitle.weight(.semibold))
                         Text("AI 产品经理").font(.title3).foregroundStyle(palette.muted)
-                        Label("已启用", systemImage: "checkmark.circle.fill")
+                        Label("本地运行", systemImage: "checkmark.circle.fill")
                             .font(.callout.weight(.medium))
                             .foregroundStyle(palette.success)
                     }
@@ -22,10 +23,10 @@ struct AlexWorkspaceView: View {
                     Button("创建任务", action: createTask).buttonStyle(.borderedProminent)
                 }
 
-                CreamSection(title: "职责") {
-                    Text("帮助你分析需求、设计产品方案，并生成可以进入评审的产品需求文档。")
-                        .foregroundStyle(palette.body)
-                }
+                Text("Alex 把模糊需求整理成可验证的产品决策，并交付可以进入评审的 PRD。")
+                    .font(.title3)
+                    .foregroundStyle(palette.body)
+                    .frame(maxWidth: 620, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
                     Text("工作能力").font(.headline)

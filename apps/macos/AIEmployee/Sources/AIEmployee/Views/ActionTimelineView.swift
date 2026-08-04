@@ -32,6 +32,10 @@ struct ActionTimelineView: View {
                         .font(.caption)
                         .foregroundStyle(palette.muted)
                     }
+                    .padding(.horizontal, node.status == "running" ? AppTheme.Spacing.sm : 0)
+                    .padding(.vertical, node.status == "running" ? AppTheme.Spacing.xs : 0)
+                    .background(node.status == "running" ? palette.surfaceSoft : .clear)
+                    .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
                     .padding(.bottom, index < nodes.count - 1 ? AppTheme.Spacing.sm : 0)
 
                     Spacer(minLength: 0)

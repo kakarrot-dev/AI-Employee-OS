@@ -6,16 +6,31 @@ struct MarkdownPreviewView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        CreamSection(title: "PRD 预览") {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            HStack {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                    Text("交付文档")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(palette.primary)
+                    Text("PRD")
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(palette.ink)
+                }
+                Spacer()
+                Label("本地产物", systemImage: "lock.doc.fill")
+                    .font(.caption)
+                    .foregroundStyle(palette.muted)
+            }
+
             Group {
                 switch state {
                 case .loading:
-                    HStack(spacing: 8) {
+                    HStack(spacing: AppTheme.Spacing.xs) {
                         ProgressView().controlSize(.small)
-                        Text("正在读取本地产物…").foregroundStyle(AppTheme.palette(for: colorScheme).muted)
+                        Text("正在读取本地产物…").foregroundStyle(palette.muted)
                     }
                 case .loaded(let content):
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
                         ForEach(Array(MarkdownBlock.parse(content).enumerated()), id: \.offset) { _, block in
                             markdownBlock(block)
                         }
@@ -23,12 +38,14 @@ struct MarkdownPreviewView: View {
                     .textSelection(.enabled)
                 case .failed(let message):
                     Label(message, systemImage: "doc.badge.ellipsis")
-                        .foregroundStyle(AppTheme.palette(for: colorScheme).muted)
+                        .foregroundStyle(palette.muted)
                         .textSelection(.enabled)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 8)
+            .padding(AppTheme.Spacing.lg)
+            .background(palette.surfaceCard)
+            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
         }
         .task(id: path) {
             state = .loading
@@ -43,23 +60,24 @@ struct MarkdownPreviewView: View {
         case .heading(let level, let text):
             Text(inlineMarkdown(text))
                 .font(headingFont(level))
+                .foregroundStyle(palette.ink)
                 .padding(.top, level == 1 ? 4 : 8)
         case .bullet(let text):
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("•").foregroundStyle(AppTheme.palette(for: colorScheme).muted)
+            HStack(alignment: .firstTextBaseline, spacing: AppTheme.Spacing.xs) {
+                Text("•").foregroundStyle(palette.muted)
                 Text(inlineMarkdown(text))
             }
         case .numbered(let text):
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: "circle.fill").font(.system(size: 4)).foregroundStyle(AppTheme.palette(for: colorScheme).muted)
+            HStack(alignment: .firstTextBaseline, spacing: AppTheme.Spacing.xs) {
+                Image(systemName: "circle.fill").font(.system(size: 4)).foregroundStyle(palette.muted)
                 Text(inlineMarkdown(text))
             }
         case .quote(let text):
             Text(inlineMarkdown(text))
-                .foregroundStyle(AppTheme.palette(for: colorScheme).muted)
+                .foregroundStyle(palette.muted)
                 .padding(.leading, AppTheme.Spacing.md)
                 .overlay(alignment: .leading) {
-                    Rectangle().fill(AppTheme.palette(for: colorScheme).primary).frame(width: 2)
+                    Rectangle().fill(palette.primary).frame(width: 2)
                 }
         case .code(let text):
             ScrollView(.horizontal) {
@@ -68,14 +86,14 @@ struct MarkdownPreviewView: View {
                     .textSelection(.enabled)
                     .padding(AppTheme.Spacing.sm)
             }
-            .background(AppTheme.palette(for: colorScheme).surfaceSoft)
+            .background(palette.surfaceSoft)
             .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous))
         case .divider:
-            Divider()
+            Divider().overlay(palette.hairlineSoft)
         case .spacing:
             Spacer().frame(height: 2)
         case .paragraph(let text):
-            Text(inlineMarkdown(text)).font(.body).lineSpacing(3)
+            Text(inlineMarkdown(text)).font(.body).lineSpacing(5)
         }
     }
 
@@ -90,6 +108,8 @@ struct MarkdownPreviewView: View {
         default: .subheadline.weight(.semibold)
         }
     }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 
     private enum PreviewState {
         case loading

@@ -36,6 +36,18 @@ enum AppTheme {
         static let lg: CGFloat = 12
     }
 
+    enum Motion {
+        static let fast = 0.12
+        static let standard = 0.22
+        static let emphasized = 0.35
+    }
+
+    enum Elevation {
+        static let composerRadius: CGFloat = 10
+        static let composerY: CGFloat = 3
+        static let composerOpacity = 0.08
+    }
+
     static func palette(for scheme: ColorScheme) -> Palette {
         if scheme == .dark {
             return Palette(

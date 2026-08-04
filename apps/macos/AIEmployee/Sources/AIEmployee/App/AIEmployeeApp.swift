@@ -10,10 +10,11 @@ struct AIEmployeeApp: App {
     var body: some Scene {
         WindowGroup("AI Employee OS", id: "main") {
             ContentView(store: store)
-                .frame(minWidth: 880, minHeight: 580)
+                .frame(minWidth: 960, minHeight: 640)
                 .fontDesign(.default)
                 .preferredColorScheme(preferredColorScheme)
         }
+        .defaultSize(width: 1280, height: 820)
         .commands {
             CommandGroup(after: .newItem) {
                 Button("新建任务") { store.beginComposing() }

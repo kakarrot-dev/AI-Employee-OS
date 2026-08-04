@@ -5,13 +5,11 @@ struct AppSidebarView: View {
 
     var body: some View {
         List(selection: $selection) {
-            Section("AI Company") {
+            Section("工作空间") {
                 destination(.company)
-            }
-            Section("员工") {
                 destination(.alex)
             }
-            Section("工作") {
+            Section("资料") {
                 destination(.tasks)
                 destination(.artifacts)
                 destination(.knowledge)
@@ -23,7 +21,7 @@ struct AppSidebarView: View {
             }
         }
         .listStyle(.sidebar)
-        .navigationTitle("AI Employee")
+        .navigationTitle("Alex Office")
     }
 
     private func destination(_ destination: AppDestination) -> some View {
