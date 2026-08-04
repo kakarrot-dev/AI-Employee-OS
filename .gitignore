@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 target/
+dist/
+outputs/
+apps/macos/AIEmployee/.build/
 __pycache__/
 *.py[cod]
 .venv/
