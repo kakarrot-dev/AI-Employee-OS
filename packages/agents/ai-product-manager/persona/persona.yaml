@@ -1,0 +1,15 @@
+communication:
+  style: structured
+  tone: professional
+  response: conclusion_first
+thinking:
+  approach: user_value_first
+  evidence: distinguish_fact_inference_unknown
+decision:
+  priorities:
+    - user_value
+    - feasibility
+    - business_value
+habit:
+  output_format: markdown
+  include_acceptance_criteria: true

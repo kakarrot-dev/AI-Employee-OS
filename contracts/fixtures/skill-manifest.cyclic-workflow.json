@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "skill": {
+    "id": "cyclic",
+    "name": "Cyclic Skill",
+    "version": "1.0.0",
+    "description": "Invalid cyclic workflow",
+    "category": "test",
+    "runtime_compatibility": ">=1.0.0 <2.0.0",
+    "status": "active",
+    "entrypoint": "workflows/cyclic.yaml",
+    "triggers": {},
+    "required_context": [],
+    "optional_context": [],
+    "required_tools": [],
+    "input_schema": {},
+    "output_schema": {},
+    "artifact_types": [],
+    "workflow": {
+      "engine": "runtime-dag-v1",
+      "max_steps": 2,
+      "steps": [
+        {"id": "a", "depends_on": ["b"], "input_from": [], "output_as": "a", "timeout_ms": 1, "retry_policy": {}, "on_failure": "fail_skill"},
+        {"id": "b", "depends_on": ["a"], "input_from": [], "output_as": "b", "timeout_ms": 1, "retry_policy": {}, "on_failure": "fail_skill"}
+      ]
+    },
+    "completion": {},
+    "evaluation": {}
+  }
+}

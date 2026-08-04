@@ -1,0 +1,36 @@
+schema_version: 1.0.0
+tool:
+  id: document-tool
+  name: Document Tool
+  version: 1.0.0
+  description: Create an authorized Markdown document
+  type: native
+  runtime: rust-native-v1
+  entrypoint: document_tool
+  actions:
+    - name: create_markdown
+      description: Create or replace one Markdown document
+      input_schema:
+        type: object
+        additionalProperties: false
+        required: [path, content]
+        properties:
+          path: {type: string}
+          content: {type: string}
+      output_schema:
+        type: object
+        additionalProperties: false
+        required: [path]
+        properties:
+          path: {type: string}
+      required_permissions: [document.write]
+      risk_level: 2
+      side_effect: reversible
+      confirmation: always
+      timeout_ms: 10000
+      idempotency: keyed
+      concurrency_safe: false
+      retry_policy: {max_attempts: 1, retry_on: []}
+      result_size_limit: 4096
+      sensitive_fields: [arguments.path, arguments.content]
+      verification: required

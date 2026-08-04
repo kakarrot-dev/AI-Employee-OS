@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0.0",
+  "skill": {
+    "id": "prd-generation",
+    "name": "PRD Generator",
+    "version": "1.0.0",
+    "description": "Generate a product requirements document",
+    "category": "product",
+    "runtime_compatibility": ">=1.0.0 <2.0.0",
+    "status": "active",
+    "entrypoint": "workflows/prd-generation.yaml",
+    "triggers": {},
+    "required_context": [],
+    "optional_context": [],
+    "required_tools": [],
+    "input_schema": {"type": "object"},
+    "output_schema": {"type": "object"},
+    "artifact_types": ["markdown_document"],
+    "workflow": {
+      "engine": "runtime-dag-v1",
+      "max_steps": 20,
+      "steps": [{
+        "id": "analyze",
+        "depends_on": [],
+        "input_from": ["skill.input"],
+        "output_as": "analysis",
+        "timeout_ms": 30000,
+        "retry_policy": {"max_attempts": 1},
+        "on_failure": "fail_skill"
+      }]
+    },
+    "completion": {"required_steps": ["analyze"], "allow_partial": false},
+    "evaluation": {"timing": "before_delivery", "block_on_failure": true, "metrics": []}
+  }
+}

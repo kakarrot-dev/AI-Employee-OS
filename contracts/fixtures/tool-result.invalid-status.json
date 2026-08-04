@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "call_id": "call_1",
+  "status": "completed",
+  "output": {},
+  "error": null,
+  "side_effect_state": "none",
+  "artifacts": [],
+  "started_at": "2026-08-04T10:00:00Z",
+  "finished_at": "2026-08-04T10:00:01Z",
+  "duration_ms": 1000,
+  "trace_id": "trace_1"
+}

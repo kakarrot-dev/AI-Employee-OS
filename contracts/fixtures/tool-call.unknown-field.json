@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "call_id": "call_1",
+  "task_id": "task_1",
+  "action_id": "action_1",
+  "agent_id": "alex",
+  "tool_id": "file-tool",
+  "tool_version": "1.0.0",
+  "action": "read_file",
+  "arguments": {},
+  "idempotency_key": "task_1:action_1:1",
+  "permission_context": {"grant_ids": []},
+  "deadline": "2026-08-04T10:00:00Z",
+  "trace_id": "trace_1",
+  "attempt": 1,
+  "untrusted_override": true
+}

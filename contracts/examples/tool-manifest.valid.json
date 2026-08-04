@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "tool": {
+    "id": "file-tool",
+    "name": "File Tool",
+    "version": "1.0.0",
+    "description": "Read authorized local files",
+    "type": "native",
+    "runtime": "rust-native-v1",
+    "entrypoint": "file_tool",
+    "actions": [{
+      "name": "read_file",
+      "description": "Read one authorized local file",
+      "input_schema": {"type": "object"},
+      "output_schema": {"type": "object"},
+      "required_permissions": ["filesystem.read"],
+      "risk_level": 0,
+      "side_effect": "none",
+      "confirmation": "never",
+      "timeout_ms": 10000,
+      "idempotency": "safe",
+      "concurrency_safe": true,
+      "retry_policy": {"max_attempts": 2, "retry_on": ["DEPENDENCY_UNAVAILABLE"]},
+      "result_size_limit": 1048576,
+      "sensitive_fields": ["arguments.path"],
+      "verification": "none"
+    }]
+  }
+}

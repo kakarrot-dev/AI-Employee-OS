@@ -1021,6 +1021,62 @@ Accepted
 
 ---
 
+# ADR-019：Tool 调用尝试独立持久化
+
+## 状态
+
+Accepted
+
+## 背景
+
+Canonical ToolCall 要求 `call_id`、`idempotency_key`、`attempt` 和副作用状态，但原 16 表模型只有 Action，无法在进程重启后可靠去重，也无法表达同一 Action 的多次受控尝试。
+
+## 决策
+
+新增 `tool_executions` canonical 表，将计划步骤与真实调用尝试分离：
+
+- Action 表达 Agent Loop 中的计划步骤。
+- Tool Execution 表达一次实际调用尝试。
+- `idempotency_key` 全局唯一，`action_id + attempt` 唯一。
+- 持久化 `status`、`side_effect_state`、结果、时间和 Trace。
+- `result_unknown` 禁止自动重放，只能人工核验收敛。
+
+数据库通过追加 Migration `002_tool_executions.sql` 演进，不修改已发布的 `001_initial.sql`。
+
+# ADR-020：DeepSeek 主源与 Poe 受控兜底
+
+## 状态
+
+Accepted
+
+## 决策
+
+MVP Provider Adapter 使用 DeepSeek 官方 API 作为主模型源，Poe OpenAI-compatible API（`https://api.poe.com/v1`）作为兜底模型源。Poe 使用 Responses API 的 `model` 字段选择模型，不使用 Creator Bot Query API。
+
+只允许以下错误触发有界兜底：网络不可达、限流、服务端临时错误和明确的依赖不可用。认证失败、余额或配额问题、非法请求、内容策略拒绝和响应 Schema 错误不得静默切换，以免掩盖配置、安全或契约问题。
+
+Provider 切换必须进入脱敏 Trace 与 Metrics。API Key 和 Token 只能来自受控进程环境或 macOS Keychain，不进入仓库、SQLite、日志、Trace、Memory 或 Agent Context。测试默认使用 deterministic fake provider，不调用计费 API。
+
+# ADR-021：Task 执行配置使用持久化快照
+
+## 状态
+
+Accepted
+
+## 决策
+
+Task 从 `pending` 转为 `running` 前，必须在同一事务中创建 `task_execution_snapshots`，锁定 Skill、Toolset、Persona、Context 策略、权限和非敏感 Provider 配置。运行中只读取该快照，包或设置更新不得影响已启动 Task。快照禁止保存 API Key、Token、完整敏感 Context或模型原始输入。数据库通过追加 Migration `003_task_execution_snapshots.sql` 演进。
+
+# ADR-022：User 与 Company 使用最小 Subject 引用表
+
+## 状态
+
+Accepted
+
+## 决策
+
+新增 `subjects` 表，仅提供 User、Company 的稳定 ID、名称和启停状态。Agent 继续使用 `agents`。Memory 与 Permission 在应用层按类型校验 `subjects` 或 `agents`。该表不引入账号、组织管理或 RBAC。数据库通过追加 Migration `004_subjects.sql` 演进。
+
 # ADR 总结
 
 最终技术原则：
@@ -1074,7 +1130,7 @@ AI Employee OS v1.0 Architecture Freeze
 |客户端|SwiftUI + AppKit|
 |Runtime|Rust|
 |Agent Engine|Deep Agents + LangGraph|
-|模型|Provider Adapter|
+|模型|DeepSeek 官方 API 主源 + Poe API 受控兜底|
 |Skill|Skill Runtime|
 |Tool|Native + MCP + Plugin|
 |Storage|SQLite + FastEmbed|

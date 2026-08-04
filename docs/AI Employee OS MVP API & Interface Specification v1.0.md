@@ -977,6 +977,14 @@ poe.py
 
 ```
 
+MVP 路由决策：
+
+- 主模型源：DeepSeek 官方 API。
+- 兜底模型源：Poe API。
+- 只有网络不可达、限流、服务端临时错误或依赖不可用允许按有界策略切换。
+- 认证失败、余额或配额问题、非法请求、内容策略拒绝、响应 Schema 错误不得静默切换。
+- Provider 切换必须记录脱敏 Trace、错误分类和 Metrics，不得记录 API Key、Token 或原始敏感输入。
+
 ---
 
 # 13. Agent Package Schema
