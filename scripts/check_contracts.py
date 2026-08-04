@@ -1,4 +1,5 @@
 import json
+import hashlib
 import re
 from pathlib import Path
 
@@ -47,6 +48,8 @@ def validate(schema: dict, value: object, path: str = "$") -> None:
     if isinstance(value, list):
         if len(value) < schema.get("minItems", 0):
             raise AssertionError(f"{path}: too few items")
+        if "maxItems" in schema and len(value) > schema["maxItems"]:
+            raise AssertionError(f"{path}: too many items")
         if schema.get("uniqueItems") and len({json.dumps(item, sort_keys=True) for item in value}) != len(value):
             raise AssertionError(f"{path}: duplicate items")
         item_schema = schema.get("items")
@@ -57,6 +60,8 @@ def validate(schema: dict, value: object, path: str = "$") -> None:
     if isinstance(value, str):
         if len(value) < schema.get("minLength", 0):
             raise AssertionError(f"{path}: string is too short")
+        if "maxLength" in schema and len(value) > schema["maxLength"]:
+            raise AssertionError(f"{path}: string is too long")
         pattern = schema.get("pattern")
         if pattern and re.fullmatch(pattern, value) is None:
             raise AssertionError(f"{path}: value does not match {pattern}")
@@ -107,6 +112,26 @@ def validate_contract(schema_name: str, payload_name: str) -> None:
         validate_tool_policy(payload)
     if schema_name == "skill-manifest.schema.json":
         validate_skill_dag(payload)
+    if schema_name == "decision-context.schema.json":
+        prompt = payload["prompt"]
+        if hashlib.sha256(prompt["content"].encode()).hexdigest() != prompt["sha256"]:
+            raise AssertionError("decision context prompt hash mismatch")
+        measured = sum(len(value) for value in (
+            payload["schema_version"], prompt["id"], prompt["version"], prompt["sha256"],
+            prompt["content"], payload["task"]["id"], payload["task"]["input"],
+        ))
+        for section in payload["sections"]:
+            measured += len(section["kind"]) + len(section["trust"])
+            for item in section["items"]:
+                measured += len(item["id"]) + len(item["content"]) + len(item["content_hash"])
+                measured += len(item["source_uri"] or "")
+        if payload["budget"]["used_chars"] != measured:
+            raise AssertionError("decision context used_chars mismatch")
+        if payload["budget"]["used_chars"] > payload["budget"]["max_chars"]:
+            raise AssertionError("decision context exceeds its declared budget")
+        kinds = [section["kind"] for section in payload["sections"]]
+        if len(kinds) != len(set(kinds)):
+            raise AssertionError("decision context sections must be unique")
 
 
 VALID_CASES = (
@@ -114,6 +139,7 @@ VALID_CASES = (
     ("tool-result.schema.json", "examples/tool-result.valid.json"),
     ("tool-manifest.schema.json", "examples/tool-manifest.valid.json"),
     ("skill-manifest.schema.json", "examples/skill-manifest.valid.json"),
+    ("decision-context.schema.json", "examples/decision-context.valid.json"),
 )
 
 INVALID_CASES = (
@@ -122,6 +148,7 @@ INVALID_CASES = (
     ("tool-result.schema.json", "fixtures/tool-result.invalid-status.json"),
     ("tool-manifest.schema.json", "fixtures/tool-manifest.unsafe-retry.json"),
     ("skill-manifest.schema.json", "fixtures/skill-manifest.cyclic-workflow.json"),
+    ("decision-context.schema.json", "fixtures/decision-context.invalid-budget.json"),
 )
 
 for schema_name, payload_name in VALID_CASES:

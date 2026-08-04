@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-employee-os.local/contracts/decision-context.schema.json",
+  "title": "DecisionContext",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "prompt", "task", "budget", "sections"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "prompt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "sha256", "content"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "content": {"type": "string", "minLength": 1, "maxLength": 3000}
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "input"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "input": {"type": "string", "minLength": 1, "maxLength": 2000}
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_chars", "used_chars"],
+      "properties": {
+        "max_chars": {"type": "integer", "minimum": 1},
+        "used_chars": {"type": "integer", "minimum": 0}
+      }
+    },
+    "sections": {
+      "type": "array",
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "trust", "items"],
+        "properties": {
+          "kind": {"enum": ["identity", "persona", "skill", "memory", "knowledge", "tool"]},
+          "trust": {"enum": ["trusted", "untrusted_data"]},
+          "items": {
+            "type": "array",
+            "maxItems": 6,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "content", "content_hash", "source_uri"],
+              "properties": {
+                "id": {"type": "string", "minLength": 1, "maxLength": 128},
+                "content": {"type": "string", "minLength": 1, "maxLength": 4000},
+                "content_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                "source_uri": {"type": ["string", "null"], "maxLength": 512}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

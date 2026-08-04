@@ -30,10 +30,21 @@ fn real_process_golden_path_persists_terminal_states_and_prd() {
     let response: Value = serde_json::from_slice(&result.stdout).unwrap();
     assert_eq!(response["status"], "succeeded");
     assert_eq!(response["evaluation"]["score"], 1.0);
+    assert_eq!(response["decision_context"]["prompt"]["version"], "1.0.0");
+    assert!(
+        response["decision_context"]["budget"]["used_chars"]
+            .as_u64()
+            .unwrap()
+            <= response["decision_context"]["budget"]["max_chars"]
+                .as_u64()
+                .unwrap()
+    );
+    assert_eq!(response["memory_outcome"], "stored");
     assert_eq!(response["events"].as_array().unwrap().len(), 4);
     let artifact = PathBuf::from(response["artifact_path"].as_str().unwrap());
     let content = fs::read_to_string(artifact).unwrap();
     assert!(content.contains("Given 用户已授权目标目录"));
+    assert!(content.contains("seed://golden/interviews#golden-interviews:0"));
 
     let repeated = run_golden(
         &repository,
@@ -43,21 +54,59 @@ fn real_process_golden_path_persists_terminal_states_and_prd() {
     );
     assert!(
         repeated.status.success(),
-        "the same authorized database and output directory must be reusable"
+        "{} {}",
+        String::from_utf8_lossy(&repeated.stderr),
+        String::from_utf8_lossy(&repeated.stdout)
+    );
+    let repeated_response: Value = serde_json::from_slice(&repeated.stdout).unwrap();
+    assert_eq!(repeated_response["memory_outcome"], "duplicate");
+    let first_memory_id = format!("memory-{}", response["task_id"].as_str().unwrap());
+    assert!(
+        repeated_response["decision_context"]["sections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|section| section["kind"] == "memory")
+            .unwrap()["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["id"] == first_memory_id)
     );
 
     let connection = Connection::open(database).unwrap();
-    let statuses: (i64, i64, i64, i64) = connection
+    let statuses: (i64, i64, i64, i64, i64, i64) = connection
         .query_row(
             "SELECT (SELECT count(*) FROM tasks WHERE status='succeeded'),
                     (SELECT count(*) FROM actions WHERE status='succeeded'),
                     (SELECT count(*) FROM tool_executions WHERE status='succeeded'),
-                    (SELECT count(*) FROM permissions)",
+                    (SELECT count(*) FROM permissions),
+                    (SELECT count(*) FROM memories),
+                    (SELECT count(*) FROM knowledge_sources WHERE index_status='indexed')",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            },
         )
         .unwrap();
-    assert_eq!(statuses, (2, 2, 2, 0));
+    assert_eq!(statuses, (2, 2, 2, 0, 2, 1));
+    let snapshot: String = connection
+        .query_row(
+            "SELECT context_policy_snapshot_json FROM task_execution_snapshots WHERE task_id=?1",
+            [response["task_id"].as_str().unwrap()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(!snapshot.contains("为企业 AI 知识库设计一个 PRD"));
+    assert!(!snapshot.contains("企业用户要求权限隔离"));
+    assert!(snapshot.contains("decision_context_sha256"));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -143,6 +192,44 @@ print(json.dumps({{"schema_version":"1.0","type":"final","content":"done","metri
     );
     let response: Value = serde_json::from_slice(&result.stdout).unwrap();
     assert_eq!(response["worker_metrics"]["direct_writes_blocked"], true);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn rejected_evaluation_does_not_create_experience_memory() {
+    let root = temporary_root();
+    let output_dir = root.join("output");
+    let database = root.join("runtime.sqlite3");
+    let worker = root.join("low-quality-worker.py");
+    let script = r###"#!/usr/bin/env python3
+import json, sys
+request = json.loads(sys.stdin.readline())
+print(json.dumps({"schema_version":"1.0","type":"tool_call","call_id":request["call_id"],"action":"create_markdown","arguments":{"path":request["artifact_path"],"content":"# incomplete"},"idempotency_key":request["idempotency_key"]}), flush=True)
+json.loads(sys.stdin.readline())
+print(json.dumps({"schema_version":"1.0","type":"final","content":"done","metrics":{}}), flush=True)
+"###;
+    fs::write(&worker, script).unwrap();
+    fs::set_permissions(&worker, fs::Permissions::from_mode(0o755)).unwrap();
+    let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let result = run_golden_with_python(
+        &repository,
+        &database,
+        &output_dir,
+        "生成不完整 PRD",
+        Some(&worker),
+    );
+    assert!(!result.status.success());
+    let connection = Connection::open(database).unwrap();
+    let counts: (i64, i64) = connection
+        .query_row(
+            "SELECT
+               (SELECT count(*) FROM memories WHERE owner_type='agent' AND memory_type='experience'),
+               (SELECT count(*) FROM memory_provenance)",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(counts, (0, 0));
     fs::remove_dir_all(root).unwrap();
 }
 

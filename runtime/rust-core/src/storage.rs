@@ -7,6 +7,8 @@ pub const MIGRATION_003: &str =
 pub const MIGRATION_004: &str = include_str!("../../../storage/migrations/004_subjects.sql");
 pub const MIGRATION_005: &str =
     include_str!("../../../storage/migrations/005_scoped_permission_grants.sql");
+pub const MIGRATION_006: &str =
+    include_str!("../../../storage/migrations/006_memory_provenance.sql");
 
 pub fn migrate(connection: &mut Connection) -> Result<()> {
     connection.execute_batch("PRAGMA foreign_keys = ON;")?;
@@ -16,6 +18,7 @@ pub fn migrate(connection: &mut Connection) -> Result<()> {
     transaction.execute_batch(MIGRATION_003)?;
     transaction.execute_batch(MIGRATION_004)?;
     transaction.execute_batch(MIGRATION_005)?;
+    transaction.execute_batch(MIGRATION_006)?;
     transaction.commit()
 }
 
@@ -36,7 +39,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 21); // 20 canonical tables plus schema_migrations.
+        assert_eq!(count, 22); // 21 canonical tables plus schema_migrations.
 
         let integrity: String = connection
             .query_row("PRAGMA integrity_check", [], |row| row.get(0))
@@ -48,7 +51,7 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(migration_count, 5);
+        assert_eq!(migration_count, 6);
     }
 
     #[test]
@@ -122,7 +125,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(index_count, 13);
+        assert_eq!(index_count, 14);
     }
 
     #[test]

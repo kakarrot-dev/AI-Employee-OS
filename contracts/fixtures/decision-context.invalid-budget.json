@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0",
+  "prompt": {"id": "prd-generation", "version": "1.0.0", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "content": "system prompt"},
+  "task": {"id": "task_1", "input": "生成 PRD"},
+  "budget": {"max_chars": 0, "used_chars": 20},
+  "sections": []
+}

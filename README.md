@@ -4,7 +4,7 @@ AI Employee OS 是一个 Local-first 的 macOS AI 员工运行平台。MVP 以 A
 
 ## 当前状态
 
-项目处于“首个可执行纵向切片”阶段：架构文档已经冻结，Runtime 已能以 deterministic Provider 跑通 Task、Python Worker、Rust ToolExecutor、PRD 产物、Evaluation 和终态持久化。macOS Client 仍未实现。
+项目已完成安全 Golden Path 和 Release 1 Decision Substrate：Runtime 能以 deterministic Provider 跑通 Task、版本化 Prompt、预算化 Context、带来源 Knowledge、Memory 读写、Python Worker、Rust ToolExecutor、PRD 产物、Evaluation 和终态持久化。macOS Client 仍未实现。
 
 ## 架构
 
@@ -76,7 +76,7 @@ mkdir -p /tmp/ai-employee-os/output
   --approve-write
 ```
 
-成功时 stdout 返回结构化 JSON，其中包含 `task_id`、`artifact_path`、Evaluation、Worker Metrics 和有序事件。数据库中的 Task、Action 与 Tool Execution 均应收敛为 `succeeded`。
+成功时 stdout 返回结构化 JSON，其中包含 `task_id`、`artifact_path`、Decision Context、Memory Outcome、Evaluation、Worker Metrics 和有序事件。数据库中的 Task、Action 与 Tool Execution 均应收敛为 `succeeded`。
 
 ## 事实源
 
@@ -84,6 +84,7 @@ mkdir -p /tmp/ai-employee-os/output
 - 接口：[MVP API & Interface Specification](./docs/AI%20Employee%20OS%20MVP%20API%20&%20Interface%20Specification%20v1.0.md)
 - 架构决策：[ADR](./docs/AI%20Employee%20OS%20技术决策记录%20ADR（Architecture%20Decision%20Records）v1.0.md)
 - 协作与验收：[AGENTS.md](./AGENTS.md)
+- Release 1：[Decision Substrate](./docs/releases/Release%201%20Decision%20Substrate.md)
 
 ## 安全
 

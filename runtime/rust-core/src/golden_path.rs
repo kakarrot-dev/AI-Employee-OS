@@ -11,11 +11,17 @@ use std::{
 use rusqlite::{Connection, params};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 use crate::{
     agent::install_agent_package,
+    decision_context::{
+        ContextItem, ContextSection, DecisionContext, PromptRef, assemble, content_hash,
+    },
     evaluation::evaluate_prd_content,
     event::EventLog,
+    knowledge::{import_source, search},
+    memory::{CandidateOutcome, MemoryCandidate, retrieve, save_untrusted_memory, store_candidate},
     skill_package::install_skill_package,
     storage::migrate,
     task::TaskEvent,
@@ -112,6 +118,14 @@ pub fn run(config: &GoldenPathConfig) -> Result<Value, String> {
     let evaluation_id = generated_id(&connection, "evaluation")?;
     let deadline = runtime_deadline(&connection)?;
     let artifact = output_dir.join(format!("{task_id}.md"));
+    let decision_context = prepare_decision_context(
+        &mut connection,
+        &config.repository_root,
+        &task_id,
+        &config.task_input,
+        &now,
+    )?;
+    let context_policy = context_policy_snapshot(&decision_context)?;
 
     let mut events = EventLog::default();
     start_task(
@@ -119,6 +133,7 @@ pub fn run(config: &GoldenPathConfig) -> Result<Value, String> {
         &mut events,
         &task_id,
         &config.task_input,
+        &context_policy,
         &now,
     )?;
     seed_execution(&connection, &task_id, &action_id, &approval_id, &now)?;
@@ -141,6 +156,7 @@ pub fn run(config: &GoldenPathConfig) -> Result<Value, String> {
         "call_id": call_id,
         "idempotency_key": idempotency_key,
         "trace_id": trace_id,
+        "decision_context": decision_context,
     });
     let locked = LockedExecution {
         task_id: &task_id,
@@ -194,6 +210,10 @@ pub fn run(config: &GoldenPathConfig) -> Result<Value, String> {
             return Err(format!("could not complete task: {error:?}"));
         }
     };
+    let memory_outcome = match persist_experience(&connection, &task_id, &trace_id, &now) {
+        Ok(outcome) => outcome.to_owned(),
+        Err(error) => format!("rejected:{error}"),
+    };
     let event_values: Vec<Value> = events
         .after(0)
         .into_iter()
@@ -214,8 +234,152 @@ pub fn run(config: &GoldenPathConfig) -> Result<Value, String> {
         "artifact_path": artifact,
         "evaluation": {"score": outcome.score, "delivery_allowed": outcome.delivery_allowed},
         "worker_metrics": worker_metrics,
+        "decision_context": decision_context,
+        "memory_outcome": memory_outcome,
         "events": event_values,
     }))
+}
+
+fn prepare_decision_context(
+    connection: &mut Connection,
+    repository_root: &Path,
+    task_id: &str,
+    task_input: &str,
+    now: &str,
+) -> Result<DecisionContext, String> {
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO subjects VALUES
+             ('local-user','user','Local User','active',?1,?1)",
+            [now],
+        )
+        .map_err(|error| error.to_string())?;
+    import_source(
+        connection,
+        "golden-interviews",
+        "seed://golden/interviews",
+        "seed_document",
+        "企业 AI 产品访谈",
+        "企业用户要求权限隔离、来源引用、失败恢复和可验证验收。所有未知指标必须标记待确认。",
+        now,
+    )?;
+    let preference_exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM memories WHERE id='golden-preference')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if !preference_exists {
+        save_untrusted_memory(
+            connection,
+            "golden-preference",
+            "user",
+            "local-user",
+            "preference",
+            "PRD 必须说明用户价值、商业价值和证据来源",
+            0.9,
+            0.95,
+            now,
+        )?;
+    }
+    let mut memories = retrieve(connection, "user", "local-user", 3)?;
+    memories.extend(retrieve(connection, "agent", "ai-product-manager", 3)?);
+    let knowledge = search(connection, "权限 引用 恢复 验收", 3)?;
+    let skill_version: String = connection
+        .query_row(
+            "SELECT version FROM skills WHERE id='prd-generation' AND status='active'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    let prompt_content = fs::read_to_string(repository_root.join(format!(
+        "packages/skills/prd-generation/prompts/prd-generation.system.v{skill_version}.md"
+    )))
+    .map_err(|error| format!("could not load locked prompt: {error}"))?;
+    let context = assemble(
+        task_id,
+        task_input,
+        PromptRef::new("prd-generation", &skill_version, &prompt_content)?,
+        vec![
+            ContextSection {
+                kind: "memory".into(),
+                trust: "untrusted_data".into(),
+                items: memories
+                    .into_iter()
+                    .map(|memory| ContextItem {
+                        id: memory.id,
+                        content_hash: content_hash(&memory.content),
+                        content: memory.content,
+                        source_uri: None,
+                    })
+                    .collect(),
+                max_items: 6,
+            },
+            ContextSection {
+                kind: "knowledge".into(),
+                trust: "untrusted_data".into(),
+                items: knowledge
+                    .into_iter()
+                    .map(|hit| ContextItem {
+                        id: format!("{}:{}", hit.source_id, hit.chunk_index),
+                        content_hash: hit.content_hash,
+                        content: hit.content,
+                        source_uri: Some(hit.source_uri),
+                    })
+                    .collect(),
+                max_items: 3,
+            },
+        ],
+        4_000,
+    )?;
+    Ok(context)
+}
+
+fn persist_experience(
+    connection: &Connection,
+    task_id: &str,
+    trace_id: &str,
+    now: &str,
+) -> Result<&'static str, String> {
+    let memory_id = format!("memory-{task_id}");
+    let candidate = MemoryCandidate {
+        id: &memory_id,
+        owner_type: "agent",
+        owner_id: "ai-product-manager",
+        memory_type: "experience",
+        content: "生成 PRD 后必须先通过可信 Rubric，再将 Task 收敛为 succeeded",
+        importance: 0.8,
+        confidence: 0.9,
+        stable: true,
+        future_value: true,
+        conflicts_with_id: None,
+        task_id,
+        trace_id,
+        extractor_version: "memory-rules/1.0.0",
+    };
+    match store_candidate(connection, candidate, now)? {
+        CandidateOutcome::Stored => Ok("stored"),
+        CandidateOutcome::Duplicate(_) => Ok("duplicate"),
+    }
+}
+
+fn context_policy_snapshot(context: &DecisionContext) -> Result<String, String> {
+    let serialized = serde_json::to_vec(context).map_err(|error| error.to_string())?;
+    serde_json::to_string(&json!({
+        "schema_version": "1.0",
+        "prompt": {
+            "id": context.prompt.id,
+            "version": context.prompt.version,
+            "sha256": context.prompt.sha256,
+        },
+        "max_chars": context.budget.max_chars,
+        "section_order": ["identity","persona","skill","memory","knowledge","tool"],
+        "memory_selector": {"owners": ["user:local-user","agent:ai-product-manager"], "limit_per_owner": 3},
+        "knowledge_selector": {"query": "权限 引用 恢复 验收", "limit": 3},
+        "decision_context_sha256": format!("{:x}", Sha256::digest(serialized)),
+    }))
+    .map_err(|error| error.to_string())
 }
 
 fn fail_running_task(
@@ -242,6 +406,7 @@ fn start_task(
     events: &mut EventLog,
     task_id: &str,
     task_input: &str,
+    context_policy: &str,
     now: &str,
 ) -> Result<(), String> {
     let mut tasks = TaskService::new(connection, events);
@@ -255,7 +420,7 @@ fn start_task(
                 skill: r#"{"id":"prd-generation","version":"1.0.0"}"#,
                 toolset: r#"[{"id":"document-tool","version":"1.0.0"}]"#,
                 persona: r#"{"agent_id":"ai-product-manager"}"#,
-                context_policy: r#"{"knowledge":"optional_for_golden_path"}"#,
+                context_policy,
                 permissions: r#"["document.write"]"#,
                 provider_config: r#"{"provider":"deterministic","network":false}"#,
             },
@@ -315,7 +480,18 @@ fn invoke_worker(
     });
     write_json_line(&mut stdin, request)?;
 
-    let decision: WorkerDecision = receive_worker_json(&output_rx, &mut child.child)?;
+    let decision_value: Value = receive_worker_json(&output_rx, &mut child.child)?;
+    if decision_value.get("type").and_then(Value::as_str) == Some("failed") {
+        return Err(format!(
+            "Python worker rejected Decision Context: {}",
+            decision_value
+                .get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown error")
+        ));
+    }
+    let decision: WorkerDecision =
+        serde_json::from_value(decision_value).map_err(|error| error.to_string())?;
     validate_decision(&decision, locked)?;
     let call = ToolCall {
         schema_version: "1.0".to_owned(),

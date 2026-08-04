@@ -217,6 +217,17 @@ CREATE TABLE memories (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE memory_provenance (
+  memory_id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  trace_id TEXT NOT NULL,
+  extractor_version TEXT NOT NULL,
+  trust TEXT NOT NULL CHECK (trust IN ('untrusted_data')),
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE RESTRICT
+);
+
 CREATE TABLE knowledge_sources (
   id TEXT PRIMARY KEY,
   uri TEXT NOT NULL UNIQUE,

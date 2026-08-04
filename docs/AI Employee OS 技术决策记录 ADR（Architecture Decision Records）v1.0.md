@@ -1089,6 +1089,18 @@ Python Worker 是不持有系统权限的推理进程。macOS Runtime 必须通�
 
 高风险单次授权使用持久化 `scoped_permission_grants`，绑定 Task、Action、Agent、Resource、Action、过期时间和消费时间。授权不得仅存在于进程内；执行终态与授权消费在同一事务提交。数据库通过追加 Migration `005_scoped_permission_grants.sql` 演进。副作用完成但终态提交失败时必须持久化 `result_unknown` 证据，禁止将其降级为普通失败或自动重放。
 
+# ADR-024：Decision Context 与自动 Memory 的信任边界
+
+## 状态
+
+Accepted
+
+## 决策
+
+运行时 Decision Context 使用 `decision-context.schema.json`，统一锁定 Prompt 内容与 Hash、Task、字符预算、Section 信任级别、Item 内容 Hash 和来源。预算按所有模型可见字符串字段计量，超预算失败关闭，不静默裁剪。完整 Context 只在受控进程间传递；Task Snapshot 仅保存 Context Policy、选择规则和完整 Context 的不可逆 Hash，不保存 Context 本体。
+
+Knowledge 必须以 `untrusted_data` 进入 Context，读取时同时验证 Source 与 Chunk 的持久化 Hash。自动 Memory 必须绑定 Task、Trace 和 Extractor Version，并通过 `memory_provenance` 标记为 `untrusted_data`；缺少 Provenance 的旧记录同样默认按 `untrusted_data` 处理，禁止缺省提权。直接写入接口仅限 Runtime 内部 Bootstrap，外部调用必须经过候选门禁。自动候选与既有同 Owner/Type 的不同内容发生冲突时拒绝写入，禁止由调用者用空冲突字段绕过。数据库通过追加 Migration `006_memory_provenance.sql` 演进。
+
 # ADR 总结
 
 最终技术原则：

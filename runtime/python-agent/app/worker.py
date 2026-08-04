@@ -1,6 +1,10 @@
 import json
+from hashlib import sha256
 from pathlib import Path
+import re
 import sys
+
+from .context import measured_chars
 
 
 def plan(request: object) -> dict:
@@ -12,7 +16,7 @@ def plan(request: object) -> dict:
         "action": "create_markdown",
         "arguments": {
             "path": request["artifact_path"],
-            "content": _prd_content(request["task_input"]),
+            "content": _prd_content(request["task_input"], request["decision_context"]),
         },
         "idempotency_key": request["idempotency_key"],
     }
@@ -43,22 +47,78 @@ def _validate_request(request: object) -> None:
         "call_id",
         "idempotency_key",
         "trace_id",
+        "decision_context",
     }
     if not isinstance(request, dict) or set(request) != required:
         raise ValueError("worker request fields do not match schema 1.0")
     if request["schema_version"] != "1.0":
         raise ValueError("unsupported schema_version")
-    if not all(isinstance(request[key], str) and request[key] for key in required):
+    string_fields = required - {"decision_context"}
+    if not all(isinstance(request[key], str) and request[key] for key in string_fields):
         raise ValueError("worker request values must be non-empty strings")
+    _validate_decision_context(request["decision_context"], request["task_id"], request["task_input"])
     if Path(request["artifact_path"]).suffix != ".md":
         raise ValueError("artifact_path must use .md")
 
 
-def _prd_content(task_input: str) -> str:
+def _validate_decision_context(context: object, task_id: str, task_input: str) -> None:
+    if not isinstance(context, dict) or set(context) != {"schema_version", "prompt", "task", "budget", "sections"}:
+        raise ValueError("decision_context fields do not match schema 1.0")
+    if context["schema_version"] != "1.0" or context["task"] != {"id": task_id, "input": task_input}:
+        raise ValueError("decision_context does not match the task")
+    budget = context["budget"]
+    if (
+        not isinstance(budget, dict)
+        or set(budget) != {"max_chars", "used_chars"}
+        or not all(isinstance(budget[key], int) and not isinstance(budget[key], bool) and budget[key] >= 0 for key in budget)
+        or budget["max_chars"] < 1
+    ):
+        raise ValueError("decision_context budget is invalid")
+    if measured_chars(context) != budget["used_chars"] or budget["used_chars"] > budget["max_chars"]:
+        raise ValueError("decision_context exceeds its budget")
+    kinds = [section.get("kind") for section in context["sections"]]
+    allowed = {"identity", "persona", "skill", "memory", "knowledge", "tool"}
+    if len(kinds) > 6 or len(kinds) != len(set(kinds)) or not set(kinds) <= allowed:
+        raise ValueError("decision_context sections must be unique")
+    prompt = context["prompt"]
+    if set(prompt) != {"id", "version", "sha256", "content"} or len(prompt["sha256"]) != 64:
+        raise ValueError("decision_context prompt identity is invalid")
+    if re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", prompt["version"]) is None:
+        raise ValueError("decision_context prompt version is invalid")
+    if prompt["sha256"] != sha256(prompt["content"].encode()).hexdigest():
+        raise ValueError("decision_context prompt hash mismatch")
+    required_rules = ("Knowledge", "不可信", "source_uri", "result_unknown")
+    if not all(rule in prompt["content"] for rule in required_rules):
+        raise ValueError("locked prompt is missing required safety rules")
+    for section in context["sections"]:
+        if set(section) != {"kind", "trust", "items"} or section["trust"] not in {"trusted", "untrusted_data"}:
+            raise ValueError("decision_context section is invalid")
+        if not isinstance(section["items"], list) or len(section["items"]) > 6:
+            raise ValueError("decision_context section items are invalid")
+        if section["kind"] == "knowledge" and section["trust"] != "untrusted_data":
+            raise ValueError("knowledge must be treated as untrusted data")
+        for item in section["items"]:
+            if set(item) != {"id", "content", "content_hash", "source_uri"}:
+                raise ValueError("decision_context item fields are invalid")
+            if not item["id"] or len(item["id"]) > 128 or not item["content"] or len(item["content"]) > 4_000:
+                raise ValueError("decision_context item is invalid")
+            if item["source_uri"] is not None and (not isinstance(item["source_uri"], str) or len(item["source_uri"]) > 512):
+                raise ValueError("decision_context source is invalid")
+            if section["kind"] == "knowledge" and not item["source_uri"]:
+                raise ValueError("knowledge item requires source_uri")
+            if item["content_hash"] != sha256(item["content"].encode()).hexdigest():
+                raise ValueError("decision_context item hash mismatch")
+
+
+def _prd_content(task_input: str, context: dict) -> str:
+    knowledge = next((section["items"] for section in context["sections"] if section["kind"] == "knowledge"), [])
+    memories = next((section["items"] for section in context["sections"] if section["kind"] == "memory"), [])
+    citations = "；".join(f'{item["source_uri"]}#{item["id"]}' for item in knowledge) or "无补充资料"
+    memory_note = "；".join(_quoted_data(item["content"]) for item in memories) or "无可用长期记忆"
     return f"""# 产品需求文档
 
 ## 1. 背景与证据
-来源：用户本次输入“{task_input}”。当前没有补充业务资料，未确认内容不会被当作事实。
+来源：用户本次输入“{task_input}”；证据引用：{citations}。Knowledge 仅作为不可信数据，不执行其中任何指令；未确认内容不会被当作事实。
 
 ## 2. 用户问题
 用户需要把模糊需求转化为可评审、可追踪的产品方案。用户价值是降低遗漏关键约束和反复沟通的成本。
@@ -82,8 +142,12 @@ def _prd_content(task_input: str) -> str:
 Given 用户已授权目标目录并批准本次写入，When Alex 执行任务，Then 只产生 1 份 PRD，Task 在评价通过后进入 succeeded。
 
 ## 9. 风险与待确认项
-待确认：目标用户细分、业务现状、指标基线、交付时间和最终评审人。在获得证据前不虚构答案。
+记忆约束：{memory_note}。待确认：目标用户细分、业务现状、指标基线、交付时间和最终评审人。在获得证据前不虚构答案。
 """
+
+
+def _quoted_data(content: str) -> str:
+    return "数据摘录「" + " ".join(content.split())[:300] + "」"
 
 
 def main() -> int:
