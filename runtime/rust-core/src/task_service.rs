@@ -186,6 +186,17 @@ impl<'a> TaskService<'a> {
             now,
         )
         .map_err(TaskServiceError::Evaluation)?;
+        self.events.append_persisted(
+            &transaction,
+            id,
+            if outcome.delivery_allowed {
+                EventType::EvaluationPassed
+            } else {
+                EventType::EvaluationBlocked
+            },
+            now,
+            serde_json::json!({"score": outcome.score, "failed_items": outcome.failed_items}),
+        )?;
         if outcome.delivery_allowed {
             let updated = transaction.execute(
                 "UPDATE tasks SET status=?1,updated_at=?2
@@ -201,19 +212,6 @@ impl<'a> TaskService<'a> {
             }
         }
         transaction.commit()?;
-        self.events.append(
-            id,
-            if outcome.delivery_allowed {
-                EventType::EvaluationPassed
-            } else {
-                EventType::EvaluationBlocked
-            },
-            now,
-            serde_json::json!({
-                "score": outcome.score,
-                "failed_items": outcome.failed_items
-            }),
-        );
         if !outcome.delivery_allowed {
             return Err(TaskServiceError::EvaluationBlocked {
                 score: outcome.score,

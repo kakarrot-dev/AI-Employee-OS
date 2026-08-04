@@ -32,12 +32,15 @@ use crate::{
     tool_package::install_tool_package,
 };
 
+const TASK_CANCELLED: &str = "__TASK_CANCELLED__";
+
 pub struct GoldenPathConfig {
     pub repository_root: PathBuf,
     pub database: PathBuf,
     pub output_dir: PathBuf,
     pub python: PathBuf,
     pub task_input: String,
+    pub task_id: Option<String>,
     pub approve_write: bool,
 }
 
@@ -82,6 +85,14 @@ struct WorkerChild {
     child: Child,
 }
 
+fn valid_task_id(value: &str) -> bool {
+    value.starts_with("task_")
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
+
 impl WorkerChild {
     fn new(child: Child) -> Self {
         Self { child }
@@ -113,7 +124,16 @@ pub fn run(config: &GoldenPathConfig) -> Result<Value, String> {
     let now = runtime_now(&connection)?;
     install_packages(&mut connection, &config.repository_root, &now)?;
 
-    let task_id = generated_id(&connection, "task")?;
+    let task_id = match &config.task_id {
+        Some(task_id) if valid_task_id(task_id) => task_id.clone(),
+        Some(_) => {
+            return Err(
+                "task_id must start with task_ and contain only ASCII letters, digits, _ or -"
+                    .to_owned(),
+            );
+        }
+        None => generated_id(&connection, "task")?,
+    };
     let approval_id = generated_id(&connection, "approval")?;
     let permission_id = generated_id(&connection, "permission")?;
     let call_id = generated_id(&connection, "call")?;
@@ -216,19 +236,36 @@ pub fn run(config: &GoldenPathConfig) -> Result<Value, String> {
         tool_action: &tool_action,
         tool_version: &tool_version,
     };
-    let worker_metrics =
-        match invoke_worker(config, &worker_request, &locked, &mut connection, &now) {
-            Ok(metrics) => metrics,
-            Err(error) => resolve_worker_failure(
-                &mut connection,
-                &mut events,
-                &task_id,
-                &action_id,
-                &artifact,
-                &now,
-                error,
-            )?,
-        };
+    let worker_metrics = match invoke_worker(
+        config,
+        &worker_request,
+        &locked,
+        &mut connection,
+        &now,
+    ) {
+        Ok(metrics) => metrics,
+        Err(error) if error == TASK_CANCELLED => {
+            cancel_running_task(&mut connection, &mut events, &task_id, &now)?;
+            let graph_evidence = graph.evidence(&connection, &task_id)?;
+            return Ok(json!({
+                "schema_version":"1.0", "task_id":task_id, "status":"cancelled",
+                "artifact_path":artifact, "evaluation":{"score":0.0,"delivery_allowed":false},
+                "worker_metrics":{}, "decision_context":decision_context,
+                "memory_outcome":"not_stored",
+                "graph":{"engine":"runtime-dag-v1","skill_id":graph.skill_id,"skill_version":graph.skill_version,"nodes":graph_evidence},
+                "events":event_values(&events)
+            }));
+        }
+        Err(error) => resolve_worker_failure(
+            &mut connection,
+            &mut events,
+            &task_id,
+            &action_id,
+            &artifact,
+            &now,
+            error,
+        )?,
+    };
 
     let content = match fs::read_to_string(&artifact) {
         Ok(content) => content,
@@ -261,19 +298,7 @@ pub fn run(config: &GoldenPathConfig) -> Result<Value, String> {
         Ok(outcome) => outcome.to_owned(),
         Err(error) => format!("rejected:{error}"),
     };
-    let event_values: Vec<Value> = events
-        .after(0)
-        .into_iter()
-        .map(|event| {
-            json!({
-                "event_id": event.event_id,
-                "sequence": event.sequence,
-                "type": event.event_type.as_str(),
-                "occurred_at": event.occurred_at,
-                "payload": event.payload,
-            })
-        })
-        .collect();
+    let event_values = event_values(&events);
     let graph_evidence = graph.evidence(&connection, &task_id)?;
     Ok(json!({
         "schema_version": "1.0",
@@ -292,6 +317,24 @@ pub fn run(config: &GoldenPathConfig) -> Result<Value, String> {
         },
         "events": event_values,
     }))
+}
+
+fn event_values(events: &EventLog) -> Vec<Value> {
+    events
+        .after(0)
+        .into_iter()
+        .map(|event| {
+            json!({
+                "schema_version": "1.0",
+                "event_id": event.event_id,
+                "sequence": event.sequence,
+                "task_id": event.task_id,
+                "type": event.event_type.as_str(),
+                "occurred_at": event.occurred_at,
+                "payload": event.payload,
+            })
+        })
+        .collect()
 }
 
 fn prepare_decision_context(
@@ -455,6 +498,37 @@ fn fail_running_task(
     Ok(())
 }
 
+fn cancel_running_task(
+    connection: &mut Connection,
+    events: &mut EventLog,
+    task_id: &str,
+    now: &str,
+) -> Result<(), String> {
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "UPDATE actions SET status='cancelled',updated_at=?1
+         WHERE task_id=?2 AND status IN ('pending','running','blocked')",
+            params![now, task_id],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction.execute(
+        "UPDATE approvals SET status='expired',resolved_at=?1 WHERE task_id=?2 AND status='pending'",
+        params![now, task_id],
+    ).map_err(|error| error.to_string())?;
+    transaction.execute(
+        "UPDATE task_cancellation_requests SET acknowledged_at=?1 WHERE task_id=?2 AND acknowledged_at IS NULL",
+        params![now, task_id],
+    ).map_err(|error| error.to_string())?;
+    transaction.commit().map_err(|error| error.to_string())?;
+    TaskService::new(connection, events)
+        .transition(task_id, TaskEvent::Cancel, now)
+        .map_err(|error| format!("could not cancel task: {error:?}"))?;
+    Ok(())
+}
+
 fn fail_open_actions_and_task(
     connection: &mut Connection,
     events: &mut EventLog,
@@ -525,14 +599,13 @@ fn invoke_worker(
         &config.repository_root.join("runtime/python-agent"),
         &config.python,
     )?;
+    let worker_root = config.repository_root.join("runtime/python-agent");
     let child = Command::new("/usr/bin/sandbox-exec")
         .args(["-p", &profile])
         .arg(&config.python)
         .args(["-m", "app.worker"])
-        .env(
-            "PYTHONPATH",
-            config.repository_root.join("runtime/python-agent"),
-        )
+        .env("PYTHONPATH", &worker_root)
+        .current_dir(&worker_root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
@@ -563,7 +636,8 @@ fn invoke_worker(
     });
     write_json_line(&mut stdin, request)?;
 
-    let decision_value: Value = receive_worker_json(&output_rx, &mut child.child)?;
+    let decision_value: Value =
+        receive_worker_json(&output_rx, &mut child.child, connection, locked.task_id)?;
     if decision_value.get("type").and_then(Value::as_str) == Some("failed") {
         return Err(format!(
             "Python worker rejected Decision Context: {}",
@@ -596,6 +670,9 @@ fn invoke_worker(
         attempt: 1,
     };
     let result = ToolExecutor::new(connection).execute(&call, now);
+    if cancellation_requested(connection, locked.task_id)? {
+        return Err(TASK_CANCELLED.to_owned());
+    }
     write_json_line(
         &mut stdin,
         &serde_json::to_value(&result).map_err(|e| e.to_string())?,
@@ -612,7 +689,8 @@ fn invoke_worker(
                 .unwrap_or(true)
         ));
     }
-    let final_result: WorkerFinal = receive_worker_json(&output_rx, &mut child.child)?;
+    let final_result: WorkerFinal =
+        receive_worker_json(&output_rx, &mut child.child, connection, locked.task_id)?;
     drop(stdin);
     child.terminate();
     if final_result.schema_version != "1.0"
@@ -627,17 +705,38 @@ fn invoke_worker(
 fn receive_worker_json<T: serde::de::DeserializeOwned>(
     receiver: &mpsc::Receiver<String>,
     child: &mut std::process::Child,
+    connection: &Connection,
+    task_id: &str,
 ) -> Result<T, String> {
-    match receiver.recv_timeout(Duration::from_secs(30)) {
-        Ok(line) => serde_json::from_str(&line).map_err(|error| error.to_string()),
-        Err(error) => {
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        if cancellation_requested(connection, task_id)? {
             let _ = child.kill();
             let _ = child.wait();
-            Err(format!(
-                "Python worker response timeout or disconnect: {error}"
-            ))
+            return Err(TASK_CANCELLED.to_owned());
+        }
+        match receiver.recv_timeout(Duration::from_millis(100)) {
+            Ok(line) => return serde_json::from_str(&line).map_err(|error| error.to_string()),
+            Err(mpsc::RecvTimeoutError::Timeout) if std::time::Instant::now() < deadline => {
+                continue;
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "Python worker response timeout or disconnect: {error}"
+                ));
+            }
         }
     }
+}
+
+fn cancellation_requested(connection: &Connection, task_id: &str) -> Result<bool, String> {
+    connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM task_cancellation_requests WHERE task_id=?1 AND acknowledged_at IS NULL)",
+        [task_id],
+        |row| row.get(0),
+    ).map_err(|error| error.to_string())
 }
 
 fn worker_sandbox_profile(

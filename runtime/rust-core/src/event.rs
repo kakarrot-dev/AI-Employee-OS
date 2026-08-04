@@ -1,3 +1,4 @@
+use rusqlite::{Connection, params};
 use serde_json::Value;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -50,7 +51,7 @@ impl EventLog {
     ) -> EventEnvelope {
         let sequence = self.events.len() as u64 + 1;
         let event = EventEnvelope {
-            event_id: format!("event_{sequence}"),
+            event_id: format!("{task_id}:event:{sequence}"),
             sequence,
             task_id: task_id.to_owned(),
             event_type,
@@ -59,6 +60,36 @@ impl EventLog {
         };
         self.events.push(event.clone());
         event
+    }
+
+    pub fn append_persisted(
+        &mut self,
+        connection: &Connection,
+        task_id: &str,
+        event_type: EventType,
+        occurred_at: &str,
+        payload: Value,
+    ) -> rusqlite::Result<EventEnvelope> {
+        let sequence: i64 = connection.query_row(
+            "SELECT COALESCE(MAX(sequence), 0) + 1 FROM runtime_events WHERE task_id=?1",
+            [task_id],
+            |row| row.get(0),
+        )?;
+        let event = EventEnvelope {
+            event_id: format!("{task_id}:event:{sequence}"),
+            sequence: sequence as u64,
+            task_id: task_id.to_owned(),
+            event_type,
+            occurred_at: occurred_at.to_owned(),
+            payload,
+        };
+        connection.execute(
+            "INSERT INTO runtime_events(task_id,sequence,event_id,event_type,payload_json,occurred_at)
+             VALUES (?1,?2,?3,?4,?5,?6)",
+            params![event.task_id, sequence, event.event_id, event.event_type.as_str(), event.payload.to_string(), event.occurred_at],
+        )?;
+        self.events.push(event.clone());
+        Ok(event)
     }
 
     pub fn after(&self, sequence: u64) -> Vec<EventEnvelope> {

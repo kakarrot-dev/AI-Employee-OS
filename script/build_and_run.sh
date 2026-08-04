@@ -9,6 +9,8 @@ PACKAGE_DIR="$ROOT_DIR/apps/macos/AIEmployee"
 APP_BUNDLE="$ROOT_DIR/dist/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_BINARY="$APP_CONTENTS/MacOS/$APP_NAME"
+RUNTIME_BINARY="$APP_CONTENTS/MacOS/ai-employee-runtime"
+RUNTIME_RESOURCES="$APP_CONTENTS/Resources/AIEmployeeRuntime"
 
 if [[ -d /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk ]]; then
   export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk
@@ -23,13 +25,21 @@ BUILD_BINARY="$(swift build --package-path "$PACKAGE_DIR" --show-bin-path)/$APP_
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_CONTENTS/MacOS"
 cp "$BUILD_BINARY" "$APP_BINARY"
+cp "$ROOT_DIR/target/debug/ai-employee-runtime" "$RUNTIME_BINARY"
+mkdir -p "$RUNTIME_RESOURCES/runtime" "$RUNTIME_RESOURCES/packages/agents" "$RUNTIME_RESOURCES/packages/skills" "$RUNTIME_RESOURCES/packages/tools"
+rsync -a --exclude '__pycache__' --exclude '*.pyc' "$ROOT_DIR/runtime/python-agent/" "$RUNTIME_RESOURCES/runtime/python-agent/"
+cp -R "$ROOT_DIR/packages/agents/ai-product-manager" "$RUNTIME_RESOURCES/packages/agents/ai-product-manager"
+cp -R "$ROOT_DIR/packages/skills/prd-generation" "$RUNTIME_RESOURCES/packages/skills/prd-generation"
+cp -R "$ROOT_DIR/packages/tools/document-tool" "$RUNTIME_RESOURCES/packages/tools/document-tool"
 chmod +x "$APP_BINARY"
+chmod +x "$RUNTIME_BINARY"
 sed -e "s/__APP_NAME__/$APP_NAME/g" -e "s/__BUNDLE_ID__/$BUNDLE_ID/g" \
   "$ROOT_DIR/apps/macos/AIEmployee/Resources/Info.plist.template" > "$APP_CONTENTS/Info.plist"
+codesign --force --sign - --options runtime "$RUNTIME_BINARY"
 codesign --force --sign - --options runtime --entitlements \
   "$ROOT_DIR/apps/macos/AIEmployee/Resources/AIEmployee.entitlements" "$APP_BUNDLE"
 
-open_app() { AI_EMPLOYEE_OS_ROOT="$ROOT_DIR" /usr/bin/open -n "$APP_BUNDLE"; }
+open_app() { /usr/bin/open -n "$APP_BUNDLE"; }
 
 case "$MODE" in
   run) open_app ;;

@@ -1113,6 +1113,20 @@ MVP Graph Engine 为 `runtime-dag-v1`，直接编译已安装且版本锁定的 
 
 下游 Step 只有在全部依赖 Action 为 `succeeded` 时才能启动。Tool Node 的 Tool ID 与 Action 来自锁定 Manifest，Worker 不得改变；有副作用节点 `max_attempts` 必须为 1。Graph 初始化失败必须将已物化但未终结的 Action 与 Task 一并收敛为失败。运行 Evidence 从 canonical Action 状态读取，不把内存中的计划当作完成证据。
 
+# ADR-026：Task 取消请求与 Runtime Event 持久化
+
+## 状态
+
+Accepted
+
+## 决策
+
+Swift Client 在启动 Task 前生成符合约束的 canonical `task_id`，但不直接写数据库。所有取消通过 Rust `cancel-task` 写入 `task_cancellation_requests`；执行中的 Runtime 在 Worker 等待边界轮询请求，终止 Worker，将未完成 Action 与 Task 收敛为 `cancelled`，并写入确认时间。取消与 Tool 完成竞争时，以已持久化的副作用证据为准，不回滚已确认成功的副作用。
+
+Task 生命周期事件追加写入 `runtime_events`，`sequence` 在单个 Task 内从 1 单调递增，Swift 仅通过 `events --after <sequence>` 续读。客户端不得用本地进度覆盖 canonical Task/Action 状态，也不得因断线重复创建 Task。
+
+数据库通过追加 Migration `007_runtime_events_and_cancellation.sql` 演进；旧 Migration 不修改。
+
 # ADR 总结
 
 最终技术原则：

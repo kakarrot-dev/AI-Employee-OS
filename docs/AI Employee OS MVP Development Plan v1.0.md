@@ -160,7 +160,7 @@ Product Owner 负责范围裁决、Golden Cases、PRD Rubric 和阶段验收。
 
 - 所有合法契约样例通过。
 - 缺字段、未知字段、未知版本、无效枚举、非法权限和错误 Schema 的反例失败。
-- 17 张 canonical 表及索引与 Unified Data Model 一致。
+- 23 张 canonical 表及索引与 Unified Data Model 一致。
 - Migration 重复执行不损坏数据。
 - 非法 Task、Action 和 Approval 状态无法写入。
 - `./scripts/check.sh` 通过。

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-employee.local/contracts/runtime-event.schema.json",
+  "title": "RuntimeEventEnvelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "event_id", "sequence", "task_id", "type", "occurred_at", "payload"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "event_id": { "type": "string", "minLength": 1 },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "task_id": { "type": "string", "minLength": 1 },
+    "type": { "enum": ["task_created", "task_started", "task_succeeded", "task_failed", "task_cancelled", "evaluation_passed", "evaluation_blocked"] },
+    "occurred_at": { "type": "string", "minLength": 1 },
+    "payload": { "type": "object" }
+  }
+}

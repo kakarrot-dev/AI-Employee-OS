@@ -32,20 +32,91 @@ struct RuntimeResponse: Codable, Sendable {
     let artifactPath: String
     let evaluation: Evaluation
     let graph: Graph
+    let events: [RuntimeEvent]
 
     enum CodingKeys: String, CodingKey {
         case taskID = "task_id"
         case status
         case artifactPath = "artifact_path"
-        case evaluation, graph
+        case evaluation, graph, events
+    }
+}
+
+struct TaskHistoryResponse: Codable, Sendable {
+    struct Item: Codable, Sendable {
+        let taskID: String
+        let input: String
+        let status: TaskRunStatus
+        let createdAt: String
+        let updatedAt: String
+        let actions: [GraphNodeEvidence]
+        let artifactPath: String?
+        let evaluation: RuntimeResponse.Evaluation?
+        let events: [RuntimeEvent]
+        let cancellationRequested: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case taskID = "task_id"
+            case input, status, actions, evaluation, events
+            case createdAt = "created_at"
+            case updatedAt = "updated_at"
+            case artifactPath = "artifact_path"
+            case cancellationRequested = "cancellation_requested"
+        }
+    }
+
+    let schemaVersion: String
+    let tasks: [Item]
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case tasks
+    }
+}
+
+struct RuntimeEvent: Codable, Identifiable, Sendable {
+    let schemaVersion: String
+    let eventID: String
+    let sequence: Int
+    let taskID: String
+    let type: String
+    let occurredAt: String
+
+    var id: String { eventID }
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case eventID = "event_id"
+        case sequence
+        case taskID = "task_id"
+        case type
+        case occurredAt = "occurred_at"
+    }
+}
+
+struct RuntimeEventsResponse: Codable, Sendable {
+    let schemaVersion: String
+    let taskID: String
+    let after: Int
+    let events: [RuntimeEvent]
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case taskID = "task_id"
+        case after, events
     }
 }
 
 struct TaskRun: Identifiable {
-    let id: UUID
+    let id: String
     let input: String
-    let createdAt: Date
+    let createdAt: String
     var status: TaskRunStatus
+    var actions: [GraphNodeEvidence]
+    var events: [RuntimeEvent]
     var response: RuntimeResponse?
     var error: String?
+    var artifactPath: String?
+    var evaluation: RuntimeResponse.Evaluation?
+    var isCancellationRequested: Bool
 }

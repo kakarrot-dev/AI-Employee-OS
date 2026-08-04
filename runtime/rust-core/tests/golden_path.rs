@@ -2,8 +2,10 @@ use std::{
     fs,
     os::unix::fs::PermissionsExt,
     path::PathBuf,
-    process::Command,
+    process::{Command, Stdio},
     sync::atomic::{AtomicU64, Ordering},
+    thread,
+    time::Duration,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -84,7 +86,7 @@ fn real_process_golden_path_persists_terminal_states_and_prd() {
             .any(|item| item["id"] == first_memory_id)
     );
 
-    let connection = Connection::open(database).unwrap();
+    let connection = Connection::open(&database).unwrap();
     let statuses: (i64, i64, i64, i64, i64, i64) = connection
         .query_row(
             "SELECT (SELECT count(*) FROM tasks WHERE status='succeeded'),
@@ -107,6 +109,30 @@ fn real_process_golden_path_persists_terminal_states_and_prd() {
         )
         .unwrap();
     assert_eq!(statuses, (2, 4, 2, 0, 2, 1));
+    let history = Command::new(env!("CARGO_BIN_EXE_ai-employee-runtime"))
+        .args([
+            "list-tasks",
+            "--database",
+            database.to_string_lossy().as_ref(),
+        ])
+        .output()
+        .unwrap();
+    assert!(history.status.success());
+    let history: Value = serde_json::from_slice(&history.stdout).unwrap();
+    assert_eq!(history["schema_version"], "1.0");
+    assert_eq!(history["tasks"].as_array().unwrap().len(), 2);
+    assert_eq!(history["tasks"][0]["status"], "succeeded");
+    assert_eq!(history["tasks"][0]["actions"].as_array().unwrap().len(), 2);
+    assert_eq!(history["tasks"][0]["evaluation"]["score"], 1.0);
+    assert_eq!(history["tasks"][0]["evaluation"]["delivery_allowed"], true);
+    assert!(
+        history["tasks"][0]["artifact_path"]
+            .as_str()
+            .unwrap()
+            .ends_with(".md")
+    );
+    assert!(!history["tasks"][0]["events"].as_array().unwrap().is_empty());
+    assert_eq!(history["tasks"][0]["cancellation_requested"], false);
     let snapshot: String = connection
         .query_row(
             "SELECT context_policy_snapshot_json FROM task_execution_snapshots WHERE task_id=?1",
@@ -117,6 +143,121 @@ fn real_process_golden_path_persists_terminal_states_and_prd() {
     assert!(!snapshot.contains("为企业 AI 知识库设计一个 PRD"));
     assert!(!snapshot.contains("企业用户要求权限隔离"));
     assert!(snapshot.contains("decision_context_sha256"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn cancellation_is_acknowledged_and_events_resume_after_cursor() {
+    let root = temporary_root();
+    let output_dir = root.join("output");
+    let database = root.join("runtime.sqlite3");
+    let worker = root.join("slow-worker.py");
+    fs::write(
+        &worker,
+        "#!/usr/bin/env python3\nimport time\ntime.sleep(10)\n",
+    )
+    .unwrap();
+    fs::set_permissions(&worker, fs::Permissions::from_mode(0o755)).unwrap();
+    let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let task_id = "task_cancel_integration";
+    let runtime = Command::new(env!("CARGO_BIN_EXE_ai-employee-runtime"))
+        .args([
+            "run-golden",
+            "--repository-root",
+            repository.to_string_lossy().as_ref(),
+            "--database",
+            database.to_string_lossy().as_ref(),
+            "--output-dir",
+            output_dir.to_string_lossy().as_ref(),
+            "--input",
+            "取消测试",
+            "--task-id",
+            task_id,
+            "--approve-write",
+            "--python",
+            worker.to_string_lossy().as_ref(),
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    for _ in 0..100 {
+        if database.is_file() {
+            if let Ok(connection) = Connection::open(&database) {
+                let running: bool = connection
+                    .query_row(
+                        "SELECT EXISTS(SELECT 1 FROM tasks WHERE id=?1 AND status='running')",
+                        [task_id],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or(false);
+                if running {
+                    break;
+                }
+            }
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    let cancel = Command::new(env!("CARGO_BIN_EXE_ai-employee-runtime"))
+        .args([
+            "cancel-task",
+            "--database",
+            database.to_string_lossy().as_ref(),
+            "--task-id",
+            task_id,
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        cancel.status.success(),
+        "{}",
+        String::from_utf8_lossy(&cancel.stderr)
+    );
+    let runtime = runtime.wait_with_output().unwrap();
+    assert!(
+        runtime.status.success(),
+        "{}",
+        String::from_utf8_lossy(&runtime.stderr)
+    );
+    let connection = Connection::open(&database).unwrap();
+    let status: String = connection
+        .query_row("SELECT status FROM tasks WHERE id=?1", [task_id], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(status, "cancelled");
+    let acknowledged: bool = connection
+        .query_row(
+            "SELECT acknowledged_at IS NOT NULL FROM task_cancellation_requests WHERE task_id=?1",
+            [task_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(acknowledged);
+    let events = Command::new(env!("CARGO_BIN_EXE_ai-employee-runtime"))
+        .args([
+            "events",
+            "--database",
+            database.to_string_lossy().as_ref(),
+            "--task-id",
+            task_id,
+            "--after",
+            "1",
+        ])
+        .output()
+        .unwrap();
+    let events: Value = serde_json::from_slice(&events.stdout).unwrap();
+    assert_eq!(
+        events["events"].as_array().unwrap().last().unwrap()["type"],
+        "task_cancelled"
+    );
+    assert!(
+        events["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|event| event["sequence"].as_i64().unwrap() > 1)
+    );
     fs::remove_dir_all(root).unwrap();
 }
 

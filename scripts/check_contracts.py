@@ -166,6 +166,7 @@ VALID_CASES = (
     ("skill-manifest.schema.json", "examples/skill-manifest.valid.json"),
     ("decision-context.schema.json", "examples/decision-context.valid.json"),
     ("eval-report.schema.json", "examples/eval-report.valid.json"),
+    ("runtime-event.schema.json", "examples/runtime-event.valid.json"),
 )
 
 INVALID_CASES = (
@@ -176,6 +177,7 @@ INVALID_CASES = (
     ("skill-manifest.schema.json", "fixtures/skill-manifest.cyclic-workflow.json"),
     ("decision-context.schema.json", "fixtures/decision-context.invalid-budget.json"),
     ("eval-report.schema.json", "fixtures/eval-report.invalid-score.json"),
+    ("runtime-event.schema.json", "fixtures/runtime-event.invalid-type.json"),
 )
 
 for schema_name, payload_name in VALID_CASES:

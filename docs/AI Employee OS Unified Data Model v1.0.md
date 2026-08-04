@@ -172,6 +172,24 @@ CREATE TABLE actions (
   FOREIGN KEY (tool_id) REFERENCES tools(id) ON DELETE RESTRICT
 );
 
+CREATE TABLE runtime_events (
+  task_id TEXT NOT NULL,
+  sequence INTEGER NOT NULL CHECK (sequence >= 1),
+  event_id TEXT NOT NULL UNIQUE,
+  event_type TEXT NOT NULL,
+  payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
+  occurred_at TEXT NOT NULL,
+  PRIMARY KEY (task_id, sequence),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+CREATE TABLE task_cancellation_requests (
+  task_id TEXT PRIMARY KEY,
+  requested_at TEXT NOT NULL,
+  acknowledged_at TEXT,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
 CREATE TABLE tool_executions (
   call_id TEXT PRIMARY KEY,
   action_id TEXT NOT NULL,
@@ -345,6 +363,7 @@ CREATE TABLE metrics (
 
 CREATE INDEX idx_tasks_agent_status ON tasks(agent_id, status);
 CREATE INDEX idx_actions_task_created ON actions(task_id, created_at);
+CREATE INDEX idx_runtime_events_task_sequence ON runtime_events(task_id, sequence);
 CREATE INDEX idx_tool_executions_action_started ON tool_executions(action_id, started_at);
 CREATE INDEX idx_tool_executions_trace ON tool_executions(trace_id);
 CREATE INDEX idx_memories_owner_type ON memories(owner_type, owner_id, memory_type);
@@ -369,6 +388,8 @@ CREATE INDEX idx_metrics_name_recorded ON metrics(name, recorded_at);
 | `tools` | 可调用 Tool 清单 | 被 Action 引用 | 已产生 Action 时限制删除 |
 | `tasks` | 一次用户任务及其状态 | 属于 Agent，包含 Action | 有审计或审批记录时限制删除 |
 | `actions` | Agent Loop 中的单步执行 | 属于 Task，可引用 Tool | Task 删除时级联 |
+| `runtime_events` | Swift 可按 Task 与 cursor 续读的 canonical 运行事件 | 属于 Task，`sequence` 在 Task 内单调递增 | Task 删除时级联 |
+| `task_cancellation_requests` | 用户取消意图及 Runtime 确认 | 与 Task 一对一 | Task 删除时级联 |
 | `tool_executions` | Tool 调用尝试、幂等与副作用核验记录 | 属于 Action，`idempotency_key` 全局唯一 | Action 删除时级联；有 Audit 的 Task 仍受保留规则约束 |
 | `task_execution_snapshots` | Task 启动时锁定执行配置 | 与 Task 一对一 | Task 删除时级联 |
 | `memories` | 用户、Agent 或公司的长期记忆 | 多态 owner | 应用层负责 owner 完整性 |
