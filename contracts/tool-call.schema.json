@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-employee-os.local/contracts/tool-call.schema.json",
+  "title": "ToolCall",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "call_id", "task_id", "action_id", "agent_id", "tool_id", "tool_version", "action", "arguments", "idempotency_key", "permission_context", "deadline", "trace_id", "attempt"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "call_id": {"type": "string", "minLength": 1},
+    "task_id": {"type": "string", "minLength": 1},
+    "action_id": {"type": "string", "minLength": 1},
+    "agent_id": {"type": "string", "minLength": 1},
+    "tool_id": {"type": "string", "minLength": 1},
+    "tool_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "action": {"type": "string", "minLength": 1},
+    "arguments": {"type": "object"},
+    "idempotency_key": {"type": "string", "minLength": 1},
+    "permission_context": {"type": "object", "required": ["grant_ids"], "properties": {"grant_ids": {"type": "array", "items": {"type": "string"}}}, "additionalProperties": false},
+    "approval_id": {"type": ["string", "null"]},
+    "deadline": {"type": "string", "format": "date-time"},
+    "trace_id": {"type": "string", "minLength": 1},
+    "attempt": {"type": "integer", "minimum": 1}
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-employee-os.local/contracts/tool-result.schema.json",
+  "title": "ToolResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "call_id", "status", "output", "error", "side_effect_state", "artifacts", "started_at", "finished_at", "duration_ms", "trace_id"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "call_id": {"type": "string", "minLength": 1},
+    "status": {"enum": ["succeeded", "failed", "blocked", "result_unknown"]},
+    "output": {"type": ["object", "null"]},
+    "error": {"type": ["object", "null"]},
+    "side_effect_state": {"enum": ["none", "not_started", "confirmed", "unknown"]},
+    "verification": {"type": ["object", "null"]},
+    "artifacts": {"type": "array", "items": {"type": "object"}},
+    "result_ref": {"type": ["string", "null"]},
+    "started_at": {"type": "string", "format": "date-time"},
+    "finished_at": {"type": "string", "format": "date-time"},
+    "duration_ms": {"type": "integer", "minimum": 0},
+    "trace_id": {"type": "string", "minLength": 1}
+  }
+}
