@@ -1,8 +1,12 @@
 use std::{
-    fs,
+    fs::{self, File, OpenOptions},
+    io::Write,
+    os::fd::{AsRawFd, FromRawFd},
+    os::unix::ffi::OsStrExt,
+    os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     sync::mpsc,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use rusqlite::{Connection, OptionalExtension, params};
@@ -20,6 +24,34 @@ pub struct ToolExecutor<'a> {
 impl<'a> ToolExecutor<'a> {
     pub fn new(connection: &'a mut Connection) -> Self {
         Self { connection }
+    }
+
+    pub fn grant_ephemeral(
+        &self,
+        id: &str,
+        task_id: &str,
+        action_id: &str,
+        agent_id: &str,
+        resource: &Path,
+        action: &str,
+        expires_at: &str,
+    ) -> Result<(), String> {
+        self.connection
+            .execute(
+                "INSERT INTO scoped_permission_grants VALUES
+                 (?1,?2,?3,?4,?5,?6,?7,NULL,strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+                params![
+                    id,
+                    task_id,
+                    action_id,
+                    agent_id,
+                    resource.to_string_lossy(),
+                    action,
+                    expires_at
+                ],
+            )
+            .map(|_| ())
+            .map_err(|error| error.to_string())
     }
 
     pub fn execute(&mut self, call: &ToolCall, now: &str) -> ToolResult {
@@ -45,7 +77,7 @@ impl<'a> ToolExecutor<'a> {
         if let Err(message) = validate_schema(&action.input_schema, &call.arguments, "$") {
             return self.reject(call, now, "INVALID_ARGUMENT", &message);
         }
-        if let Err((code, message)) = self.validate_context(call, action) {
+        if let Err((code, message)) = self.validate_context(call, action, now) {
             return self.reject(call, now, code, &message);
         }
         if let Err((code, message)) = self.begin_execution(call, action, now) {
@@ -55,7 +87,7 @@ impl<'a> ToolExecutor<'a> {
         let authorized_root = action
             .required_permissions
             .first()
-            .and_then(|permission| self.authorized_resource(call, permission).ok());
+            .and_then(|permission| self.authorized_resource(call, permission, now).ok());
         let execution = execute_native_with_timeout(call, action, authorized_root);
         match execution {
             Ok((output, side_effect_state)) => {
@@ -153,6 +185,7 @@ impl<'a> ToolExecutor<'a> {
         &self,
         call: &ToolCall,
         action: &ToolAction,
+        now: &str,
     ) -> Result<(), (&'static str, String)> {
         let relation_exists: bool = self
             .connection
@@ -195,7 +228,8 @@ impl<'a> ToolExecutor<'a> {
 
         for required in &action.required_permissions {
             let granted = call.permission_context.grant_ids.iter().any(|grant_id| {
-                self.connection
+                let persistent = self
+                    .connection
                     .query_row(
                         "SELECT EXISTS(
                            SELECT 1 FROM permissions
@@ -205,7 +239,8 @@ impl<'a> ToolExecutor<'a> {
                         params![grant_id, call.agent_id, required],
                         |row| row.get::<_, bool>(0),
                     )
-                    .unwrap_or(false)
+                    .unwrap_or(false);
+                persistent || self.has_ephemeral_grant(call, grant_id, required, now)
             });
             if !granted {
                 return Err((
@@ -243,6 +278,7 @@ impl<'a> ToolExecutor<'a> {
         &self,
         call: &ToolCall,
         required: &str,
+        now: &str,
     ) -> Result<PathBuf, (&'static str, String)> {
         for grant_id in &call.permission_context.grant_ids {
             let resource: Option<String> = self
@@ -259,11 +295,59 @@ impl<'a> ToolExecutor<'a> {
             if let Some(resource) = resource {
                 return Ok(PathBuf::from(resource));
             }
+            let resource: Option<String> = self
+                .connection
+                .query_row(
+                    "SELECT resource FROM scoped_permission_grants
+                     WHERE id=?1 AND task_id=?2 AND action_id=?3 AND subject_id=?4
+                       AND action=?5 AND consumed_at IS NULL AND expires_at>=?6",
+                    params![
+                        grant_id,
+                        call.task_id,
+                        call.action_id,
+                        call.agent_id,
+                        required,
+                        now
+                    ],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|error| ("EXECUTION_FAILED", error.to_string()))?;
+            if let Some(resource) = resource {
+                return Ok(PathBuf::from(resource));
+            }
         }
         Err((
             "PERMISSION_DENIED",
             format!("missing permission {required}"),
         ))
+    }
+
+    fn has_ephemeral_grant(
+        &self,
+        call: &ToolCall,
+        grant_id: &str,
+        required: &str,
+        now: &str,
+    ) -> bool {
+        self.connection
+            .query_row(
+                "SELECT EXISTS(
+                   SELECT 1 FROM scoped_permission_grants
+                   WHERE id=?1 AND task_id=?2 AND action_id=?3 AND subject_id=?4
+                     AND action=?5 AND consumed_at IS NULL AND expires_at>=?6
+                 )",
+                params![
+                    grant_id,
+                    call.task_id,
+                    call.action_id,
+                    call.agent_id,
+                    required,
+                    now
+                ],
+                |row| row.get(0),
+            )
+            .unwrap_or(false)
     }
 
     fn begin_execution(
@@ -272,6 +356,28 @@ impl<'a> ToolExecutor<'a> {
         action: &ToolAction,
         now: &str,
     ) -> Result<(), (&'static str, String)> {
+        let duplicate: bool = self
+            .connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM tool_executions WHERE idempotency_key=?1)",
+                [&call.idempotency_key],
+                |row| row.get(0),
+            )
+            .map_err(|error| ("EXECUTION_FAILED", error.to_string()))?;
+        if duplicate {
+            return Err(("RESULT_UNKNOWN", "duplicate execution attempt".to_owned()));
+        }
+        let action_running: bool = self
+            .connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM actions WHERE id=?1 AND status='running')",
+                [&call.action_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| ("EXECUTION_FAILED", error.to_string()))?;
+        if !action_running {
+            return Err(("INVALID_ARGUMENT", "action is not running".to_owned()));
+        }
         let side_effect_state = if action.side_effect == "none" {
             "none"
         } else {
@@ -306,14 +412,85 @@ impl<'a> ToolExecutor<'a> {
     fn persist_or_unknown(&mut self, call: &ToolCall, result: ToolResult, now: &str) -> ToolResult {
         match self.finish(call, &result, now) {
             Ok(()) => result,
-            Err(message) => failed_result(
-                call,
-                now,
-                "RESULT_UNKNOWN",
-                &format!("could not persist verified result: {message}"),
-                SideEffectState::Unknown,
-            ),
+            Err(message) => {
+                let unknown = failed_result(
+                    call,
+                    now,
+                    "RESULT_UNKNOWN",
+                    &format!("could not persist verified result: {message}"),
+                    SideEffectState::Unknown,
+                );
+                if let Err(evidence_error) = self.persist_unknown_evidence(call, &unknown, now) {
+                    let mut unpersisted = unknown;
+                    unpersisted.error = Some(ToolError {
+                        code: "DURABILITY_FAILURE".to_owned(),
+                        message: format!(
+                            "result is unknown and durable evidence could not be written: {evidence_error}"
+                        ),
+                        retryable: false,
+                    });
+                    unpersisted.verification = Some(json!({"durable": false}));
+                    return unpersisted;
+                }
+                unknown
+            }
         }
+    }
+
+    fn persist_unknown_evidence(
+        &mut self,
+        call: &ToolCall,
+        result: &ToolResult,
+        now: &str,
+    ) -> rusqlite::Result<()> {
+        let result_json = serde_json::to_string(result).ok();
+        let transaction = self.connection.transaction()?;
+        let execution_updated = transaction.execute(
+            "UPDATE tool_executions SET status='result_unknown', side_effect_state='unknown',
+             result_json=?1, finished_at=?2 WHERE call_id=?3 AND status='running'",
+            params![result_json, now, call.call_id],
+        )?;
+        if execution_updated != 1 {
+            let equivalent: bool = transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM tool_executions
+                 WHERE call_id=?1 AND status='result_unknown' AND side_effect_state='unknown')",
+                [&call.call_id],
+                |row| row.get(0),
+            )?;
+            if !equivalent {
+                return Err(rusqlite::Error::QueryReturnedNoRows);
+            }
+        }
+        let action_updated = transaction.execute(
+            "UPDATE actions SET status='result_unknown', updated_at=?1
+             WHERE id=?2 AND status IN ('running','cancelled')",
+            params![now, call.action_id],
+        )?;
+        if action_updated == 0 {
+            let reviewable_terminal: bool = transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM actions
+                 WHERE id=?1 AND status='result_unknown')",
+                [&call.action_id],
+                |row| row.get(0),
+            )?;
+            if !reviewable_terminal {
+                return Err(rusqlite::Error::QueryReturnedNoRows);
+            }
+        }
+        transaction.execute(
+            "INSERT OR IGNORE INTO audit_logs (
+               id, agent_id, task_id, approval_id, action, resource, result, created_at
+             ) VALUES (?1,?2,?3,?4,?5,'redacted','result_unknown',?6)",
+            params![
+                format!("audit_unknown_{}", call.call_id),
+                call.agent_id,
+                call.task_id,
+                call.approval_id,
+                call.action,
+                now
+            ],
+        )?;
+        transaction.commit()
     }
 
     fn finish(&mut self, call: &ToolCall, result: &ToolResult, now: &str) -> rusqlite::Result<()> {
@@ -330,11 +507,30 @@ impl<'a> ToolExecutor<'a> {
             SideEffectState::Unknown => "unknown",
         };
         let result_json = serde_json::to_string(result).ok();
+        let action_output = result
+            .output
+            .as_ref()
+            .and_then(|output| serde_json::to_string(output).ok());
         let transaction = self.connection.transaction()?;
-        transaction.execute(
+        let execution_updated = transaction.execute(
             "UPDATE tool_executions SET status = ?1, side_effect_state = ?2,
                    result_json = ?3, finished_at = ?4 WHERE call_id = ?5",
             params![status, side_effect, result_json, now, call.call_id],
+        )?;
+        if execution_updated != 1 {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+        let action_updated = transaction.execute(
+            "UPDATE actions SET status = ?1, output_json = ?2, updated_at = ?3 WHERE id = ?4 AND status='running'",
+            params![status, action_output, now, call.action_id],
+        )?;
+        if action_updated != 1 {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+        transaction.execute(
+            "UPDATE scoped_permission_grants SET consumed_at=?1
+             WHERE task_id=?2 AND action_id=?3 AND consumed_at IS NULL",
+            params![now, call.task_id, call.action_id],
         )?;
         transaction.execute(
             "INSERT INTO audit_logs (
@@ -385,6 +581,16 @@ impl<'a> ToolExecutor<'a> {
             duration_ms: 0,
             trace_id: call.trace_id.clone(),
         };
+        let action_status = match status {
+            ToolResultStatus::Blocked => "blocked",
+            ToolResultStatus::ResultUnknown => "result_unknown",
+            ToolResultStatus::Failed => "failed",
+            ToolResultStatus::Succeeded => "succeeded",
+        };
+        let _ = self.connection.execute(
+            "UPDATE actions SET status = ?1, updated_at = ?2 WHERE id = ?3 AND status='running'",
+            params![action_status, now, call.action_id],
+        );
         let _ = self.connection.execute(
             "INSERT INTO audit_logs (
                id, agent_id, task_id, approval_id, action, resource, result, created_at
@@ -592,49 +798,110 @@ fn create_markdown(
             SideEffectState::NotStarted,
         ));
     }
-    let canonical_root = root.canonicalize().map_err(|error| {
+    let (directory, leaf_name) = open_parent_beneath(root, path).map_err(|error| {
         (
-            "INVALID_ARGUMENT",
+            "PERMISSION_DENIED",
             error.to_string(),
             SideEffectState::NotStarted,
         )
     })?;
-    let parent = path.parent().ok_or((
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| {
+            (
+                "EXECUTION_FAILED",
+                error.to_string(),
+                SideEffectState::NotStarted,
+            )
+        })?
+        .as_nanos();
+    let name = path.file_name().and_then(|value| value.to_str()).ok_or((
         "INVALID_ARGUMENT",
-        "path has no parent".to_owned(),
+        "document path has no valid file name".to_owned(),
         SideEffectState::NotStarted,
     ))?;
-    let canonical_parent = parent.canonicalize().map_err(|error| {
-        (
-            "INVALID_ARGUMENT",
-            error.to_string(),
-            SideEffectState::NotStarted,
-        )
-    })?;
-    if !canonical_parent.starts_with(&canonical_root) {
+    let temporary_name = format!(".{name}.{}-{nonce}.tmp", std::process::id());
+    let write_result = (|| -> std::io::Result<()> {
+        let temporary = std::ffi::CString::new(temporary_name.as_bytes())?;
+        let destination = std::ffi::CString::new(leaf_name.as_bytes())?;
+        let descriptor = unsafe {
+            libc::openat(
+                directory.as_raw_fd(),
+                temporary.as_ptr(),
+                libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                0o600,
+            )
+        };
+        if descriptor < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        let mut file = unsafe { File::from_raw_fd(descriptor) };
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;
+        let renamed = unsafe {
+            libc::renameat(
+                directory.as_raw_fd(),
+                temporary.as_ptr(),
+                directory.as_raw_fd(),
+                destination.as_ptr(),
+            )
+        };
+        if renamed != 0 {
+            unsafe {
+                libc::unlinkat(directory.as_raw_fd(), temporary.as_ptr(), 0);
+            }
+            return Err(std::io::Error::last_os_error());
+        }
+        directory.sync_all()
+    })();
+    if let Err(error) = write_result {
         return Err((
-            "PERMISSION_DENIED",
-            "path is outside authorized root".to_owned(),
-            SideEffectState::NotStarted,
-        ));
-    }
-    fs::write(path, content).map_err(|error| {
-        (
             "RESULT_UNKNOWN",
             error.to_string(),
             SideEffectState::Unknown,
-        )
-    })?;
+        ));
+    }
     Ok((
         json!({"path": path.to_string_lossy()}),
         SideEffectState::Confirmed,
     ))
 }
 
+fn open_parent_beneath(root: &Path, path: &Path) -> std::io::Result<(File, std::ffi::OsString)> {
+    let relative = path
+        .strip_prefix(root)
+        .map_err(|_| std::io::Error::other("path is outside authorized root"))?;
+    let leaf = relative
+        .file_name()
+        .ok_or_else(|| std::io::Error::other("document path has no file name"))?
+        .to_os_string();
+    let parent = relative.parent().unwrap_or_else(|| Path::new(""));
+    let mut directory = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(root)?;
+    for component in parent.components() {
+        let std::path::Component::Normal(name) = component else {
+            return Err(std::io::Error::other("path contains an unsafe component"));
+        };
+        let name = std::ffi::CString::new(name.as_bytes())?;
+        let descriptor = unsafe {
+            libc::openat(
+                directory.as_raw_fd(),
+                name.as_ptr(),
+                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
+        if descriptor < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        directory = unsafe { File::from_raw_fd(descriptor) };
+    }
+    Ok((directory, leaf))
+}
+
 #[cfg(test)]
 mod tests {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
     use super::*;
     use crate::storage::migrate;
 
@@ -809,6 +1076,14 @@ mod tests {
         );
         assert_eq!(result.status, ToolResultStatus::Blocked);
         assert_eq!(result.error.unwrap().code, "APPROVAL_REQUIRED");
+        let action_status: String = connection
+            .query_row(
+                "SELECT status FROM actions WHERE id='action_1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(action_status, "blocked");
         assert!(!root.join("prd.md").exists());
         fs::remove_dir_all(root).unwrap();
     }
@@ -843,7 +1118,110 @@ mod tests {
             ToolExecutor::new(&mut connection).execute(&approved_call, "2026-08-04T00:00:01Z");
         assert_eq!(result.status, ToolResultStatus::Succeeded);
         assert_eq!(result.side_effect_state, SideEffectState::Confirmed);
+        let (action_status, action_output): (String, String) = connection
+            .query_row(
+                "SELECT status, output_json FROM actions WHERE id='action_1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(action_status, "succeeded");
+        assert_eq!(
+            serde_json::from_str::<Value>(&action_output).unwrap(),
+            json!({"path": target})
+        );
         assert_eq!(fs::read_to_string(&target).unwrap(), "# PRD");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn document_write_replaces_a_symlink_without_following_it() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_root("document-symlink");
+        let outside_root = temp_root("document-symlink-outside");
+        let outside = outside_root.join("outside.md");
+        fs::write(&outside, "protected").unwrap();
+        let target = root.join("prd.md");
+        symlink(&outside, &target).unwrap();
+        let mut connection = setup(
+            "document-tool",
+            "create_markdown",
+            "document.write",
+            0,
+            &root,
+        );
+        let result = ToolExecutor::new(&mut connection).execute(
+            &call(
+                "document-tool",
+                "create_markdown",
+                json!({"path": target, "content": "# Safe"}),
+            ),
+            "2026-08-04T00:00:01Z",
+        );
+        assert_eq!(result.status, ToolResultStatus::Succeeded);
+        assert_eq!(fs::read_to_string(&outside).unwrap(), "protected");
+        assert_eq!(fs::read_to_string(root.join("prd.md")).unwrap(), "# Safe");
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(outside_root).unwrap();
+    }
+
+    #[test]
+    fn finish_rejects_a_concurrent_terminal_action_change() {
+        let root = temp_root("concurrent-action");
+        let mut connection = setup("file-tool", "read_file", "filesystem.read", 0, &root);
+        connection
+            .execute(
+                "INSERT INTO tool_executions VALUES ('call_1','action_1','task_1:action_1:1',1,'running','none',NULL,'t',NULL,'trace_1')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "UPDATE actions SET status='cancelled' WHERE id='action_1'",
+                [],
+            )
+            .unwrap();
+        let tool_call = call(
+            "file-tool",
+            "read_file",
+            json!({"path": root.join("missing")}),
+        );
+        let result = ToolResult {
+            schema_version: "1.0",
+            call_id: "call_1".into(),
+            status: ToolResultStatus::Succeeded,
+            output: Some(json!({"content":"x"})),
+            error: None,
+            side_effect_state: SideEffectState::None,
+            verification: None,
+            artifacts: vec![],
+            result_ref: None,
+            started_at: "t".into(),
+            finished_at: "t".into(),
+            duration_ms: 0,
+            trace_id: "trace_1".into(),
+        };
+        let persisted =
+            ToolExecutor::new(&mut connection).persist_or_unknown(&tool_call, result, "t");
+        assert_eq!(persisted.status, ToolResultStatus::ResultUnknown);
+        let execution_status: String = connection
+            .query_row(
+                "SELECT status FROM tool_executions WHERE call_id='call_1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(execution_status, "result_unknown");
+        let action_status: String = connection
+            .query_row(
+                "SELECT status FROM actions WHERE id='action_1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(action_status, "result_unknown");
         fs::remove_dir_all(root).unwrap();
     }
 

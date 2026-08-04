@@ -34,6 +34,7 @@ pub enum TaskServiceError {
     InvalidTransition(InvalidTransition),
     SnapshotRequired,
     EvaluationRequired,
+    ActionsIncomplete,
     EvaluationBlocked { score: f64 },
     Evaluation(String),
 }
@@ -168,6 +169,14 @@ impl<'a> TaskService<'a> {
         let current = self.get(id)?;
         let next = current.status.transition(TaskEvent::Complete)?;
         let transaction = self.connection.transaction()?;
+        let actions_incomplete: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM actions WHERE task_id=?1 AND status!='succeeded')",
+            params![id],
+            |row| row.get(0),
+        )?;
+        if actions_incomplete {
+            return Err(TaskServiceError::ActionsIncomplete);
+        }
         persist_evaluation_in(
             &transaction,
             evaluation_id,
@@ -179,7 +188,12 @@ impl<'a> TaskService<'a> {
         .map_err(TaskServiceError::Evaluation)?;
         if outcome.delivery_allowed {
             let updated = transaction.execute(
-                "UPDATE tasks SET status=?1,updated_at=?2 WHERE id=?3 AND status='running'",
+                "UPDATE tasks SET status=?1,updated_at=?2
+                 WHERE id=?3 AND status='running'
+                   AND NOT EXISTS(
+                     SELECT 1 FROM actions
+                     WHERE task_id=?3 AND status!='succeeded'
+                   )",
                 params![next.as_str(), now, id],
             )?;
             if updated != 1 {

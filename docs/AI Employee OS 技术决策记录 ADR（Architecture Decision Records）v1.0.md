@@ -1077,6 +1077,18 @@ Accepted
 
 新增 `subjects` 表，仅提供 User、Company 的稳定 ID、名称和启停状态。Agent 继续使用 `agents`。Memory 与 Permission 在应用层按类型校验 `subjects` 或 `agents`。该表不引入账号、组织管理或 RBAC。数据库通过追加 Migration `004_subjects.sql` 演进。
 
+# ADR-023：Worker 隔离与一次性权限授权
+
+## 状态
+
+Accepted
+
+## 决策
+
+Python Worker 是不持有系统权限的推理进程。macOS Runtime 必须通过 Seatbelt Sandbox 启动 Worker，禁止文件写入，并明确拒绝读取 SQLite 主文件及其 WAL/SHM；Worker 只通过有界 JSON Lines 协议提出 Tool Call，协议等待必须有超时。Rust Runtime 独立验证锁定的 Call、路径、幂等键和最终产物，所有副作用仍由 Rust ToolExecutor 执行。
+
+高风险单次授权使用持久化 `scoped_permission_grants`，绑定 Task、Action、Agent、Resource、Action、过期时间和消费时间。授权不得仅存在于进程内；执行终态与授权消费在同一事务提交。数据库通过追加 Migration `005_scoped_permission_grants.sql` 演进。副作用完成但终态提交失败时必须持久化 `result_unknown` 证据，禁止将其降级为普通失败或自动重放。
+
 # ADR 总结
 
 最终技术原则：

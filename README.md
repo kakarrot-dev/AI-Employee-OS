@@ -4,7 +4,7 @@ AI Employee OS 是一个 Local-first 的 macOS AI 员工运行平台。MVP 以 A
 
 ## 当前状态
 
-项目处于“实现基线收敛”阶段：架构文档已经冻结，当前工作重点是把文档中的状态、数据和 Tool 契约转成可编译、可迁移、可测试的工程事实源。
+项目处于“首个可执行纵向切片”阶段：架构文档已经冻结，Runtime 已能以 deterministic Provider 跑通 Task、Python Worker、Rust ToolExecutor、PRD 产物、Evaluation 和终态持久化。macOS Client 仍未实现。
 
 ## 架构
 
@@ -60,6 +60,23 @@ scripts/                    本地验证入口
 ```bash
 cargo test --manifest-path runtime/rust-core/Cargo.toml
 ```
+
+## 运行 Golden Path
+
+该命令不访问网络，也不调用付费模型。`--approve-write` 表示用户明确批准本次 Markdown 写入；省略时 Runtime 默认拒绝执行。
+
+```bash
+cargo build --bins
+mkdir -p /tmp/ai-employee-os/output
+./target/debug/ai-employee-runtime run-golden \
+  --repository-root "$PWD" \
+  --database /tmp/ai-employee-os/runtime.sqlite3 \
+  --output-dir /tmp/ai-employee-os/output \
+  --input "为企业 AI 知识库设计一个 PRD" \
+  --approve-write
+```
+
+成功时 stdout 返回结构化 JSON，其中包含 `task_id`、`artifact_path`、Evaluation、Worker Metrics 和有序事件。数据库中的 Task、Action 与 Tool Execution 均应收敛为 `succeeded`。
 
 ## 事实源
 

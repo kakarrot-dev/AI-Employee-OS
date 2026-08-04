@@ -46,6 +46,23 @@ pub fn evaluate_prd(rubric: &PrdRubric) -> EvaluationOutcome {
     }
 }
 
+pub fn evaluate_prd_content(content: &str) -> EvaluationOutcome {
+    let contains = |needles: &[&str]| needles.iter().all(|needle| content.contains(needle));
+    evaluate_prd(&PrdRubric {
+        evidence_traceable: contains(&["## 1.", "来源"]),
+        user_value_clear: contains(&["## 2.", "用户价值"]),
+        measurable_goal: contains(&["## 3."])
+            && ["%", "天", "小时", "分钟", "秒", "个"]
+                .iter()
+                .any(|unit| content.contains(unit)),
+        scope_clear: contains(&["## 4.", "范围", "非范围"]),
+        recovery_flow: contains(&["## 5.", "正常"]) && contains(&["## 7.", "异常", "恢复"]),
+        permission_boundary: contains(&["## 6.", "权限", "数据边界"]),
+        testable_acceptance: contains(&["## 8.", "Given", "When", "Then"]),
+        unknowns_not_fabricated: contains(&["## 9.", "待确认"]),
+    })
+}
+
 pub fn persist_evaluation(
     connection: &mut Connection,
     id: &str,

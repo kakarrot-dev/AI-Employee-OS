@@ -3,6 +3,7 @@ pub mod agent;
 pub mod approval;
 pub mod evaluation;
 pub mod event;
+pub mod golden_path;
 pub mod knowledge;
 pub mod memory;
 pub mod observability;
