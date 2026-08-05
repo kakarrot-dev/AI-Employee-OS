@@ -1,5 +1,7 @@
 # AI Employee OS 技术决策记录 ADR（Architecture Decision Records）v1.0
 
+> 阅读顺序：先读文首 ADR-027～031（现行 MVP 决策），再读 ADR-001 起的历史记录。ADR-003（Deep Agents + LangGraph）描述长期目标引擎；**MVP 工作执行以 ADR-031 为准**。
+
 ## ADR-027：普通对话与任务执行分离
 
 Alex 的 Conversation/Message 是连续交流事实，Task/Action 是受控执行事实，两者不得互相冒充。闲聊由 DeepSeek 官方 API 生成；工作走 `run-task` / Skill Graph / ToolExecutor，见 ADR-031。多轮上下文由 Runtime 从 SQLite 按顺序重建，模型 reasoning 不持久化、不展示。API Key 只允许来自 macOS Keychain 注入的受控进程环境。
@@ -1218,12 +1220,14 @@ AI Employee OS v1.0 Architecture Freeze
 |---|---|
 |客户端|SwiftUI + AppKit|
 |Runtime|Rust|
-|Agent Engine|MVP：自研 Graph + Golden Path；目标：Deep Agents + LangGraph|
+|Agent Engine|MVP：自研 Graph + Golden Path（ADR-031）；目标可选：Deep Agents + LangGraph（非状态源）|
 |模型|DeepSeek 官方 API 主源 + Poe API 受控兜底|
-|Skill|Skill Runtime|
-|Tool|Native + MCP + Plugin|
+|Skill|仓库 Package 安装 + `agent_skills` 绑定|
+|Tool|MVP：Native Tool（File/Document/Knowledge）；MCP / Plugin 非 MVP|
+|传输|CLI / 子进程 JSON（非 gRPC）|
 |Storage|SQLite；向量检索后置 FastEmbed；MVP Knowledge 为关键词|
-|Memory|Hybrid Memory|
-|State|Dual State|
-|安全|Permission + Sandbox + Approval|
+|Memory|Hybrid Memory（Runtime 已有，产品未全暴露）|
+|State|Task / Action 双状态机（见 Unified Data Model）|
+|安全|Permission + Approval + Audit；App Sandbox 未作为 MVP 硬启用|
 |工程|Monorepo|
+

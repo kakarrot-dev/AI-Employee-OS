@@ -1,5 +1,7 @@
 # Release 3：Agent Experience and Production
 
+> 历史里程碑快照（约 2026-08-04），非现行产品 Spec。文中 Company / Alex / Tasks / Artifacts / Knowledge 五栏与 `run-golden` 描述已被后续迭代取代：现行导航为办公室 / 通讯录 / 工作库 / 技能库 / 工具库 / 设置；工作执行为 `run-task`。以 `AGENTS.md`、[架构总览](../架构总览.md) 与 [Main Interface Spec v2.0](../design-system/AI%20Employee%20macOS%20Main%20Interface%20Spec%20v2.0.md) 为准。
+
 ## 目标
 
 把 Release 1–2 的 Runtime 能力收敛为可操作、可诊断、可打包验证的 macOS MVP。Swift 只负责交互与展示，不复制 Task/Action 状态机，也不直接执行 Tool。

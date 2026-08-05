@@ -1,5 +1,7 @@
 # Release 2：Execution and Evidence
 
+> 历史里程碑快照，非现行产品入口。现行能力与边界以根目录 `AGENTS.md` 与 [架构总览](../架构总览.md) 为准。
+
 ## 目标
 
 把 Skill Workflow、Tool Loop 和 Eval Set 从静态描述升级为可执行、可恢复、可审计的运行机制。Release 2 复用 canonical Task/Action/ToolExecution，不引入 LangGraph，也不建立第二套节点状态。

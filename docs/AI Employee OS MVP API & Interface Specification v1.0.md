@@ -1,6 +1,8 @@
 # AI Employee OS MVP API & Interface Specification v1.0
 
-> 2026-08-05 扩展：Runtime 新增 `employees-list`、`employee-save`、`employee-delete`、`effective-prompt`、`chat-history` 与 `chat-send` 命令。员工保存输入遵循 `contracts/employee-profile.schema.json`；有历史的员工删除请求收敛为 disabled。`chat-send` 先持久化 User Message 和 ModelCall，再通过 Python Provider 调用 DeepSeek；只有非空成功响应才能追加 Assistant Message。Effective Prompt 只由 Rust 根据 Identity、Soul、Persona、基础 Prompt 与安全边界编译。DeepSeek API Key 仅由受控进程环境提供，不进入参数、数据库或日志。普通对话不创建 Task。
+> 实现状态（对齐 `AGENTS.md`）：进程间传输为 **CLI / 子进程 JSON**，不是 gRPC。MVP 工作编排为自研 Graph + Golden Path（ADR-031）；Deep Agents / LangGraph 不是状态源。下文部分 Proto 块仅作语义 IDL 历史草稿，不得据此实现第二套协议；以 Runtime CLI 与 `contracts/` 为准。
+>
+> 2026-08-05 扩展：Runtime 新增 `employees-list`、`employee-save`、`employee-delete`、`effective-prompt`、`chat-history` 与 `chat-send` 命令。员工保存输入遵循 `contracts/employee-profile.schema.json`；有历史的员工删除请求收敛为 disabled。`chat-send` 先持久化 User Message 和 ModelCall，再通过 Python Provider 调用 DeepSeek；只有非空成功响应才能追加 Assistant Message。Effective Prompt 只由 Rust 根据 Identity、Soul、Persona、基础 Prompt 与安全边界编译。DeepSeek API Key 仅由受控进程环境提供，不进入参数、数据库或日志。普通对话不创建 Task；工作意图在 `tasks_enabled` 时走 `run-task`。
 
 目标：
 
@@ -10,7 +12,7 @@
     
 - Rust Runtime Kernel
     
-- Python Agent Engine
+- Python Agent Worker
     
 - Skill Runtime
     
@@ -33,7 +35,7 @@
 
                       |
 
-                gRPC / IPC
+              CLI / 子进程 JSON
 
 
                       |
@@ -45,7 +47,7 @@
 
         |             |             |
 
-   Agent API     Task API     Tool API
+ employees/chat   run-task     ToolExecutor
 
 
                       |
@@ -55,7 +57,7 @@
 
                       |
 
-              Deep Agents Runtime
+        意图 / 闲聊 / Context / LLM Provider
 
 
                       |
@@ -64,7 +66,7 @@
 
         |             |             |
 
-     Skill API    Memory API   LLM API
+   Skill Graph   Memory API   LLM API
 
 ```
 
@@ -80,18 +82,16 @@
 
 调用：
 
-- Agent Service
+- Runtime CLI（员工、对话、任务、事件）
     
-- Task Service
-    
-- Event Stream
+- 本地 Store / Keychain
     
 
 不直接访问：
 
 ❌ LLM  
-❌ Skill  
-❌ Tool
+❌ Skill 执行  
+❌ Tool 执行
 
 ---
 
@@ -105,18 +105,20 @@
 
 - 生命周期
     
-- 权限
+- 权限 / 审批 / 审计
     
-- 调度
+- Task / Action 调度
     
-- 状态
+- 状态与 SQLite
     
-- IPC
+- Tool Gateway
+    
+- 子进程 IPC
     
 
 ---
 
-## Python Agent Engine
+## Python Agent Worker
 
 职责：
 
@@ -124,20 +126,20 @@
 
 负责：
 
+- 意图分类与闲聊
+    
 - Context Engineering
     
-- Deep Agents
+- 规划推理（不直接取得系统权限）
     
-- Skill执行
-    
-- Memory检索
-    
-- LLM调用
+- LLM Provider 调用
     
 
 ---
 
-# 3. gRPC API Definition
+# 3. 接口语义草稿（非 gRPC 传输）
+
+> 下列 message / service 名称描述字段语义。实际调用形态为 Runtime CLI 子命令与 JSON stdin/stdout；禁止实现独立 gRPC server。
 
 ## 3.1 Agent Service
 
@@ -145,7 +147,7 @@
 
 AI员工管理。
 
-Proto：
+语义草稿：
 
 ```protobuf
 service AgentService {
@@ -1122,60 +1124,31 @@ Swift UI
 
 ↓
 
-CreateTask API
+chat-send / run-task（Runtime CLI）
 
 ↓
 
-Rust Task Manager
+Rust Task Manager / ToolExecutor
 
 ↓
 
-Agent Worker API
+Python Worker（意图 / Context / 规划）
 
 ↓
 
-Deep Agents
-
-
-↓
-
-Context Builder
-
+Skill Graph（golden_path）
 
 ↓
 
-Skill Runtime
-
-
-↓
-
-Tool Runtime
-
+Tool Runtime（仅经 Rust）
 
 ↓
 
 LLM Provider
 
-
 ↓
 
-Result
-
-
-↓
-
-Evaluation
-
-
-↓
-
-Memory Update
-
-
-↓
-
-Event Stream
-
+Result / Event Stream
 
 ↓
 
@@ -1365,13 +1338,11 @@ Swift：
 
 # 当前文档状态
 
-已经完成：
+现行入口：
 
-1. 架构设计 v1.0 ✅
-    
-2. 技术详细设计 LLD v1.0 ✅
-    
-3. AI Product Manager Agent 规范 v1.0 ✅
-    
-4. API & Interface Specification v1.0 ✅
+1. [架构总览](./架构总览.md)
+2. Unified Data Model + `contracts/`
+3. 本文档（CLI / 子进程语义；Proto 块为历史草稿）
+4. ADR（含 ADR-027～031）
+5. AI Product Manager Agent 规范（主路径 Alex + `prd-generation`）
     

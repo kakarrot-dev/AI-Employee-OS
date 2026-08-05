@@ -164,15 +164,14 @@ Runtime infrastructure for Memory, Knowledge, Evaluation, permissions, approval,
 
 ## Documentation
 
-- [Architecture overview](docs/架构设计%20v1.0（产品+技术总览版）.md)
+- [Architecture overview](docs/架构总览.md)
 - [Unified Data Model](docs/AI%20Employee%20OS%20Unified%20Data%20Model%20v1.0.md)
 - [MVP API & Interface Specification](docs/AI%20Employee%20OS%20MVP%20API%20&%20Interface%20Specification%20v1.0.md)
 - [Security & Permission Architecture](docs/AI%20Employee%20OS%20Security%20&%20Permission%20Architecture%20v1.0.md)
 - [Architecture Decision Records](docs/AI%20Employee%20OS%20技术决策记录%20ADR（Architecture%20Decision%20Records）v1.0.md)
+- [macOS Main Interface Spec v2.0](docs/design-system/AI%20Employee%20macOS%20Main%20Interface%20Spec%20v2.0.md)
 - [Claude Cream macOS UI](docs/design-system/Claude%20Cream%20macOS%20UI.md)
-- [Release 1: Decision Substrate](docs/releases/Release%201%20Decision%20Substrate.md)
-- [Release 2: Execution and Evidence](docs/releases/Release%202%20Execution%20and%20Evidence.md)
-- [Release 3: Agent Experience and Production](docs/releases/Release%203%20Agent%20Experience%20and%20Production.md)
+- Historical: [Release 1](docs/releases/Release%201%20Decision%20Substrate.md) · [Release 2](docs/releases/Release%202%20Execution%20and%20Evidence.md) · [Release 3](docs/releases/Release%203%20Agent%20Experience%20and%20Production.md)
 
 ## Contributing
 

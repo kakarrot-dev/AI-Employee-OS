@@ -1,5 +1,7 @@
 # AI Employee OS Skill Engineering Guide v1.0
 
+> 实现状态：Skill 由仓库 Package 安装，经 `agent_skills` 绑定员工；客户端不创建 Package。MVP 工作主路径 Skill 为 `prd-generation`。编排见 ADR-031，不以 LangGraph 为状态源。
+
 目标：
 
 定义 AI Employee OS 的能力扩展体系。
@@ -595,9 +597,7 @@ PRD
 
 # 10. Skill Workflow
 
-推荐采用：
-
-LangGraph。
+MVP 采用自研 Graph + Golden Path（ADR-031）。LangGraph 仅为后置可选实现，不得成为 Task/Action 状态源。
 
 例如：
 

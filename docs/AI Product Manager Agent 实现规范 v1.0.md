@@ -1,10 +1,12 @@
 # AI Product Manager Agent 实现规范 v1.0
 
+> 实现状态：主验证路径为 **Alex**（`ai-product-manager`）+ **`prd-generation`**，经 `run-task` / 自研 Graph / ToolExecutor。下文若列出 `competitor-analysis` 等扩展 Skill，视为非现行主路径。编排不以 Deep Agents 为必经链。
+
 目标：
 
 定义第一个可运行 AI 员工：
 
-> AI 产品经理 Agent
+> AI 产品经理 Agent（Alex）
 
 用于验证：
 
@@ -16,9 +18,9 @@
     
 - Context Engineering
     
-- Deep Agents 执行链
+- 意图路由与工作执行（`tasks_enabled`）
     
-- Memory 成长
+- Memory 基础设施（产品面未全暴露）
     
 
 ---

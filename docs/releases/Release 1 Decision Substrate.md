@@ -1,5 +1,7 @@
 # Release 1：Decision Substrate
 
+> 历史里程碑快照，非现行产品入口。现行能力与边界以根目录 `AGENTS.md` 与 [架构总览](../架构总览.md) 为准。
+
 ## 目标
 
 让每次 Agent 决策都能回答四个问题：使用了哪个 Prompt、装配了哪些 Context、引用了哪些 Knowledge、读取和写入了哪些 Memory。Release 1 不引入新 Agent 框架，也不扩大 MVP Tool 权限。

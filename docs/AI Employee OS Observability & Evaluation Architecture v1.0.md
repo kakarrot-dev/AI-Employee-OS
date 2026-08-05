@@ -1,5 +1,7 @@
 # AI Employee OS Observability & Evaluation Architecture v1.0
 
+> 实现状态：基础 Trace / Evaluation 属 Runtime 基础设施；产品界面尚未完整暴露为「员工绩效仪表盘」。Schema 以 Unified Data Model 为准。
+
 目标：
 
 定义 AI 员工如何：
@@ -1048,29 +1050,19 @@ Memory：
 
 # 21. MVP Observability 范围
 
-实现：
+Runtime 已具备（产品面未全暴露）：
 
-✅ Task Trace
+- Task / Action 事件与基础 Trace
+- Tool 执行记录
+- ModelCall 用量字段
+- Evaluation / Feedback 表结构与写入路径
 
-✅ Tool Log
+暂缓 / 非现行主路径：
 
-✅ Model Usage
-
-✅ Quality Score
-
-✅ User Feedback
-
-✅ Agent Performance
-
----
-
-暂缓：
-
-⏸ 分布式Tracing
-
-⏸ 企业监控平台
-
-⏸ 自动调优系统
+- 面向用户的 Agent Performance 仪表盘
+- 分布式 Tracing
+- 企业监控平台
+- 自动调优系统
 
 ---
 

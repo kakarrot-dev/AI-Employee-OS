@@ -164,15 +164,14 @@ Runtime 已经包含 Memory、Knowledge、Evaluation、权限、审批和 Trace 
 
 ## 项目文档
 
-- [架构总览](docs/架构设计%20v1.0（产品+技术总览版）.md)
+- [架构总览](docs/架构总览.md)
 - [统一数据模型](docs/AI%20Employee%20OS%20Unified%20Data%20Model%20v1.0.md)
 - [MVP API 与接口规范](docs/AI%20Employee%20OS%20MVP%20API%20&%20Interface%20Specification%20v1.0.md)
 - [安全与权限架构](docs/AI%20Employee%20OS%20Security%20&%20Permission%20Architecture%20v1.0.md)
 - [架构决策记录](docs/AI%20Employee%20OS%20技术决策记录%20ADR（Architecture%20Decision%20Records）v1.0.md)
+- [macOS 主界面 Spec v2.0](docs/design-system/AI%20Employee%20macOS%20Main%20Interface%20Spec%20v2.0.md)
 - [Claude Cream macOS UI](docs/design-system/Claude%20Cream%20macOS%20UI.md)
-- [Release 1：Decision Substrate](docs/releases/Release%201%20Decision%20Substrate.md)
-- [Release 2：Execution and Evidence](docs/releases/Release%202%20Execution%20and%20Evidence.md)
-- [Release 3：Agent Experience and Production](docs/releases/Release%203%20Agent%20Experience%20and%20Production.md)
+- 历史里程碑：[Release 1](docs/releases/Release%201%20Decision%20Substrate.md) · [Release 2](docs/releases/Release%202%20Execution%20and%20Evidence.md) · [Release 3](docs/releases/Release%203%20Agent%20Experience%20and%20Production.md)
 
 ## 参与贡献
 

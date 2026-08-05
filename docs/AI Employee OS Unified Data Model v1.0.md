@@ -17,7 +17,7 @@ confidence: high
 # AI Employee OS Unified Data Model v1.0
 
 > [!warning] 单一事实源
-> 本文档是 AI Employee OS MVP 持久化模型的 canonical schema。LLD、各 Engineering Guide 和 Code Skeleton 只描述领域语义或 migration 组织方式，不再维护独立建表定义。
+> 本文档是 AI Employee OS MVP 持久化模型的 canonical schema。各 Engineering Guide 只描述领域语义；实际 migration 只追加在 `storage/migrations/`，必须依据本文档生成，禁止在专题文档中维护第二套建表定义。
 
 ## 1. 模型边界
 
@@ -452,12 +452,12 @@ CREATE INDEX idx_metrics_name_recorded ON metrics(name, recorded_at);
 
 | 实体 | 旧定义冲突 | Canonical 决策 | 理由 |
 | --- | --- | --- | --- |
-| `agents` | Code Skeleton 缺少 `package_path` 和时间字段 | 采用 LLD 字段并补 `updated_at` | Agent Package 是运行时定位依据，可变实体需要更新时间 |
-| `tasks` | Code Skeleton 缺少时间字段 | 采用 LLD 字段并补 `updated_at` | Task 状态变化必须可追踪 |
+| `agents` | 早期草稿缺少 `package_path` 和时间字段 | 保留 `package_path` 并补 `updated_at` | Agent Package 是运行时定位依据，可变实体需要更新时间 |
+| `tasks` | 早期草稿缺少时间字段 | 补齐时间字段并含 `updated_at` | Task 状态变化必须可追踪 |
 | `personas` | 只有 `updated_at`，缺少创建时间 | 补充 `created_at` | 可变从属实体保持统一时间基线 |
-| `skills` | LLD 使用 `path`，Skill Guide 使用 `manifest` 和 `status` | 同时保留 `path`、`manifest_json`、`status` | 路径负责加载，manifest 负责声明，状态负责启停，职责不同 |
+| `skills` | 路径字段与 manifest/status 表述不一 | 同时保留 `path`、`manifest_json`、`status` | 路径负责加载，manifest 负责声明，状态负责启停，职责不同 |
 | `tools` | Tool Guide 使用包内 `manifest.yaml`，旧表只保存名称与版本 | 增加 `manifest_json` | 包文件是安装输入；校验、规范化后的数据库快照是运行时单一事实源 |
-| `actions` | LLD 使用自由文本 `tool` | 改为可空外键 `tool_id` | 避免 Tool 名称漂移；无 Tool 的内部 Action 仍可记录 |
+| `actions` | 早期草稿使用自由文本 `tool` | 改为可空外键 `tool_id` | 避免 Tool 名称漂移；无 Tool 的内部 Action 仍可记录 |
 | Tool 幂等 | ToolCall 要求幂等键与多次尝试，但旧模型只有 Action | 增加 `tool_executions` | Action 表达计划步骤，Execution 表达每次真实调用及副作用状态，支持跨重启去重和人工核验 |
 | `memories` | `owner` 对 `owner_type + owner_id` | 采用 `owner_type + owner_id` | 明确多主体归属 |
 | `memories` | `type` 对 `memory_type` | 采用 `memory_type` | 避免通用字段名歧义 |
@@ -472,8 +472,7 @@ CREATE INDEX idx_metrics_name_recorded ON metrics(name, recorded_at);
 
 ## 9. 引用规则
 
-- LLD 负责解释领域实体和关系，schema 统一引用本文档。
-- Memory、Skill、Tool、Security、Observability Guide 负责解释各自生命周期和运行规则，不复制建表语句。
-- Code Skeleton 只给出 migration 文件组织和执行顺序，实际 migration 必须依据本文档生成。
+- Memory、Skill、Tool、Security、Observability、Runtime Guide 负责解释各自生命周期和运行规则，不复制建表语句。
+- Migration 只追加在 `storage/migrations/`，字段与约束必须依据本文档生成。
 - Skill 和 Tool 的包内 manifest 只是安装输入。Loader 必须先按对应 JSON Schema 校验，再将规范化 JSON 写入 `manifest_json`；Task 开始后只能使用已锁定版本的数据库快照。
 - 若未来实现与本文档冲突，先通过 ADR 记录变更，再同步本文档和 migration；不得直接在专题 Guide 中产生第二套 schema。

@@ -1,5 +1,7 @@
 # 《AI Employee OS Security & Permission Architecture v1.0》
 
+> 实现状态：Permission / Approval / Audit 属 Runtime 已具备能力；产品面按任务路径暴露，不以「企业 RBAC 已交付」解读。Secret 边界见 `AGENTS.md`。
+
 目标：
 
 定义 AI 员工如何在 macOS 上安全地拥有：

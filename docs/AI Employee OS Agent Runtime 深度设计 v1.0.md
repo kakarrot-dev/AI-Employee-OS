@@ -1,5 +1,7 @@
 # AI Employee OS Agent Runtime 深度设计 v1.0
 
+> 实现状态（对齐 `AGENTS.md` / ADR-031）：MVP 工作执行使用自研 Graph + Golden Path，经 `run-task` 与 Rust `ToolExecutor`。Deep Agents / LangGraph 仅为长期可选规划器方向，**不得**成为 Task/Action 状态源。下文若出现 Deep Agents / LangGraph 设计段落，按「后置选项」阅读，不以之覆盖现行编排。
+
 目标：
 
 定义 AI 员工“大脑”的运行机制。
@@ -10,15 +12,13 @@
     
 - Context 如何动态组装
     
-- Deep Agents 如何接入
+- MVP Graph / Golden Path 如何编排工作
     
-- LangGraph 如何设计 State Graph
+- Planner / Executor / Reviewer 如何协作（领域语义）
     
-- Planner / Executor / Reviewer 如何协作
+- Tool 如何经 Rust 调用
     
-- Tool 如何调用
-    
-- Memory 如何沉淀
+- Memory 如何沉淀（Runtime 基础设施；产品面未全暴露）
     
 
 ---

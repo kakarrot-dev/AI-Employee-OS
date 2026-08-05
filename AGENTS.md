@@ -20,9 +20,9 @@
 
 1. `docs/AI Employee OS Unified Data Model v1.0.md`：持久化模型唯一事实源。
 2. `contracts/`：Tool、Skill 和跨进程数据的机器可读契约。
-3. `docs/AI Employee OS MVP API & Interface Specification v1.0.md`：进程接口语义。
+3. `docs/AI Employee OS MVP API & Interface Specification v1.0.md`：进程接口语义（CLI / 子进程；非 gRPC）。
 4. Runtime、Security、Memory、Skill、Tool 专题文档：领域行为。
-5. Blueprint、Code Skeleton：实现参考，不覆盖上述契约。
+5. `docs/架构总览.md`、`docs/design-system/`、`docs/releases/`：总览、UI 与历史里程碑；不覆盖上述契约。
 
 若实现需要改变冻结契约，先更新 ADR、canonical 文档和测试，再修改代码。禁止在专题模块中建立第二套状态或 Schema。
 
@@ -82,7 +82,6 @@ Python Agent Worker         意图分类、闲聊、Context/规划推理；不�
 - Migration 只追加，不修改已发布文件；数据库变更必须覆盖 fresh install、重复启动、外键和完整性检查。
 - 外部副作用必须有幂等键、明确超时和可验证结果。
 - 用户可见内容使用简体中文；代码标识符、协议字段和错误码使用英文。
-- 被纠正过的协作模式记入 `tasks/lessons.md`，避免重复踩坑。
 
 ## 验证门禁
 

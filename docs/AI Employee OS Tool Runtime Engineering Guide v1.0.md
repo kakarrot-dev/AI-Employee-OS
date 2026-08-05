@@ -1,5 +1,7 @@
 # 《AI Employee OS Tool Runtime Engineering Guide v1.0》
 
+> 实现状态：MVP 内置 File / Document / Knowledge Tool，一律经 Rust `ToolExecutor`。Browser、MCP、Computer Use、Marketplace 不在当前 MVP。Tool 全局安装，无 per-agent 绑定表。
+
 目标：
 
 定义 AI 员工的“执行能力层”。
@@ -8,19 +10,23 @@
 
 > AI 员工如何安全地操作外部世界？
 
-包括：
+MVP 包括：
 
 - 文件
     
-- 浏览器
-    
 - 文档
     
-- 企业系统
+- 本地 Knowledge
+
+后置（非 MVP）：
+
+- 浏览器 / 实时网页抓取
     
 - MCP 服务
     
-- 自定义插件
+- Computer Use
+    
+- 自定义插件 Marketplace
     
 
 ---

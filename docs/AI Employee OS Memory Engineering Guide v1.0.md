@@ -1,5 +1,7 @@
 # AI Employee OS Memory Engineering Guide v1.0
 
+> 实现状态：Memory 属 Runtime 基础设施；产品界面尚未完整暴露。Schema 以 Unified Data Model 为准，本文只描述领域语义与生命周期。
+
 目标：
 
 定义 AI 员工长期记忆系统。
@@ -1075,27 +1077,18 @@ Search
 
 # 21. MVP Memory 实现范围
 
-实现：
+Runtime 已具备（产品面未全暴露）：
 
-✅ User Memory
+- User / Agent Memory 表结构与基础读写路径
+- Context 注入挂钩（按任务需要启用）
 
-✅ Agent Memory
+暂缓 / 非现行主路径：
 
-✅ Memory Extractor
-
-✅ Vector Retrieval
-
-✅ Context Injection
-
----
-
-暂缓：
-
-⏸ Memory 自动重构
-
-⏸ Memory Graph
-
-⏸ Agent 自主修改 Memory Schema
+- Memory Extractor 自动化闭环
+- Vector Retrieval（FastEmbed 后置，见 ADR）
+- Memory 自动重构
+- Memory Graph
+- Agent 自主修改 Memory Schema
 
 ---
 
