@@ -3,53 +3,22 @@ import SwiftUI
 struct EmployeeDirectoryView: View {
     @ObservedObject var store: EmployeeStore
     let openChat: (Employee) -> Void
-    @State private var query = ""
     @State private var confirmingRemoval: Employee?
     @Environment(\.colorScheme) private var colorScheme
 
-    private var filtered: [Employee] {
-        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !needle.isEmpty else { return store.employees }
-        return store.employees.filter { [$0.name, $0.role, $0.department].contains { $0.localizedCaseInsensitiveContains(needle) } }
-    }
-
     var body: some View {
-        HSplitView {
-            VStack(spacing: 0) {
-                HStack {
-                    TextField("搜索员工", text: $query).textFieldStyle(.roundedBorder)
-                    Button(action: store.create) { Image(systemName: "plus") }.help("新建员工")
-                }
-                .padding(AppTheme.Spacing.md)
-                Divider()
-                if store.isLoading {
-                    ProgressView("正在读取员工…").frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if filtered.isEmpty {
-                    ContentUnavailableView("没有员工", systemImage: "person.2", description: Text("新建一名员工，配置其身份、灵魂与提示词。"))
-                } else {
-                    List(filtered, selection: $store.selection) { employee in
-                        EmployeeDirectoryRow(employee: employee).tag(employee.id)
-                            .contextMenu {
-                                Button("编辑") { store.edit(employee) }
-                                Divider()
-                                Button(employee.status == "active" ? "停用或删除" : "删除", role: .destructive) { confirmingRemoval = employee }
-                            }
-                    }
-                    .listStyle(.sidebar)
-                }
-            }
-            .frame(minWidth: 260, idealWidth: 300, maxWidth: 360)
-            .background(palette.surfaceSoft)
-
-            if let employee = store.selected {
-                EmployeeDetailView(employee: employee, store: store, openChat: { openChat(employee) })
-                    .frame(minWidth: 520)
-            } else {
-                ContentUnavailableView("选择一名员工", systemImage: "person.text.rectangle")
+        Group {
+            if store.isLoading {
+                ProgressView("正在读取员工…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let employee = store.selected {
+                EmployeeDetailView(employee: employee, store: store, openChat: { openChat(employee) })
+            } else {
+                EmployeeDirectoryEmptyView(create: store.create)
             }
         }
-        .navigationTitle("员工")
+        .background(palette.canvas)
+        .navigationTitle("通讯录")
         .toolbar {
             ToolbarItem(placement: .primaryAction) { Button("新建员工", systemImage: "person.badge.plus", action: store.create) }
         }
@@ -63,17 +32,77 @@ struct EmployeeDirectoryView: View {
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
-private struct EmployeeDirectoryRow: View {
-    let employee: Employee
+struct EmployeeDirectorySidebar: View {
+    @ObservedObject var store: EmployeeStore
+    @State private var query = ""
+    @State private var confirmingRemoval: Employee?
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var filtered: [Employee] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return store.employees }
+        return store.employees.filter { [$0.name, $0.role, $0.department].contains { $0.localizedCaseInsensitiveContains(needle) } }
+    }
+
     var body: some View {
-        HStack(spacing: AppTheme.Spacing.sm) {
-            Circle().fill(employee.status == "active" ? Color(hex: 0x4B6F3D) : Color.secondary.opacity(0.35)).frame(width: 8, height: 8)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(employee.name).font(.body.weight(.medium))
-                Text("\(employee.role) · \(employee.department)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(palette.mutedSoft)
+                TextField("搜索员工", text: $query).textFieldStyle(.plain)
             }
-            Spacer(minLength: 0)
-        }.padding(.vertical, 4)
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .background(palette.canvas.opacity(0.68), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+
+            if filtered.isEmpty {
+                ContentUnavailableView("没有员工", systemImage: "person.2", description: Text("新建一名员工，配置身份和工作边界。"))
+            } else {
+                List(selection: $store.selection) {
+                    ForEach(Dictionary(grouping: filtered, by: \.department).keys.sorted(), id: \.self) { department in
+                        Section(department) {
+                            ForEach(filtered.filter { $0.department == department }) { employee in
+                                EmployeeContextRow(employee: employee)
+                                    .tag(employee.id)
+                                    .contextMenu {
+                                        Button("编辑") { store.edit(employee) }
+                                        Divider()
+                                        Button(employee.status == "active" ? "停用或删除" : "删除", role: .destructive) { confirmingRemoval = employee }
+                                    }
+                            }
+                        }
+                    }
+                }
+                .listStyle(.sidebar)
+            }
+        }
+        .confirmationDialog("停用或删除 \(confirmingRemoval?.name ?? "员工")？", isPresented: Binding(get: { confirmingRemoval != nil }, set: { if !$0 { confirmingRemoval = nil } })) {
+            Button("继续", role: .destructive) {
+                if let employee = confirmingRemoval { Task { await store.remove(employee) } }
+                confirmingRemoval = nil
+            }
+            Button("取消", role: .cancel) { confirmingRemoval = nil }
+        } message: {
+            Text("没有历史记录时会删除；存在对话或任务记录时只会停用，以保留证据。")
+        }
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct EmployeeDirectoryEmptyView: View {
+    let create: () -> Void
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("AI 员工通讯录", systemImage: "person.2")
+        } description: {
+            Text("从左侧选择一名员工，查看职责、能力和工作边界。")
+        } actions: {
+            Button("新建 AI 员工", action: create).buttonStyle(.borderedProminent)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -98,11 +127,17 @@ private struct EmployeeDetailView: View {
                     Button("编辑") { store.edit(employee) }
                     Button("开始对话", action: openChat).buttonStyle(.borderedProminent)
                 }
-                Divider()
+                Divider().overlay(palette.hairlineSoft)
                 detailSection("使命") { Text(employee.mission).font(.title3).foregroundStyle(palette.body).textSelection(.enabled) }
-                HStack(alignment: .top, spacing: AppTheme.Spacing.xxl) {
-                    detailSection("职责") { bulletList(employee.responsibilities) }
-                    detailSection("工作边界") { bulletList(employee.boundaries) }
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: AppTheme.Spacing.xxl) {
+                        detailSection("职责") { bulletList(employee.responsibilities) }
+                        detailSection("工作边界") { bulletList(employee.boundaries) }
+                    }
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+                        detailSection("职责") { bulletList(employee.responsibilities) }
+                        detailSection("工作边界") { bulletList(employee.boundaries) }
+                    }
                 }
                 detailSection("Soul") { bulletList(employee.soul) }
                 detailSection("Persona") {

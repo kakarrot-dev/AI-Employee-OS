@@ -15,7 +15,7 @@ struct MenuBarStatusView: View {
             openWindow(id: "main")
             NSApp.activate(ignoringOtherApps: true)
         }
-        Button("交给 Alex 新工作") {
+        Button("打开 Alex 工作区") {
             destinationRaw = AppDestination.work.rawValue
             openWindow(id: "main")
             NSApp.activate(ignoringOtherApps: true)

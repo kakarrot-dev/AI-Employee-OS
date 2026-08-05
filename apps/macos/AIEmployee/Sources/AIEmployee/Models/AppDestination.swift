@@ -5,17 +5,15 @@ enum AppDestination: String, CaseIterable, Identifiable {
     case contacts
     case work
     case capabilities
-    case settings
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .office: "办公室"
-        case .contacts: "员工"
-        case .work: "对话"
-        case .capabilities: "能力"
-        case .settings: "设置"
+        case .contacts: "通讯录"
+        case .work: "工作"
+        case .capabilities: "能力库"
         }
     }
 
@@ -25,7 +23,6 @@ enum AppDestination: String, CaseIterable, Identifiable {
         case .contacts: "person.2"
         case .work: "bubble.left.and.bubble.right"
         case .capabilities: "square.grid.2x2"
-        case .settings: "gearshape"
         }
     }
 }

@@ -3,6 +3,7 @@ import SwiftUI
 struct CommandPaletteView: View {
     let navigate: (AppDestination) -> Void
     let newWork: () -> Void
+    let openSettings: () -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
@@ -15,7 +16,7 @@ struct CommandPaletteView: View {
             destination("打开通讯录", "按部门查找员工", "person.2", .contacts),
             destination("打开工作", "查看与 Alex 的工作记录", "bubble.left.and.bubble.right", .work),
             destination("打开能力库", "查看可用 Skills 与 Tools", "square.grid.2x2", .capabilities),
-            destination("打开设置", "配置模型、隐私与应用选项", "gearshape", .settings)
+            PaletteCommand(title: "打开设置", subtitle: "配置模型、隐私与应用选项", image: "gearshape", action: settings)
         ]
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty else { return all }
@@ -80,6 +81,11 @@ struct CommandPaletteView: View {
     private func newTask() {
         newWork()
         dismiss()
+    }
+
+    private func settings() {
+        dismiss()
+        openSettings()
     }
 }
 

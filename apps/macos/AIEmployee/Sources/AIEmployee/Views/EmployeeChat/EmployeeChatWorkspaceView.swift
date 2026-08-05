@@ -2,17 +2,23 @@ import SwiftUI
 
 struct EmployeeChatWorkspaceView: View {
     @ObservedObject var store: TaskStore
+    @ObservedObject var conversationStore: ConversationStore
+    let employee: Employee?
+    @Binding var isCreatingWork: Bool
 
-    @State private var inspectorVisible = true
+    @SceneStorage("taskInspectorVisible") private var inspectorVisible = true
     @State private var inspectorWidth: CGFloat = 320
+    @State private var workspaceWidth: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
 
     private var activeRun: TaskRun? {
-        store.runs.first { $0.status == .running || $0.status == .pending }
+        guard supportsTasks else { return nil }
+        return store.runs.first { $0.status == .running || $0.status == .pending }
     }
 
     private var selectedRun: TaskRun? {
+        guard supportsTasks else { return nil }
         if let selection = store.selection,
            let selected = store.runs.first(where: { $0.id == selection }) {
             return selected
@@ -20,16 +26,31 @@ struct EmployeeChatWorkspaceView: View {
         return activeRun ?? store.runs.first
     }
 
+    private var showsInspector: Bool {
+        supportsTasks && inspectorVisible && workspaceWidth >= 820
+    }
+
+    private var supportsTasks: Bool {
+        (employee?.id ?? conversationStore.employeeID) == "ai-product-manager"
+    }
+
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
-                EmployeeMessageStream(store: store)
-                EmployeeComposerContainer(store: store, activeRun: activeRun)
+                EmployeeMessageStream(store: store, conversationStore: conversationStore, employee: employee, showsTasks: supportsTasks)
+                EmployeeComposerContainer(
+                    store: store,
+                    conversationStore: conversationStore,
+                    activeRun: activeRun,
+                    employeeName: employee?.name ?? conversationStore.employeeName,
+                    supportsTasks: supportsTasks,
+                    isCreatingWork: $isCreatingWork
+                )
             }
             .frame(minWidth: 460, maxWidth: .infinity, maxHeight: .infinity)
             .background(palette.canvas)
 
-            if inspectorVisible {
+            if showsInspector {
                 TaskInspectorView(run: selectedRun)
                     .frame(minWidth: 280, idealWidth: inspectorWidth, maxWidth: 420)
                     .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { newWidth in
@@ -37,18 +58,22 @@ struct EmployeeChatWorkspaceView: View {
                     }
             }
         }
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { workspaceWidth = $0 }
         .navigationTitle("")
         .toolbar {
             ToolbarItem(placement: .navigation) {
-                EmployeeToolbarTitle(run: activeRun, reduceMotion: reduceMotion)
+                EmployeeToolbarTitle(employee: employee, run: activeRun, reduceMotion: reduceMotion)
             }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    inspectorVisible.toggle()
-                } label: {
-                    Label(inspectorVisible ? "隐藏任务面板" : "显示任务面板", systemImage: "sidebar.right")
+            if supportsTasks {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        inspectorVisible.toggle()
+                    } label: {
+                        Label(showsInspector ? "隐藏任务面板" : "显示任务面板", systemImage: "sidebar.right")
+                    }
+                    .help(workspaceWidth < 820 ? "扩大窗口后可显示任务面板" : (showsInspector ? "隐藏任务面板" : "显示任务面板"))
+                    .disabled(workspaceWidth < 820)
                 }
-                .help(inspectorVisible ? "隐藏任务面板" : "显示任务面板")
             }
         }
     }
@@ -57,6 +82,7 @@ struct EmployeeChatWorkspaceView: View {
 }
 
 private struct EmployeeToolbarTitle: View {
+    let employee: Employee?
     let run: TaskRun?
     let reduceMotion: Bool
 
@@ -76,8 +102,8 @@ private struct EmployeeToolbarTitle: View {
                     Circle().fill(stateColor).frame(width: 7, height: 7)
                 }
                 HStack(spacing: 5) {
-                    Text("Alex").fontWeight(.semibold)
-                    Text("· AI 产品经理").foregroundStyle(.secondary)
+                    Text(employee?.name ?? "Alex").fontWeight(.semibold)
+                    Text("· \(employee?.role ?? "AI 产品经理")").foregroundStyle(.secondary)
                 }
                 Image(systemName: "chevron.down")
                     .font(.caption2.weight(.semibold))
@@ -85,11 +111,11 @@ private struct EmployeeToolbarTitle: View {
             }
         }
         .buttonStyle(.plain)
-        .help(run.map { "Alex 正在处理：\($0.input)" } ?? "查看 Alex 详情")
+        .help(run.map { "\(employee?.name ?? "Alex") 正在处理：\($0.input)" } ?? "查看员工详情")
         .popover(isPresented: $detailsVisible, arrowEdge: .top) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                Text("Alex").font(.headline)
-                Text("AI 产品经理 · 产品部").font(.callout).foregroundStyle(.secondary)
+                Text(employee?.name ?? "Alex").font(.headline)
+                Text("\(employee?.role ?? "AI 产品经理") · \(employee?.department ?? "产品部")").font(.callout).foregroundStyle(.secondary)
                 Divider()
                 Label("需求分析", systemImage: "text.magnifyingglass")
                 Label("PRD 生成", systemImage: "doc.text")
@@ -125,14 +151,23 @@ private struct EmployeeToolbarTitle: View {
 
 private struct EmployeeMessageStream: View {
     @ObservedObject var store: TaskStore
+    @ObservedObject var conversationStore: ConversationStore
+    let employee: Employee?
+    let showsTasks: Bool
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
-                if store.runs.isEmpty {
-                    EmptyConversationView()
-                } else {
+                if conversationStore.messages.isEmpty && (!showsTasks || store.runs.isEmpty) {
+                    EmptyConversationView(employeeName: employee?.name ?? conversationStore.employeeName)
+                }
+
+                ForEach(conversationStore.messages) { message in
+                    ConversationMessageBlock(message: message, employeeName: employee?.name ?? conversationStore.employeeName)
+                }
+
+                if showsTasks && !store.runs.isEmpty {
                     ForEach(Array(store.runs.reversed())) { run in
                         TaskConversationBlock(run: run)
                             .id(run.id)
@@ -153,19 +188,47 @@ private struct EmployeeMessageStream: View {
 }
 
 private struct EmptyConversationView: View {
+    let employeeName: String
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-            Text("和 Alex 开始工作")
+            Text("和 \(employeeName) 聊聊")
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(palette.ink)
-            Text("描述目标、已有材料和期望交付物。Alex 会在执行写入前请求一次性授权。")
+            Text("可以先讨论想法、补充背景或澄清问题。需要正式执行时，再明确交给 \(employeeName) 一项工作。")
                 .font(.body)
                 .foregroundStyle(palette.muted)
                 .frame(maxWidth: 560, alignment: .leading)
         }
         .padding(.top, AppTheme.Spacing.xxl)
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct ConversationMessageBlock: View {
+    let message: ChatMessage
+    let employeeName: String
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if message.role == "user" {
+                Text("你")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.muted)
+            }
+            Text(message.content)
+                .font(.body)
+                .foregroundStyle(palette.body)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(message.role == "user" ? AppTheme.Spacing.md : 0)
+        .frame(maxWidth: message.role == "user" ? 680 : .infinity, alignment: .leading)
+        .background(message.role == "user" ? palette.surfaceSoft : .clear, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+        .accessibilityLabel(message.role == "user" ? "你：\(message.content)" : "\(employeeName)：\(message.content)")
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
@@ -401,6 +464,7 @@ private struct ArtifactMessageBlock: View {
     let run: TaskRun
     let path: String
     @State private var artifactError: String?
+    @State private var preview: String?
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -418,14 +482,48 @@ private struct ArtifactMessageBlock: View {
                     }
                 }
                 Spacer()
+                Button {
+                    perform { try ArtifactService.open(path) }
+                } label: {
+                    Label("打开", systemImage: "arrow.up.right")
+                }
+                .buttonStyle(.plain)
             }
-            HStack(spacing: AppTheme.Spacing.sm) {
-                Button("打开文档") { perform { try ArtifactService.open(path) } }
-                    .buttonStyle(.borderedProminent)
+
+            Divider().overlay(palette.hairlineSoft)
+
+            if let preview {
+                Text(tryAttributedMarkdown(preview))
+                    .font(.callout)
+                    .foregroundStyle(palette.body)
+                    .lineLimit(12)
+                    .textSelection(.enabled)
+            } else {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("正在读取交付物…").font(.caption).foregroundStyle(palette.muted)
+                }
+            }
+
+            HStack {
+                Text(URL(fileURLWithPath: path).lastPathComponent)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(palette.muted)
+                    .lineLimit(1)
+                Spacer()
                 Button("在 Finder 中显示") { perform { try ArtifactService.reveal(path) } }
+                    .buttonStyle(.plain)
+                    .font(.caption)
             }
         }
-        .padding(.vertical, AppTheme.Spacing.sm)
+        .padding(AppTheme.Spacing.md)
+        .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous).stroke(palette.hairlineSoft, lineWidth: 1) }
+        .frame(maxWidth: 680, alignment: .leading)
+        .task(id: path) {
+            do { preview = try await ArtifactService.loadMarkdown(at: path) }
+            catch { artifactError = error.localizedDescription }
+        }
         .alert("无法访问交付物", isPresented: Binding(
             get: { artifactError != nil },
             set: { if !$0 { artifactError = nil } }
@@ -441,44 +539,103 @@ private struct ArtifactMessageBlock: View {
         catch { artifactError = error.localizedDescription }
     }
 
+    private func tryAttributedMarkdown(_ source: String) -> AttributedString {
+        (try? AttributedString(markdown: source)) ?? AttributedString(source)
+    }
+
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
 private struct EmployeeComposerContainer: View {
     @ObservedObject var store: TaskStore
+    @ObservedObject var conversationStore: ConversationStore
     let activeRun: TaskRun?
+    let employeeName: String
+    let supportsTasks: Bool
+    @Binding var isCreatingWork: Bool
 
     var body: some View {
-        Group {
-            if store.awaitingApproval {
-                ApprovalActionBar(store: store)
-            } else if let activeRun {
-                WorkingStatusBar(run: activeRun, stop: { store.cancel(activeRun.id) })
+        VStack(spacing: AppTheme.Spacing.sm) {
+            if supportsTasks {
+                if store.awaitingApproval {
+                    ApprovalActionBar(store: store)
+                } else if let activeRun {
+                    WorkingStatusBar(run: activeRun, stop: { store.cancel(activeRun.id) })
+                }
+            }
+
+            if isCreatingWork && supportsTasks {
+                EmployeeWorkComposer(
+                    store: store,
+                    employeeName: employeeName,
+                    cancel: { isCreatingWork = false }
+                )
             } else {
-                EmployeeInputComposer(store: store)
+                EmployeeChatComposer(
+                    store: conversationStore,
+                    employeeName: employeeName,
+                    canCreateWork: supportsTasks && activeRun == nil && !store.awaitingApproval,
+                    createWork: { isCreatingWork = true }
+                )
             }
         }
         .padding(.horizontal, AppTheme.Spacing.lg)
         .padding(.bottom, AppTheme.Spacing.md)
+        .onChange(of: store.awaitingApproval) { _, awaitingApproval in
+            if awaitingApproval { isCreatingWork = false }
+        }
+        .onChange(of: supportsTasks) { _, canCreateTasks in
+            if !canCreateTasks { isCreatingWork = false }
+        }
     }
 }
 
-private struct EmployeeInputComposer: View {
-    @ObservedObject var store: TaskStore
+private struct EmployeeChatComposer: View {
+    @ObservedObject var store: ConversationStore
+    let employeeName: String
+    let canCreateWork: Bool
+    let createWork: () -> Void
     @FocusState private var focused: Bool
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(spacing: AppTheme.Spacing.xs) {
-            TextField("给 Alex 一项工作…", text: $store.draft, axis: .vertical)
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+            if let error = store.error {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(palette.error)
+                    .textSelection(.enabled)
+            }
+
+            TextField("给 \(employeeName) 发消息…", text: $store.draft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.body)
                 .lineLimit(1...8)
                 .focused($focused)
                 .onSubmit(submit)
 
-            HStack {
+            HStack(spacing: AppTheme.Spacing.sm) {
+                if canCreateWork {
+                    Button(action: createWork) {
+                        Label("交给 \(employeeName) 工作", systemImage: "briefcase")
+                    }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                    .foregroundStyle(palette.muted)
+                    .disabled(store.isSending)
+                }
+
                 Spacer()
+
+                if store.isSending {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("\(employeeName) 正在回复…")
+                            .font(.caption)
+                            .foregroundStyle(palette.muted)
+                    }
+                }
+
                 Button(action: submit) {
                     Image(systemName: "arrow.up")
                         .font(.body.weight(.bold))
@@ -488,7 +645,7 @@ private struct EmployeeInputComposer: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!canSubmit)
-                .help("发送")
+                .help("发送消息")
             }
         }
         .padding(AppTheme.Spacing.sm)
@@ -500,6 +657,64 @@ private struct EmployeeInputComposer: View {
         .shadow(color: .black.opacity(0.09), radius: 12, y: 4)
         .frame(maxWidth: 820)
         .frame(maxWidth: .infinity)
+    }
+
+    private var canSubmit: Bool {
+        !store.isSending && !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func submit() {
+        guard canSubmit else { return }
+        store.send()
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct EmployeeWorkComposer: View {
+    @ObservedObject var store: TaskStore
+    let employeeName: String
+    let cancel: () -> Void
+    @FocusState private var focused: Bool
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(spacing: AppTheme.Spacing.xs) {
+            TextField("描述要交给 \(employeeName) 的工作…", text: $store.draft, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.body)
+                .lineLimit(1...8)
+                .focused($focused)
+                .onSubmit(submit)
+
+            HStack {
+                Button("返回聊天", action: cancel)
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                    .foregroundStyle(palette.muted)
+                Spacer()
+                Button(action: submit) {
+                    Image(systemName: "arrow.up")
+                        .font(.body.weight(.bold))
+                        .foregroundStyle(canSubmit ? palette.ink : palette.mutedSoft)
+                        .frame(width: 32, height: 32)
+                        .background((canSubmit ? palette.primary : palette.hairlineSoft), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSubmit)
+                .help("提交工作")
+            }
+        }
+        .padding(AppTheme.Spacing.sm)
+        .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(focused ? palette.primary.opacity(0.72) : palette.hairlineSoft, lineWidth: focused ? 1.4 : 1)
+        }
+        .shadow(color: .black.opacity(0.09), radius: 12, y: 4)
+        .frame(maxWidth: 820)
+        .frame(maxWidth: .infinity)
+        .onAppear { focused = true }
     }
 
     private var canSubmit: Bool {

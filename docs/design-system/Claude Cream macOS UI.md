@@ -1,6 +1,6 @@
 # Claude Cream macOS UI
 
-> 页面级事实源：Office 与 Employee Chat 的目标结构、Light Mode 范围和验收以 [AI Employee macOS Office and Employee Chat UI Spec v1.0](./AI%20Employee%20macOS%20Office%20and%20Employee%20Chat%20UI%20Spec%20v1.0.md) 为准。本文件继续维护 Claude Cream Token、业务状态颜色和通用 macOS 组件原则。下文 `Company / Alex / Tasks / Artifacts / Knowledge` 是 Release 3 已实现基线，不再作为下一轮页面结构约束。
+> 页面级事实源：当前主界面结构、通讯录、连续工作区、Settings、Light/Dark Mode 和视觉验收以 [AI Employee macOS Main Interface Spec v2.0](./AI%20Employee%20macOS%20Main%20Interface%20Spec%20v2.0.md) 为准。[AI Employee macOS Office and Employee Chat UI Spec v1.0](./AI%20Employee%20macOS%20Office%20and%20Employee%20Chat%20UI%20Spec%20v1.0.md) 保留为历史基线。本文件继续维护 Claude Cream Token、业务状态颜色和通用 macOS 组件原则。
 
 ## 定位
 
@@ -33,7 +33,7 @@ AI Employee macOS Client 使用 Claude Cream 作为唯一自定义视觉 Token�
 - Sidebar Row 保持一个状态图标、一行任务标题和一行中文状态，不承载完整证据。
 - Primary 只用于主要交互、焦点和关键图标；正文强调不得滥用 Primary。
 - 禁止在 Feature View 中直接使用 `.blue`、`.green`、`.orange`、`.red` 表达业务语义，必须使用 `AppTheme`。
-- Light 与 Dark Token 保持同名语义角色，但当前 Office 与 Employee Chat MVP 只实现并验收 Light Mode，不对未设计的 Dark Mode 自动反色。
+- Light 与 Dark Token 保持同名语义角色。应用跟随系统外观，所有主界面都必须验证 Light/Dark Mode，不使用固定 `.light` Palette 或硬编码白色背景。
 - Sidebar 使用 Claude Cream Primary 的低对比选中底色，避免系统蓝与暖色工作区冲突；同一时刻只显示一个选中上下文。
 
 ## Release 3 历史基线
@@ -92,7 +92,7 @@ UI 不持久化 `Available / Planning / Reviewing / Completed / Error` 等第二
 
 - 默认窗口 `1280 × 820`，最小窗口 `960 × 640`。
 - 首屏不依赖统计卡片也能回答：Alex 是否在工作、做什么、做到哪里、最近交付了什么。
-- 当前目标页面只验收 Light Mode；未来 Dark Mode 必须保持同一信息层级且相邻表面可分辨，不能直接自动反色。
+- Release 3 历史页面只验收 Light Mode。当前主界面按 v2 规格同时验收 Light/Dark Mode，Dark Mode 必须保持同一信息层级且相邻表面可分辨，不能直接自动反色。
 - 业务颜色和 Sidebar 选中态全部来自 `AppTheme`。
 - 审批、取消、失败、`blocked`、`result_unknown` 和 Artifact 操作语义不因视觉改版而丢失。
 

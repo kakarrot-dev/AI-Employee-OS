@@ -5,7 +5,9 @@ struct ContentView: View {
     @ObservedObject var conversationStore: ConversationStore
     @ObservedObject var employeeStore: EmployeeStore
     @SceneStorage("appDestination") private var destinationRaw = AppDestination.office.rawValue
+    @SceneStorage("workComposerPresented") private var workComposerPresented = false
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openSettings) private var openSettings
 
     private var destination: Binding<AppDestination> {
         Binding(
@@ -15,27 +17,22 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
-            AppSidebarView(selection: destination, store: store, conversationStore: conversationStore)
-                .navigationSplitViewColumnWidth(min: 212, ideal: 228, max: 244)
-        } detail: {
+        AppShellView(
+            selection: destination,
+            store: store,
+            conversationStore: conversationStore,
+            employeeStore: employeeStore,
+            openSettings: { openSettings() },
+            newWork: { beginWork() }
+        ) {
             workspace
         }
         .tint(AppTheme.palette(for: colorScheme).primary)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    destination.wrappedValue = .settings
-                } label: {
-                    Label("设置", systemImage: "gearshape")
-                }
-                .help("设置（⌘,）")
-            }
-        }
         .sheet(isPresented: $store.isCommandPalettePresented) {
             CommandPaletteView(
                 navigate: { destination.wrappedValue = $0 },
-                newWork: { destination.wrappedValue = .work }
+                newWork: { beginWork() },
+                openSettings: { openSettings() }
             )
         }
         .sheet(isPresented: $employeeStore.isPresentingEditor) {
@@ -52,17 +49,31 @@ struct ContentView: View {
         case .office:
             OfficeWorkspaceView(store: store, openChat: { destination.wrappedValue = .work })
         case .contacts:
-            EmployeeDirectoryView(store: employeeStore) { employee in
-                employeeStore.selection = employee.id
-                conversationStore.select(employee: employee)
-                destination.wrappedValue = .work
-            }
+            EmployeeDirectoryView(store: employeeStore) { employee in openConversation(employee) }
         case .work:
-            ConversationWorkspaceView(store: conversationStore, employee: employeeStore.selected)
+            EmployeeChatWorkspaceView(
+                store: store,
+                conversationStore: conversationStore,
+                employee: employeeStore.selected,
+                isCreatingWork: $workComposerPresented
+            )
         case .capabilities:
-            CapabilityLibraryWorkspaceView(employee: employeeStore.selected)
-        case .settings:
-            SettingsView()
+            CapabilityLibraryWorkspaceView()
         }
+    }
+
+    private func openConversation(_ employee: Employee) {
+        employeeStore.selection = employee.id
+        conversationStore.select(employee: employee)
+        destination.wrappedValue = .work
+    }
+
+    private func beginWork() {
+        if let alex = employeeStore.employees.first(where: { $0.id == "ai-product-manager" }) {
+            employeeStore.selection = alex.id
+            conversationStore.select(employee: alex)
+        }
+        destination.wrappedValue = .work
+        workComposerPresented = true
     }
 }
