@@ -2,7 +2,17 @@
 
 ## 项目目标
 
-本项目实现一个 Local-first 的 macOS AI 员工操作系统。MVP 只验证单个 AI 产品经理 Alex 完成 `接收任务 -> 规划 -> 调用工具 -> 产出 PRD -> 保存经验` 的可靠闭环。
+本项目实现一个 Local-first 的 macOS AI 员工操作系统。
+
+当前 MVP 主验证路径：
+
+1. 用户在 macOS Keychain 配置 DeepSeek API Key。
+2. 在客户端编辑员工 Identity / Soul / Persona；Effective Prompt 由 Rust Runtime 单向编译。
+3. 与员工完成可跨重启恢复的多轮对话（默认员工为 Alex / `ai-product-manager`）。
+4. Skill / Tool 由仓库 Package 安装（客户端不创建）；Runtime bootstrap 安装内置 Package 后，技能库与工具库可浏览。
+5. 对话经意图识别区分闲聊与工作：闲聊走 Python chat worker；工作意图在 `tasks_enabled` 时走 `run-task` / Graph / ToolExecutor。工作执行主路径仍以 Alex + `prd-generation` 为准。
+
+客户端已支持多员工 Profile 的创建、编辑与停用；多员工工作执行与 per-employee `tasks_enabled` 尚未成为主验证路径。
 
 ## 事实源优先级
 
@@ -18,17 +28,42 @@
 
 ## MVP 边界
 
-包含：Swift macOS Client、薄 Rust Runtime、Python Agent Worker、SQLite、Agent/Skill/Tool Package、Memory、Knowledge、Permission、Approval、Audit 和基础 Trace。
+### 产品可见（当前主路径）
 
-暂不包含：Computer Use、Multi-Agent、Cloud Sync、Marketplace、企业 RBAC、实时网页抓取。
+- Swift macOS Client：办公室、通讯录、工作库、技能库、工具库、设置
+- DeepSeek 驱动的多轮对话与意图路由
+- 员工 Profile：Identity / Soul / Persona
+- 仓库内置 Agent / Skill / Tool Package 的安装、列表与 Skill 绑定
+- Task Inspector（在 `tasks_enabled` 时展示执行步骤与交付）
+
+### Runtime 已具备、产品面尚未完整暴露
+
+- Task / Action 状态机、Permission、Approval、Audit、基础 Trace
+- Memory、Knowledge、Evaluation 基础设施
+- Graph Runtime 与 Golden Path 编排
+
+### 暂不包含
+
+Computer Use、Multi-Agent 协作、Cloud Sync、Marketplace、企业 RBAC、实时网页抓取。
 
 ## 架构边界
 
-- Swift 负责交互，不参与 Agent 推理，也不直接执行 Tool。
-- Rust 负责 Task/Action 状态、权限、审批、Tool Gateway、持久化和事件。
-- Python 负责 Context、规划和推理，不直接取得系统权限。
+```text
+Swift macOS Client          交互、本地 Store、Keychain；不推理、不直接执行 Tool
+        |
+        v
+Thin Rust Runtime           Task/Action、权限、审批、Tool Gateway、SQLite、事件
+        |
+        v
+Python Agent Worker         意图分类、闲聊、Context/规划推理；不直接取得系统权限
+```
+
+硬规则：
+
 - 所有 Tool 调用必须经过 Rust ToolExecutor。
-- Secret 不进入仓库、SQLite、日志、Trace、Memory 或 Agent Context。
+- Secret 不进入仓库、SQLite、日志、Trace、Memory 或 Agent Context；API Key 只经 Keychain 注入受控进程环境。
+- Skill 通过 `agent_skills` 绑定到员工；Tool 为全局安装（无 per-agent Tool 绑定表），客户端不可创建 Package。
+- `tasks_enabled` 表示工作执行能力已接通（当前实现以 Alex 已启用 Skill + 存在 active Tool 为条件）。
 
 ## 状态与安全不变量
 
@@ -47,6 +82,7 @@
 - Migration 只追加，不修改已发布文件；数据库变更必须覆盖 fresh install、重复启动、外键和完整性检查。
 - 外部副作用必须有幂等键、明确超时和可验证结果。
 - 用户可见内容使用简体中文；代码标识符、协议字段和错误码使用英文。
+- 被纠正过的协作模式记入 `tasks/lessons.md`，避免重复踩坑。
 
 ## 验证门禁
 
@@ -56,7 +92,13 @@
 ./scripts/check.sh
 ```
 
-该命令必须覆盖：格式检查、Rust 测试、Python 测试、Migration 重放和契约正反例。无法运行的检查必须在交付中明确说明，不得声称通过。
+该命令覆盖：Rust 格式与测试（含 Migration 重放）、Runtime/Tool Gateway 构建、契约正反例、Keychain 边界、本地签名身份、员工 Runtime 端到端检查、Python 单测、Swift 客户端模型检查。无法运行的检查必须在交付中明确说明，不得声称通过。
+
+打包并启动本地 App：
+
+```bash
+./script/build_and_run.sh
+```
 
 ## Git 规则
 

@@ -1,36 +1,47 @@
 # AI Employee OS
 
-AI Employee OS 是一个 Local-first 的 macOS AI 员工运行平台。当前产品只保留 Alex 一个 AI 员工，优先验证由 DeepSeek 驱动、SQLite 持久化并可跨重启恢复的真实多轮对话。
+AI Employee OS 是一个 Local-first 的 macOS AI 员工运行平台。默认员工为 Alex（AI 产品经理）；客户端支持多员工 Profile 编辑，工作执行主路径仍以 Alex + `prd-generation` 验证。
 
 ## 当前状态
 
-Alex 当前不绑定任何 Skill 或 Tool，固定 PRD Golden Path 已移除。用户在 macOS Keychain 配置 DeepSeek API Key 后，可与 Alex 进行真实多轮对话；Conversation、Message 与脱敏 ModelCall 状态由 Rust Runtime 持久化。
+- 在 macOS Keychain 配置 DeepSeek API Key 后，可与员工进行真实多轮对话；Conversation、Message 与脱敏 ModelCall 由 Rust Runtime 持久化。
+- 可编辑 Identity / Soul / Persona；Effective Prompt 由 Runtime 单向编译。
+- 仓库内置 Skill：`prd-generation`、`requirement-analysis`；Tool：`file-tool`、`document-tool`。Runtime bootstrap 安装后，技能库与工具库可浏览；Skill 可绑定到员工，Tool 为全局安装。客户端不创建 Package。
+- 对话路径做意图识别：闲聊走 chat worker；工作意图在 `tasks_enabled` 时走 `run-task` / Graph / ToolExecutor（副作用只经 Rust）。
+- 导航：办公室、通讯录、工作库、技能库、工具库、设置。
 
 ## 架构
 
 ```text
 Swift macOS Client
+  交互 / Store / Keychain
         |
         v
 Thin Rust Runtime
-Task / Action / Permission / Tool / SQLite / Event
+  Task / Action / Permission / Tool Gateway / SQLite / Event
         |
         v
 Python Agent Worker
-Context / Planning / LLM Provider / Memory Extraction
+  Intent / Chat / Context / Planning / LLM Provider
 ```
 
 Rust 是系统能力边界，Python 不直接执行本地工具，Swift 不参与推理。
 
 ## MVP 范围
 
-- 单个 AI 产品经理 Alex
-- Task 与 Action 状态机
-- Agent、Skill、Tool Package
+**产品主路径**
+
+- 默认员工 Alex；多员工 Profile 编辑
+- DeepSeek 多轮对话与意图路由
+- Agent / Skill / Tool Package（仓库安装）
+- Task Inspector（能力接通时）
+
+**Runtime 能力（产品面逐步暴露）**
+
+- Task / Action 状态机
 - File、Document、Knowledge Tool
-- SQLite 与本地 Knowledge
-- Permission、Approval 与 Audit
-- 基础 Trace、Evaluation 和 Memory
+- Permission、Approval、Audit
+- 基础 Trace、Evaluation、Memory
 
 Computer Use、Multi-Agent、Cloud Sync、Marketplace 和实时网页抓取不在 MVP 内。
 
@@ -44,12 +55,13 @@ contracts/                  机器可读 JSON Schema 与样例
 packages/                   Agent、Skill、Tool Package
 storage/migrations/         只追加的 SQLite Migration
 docs/                       产品与技术设计
-scripts/                    本地验证入口
+scripts/                    本地验证入口（check.sh 等）
+script/                     打包与分发（build_and_run.sh 等）
 ```
 
 ## 开始开发
 
-当前基线只要求 Rust、Python 3 和系统 SQLite：
+验证门禁（Rust、Python、契约、Runtime 端到端、Swift 模型检查）：
 
 ```bash
 ./scripts/check.sh
@@ -61,9 +73,23 @@ scripts/                    本地验证入口
 cargo test --manifest-path runtime/rust-core/Cargo.toml
 ```
 
+构建并启动 macOS App（需本地 codesign 身份）：
+
+```bash
+./script/build_and_run.sh
+```
+
+UI Demo（无需真实 Runtime 数据）：
+
+```bash
+./script/build_and_run.sh --ui-demo
+```
+
 ## 运行对话
 
-通过 App 设置页把 DeepSeek API Key 保存到 macOS Keychain，然后在“工作”页与 Alex 对话。DeepSeek Chat Completions 是无状态接口，Runtime 会从 SQLite 重建当前 Conversation 的有序消息并随每轮请求提交。
+1. 通过设置页把 DeepSeek API Key 保存到 macOS Keychain。
+2. 在「工作库」选择员工（默认 Alex）对话。
+3. DeepSeek Chat Completions 无状态；Runtime 从 SQLite 重建当前 Conversation 有序消息并随每轮请求提交。
 
 ## 事实源
 
