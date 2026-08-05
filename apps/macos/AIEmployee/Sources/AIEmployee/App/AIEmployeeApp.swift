@@ -47,14 +47,17 @@ struct AIEmployeeApp: App {
             }
         }
 
-        MenuBarExtra("AI Employee", systemImage: menuBarSystemImage) {
+        MenuBarExtra {
             MenuBarStatusView(store: store)
+        } label: {
+            Image(nsImage: MenuBarIcon.image(isRunning: hasRunningWork))
+                .accessibilityLabel(hasRunningWork ? "AI Employee 正在工作" : "AI Employee")
         }
 
     }
 
-    private var menuBarSystemImage: String {
-        store.runs.contains(where: { $0.status == .running }) ? "person.crop.circle.badge.clock" : "person.crop.circle"
+    private var hasRunningWork: Bool {
+        store.runs.contains(where: { $0.status == .running })
     }
 
     private var appearance: AppAppearance {

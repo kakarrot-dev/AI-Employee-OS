@@ -1,106 +1,194 @@
-# AI Employee OS
+<p align="center">
+  <img src="docs/design-system/assets/app-icon/ai-employee-os-app-icon-master.png" width="160" alt="AI Employee OS app icon">
+</p>
 
-AI Employee OS 是一个 Local-first 的 macOS AI 员工运行平台。默认员工为 Alex（AI 产品经理）；客户端支持多员工 Profile 编辑，工作执行主路径仍以 Alex + `prd-generation` 验证。
+<h1 align="center">AI Employee OS</h1>
 
-## 当前状态
+<p align="center">
+  A local-first macOS runtime for AI employees that can converse, execute governed work, and deliver auditable artifacts.
+</p>
 
-- 在 macOS Keychain 配置 DeepSeek API Key 后，可与员工进行真实多轮对话；Conversation、Message 与脱敏 ModelCall 由 Rust Runtime 持久化。
-- 可编辑 Identity / Soul / Persona；Effective Prompt 由 Runtime 单向编译。
-- 仓库内置 Skill：`prd-generation`、`requirement-analysis`；Tool：`file-tool`、`document-tool`。Runtime bootstrap 安装后，技能库与工具库可浏览；Skill 可绑定到员工，Tool 为全局安装。客户端不创建 Package。
-- 对话路径做意图识别：闲聊走 chat worker；工作意图在 `tasks_enabled` 时走 `run-task` / Graph / ToolExecutor（副作用只经 Rust）。
-- 导航：办公室、通讯录、工作库、技能库、工具库、设置。
+<p align="center">
+  <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-## 架构
+<p align="center">
+  <a href="https://github.com/kakarrot-dev/AI-Employee-OS/actions/workflows/ci.yml"><img src="https://github.com/kakarrot-dev/AI-Employee-OS/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/macOS-14%2B-29271d" alt="macOS 14 or later">
+  <img src="https://img.shields.io/badge/Swift-5.10-b7791f" alt="Swift 5.10">
+  <img src="https://img.shields.io/badge/Rust-stable-2c6f75" alt="Rust stable">
+</p>
+
+> [!IMPORTANT]
+> AI Employee OS is under active development. The current repository provides a runnable local MVP for development and evaluation, not a notarized end-user release.
+
+## What it does
+
+AI Employee OS turns an AI assistant into a governed local worker. The macOS client handles interaction and Keychain access, the Rust runtime owns state and permissions, and the Python worker handles intent, context, planning, and model calls.
+
+The default employee is Alex, an AI product manager. Multiple employee profiles can be created and edited, while the validated work-execution path currently remains Alex with the built-in `prd-generation` skill.
+
+## Current capabilities
+
+- Native SwiftUI workspace with Office, Contacts, Work, Skills, Tools, and Settings.
+- Persistent multi-turn conversations backed by SQLite.
+- Employee Identity, Soul, and Persona editing, with the effective prompt compiled by the Rust runtime.
+- Intent routing between conversation and governed task execution.
+- Repository-installed Agent, Skill, and Tool packages.
+- Task and Action state machines with approval, cancellation, audit, events, and recovery.
+- Tool execution through the Rust `ToolExecutor`, including idempotency and result verification.
+- Local packaging of the Swift client, Rust runtime, Python worker, and built-in packages into a macOS app bundle.
+- Claude Cream design tokens with light and dark appearances.
+
+## Architecture
 
 ```text
 Swift macOS Client
-  交互 / Store / Keychain
+  UI, local stores, Keychain
         |
         v
 Thin Rust Runtime
-  Task / Action / Permission / Tool Gateway / SQLite / Event
+  Task, Action, Permission, Approval, Tool Gateway, SQLite, Events
         |
         v
 Python Agent Worker
-  Intent / Chat / Context / Planning / LLM Provider
+  Intent, Chat, Context, Planning, LLM Provider
 ```
 
-Rust 是系统能力边界，Python 不直接执行本地工具，Swift 不参与推理。
+The trust boundary is deliberate:
 
-## MVP 范围
+- Swift does not reason or execute tools.
+- Python does not receive direct system permissions.
+- Every tool call passes through the Rust `ToolExecutor`.
+- Secrets remain in macOS Keychain and controlled process environments. They must not enter SQLite, logs, traces, memory, or agent context.
 
-**产品主路径**
+See the [Unified Data Model](docs/AI%20Employee%20OS%20Unified%20Data%20Model%20v1.0.md) and [MVP API & Interface Specification](docs/AI%20Employee%20OS%20MVP%20API%20&%20Interface%20Specification%20v1.0.md) for the canonical contracts.
 
-- 默认员工 Alex；多员工 Profile 编辑
-- DeepSeek 多轮对话与意图路由
-- Agent / Skill / Tool Package（仓库安装）
-- Task Inspector（能力接通时）
+## Requirements
 
-**Runtime 能力（产品面逐步暴露）**
+- macOS 14 or later
+- Swift 5.10 toolchain
+- Stable Rust toolchain with `rustfmt`
+- Python 3.13
+- A DeepSeek API key for real model conversations
+- A local code-signing identity for building the app bundle
 
-- Task / Action 状态机
-- File、Document、Knowledge Tool
-- Permission、Approval、Audit
-- 基础 Trace、Evaluation、Memory
+## Quick start
 
-Computer Use、Multi-Agent、Cloud Sync、Marketplace 和实时网页抓取不在 MVP 内。
+Clone the repository:
 
-## 仓库结构
-
-```text
-apps/macos/                 Swift 客户端
-runtime/rust-core/          Rust Runtime
-runtime/python-agent/       Python Agent Worker
-contracts/                  机器可读 JSON Schema 与样例
-packages/                   Agent、Skill、Tool Package
-storage/migrations/         只追加的 SQLite Migration
-docs/                       产品与技术设计
-scripts/                    本地验证入口（check.sh 等）
-script/                     打包与分发（build_and_run.sh 等）
+```bash
+git clone https://github.com/kakarrot-dev/AI-Employee-OS.git
+cd AI-Employee-OS
 ```
 
-## 开始开发
+Create the local development signing identity once:
 
-验证门禁（Rust、Python、契约、Runtime 端到端、Swift 模型检查）：
+```bash
+./scripts/setup_local_signing_identity.sh
+```
+
+Run the complete verification gate:
 
 ```bash
 ./scripts/check.sh
 ```
 
-单独运行 Runtime 测试：
-
-```bash
-cargo test --manifest-path runtime/rust-core/Cargo.toml
-```
-
-构建并启动 macOS App（需本地 codesign 身份）：
+Build and launch the macOS app:
 
 ```bash
 ./script/build_and_run.sh
 ```
 
-UI Demo（无需真实 Runtime 数据）：
+The packaged application is written to `dist/AIEmployee.app`. Runtime data is stored under `~/Library/Application Support/AIEmployee/` and is never written into the read-only app bundle.
+
+## Configure the model
+
+1. Open Settings in the app.
+2. Save the DeepSeek API key to macOS Keychain.
+3. Open Work and select an employee, Alex is the default.
+4. Start a conversation or submit a work request.
+
+DeepSeek Chat Completions are stateless. The runtime reconstructs the ordered conversation from SQLite for every model request.
+
+## Development commands
 
 ```bash
-./script/build_and_run.sh --ui-demo
+# Full Rust, Python, contract, runtime, and Swift model checks
+./scripts/check.sh
+
+# Rust runtime tests
+cargo test --manifest-path runtime/rust-core/Cargo.toml
+
+# Build the Swift client
+swift build --package-path apps/macos/AIEmployee
+
+# Build, launch, and verify the signed app bundle
+./script/build_and_run.sh --verify
+
+# Launch deterministic UI demo data
+./script/build_and_run.sh --ui-demo office
 ```
 
-## 运行对话
+CI runs `./scripts/check.sh` on `macos-latest` for every pull request and every push to `main`.
 
-1. 通过设置页把 DeepSeek API Key 保存到 macOS Keychain。
-2. 在「工作库」选择员工（默认 Alex）对话。
-3. DeepSeek Chat Completions 无状态；Runtime 从 SQLite 重建当前 Conversation 有序消息并随每轮请求提交。
+## Repository layout
 
-## 事实源
+```text
+apps/macos/AIEmployee/     SwiftUI macOS client
+runtime/rust-core/         Rust runtime and security boundary
+runtime/python-agent/      Python agent worker
+contracts/                 Machine-readable JSON Schema contracts
+packages/                  Built-in Agent, Skill, and Tool packages
+storage/migrations/        Append-only SQLite migrations
+docs/                      Product, architecture, security, and UI documents
+scripts/                   Verification and local setup
+script/                    App packaging and distribution checks
+```
 
-- 数据模型：[Unified Data Model](./docs/AI%20Employee%20OS%20Unified%20Data%20Model%20v1.0.md)
-- 接口：[MVP API & Interface Specification](./docs/AI%20Employee%20OS%20MVP%20API%20&%20Interface%20Specification%20v1.0.md)
-- 架构决策：[ADR](./docs/AI%20Employee%20OS%20技术决策记录%20ADR（Architecture%20Decision%20Records）v1.0.md)
-- 协作与验收：[AGENTS.md](./AGENTS.md)
-- Release 1：[Decision Substrate](./docs/releases/Release%201%20Decision%20Substrate.md)
-- Release 2：[Execution and Evidence](./docs/releases/Release%202%20Execution%20and%20Evidence.md)
-- Release 3：[Agent Experience and Production](./docs/releases/Release%203%20Agent%20Experience%20and%20Production.md)
+## MVP boundaries
 
-## 安全
+The current MVP includes real conversations, employee profile editing, repository package installation, governed task execution, and task inspection.
 
-不要提交 API Key、Token、Cookie、私钥、真实用户数据或运行时数据库。所有 Tool 调用必须经 Rust Runtime 完成权限检查、审批判断、审计和幂等控制。
+The following capabilities are intentionally out of scope for the current MVP:
+
+- Computer Use
+- Multi-Agent collaboration
+- Cloud Sync
+- Marketplace distribution
+- Enterprise RBAC
+- Real-time web retrieval
+- Notarized distribution, automatic updates, and DMG packaging
+
+Runtime infrastructure for Memory, Knowledge, Evaluation, permissions, approval, and tracing exists, but not every capability is fully exposed in the product interface.
+
+## Documentation
+
+- [Architecture overview](docs/架构设计%20v1.0（产品+技术总览版）.md)
+- [Unified Data Model](docs/AI%20Employee%20OS%20Unified%20Data%20Model%20v1.0.md)
+- [MVP API & Interface Specification](docs/AI%20Employee%20OS%20MVP%20API%20&%20Interface%20Specification%20v1.0.md)
+- [Security & Permission Architecture](docs/AI%20Employee%20OS%20Security%20&%20Permission%20Architecture%20v1.0.md)
+- [Architecture Decision Records](docs/AI%20Employee%20OS%20技术决策记录%20ADR（Architecture%20Decision%20Records）v1.0.md)
+- [Claude Cream macOS UI](docs/design-system/Claude%20Cream%20macOS%20UI.md)
+- [Release 1: Decision Substrate](docs/releases/Release%201%20Decision%20Substrate.md)
+- [Release 2: Execution and Evidence](docs/releases/Release%202%20Execution%20and%20Evidence.md)
+- [Release 3: Agent Experience and Production](docs/releases/Release%203%20Agent%20Experience%20and%20Production.md)
+
+## Contributing
+
+Issues and pull requests are welcome. Before opening a pull request:
+
+1. Keep changes within the current MVP and canonical contracts.
+2. Add or update tests for deterministic behavior.
+3. Run `./scripts/check.sh`.
+4. Do not commit secrets, runtime databases, build products, or local configuration.
+
+Read [AGENTS.md](AGENTS.md) for architecture boundaries, source-of-truth order, state invariants, and verification requirements.
+
+## Security
+
+Do not report credentials or private data in a public issue. Never commit API keys, tokens, cookies, private keys, real user data, or runtime databases. All tool side effects must pass through the Rust runtime's permission, approval, audit, and idempotency controls.
+
+## License
+
+No license has been selected yet. The source is publicly visible, but no permission is currently granted to use, modify, or redistribute it. Add an explicit open-source license before treating the project as licensed open-source software.

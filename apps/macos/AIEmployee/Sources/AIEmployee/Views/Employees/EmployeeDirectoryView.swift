@@ -39,13 +39,6 @@ struct EmployeeDirectoryView: View {
         }
         .background(palette.canvas)
         .moduleNavigationTitle(.contacts)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("新建员工", systemImage: "person.badge.plus") {
-                    if demo == nil { store.create() } else { editDemoEmployee(.draft()) }
-                }
-            }
-        }
         .alert("无法完成操作", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) {
             Button("好") { store.error = nil }
         } message: { Text(store.error ?? "") }
@@ -68,14 +61,25 @@ struct EmployeeDirectoryView: View {
     private var directory: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
+                HStack(spacing: 8) {
                     Text("AI 员工").font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
+                    Text("\(employees.count)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(palette.muted)
                     Spacer()
                     if demo != nil {
                         Text("演示数据").font(.caption2.weight(.medium)).foregroundStyle(palette.warning)
                             .padding(.horizontal, 7).padding(.vertical, 3).background(palette.primary.opacity(0.10), in: Capsule())
                     }
-                    Text("\(employees.count)").font(.caption.monospacedDigit()).foregroundStyle(palette.muted)
+                    Button {
+                        if demo == nil { store.create() } else { editDemoEmployee(.draft()) }
+                    } label: {
+                        Image(systemName: "person.badge.plus")
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(palette.body)
+                    .help("新建员工")
                 }
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(palette.mutedSoft)

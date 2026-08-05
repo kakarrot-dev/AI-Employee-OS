@@ -137,7 +137,7 @@ struct ModuleToolbarTitle: View {
 
 extension View {
     func moduleNavigationTitle(_ title: String, systemImage: String) -> some View {
-        navigationTitle(title)
+        navigationTitle("")
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     ModuleToolbarTitle(title: title, systemImage: systemImage)

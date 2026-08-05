@@ -40,6 +40,8 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_CONTENTS/MacOS"
 cp "$BUILD_BINARY" "$APP_BINARY"
 cp "$ROOT_DIR/target/debug/ai-employee-runtime" "$RUNTIME_BINARY"
+mkdir -p "$APP_CONTENTS/Resources"
+cp "$ROOT_DIR/apps/macos/AIEmployee/Resources/AIEmployee.icns" "$APP_CONTENTS/Resources/AIEmployee.icns"
 mkdir -p "$RUNTIME_RESOURCES/runtime" \
   "$RUNTIME_RESOURCES/packages/agents" \
   "$RUNTIME_RESOURCES/packages/skills" \
