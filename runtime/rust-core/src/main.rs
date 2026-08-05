@@ -81,7 +81,7 @@ fn ensure_alex(connection: &mut Connection, root: &std::path::Path) -> Result<()
         .map_err(|error| format!("could not install Alex: {error:?}"))?;
     }
     connection.execute(
-        "INSERT OR IGNORE INTO employee_profiles VALUES (?1,?2,?3,?4,?5,?6,?7,1,?8,?8)",
+        "INSERT OR IGNORE INTO employee_profiles (agent_id,department,mission,responsibilities_json,boundaries_json,soul_json,base_prompt,config_version,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,1,?8,?8)",
         rusqlite::params![
             "ai-product-manager", "产品部", "把模糊需求转化为可执行的产品方案。",
             json!(["需求分析", "产品方案", "可评审文档"]).to_string(),
@@ -114,7 +114,7 @@ fn employees_list(
     }
     let mut statement = connection.prepare(
         "SELECT a.id,a.name,a.role,p.department,p.mission,p.responsibilities_json,p.boundaries_json,p.soul_json,
-                pe.communication_json,pe.thinking_json,pe.decision_json,pe.habit_json,p.base_prompt,a.status,p.config_version
+                pe.communication_json,pe.thinking_json,pe.decision_json,pe.habit_json,p.base_prompt,a.status,p.config_version,p.avatar_path
          FROM agents a JOIN employee_profiles p ON p.agent_id=a.id JOIN personas pe ON pe.agent_id=a.id
          ORDER BY CASE a.status WHEN 'active' THEN 0 ELSE 1 END, lower(a.name)"
     ).map_err(|e| e.to_string())?;
@@ -137,7 +137,8 @@ fn employee_json(row: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value>
         "role":row.get::<_,String>(2)?, "department":row.get::<_,String>(3)?, "mission":row.get::<_,String>(4)?,
         "responsibilities":parse(5)?, "boundaries":parse(6)?, "soul":parse(7)?,
         "persona":{"communication":parse(8)?,"thinking":parse(9)?,"decision":parse(10)?,"habit":parse(11)?},
-        "base_prompt":row.get::<_,String>(12)?, "status":row.get::<_,String>(13)?, "config_version":row.get::<_,i64>(14)?
+        "base_prompt":row.get::<_,String>(12)?, "status":row.get::<_,String>(13)?, "config_version":row.get::<_,i64>(14)?,
+        "avatar_path":row.get::<_,Option<String>>(15)?
     }))
 }
 
@@ -169,6 +170,7 @@ fn employee_save(arguments: impl Iterator<Item = String>) -> Result<serde_json::
     let department = required_string(&payload, "department")?;
     let mission = required_string(&payload, "mission")?;
     let base_prompt = required_string(&payload, "base_prompt")?;
+    let avatar_path = payload.get("avatar_path").and_then(|value| value.as_str());
     let status = payload
         .get("status")
         .and_then(|v| v.as_str())
@@ -200,7 +202,7 @@ fn employee_save(arguments: impl Iterator<Item = String>) -> Result<serde_json::
     let tx = connection.transaction().map_err(|e| e.to_string())?;
     tx.execute("INSERT INTO agents VALUES (?1,?2,?3,'user-managed',?4,?5,?5) ON CONFLICT(id) DO UPDATE SET name=?2,role=?3,status=?4,updated_at=?5", rusqlite::params![id,name,role,status,stamp]).map_err(|e| e.to_string())?;
     tx.execute("INSERT INTO personas VALUES (?1,?2,?3,?4,?5,?6,?6) ON CONFLICT(agent_id) DO UPDATE SET communication_json=?2,thinking_json=?3,decision_json=?4,habit_json=?5,updated_at=?6", rusqlite::params![id,persona_json("communication")?,persona_json("thinking")?,persona_json("decision")?,persona_json("habit")?,stamp]).map_err(|e| e.to_string())?;
-    tx.execute("INSERT INTO employee_profiles VALUES (?1,?2,?3,?4,?5,?6,?7,1,?8,?8) ON CONFLICT(agent_id) DO UPDATE SET department=?2,mission=?3,responsibilities_json=?4,boundaries_json=?5,soul_json=?6,base_prompt=?7,config_version=config_version+1,updated_at=?8", rusqlite::params![id,department,mission,array_json("responsibilities")?,array_json("boundaries")?,array_json("soul")?,base_prompt,stamp]).map_err(|e| e.to_string())?;
+    tx.execute("INSERT INTO employee_profiles (agent_id,department,mission,responsibilities_json,boundaries_json,soul_json,base_prompt,config_version,created_at,updated_at,avatar_path) VALUES (?1,?2,?3,?4,?5,?6,?7,1,?8,?8,?9) ON CONFLICT(agent_id) DO UPDATE SET department=?2,mission=?3,responsibilities_json=?4,boundaries_json=?5,soul_json=?6,base_prompt=?7,avatar_path=?9,config_version=config_version+1,updated_at=?8", rusqlite::params![id,department,mission,array_json("responsibilities")?,array_json("boundaries")?,array_json("soul")?,base_prompt,stamp,avatar_path]).map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
     Ok(json!({"schema_version":"1.0","id":id,"saved":true}))
 }

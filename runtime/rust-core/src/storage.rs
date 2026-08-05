@@ -16,7 +16,8 @@ pub const MIGRATION_007: &str =
 pub const MIGRATION_008: &str = include_str!("../../../storage/migrations/008_conversations.sql");
 pub const MIGRATION_009: &str =
     include_str!("../../../storage/migrations/009_employee_profiles.sql");
-const LATEST_SCHEMA_VERSION: i64 = 9;
+pub const MIGRATION_010: &str = include_str!("../../../storage/migrations/010_employee_avatar.sql");
+const LATEST_SCHEMA_VERSION: i64 = 10;
 
 pub fn migrate(connection: &mut Connection) -> Result<()> {
     connection.busy_timeout(Duration::from_secs(5))?;
@@ -52,6 +53,9 @@ pub fn migrate(connection: &mut Connection) -> Result<()> {
     }
     if current < 9 {
         transaction.execute_batch(MIGRATION_009)?;
+    }
+    if current < 10 {
+        transaction.execute_batch(MIGRATION_010)?;
     }
     transaction.commit()
 }
@@ -105,7 +109,7 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(migration_count, 9);
+        assert_eq!(migration_count, 10);
     }
 
     #[test]

@@ -16,25 +16,39 @@ struct ContentView: View {
     }
 
     var body: some View {
-        AppShellView(
-            selection: destination,
-            store: store,
-            conversationStore: conversationStore,
-            employeeStore: employeeStore,
-            newWork: { beginWork() }
-        ) {
-            workspace
-        }
-        .tint(AppTheme.palette(for: colorScheme).primary)
-        .sheet(isPresented: $store.isCommandPalettePresented) {
-            CommandPaletteView(
-                navigate: { destination.wrappedValue = $0 },
-                newWork: { beginWork() },
-                openSettings: { destination.wrappedValue = .settings }
-            )
-        }
-        .sheet(isPresented: $employeeStore.isPresentingEditor) {
-            if let employee = employeeStore.editingEmployee { EmployeeEditorView(employee: employee, store: employeeStore) }
+        ZStack {
+            AppShellView(
+                selection: destination,
+                store: store,
+                conversationStore: conversationStore,
+                employeeStore: employeeStore,
+                newWork: { beginWork() }
+            ) {
+                workspace
+            }
+            .tint(AppTheme.palette(for: colorScheme).primary)
+
+            if store.isCommandPalettePresented {
+                CreamModalOverlay(close: { store.isCommandPalettePresented = false }, preferredWidth: 640, preferredHeight: 420) {
+                    CommandPaletteView(
+                        navigate: { destination.wrappedValue = $0 },
+                        newWork: { beginWork() },
+                        openSettings: { destination.wrappedValue = .settings },
+                        close: { store.isCommandPalettePresented = false }
+                    )
+                }
+            }
+
+            if employeeStore.isPresentingEditor, let employee = employeeStore.editingEmployee {
+                CreamModalOverlay(close: { employeeStore.isPresentingEditor = false }, preferredWidth: 820, preferredHeight: 660) {
+                    EmployeeEditorView(
+                        employee: employee,
+                        store: employeeStore,
+                        isDemo: false,
+                        close: { employeeStore.isPresentingEditor = false }
+                    )
+                }
+            }
         }
         .onChange(of: employeeStore.selection) { _, _ in
             if let employee = employeeStore.selected { conversationStore.select(employee: employee) }

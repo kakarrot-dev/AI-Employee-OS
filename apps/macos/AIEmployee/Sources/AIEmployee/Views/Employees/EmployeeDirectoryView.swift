@@ -1,82 +1,48 @@
 import SwiftUI
+import AppKit
 
 struct EmployeeDirectoryView: View {
     @ObservedObject var store: EmployeeStore
     let openChat: (Employee) -> Void
+    @State private var query = ""
+    @State private var compactShowsProfile = false
     @State private var confirmingRemoval: Employee?
+    @State private var demoEditorEmployee: Employee?
     @Environment(\.colorScheme) private var colorScheme
 
+    private var demo: ContactsDemoData? { ContactsDemoData.current }
+    private var employees: [Employee] { demo?.employees ?? store.employees }
+    private var selectedEmployee: Employee? {
+        employees.first { $0.id == store.selection } ?? employees.first
+    }
+
     var body: some View {
-        Group {
-            if store.isLoading {
-                ProgressView("正在读取员工…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let employee = store.selected {
-                EmployeeDetailView(employee: employee, store: store, openChat: { openChat(employee) })
+        GeometryReader { proxy in
+            if proxy.size.width >= 760 {
+                HStack(spacing: 0) {
+                    directory
+                        .frame(width: min(280, max(232, proxy.size.width * 0.28)))
+                    Divider().overlay(palette.hairlineSoft)
+                    workspace(compact: false)
+                }
+            } else if compactShowsProfile, store.selected != nil {
+                workspace(compact: true)
             } else {
-                EmployeeDirectoryEmptyView(create: store.create)
+                directory
             }
         }
         .background(palette.canvas)
         .navigationTitle("通讯录")
         .toolbar {
-            ToolbarItem(placement: .primaryAction) { Button("新建员工", systemImage: "person.badge.plus", action: store.create) }
-        }
-        .alert("无法完成操作", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) { Button("好") { store.error = nil } } message: { Text(store.error ?? "") }
-        .confirmationDialog("停用或删除 \(confirmingRemoval?.name ?? "员工")？", isPresented: Binding(get: { confirmingRemoval != nil }, set: { if !$0 { confirmingRemoval = nil } })) {
-            Button("继续", role: .destructive) { if let employee = confirmingRemoval { Task { await store.remove(employee) } }; confirmingRemoval = nil }
-            Button("取消", role: .cancel) { confirmingRemoval = nil }
-        } message: { Text("没有历史记录时会删除；存在对话或任务记录时只会停用，以保留证据。") }
-    }
-
-    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
-}
-
-struct EmployeeDirectorySidebar: View {
-    @ObservedObject var store: EmployeeStore
-    @State private var query = ""
-    @State private var confirmingRemoval: Employee?
-    @Environment(\.colorScheme) private var colorScheme
-
-    private var filtered: [Employee] {
-        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !needle.isEmpty else { return store.employees }
-        return store.employees.filter { [$0.name, $0.role, $0.department].contains { $0.localizedCaseInsensitiveContains(needle) } }
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(palette.mutedSoft)
-                TextField("搜索员工", text: $query).textFieldStyle(.plain)
-            }
-            .padding(.horizontal, 12)
-            .frame(height: 36)
-            .background(palette.canvas.opacity(0.68), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-
-            if filtered.isEmpty {
-                ContentUnavailableView("没有员工", systemImage: "person.2", description: Text("新建一名员工，配置身份和工作边界。"))
-            } else {
-                List(selection: $store.selection) {
-                    ForEach(Dictionary(grouping: filtered, by: \.department).keys.sorted(), id: \.self) { department in
-                        Section(department) {
-                            ForEach(filtered.filter { $0.department == department }) { employee in
-                                EmployeeContextRow(employee: employee)
-                                    .tag(employee.id)
-                                    .contextMenu {
-                                        Button("编辑") { store.edit(employee) }
-                                        Divider()
-                                        Button(employee.status == "active" ? "停用或删除" : "删除", role: .destructive) { confirmingRemoval = employee }
-                                    }
-                            }
-                        }
-                    }
+            ToolbarItem(placement: .primaryAction) {
+                Button("新建员工", systemImage: "person.badge.plus") {
+                    if demo == nil { store.create() } else { demoEditorEmployee = .draft() }
                 }
-                .listStyle(.sidebar)
             }
         }
+        .alert("无法完成操作", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) {
+            Button("好") { store.error = nil }
+        } message: { Text(store.error ?? "") }
         .confirmationDialog("停用或删除 \(confirmingRemoval?.name ?? "员工")？", isPresented: Binding(get: { confirmingRemoval != nil }, set: { if !$0 { confirmingRemoval = nil } })) {
             Button("继续", role: .destructive) {
                 if let employee = confirmingRemoval { Task { await store.remove(employee) } }
@@ -86,84 +52,464 @@ struct EmployeeDirectorySidebar: View {
         } message: {
             Text("没有历史记录时会删除；存在对话或任务记录时只会停用，以保留证据。")
         }
+        .onAppear {
+            if let demo, !demo.employees.contains(where: { $0.id == store.selection }) {
+                store.selection = demo.employees.first?.id
+            }
+        }
+        .overlay {
+            if let employee = demoEditorEmployee {
+                CreamModalOverlay(close: { demoEditorEmployee = nil }, preferredWidth: 820, preferredHeight: 660) {
+                    EmployeeEditorView(employee: employee, store: store, isDemo: true, close: { demoEditorEmployee = nil })
+                }
+            }
+        }
     }
 
+    private var directory: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("AI 员工").font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
+                    Spacer()
+                    if demo != nil {
+                        Text("演示数据").font(.caption2.weight(.medium)).foregroundStyle(palette.warning)
+                            .padding(.horizontal, 7).padding(.vertical, 3).background(palette.primary.opacity(0.10), in: Capsule())
+                    }
+                    Text("\(employees.count)").font(.caption.monospacedDigit()).foregroundStyle(palette.muted)
+                }
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(palette.mutedSoft)
+                    TextField("搜索姓名、岗位或部门", text: $query).textFieldStyle(.plain)
+                }
+                .padding(.horizontal, 11).frame(height: 34)
+                .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: 9).stroke(palette.hairlineSoft) }
+            }
+            .padding(16)
+
+            Divider().overlay(palette.hairlineSoft)
+
+            if store.isLoading && demo == nil {
+                ProgressView("正在读取员工…").frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if filteredEmployees.isEmpty {
+                ContentUnavailableView(query.isEmpty ? "还没有 AI 员工" : "没有匹配的员工", systemImage: "person.2", description: Text(query.isEmpty ? "创建员工后，会在这里管理他的 Profile。" : "尝试其他姓名、岗位或部门。"))
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 18) {
+                        ForEach(departments, id: \.self) { department in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(department).font(.caption.weight(.semibold)).foregroundStyle(palette.muted).padding(.horizontal, 16)
+                                ForEach(filteredEmployees.filter { $0.department == department }) { employee in
+                                    employeeRow(employee)
+                                }
+                            }
+                        }
+                    }.padding(.vertical, 14)
+                }
+            }
+        }
+        .background(palette.surfaceSoft)
+    }
+
+    private func employeeRow(_ employee: Employee) -> some View {
+        Button {
+            store.selection = employee.id
+            compactShowsProfile = true
+        } label: {
+            HStack(spacing: 11) {
+                EmployeeAvatar(name: employee.name, avatarPath: employee.avatarPath, size: 36)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(employee.name).font(.callout.weight(.semibold)).foregroundStyle(palette.ink)
+                        if employee.status != "active" { Text("已停用").font(.caption2).foregroundStyle(palette.muted) }
+                    }
+                    Text(employee.role).font(.caption).foregroundStyle(palette.muted).lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                Circle().fill(employee.status == "active" ? palette.success : palette.mutedSoft).frame(width: 7, height: 7)
+            }
+            .padding(.horizontal, 12).frame(height: 56)
+            .background(store.selection == employee.id ? palette.primary.opacity(0.11) : .clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).padding(.horizontal, 8)
+        .contextMenu {
+            if demo == nil {
+                Button("编辑资料") { store.edit(employee) }
+                Button("开始对话") { openChat(employee) }
+                Divider()
+                Button(employee.status == "active" ? "停用或删除" : "删除", role: .destructive) { confirmingRemoval = employee }
+            } else {
+                Text("演示数据不可修改")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func workspace(compact: Bool) -> some View {
+        if let employee = selectedEmployee {
+            EmployeeProfileView(
+                employee: employee,
+                store: store,
+                capabilityProfile: demo?.capabilities[employee.id] ?? .empty,
+                isDemo: demo != nil,
+                compact: compact,
+                back: { compactShowsProfile = false },
+                edit: {
+                    if demo == nil { store.edit(employee) } else { demoEditorEmployee = employee }
+                },
+                openChat: { if demo == nil { openChat(employee) } }
+            )
+        } else {
+            ContentUnavailableView {
+                Label("AI 员工 Profile", systemImage: "person.text.rectangle")
+            } description: {
+                Text("选择一名员工，查看 Identity、Soul、能力与权限。")
+            } actions: {
+                Button("新建 AI 员工", action: store.create).buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    private var filteredEmployees: [Employee] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return employees }
+        return employees.filter { [$0.name, $0.role, $0.department].contains { $0.localizedCaseInsensitiveContains(needle) } }
+    }
+    private var departments: [String] { Array(Set(filteredEmployees.map(\.department))).sorted() }
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
-private struct EmployeeDirectoryEmptyView: View {
-    let create: () -> Void
+struct EmployeeDirectorySidebar: View {
+    @ObservedObject var store: EmployeeStore
+    var body: some View { EmptyView() }
+}
 
-    var body: some View {
-        ContentUnavailableView {
-            Label("AI 员工通讯录", systemImage: "person.2")
-        } description: {
-            Text("从左侧选择一名员工，查看职责、能力和工作边界。")
-        } actions: {
-            Button("新建 AI 员工", action: create).buttonStyle(.borderedProminent)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+private enum EmployeeProfileTab: String, CaseIterable, Identifiable {
+    case identity, soul, capabilities
+    var id: String { rawValue }
+    var title: String {
+        switch self { case .identity: "身份"; case .soul: "灵魂"; case .capabilities: "能力与权限" }
     }
 }
 
-private struct EmployeeDetailView: View {
+private struct EmployeeProfileView: View {
     let employee: Employee
     @ObservedObject var store: EmployeeStore
+    let capabilityProfile: EmployeeCapabilityProfile
+    let isDemo: Bool
+    let compact: Bool
+    let back: () -> Void
+    let edit: () -> Void
     let openChat: () -> Void
-    @State private var prompt: EffectivePromptResponse?
-    @State private var showsPrompt = false
+    @State private var tab: EmployeeProfileTab = .identity
+    @State private var capabilityPicker: CapabilityPickerKind?
+    @State private var hiddenCapabilityIDs: Set<String> = []
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
-                HStack(alignment: .top, spacing: AppTheme.Spacing.md) {
-                    Circle().fill(palette.primary.opacity(0.14)).frame(width: 56, height: 56).overlay { Text(employee.name.prefix(1)).font(.title2.weight(.semibold)).foregroundStyle(palette.primaryActive) }
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(employee.name).font(.largeTitle.weight(.semibold)).foregroundStyle(palette.ink)
-                        Text("\(employee.role) · \(employee.department)").foregroundStyle(palette.muted)
-                    }
+        VStack(spacing: 0) {
+            if compact {
+                HStack {
+                    Button(action: back) { Label("员工", systemImage: "chevron.left") }.buttonStyle(.plain)
                     Spacer()
-                    Button("编辑") { store.edit(employee) }
-                    Button("开始对话", action: openChat).buttonStyle(.borderedProminent)
-                }
+                }.padding(.horizontal, 20).frame(height: 44)
                 Divider().overlay(palette.hairlineSoft)
-                detailSection("使命") { Text(employee.mission).font(.title3).foregroundStyle(palette.body).textSelection(.enabled) }
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: AppTheme.Spacing.xxl) {
-                        detailSection("职责") { bulletList(employee.responsibilities) }
-                        detailSection("工作边界") { bulletList(employee.boundaries) }
-                    }
-                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
-                        detailSection("职责") { bulletList(employee.responsibilities) }
-                        detailSection("工作边界") { bulletList(employee.boundaries) }
-                    }
-                }
-                detailSection("Soul") { bulletList(employee.soul) }
-                detailSection("Persona") {
-                    LabeledContent("沟通", value: employee.persona.communication.style)
-                    LabeledContent("语气", value: employee.persona.communication.tone)
-                    LabeledContent("思考", value: employee.persona.thinking.approach)
-                    LabeledContent("输出", value: employee.persona.habit.outputFormat)
-                }
-                detailSection("能力基线") {
-                    HStack { Label("Skills 0", systemImage: "sparkles"); Label("Tools 0", systemImage: "wrench.and.screwdriver") }.foregroundStyle(palette.muted)
-                    Text("当前员工只使用 Identity、Soul、Persona 与基础 Prompt，适合作为能力增强实验的基线。").font(.caption).foregroundStyle(palette.muted)
-                }
-                DisclosureGroup("Effective Prompt · v\(employee.configVersion)", isExpanded: $showsPrompt) {
-                    Group {
-                        if let prompt { Text(prompt.prompt).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
-                        else { ProgressView().controlSize(.small) }
-                    }.padding(.top, AppTheme.Spacing.sm)
-                }
-                .onChange(of: showsPrompt) { _, expanded in if expanded && prompt == nil { Task { prompt = try? await store.effectivePrompt(for: employee.id) } } }
             }
-            .frame(maxWidth: 820, alignment: .leading)
-            .padding(AppTheme.Spacing.xl)
-        }.background(palette.canvas)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    profileHeader
+                    CreamTabBar(items: EmployeeProfileTab.allCases, selection: $tab, title: \.title)
+                        .frame(maxWidth: 600)
+
+                    switch tab {
+                    case .identity: promptPage(title: "身份提示词", detail: "定义这名 AI 员工是谁、负责什么，以及必须遵守的工作边界。", markdown: employee.basePrompt)
+                    case .soul: promptPage(title: "灵魂提示词", detail: "定义思考、判断、沟通与行动方式。", markdown: employee.soul.joined(separator: "\n\n"))
+                    case .capabilities: capabilityPage
+                    }
+                }
+                .frame(maxWidth: 900, alignment: .leading)
+                .padding(.horizontal, compact ? 20 : 36).padding(.vertical, compact ? 24 : 36)
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .background(palette.canvas)
+        .overlay {
+            if let kind = capabilityPicker {
+                CreamModalOverlay(close: { capabilityPicker = nil }, preferredWidth: 680, preferredHeight: 620) {
+                    CapabilityPickerSheet(
+                        kind: kind,
+                        employeeName: employee.name,
+                        items: kind == .skill ? capabilityProfile.skillCatalog : capabilityProfile.toolCatalog,
+                        initiallySelected: Set((kind == .skill ? capabilityProfile.selectedSkills : capabilityProfile.selectedTools).map(\.id)),
+                        isDemo: isDemo,
+                        close: { capabilityPicker = nil }
+                    )
+                }
+            }
+        }
     }
 
-    private func detailSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View { VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) { Text(title).font(.headline).foregroundStyle(palette.ink); content() }.frame(maxWidth: .infinity, alignment: .leading) }
-    private func bulletList(_ values: [String]) -> some View { VStack(alignment: .leading, spacing: 7) { ForEach(values, id: \.self) { Text("•  \($0)").foregroundStyle(palette.body) }; if values.isEmpty { Text("未配置").foregroundStyle(palette.muted) } } }
+    private var profileHeader: some View {
+        HStack(alignment: .top, spacing: 16) {
+            EmployeeAvatar(name: employee.name, avatarPath: employee.avatarPath, size: compact ? 52 : 64)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 9) {
+                    Text(employee.name).font(.system(size: compact ? 25 : 30, weight: .semibold, design: .rounded)).foregroundStyle(palette.ink)
+                    Text(employee.status == "active" ? "启用" : "停用")
+                        .font(.caption.weight(.medium)).foregroundStyle(employee.status == "active" ? palette.success : palette.muted)
+                        .padding(.horizontal, 8).padding(.vertical, 3).background(palette.surfaceSoft, in: Capsule())
+                }
+                Text("\(employee.role) · \(employee.department)").font(.callout).foregroundStyle(palette.muted)
+            }
+            Spacer(minLength: 8)
+            if !compact {
+                Button("编辑资料", action: edit).buttonStyle(CreamSecondaryButtonStyle())
+                Button("开始对话", action: openChat).buttonStyle(CreamPrimaryButtonStyle()).disabled(isDemo)
+            }
+            else { Menu { Button("编辑资料", action: edit); Button("开始对话", action: openChat).disabled(isDemo) } label: { Image(systemName: "ellipsis.circle") } }
+        }
+    }
+
+    private func promptPage(title: String, detail: String, markdown: String) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 5) { Text(title).font(.title2.weight(.semibold)).foregroundStyle(palette.ink); Text(detail).font(.callout).foregroundStyle(palette.muted) }
+            MarkdownDocumentView(source: markdown)
+        }
+    }
+
+    private var capabilityPage: some View {
+        VStack(alignment: .leading, spacing: 30) {
+            capabilitySection(title: "技能", description: "来自技能库，定义员工可以采用的工作流程。", items: capabilityProfile.selectedSkills.filter { !hiddenCapabilityIDs.contains($0.id) }, add: { capabilityPicker = .skill })
+            capabilitySection(title: "工具", description: "来自工具库，定义员工可以请求调用的能力。", items: capabilityProfile.selectedTools.filter { !hiddenCapabilityIDs.contains($0.id) }, add: { capabilityPicker = .tool })
+            permissionSection
+        }
+    }
+
+    private func capabilitySection(title: String, description: String, items: [EmployeeCapabilityItem], add: @escaping () -> Void) -> some View {
+        profileSection(title) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text(description).font(.callout).foregroundStyle(palette.muted)
+                    Spacer()
+                    Button(action: add) { Label("添加\(title)", systemImage: "plus") }.buttonStyle(CreamSecondaryButtonStyle())
+                }
+                if items.isEmpty {
+                    HStack(spacing: 12) {
+                        Image(systemName: title == "技能" ? "sparkles" : "wrench.and.screwdriver").foregroundStyle(palette.primaryActive)
+                        Text("尚未选择\(title)").font(.callout).foregroundStyle(palette.body)
+                    }.padding(.vertical, 10)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                            capabilityRow(item) { hiddenCapabilityIDs.insert(item.id) }
+                            if index < items.count - 1 { Divider().overlay(palette.hairlineSoft) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func capabilityRow(_ item: EmployeeCapabilityItem, remove: @escaping () -> Void) -> some View {
+        CapabilityProfileRow(item: item, remove: remove)
+    }
+
+    private struct CapabilityProfileRow: View {
+        let item: EmployeeCapabilityItem
+        let remove: () -> Void
+        @State private var isHovering = false
+        @State private var isConfirmingRemoval = false
+        @Environment(\.colorScheme) private var colorScheme
+        var body: some View { HStack(spacing: 12) {
+            Image(systemName: item.kind == .skill ? "sparkles" : "wrench.and.screwdriver").foregroundStyle(palette.primaryActive).frame(width: 22)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 7) { Text(item.name).font(.callout.weight(.semibold)).foregroundStyle(palette.ink); Text("v\(item.version)").font(.caption.monospaced()).foregroundStyle(palette.muted) }
+                Text(item.detail).font(.caption).foregroundStyle(palette.muted).lineLimit(2)
+                Text(item.metadata).font(.caption2).foregroundStyle(palette.mutedSoft)
+            }
+            Spacer()
+            Button {
+                if isConfirmingRemoval { remove() }
+                else { withAnimation(.easeInOut(duration: AppTheme.Motion.fast)) { isConfirmingRemoval = true } }
+            } label: {
+                Group {
+                    if isConfirmingRemoval {
+                        Label("确认移除", systemImage: "trash")
+                            .font(.caption.weight(.semibold)).padding(.horizontal, 9).frame(height: 26)
+                    } else {
+                        Image(systemName: "trash").font(.system(size: 10, weight: .semibold)).frame(width: 26, height: 26)
+                    }
+                }
+                .foregroundStyle(palette.error)
+                .background(palette.error.opacity(isConfirmingRemoval ? 0.14 : 0.08), in: RoundedRectangle(cornerRadius: 7))
+            }
+            .buttonStyle(.plain)
+            .opacity(isHovering || isConfirmingRemoval ? 1 : 0)
+            .help(isConfirmingRemoval ? "再次点击确认移除" : "移除")
+        }
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovering = hovering
+            if !hovering { isConfirmingRemoval = false }
+        } }
+        private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+    }
+
+    private var permissionSection: some View {
+        profileSection("权限") {
+            if capabilityProfile.permissions.isEmpty {
+                Label("尚无可配置权限", systemImage: "lock.shield").foregroundStyle(palette.body).padding(.vertical, 10)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(capabilityProfile.permissions.enumerated()), id: \.element.id) { index, permission in
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "lock.shield").foregroundStyle(palette.primaryActive).frame(width: 22)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(permission.name).font(.callout.weight(.semibold)).foregroundStyle(palette.ink)
+                                Text("\(permission.resource) · 来源：\(permission.source)").font(.caption).foregroundStyle(palette.muted)
+                                if let confirmation = permission.confirmation { Text("执行确认：\(confirmation)").font(.caption2).foregroundStyle(palette.mutedSoft) }
+                            }
+                            Spacer()
+                            Text(permission.effect).font(.caption.weight(.semibold)).foregroundStyle(permission.effect == "允许" ? palette.success : palette.error)
+                        }.padding(.vertical, 12)
+                        if index < capabilityProfile.permissions.count - 1 { Divider().overlay(palette.hairlineSoft) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func profileSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View { VStack(alignment: .leading, spacing: 12) { Text(title).font(.headline).foregroundStyle(palette.ink); content() }.frame(maxWidth: .infinity, alignment: .leading) }
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+struct EmployeeAvatar: View {
+    let name: String
+    var avatarPath: String? = nil
+    let size: CGFloat
+    @Environment(\.colorScheme) private var colorScheme
+    var body: some View {
+        Group {
+            if let avatarPath, let image = NSImage(contentsOfFile: avatarPath) {
+                Image(nsImage: image).resizable().scaledToFill()
+            } else {
+                Text(String(name.prefix(1)).uppercased()).font(.system(size: size * 0.34, weight: .semibold)).foregroundStyle(palette.primaryActive)
+            }
+        }
+        .frame(width: size, height: size)
+        .background(palette.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: size * 0.28).stroke(palette.primary.opacity(0.12)) }
+    }
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private enum CapabilityPickerKind: String, Identifiable {
+    case skill, tool
+    var id: String { rawValue }
+    var title: String { self == .skill ? "添加技能" : "添加工具" }
+    var emptyTitle: String { self == .skill ? "技能库中还没有可用技能" : "工具库中还没有可用工具" }
+    var icon: String { self == .skill ? "sparkles" : "wrench.and.screwdriver" }
+}
+
+private struct CapabilityPickerSheet: View {
+    let kind: CapabilityPickerKind
+    let employeeName: String
+    let items: [EmployeeCapabilityItem]
+    let isDemo: Bool
+    let close: () -> Void
+    @State private var selectedIDs: Set<String>
+    @State private var query = ""
+    @Environment(\.colorScheme) private var colorScheme
+
+    init(kind: CapabilityPickerKind, employeeName: String, items: [EmployeeCapabilityItem], initiallySelected: Set<String>, isDemo: Bool, close: @escaping () -> Void) {
+        self.kind = kind
+        self.employeeName = employeeName
+        self.items = items
+        self.isDemo = isDemo
+        self.close = close
+        _selectedIDs = State(initialValue: initiallySelected)
+    }
+
+    private var filteredItems: [EmployeeCapabilityItem] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return needle.isEmpty ? items : items.filter { $0.name.localizedCaseInsensitiveContains(needle) || $0.detail.localizedCaseInsensitiveContains(needle) }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack { VStack(alignment: .leading, spacing: 3) { Text(kind.title).font(.title2.weight(.semibold)); Text("为 \(employeeName) 选择，保存后显示在 Profile 中").font(.caption).foregroundStyle(palette.muted) }; Spacer() }.padding(20)
+            Divider().overlay(palette.hairlineSoft)
+            HStack { Image(systemName: "magnifyingglass"); TextField(kind == .skill ? "搜索技能库" : "搜索工具库", text: $query).textFieldStyle(.plain) }.foregroundStyle(palette.muted).padding(.horizontal, 12).frame(height: 36).background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: 9)).padding(16)
+            if filteredItems.isEmpty {
+                ContentUnavailableView(kind.emptyTitle, systemImage: kind.icon, description: Text("安装并启用后，目录内容会出现在这里。"))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(filteredItems) { item in
+                            Button {
+                                guard item.isAvailable else { return }
+                                if selectedIDs.contains(item.id) { selectedIDs.remove(item.id) } else { selectedIDs.insert(item.id) }
+                            } label: {
+                                HStack(alignment: .top, spacing: 12) {
+                                    Image(systemName: selectedIDs.contains(item.id) ? "checkmark.square.fill" : "square")
+                                        .foregroundStyle(item.isAvailable ? palette.primaryActive : palette.mutedSoft).font(.system(size: 16))
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        HStack { Text(item.name).font(.callout.weight(.semibold)).foregroundStyle(palette.ink); Text("v\(item.version)").font(.caption.monospaced()).foregroundStyle(palette.muted); Spacer(); if !item.isAvailable { Text("不可用").font(.caption).foregroundStyle(palette.error) } }
+                                        Text(item.detail).font(.caption).foregroundStyle(palette.muted).lineLimit(2)
+                                        Text(item.metadata).font(.caption2).foregroundStyle(palette.mutedSoft)
+                                    }
+                                }.padding(.horizontal, 18).padding(.vertical, 12).contentShape(Rectangle())
+                            }.buttonStyle(.plain).disabled(!item.isAvailable)
+                            Divider().overlay(palette.hairlineSoft).padding(.leading, 46)
+                        }
+                    }
+                }
+            }
+            Divider().overlay(palette.hairlineSoft)
+            HStack {
+                if isDemo { Text("演示模式不会保存选择").font(.caption).foregroundStyle(palette.warning) }
+                Spacer()
+                Button("取消", action: close).buttonStyle(CreamSecondaryButtonStyle())
+                Button("添加 \(selectedIDs.count) 项", action: close).buttonStyle(CreamPrimaryButtonStyle()).disabled(items.isEmpty || isDemo)
+            }.padding(16)
+        }
+        .frame(minWidth: 520, idealWidth: 680, minHeight: 420, idealHeight: 620)
+        .background(palette.canvas)
+    }
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+struct MarkdownDocumentView: View {
+    let source: String
+    @Environment(\.colorScheme) private var colorScheme
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(MarkdownBlock.parse(source).enumerated()), id: \.offset) { _, block in
+                blockView(block)
+            }
+        }
+        .frame(maxWidth: 720, alignment: .leading).padding(20)
+        .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.xl).stroke(palette.hairlineSoft) }
+        .textSelection(.enabled)
+    }
+    @ViewBuilder private func blockView(_ block: MarkdownBlock) -> some View {
+        switch block {
+        case .heading(let level, let text): Text(text).font(level == 1 ? .title2.weight(.semibold) : level == 2 ? .title3.weight(.semibold) : .headline).foregroundStyle(palette.ink).padding(.top, level == 1 ? 4 : 8)
+        case .paragraph(let text): Text(inline(text)).foregroundStyle(palette.body).lineSpacing(3)
+        case .bullet(let text): Label { Text(inline(text)).foregroundStyle(palette.body) } icon: { Image(systemName: "circle.fill").font(.system(size: 5)).foregroundStyle(palette.primaryActive) }
+        case .numbered(let text): Text(inline(text)).foregroundStyle(palette.body)
+        case .quote(let text): Text(inline(text)).foregroundStyle(palette.muted).padding(.leading, 12).overlay(alignment: .leading) { Rectangle().fill(palette.primary.opacity(0.4)).frame(width: 2) }
+        case .code(let text): Text(text).font(.system(.caption, design: .monospaced)).foregroundStyle(palette.body).padding(12).frame(maxWidth: .infinity, alignment: .leading).background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: 8))
+        case .divider: Divider().overlay(palette.hairline)
+        case .spacing: Color.clear.frame(height: 4)
+        }
+    }
+    private func inline(_ text: String) -> AttributedString { (try? AttributedString(markdown: text)) ?? AttributedString(text) }
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }

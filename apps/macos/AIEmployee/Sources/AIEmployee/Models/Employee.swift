@@ -34,17 +34,18 @@ struct Employee: Codable, Identifiable, Sendable {
     var soul: [String]
     var persona: EmployeePersona
     var basePrompt: String
+    var avatarPath: String?
     var status: String
     var configVersion: Int
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version", id, name, role, department, mission, responsibilities, boundaries, soul, persona
-        case basePrompt = "base_prompt", status
+        case basePrompt = "base_prompt", avatarPath = "avatar_path", status
         case configVersion = "config_version"
     }
 
     static func draft() -> Employee {
-        Employee(schemaVersion: "1.0", id: "", name: "", role: "", department: "", mission: "", responsibilities: [], boundaries: [], soul: [], persona: .init(), basePrompt: "可靠、直接地协助用户完成工作。", status: "active", configVersion: 1)
+        Employee(schemaVersion: "1.0", id: "", name: "", role: "", department: "", mission: "", responsibilities: [], boundaries: [], soul: [], persona: .init(), basePrompt: "可靠、直接地协助用户完成工作。", avatarPath: nil, status: "active", configVersion: 1)
     }
 }
 

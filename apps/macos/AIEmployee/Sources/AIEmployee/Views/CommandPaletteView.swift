@@ -4,8 +4,8 @@ struct CommandPaletteView: View {
     let navigate: (AppDestination) -> Void
     let newWork: () -> Void
     let openSettings: () -> Void
+    let close: () -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @FocusState private var searchFocused: Bool
 
@@ -75,17 +75,17 @@ struct CommandPaletteView: View {
     private func destination(_ title: String, _ subtitle: String, _ image: String, _ destination: AppDestination) -> PaletteCommand {
         PaletteCommand(title: title, subtitle: subtitle, image: image) {
             navigate(destination)
-            dismiss()
+            close()
         }
     }
 
     private func newTask() {
         newWork()
-        dismiss()
+        close()
     }
 
     private func settings() {
-        dismiss()
+        close()
         openSettings()
     }
 }
