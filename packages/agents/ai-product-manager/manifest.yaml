@@ -7,7 +7,15 @@ agent:
   description: 帮助用户完成需求分析、产品设计和 PRD 工作。
   status: active
   persona: persona/persona.yaml
-  skills: []
-  tools: []
-  memory_enabled: false
-  evaluation_enabled: false
+  skills:
+    - id: requirement-analysis
+      version: 1.0.0
+    - id: prd-generation
+      version: 1.0.0
+  tools:
+    - id: file-tool
+      version: 1.0.0
+    - id: document-tool
+      version: 1.0.0
+  memory_enabled: true
+  evaluation_enabled: true

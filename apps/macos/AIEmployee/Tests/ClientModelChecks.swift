@@ -36,6 +36,7 @@ enum ClientModelChecks {
         )
         let blocked = TaskRun(
             id: "task-1",
+            agentID: "ai-product-manager",
             input: "生成 PRD",
             createdAt: "2026-08-05T00:00:00Z",
             status: .running,
@@ -53,8 +54,14 @@ enum ClientModelChecks {
         )
         let employee = Employee.draft()
         expect(employee.schemaVersion == "1.0" && employee.status == "active", "employee draft uses canonical defaults")
+        expect(employee.persona.thinking.approach == "user_value_first", "persona defaults match Alex package")
         let encoded = try! JSONEncoder().encode(employee)
         expect((try? JSONDecoder().decode(Employee.self, from: encoded))?.basePrompt == employee.basePrompt, "employee contract round trip")
+        let chatSend = """
+        {"schema_version":"1.0","conversation_id":"c1","employee_id":"ai-product-manager","config_version":2,"message":{"id":"m1","role":"assistant","content":"你好","created_at":"2026-08-05T00:00:00Z"}}
+        """.data(using: .utf8)!
+        let decodedSend = try! JSONDecoder().decode(ChatSendResponse.self, from: chatSend)
+        expect(decodedSend.employeeID == "ai-product-manager" && decodedSend.configVersion == 2, "chat-send response includes employee and config version")
         expect(
             AppDestination.allCases == [.office, .contacts, .work, .skills, .tools, .settings],
             "main shell exposes the approved six destinations"

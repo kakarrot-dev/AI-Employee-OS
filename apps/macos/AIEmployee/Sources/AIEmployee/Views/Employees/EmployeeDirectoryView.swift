@@ -3,6 +3,7 @@ import AppKit
 
 struct EmployeeDirectoryView: View {
     @ObservedObject var store: EmployeeStore
+    @ObservedObject var capabilityStore: CapabilityStore
     let openChat: (Employee) -> Void
     let editDemoEmployee: (Employee) -> Void
     @State private var query = ""
@@ -14,6 +15,11 @@ struct EmployeeDirectoryView: View {
     private var employees: [Employee] { demo?.employees ?? store.employees }
     private var selectedEmployee: Employee? {
         employees.first { $0.id == store.selection } ?? employees.first
+    }
+
+    private var liveCapabilityProfile: EmployeeCapabilityProfile {
+        guard let id = selectedEmployee?.id else { return .empty }
+        return capabilityStore.capabilityProfile(for: id)
     }
 
     var body: some View {
@@ -32,7 +38,7 @@ struct EmployeeDirectoryView: View {
             }
         }
         .background(palette.canvas)
-        .navigationTitle("通讯录")
+        .moduleNavigationTitle(.contacts)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("新建员工", systemImage: "person.badge.plus") {
@@ -145,7 +151,9 @@ struct EmployeeDirectoryView: View {
             EmployeeProfileView(
                 employee: employee,
                 store: store,
-                capabilityProfile: demo?.capabilities[employee.id] ?? .empty,
+                capabilityStore: capabilityStore,
+                capabilityProfile: demo?.capabilities[employee.id] ?? liveCapabilityProfile,
+                tasksEnabled: demo != nil ? true : capabilityStore.tasksEnabled,
                 isDemo: demo != nil,
                 compact: compact,
                 back: { compactShowsProfile = false },
@@ -176,7 +184,100 @@ struct EmployeeDirectoryView: View {
 
 struct EmployeeDirectorySidebar: View {
     @ObservedObject var store: EmployeeStore
-    var body: some View { EmptyView() }
+    @State private var query = ""
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var employees: [Employee] {
+        let source = ContactsDemoData.current?.employees ?? store.employees
+        guard !query.isEmpty else { return source }
+        return source.filter {
+            $0.name.localizedCaseInsensitiveContains(query)
+                || $0.role.localizedCaseInsensitiveContains(query)
+                || $0.department.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private var departments: [String] {
+        Array(Set(employees.map(\.department))).sorted()
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("AI 员工")
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(palette.ink)
+                    Spacer()
+                    Text("\(employees.count)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(palette.muted)
+                }
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(palette.mutedSoft)
+                    TextField("搜索姓名、岗位或部门", text: $query).textFieldStyle(.plain)
+                }
+                .padding(.horizontal, 11)
+                .frame(height: 34)
+                .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: 9).stroke(palette.hairlineSoft) }
+            }
+            .padding(16)
+
+            Divider().overlay(palette.hairlineSoft)
+
+            if store.isLoading && employees.isEmpty {
+                ProgressView("正在读取员工…").frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = store.error, employees.isEmpty {
+                ContentUnavailableView("无法读取员工", systemImage: "exclamationmark.triangle", description: Text(error))
+            } else if employees.isEmpty {
+                ContentUnavailableView(
+                    query.isEmpty ? "还没有 AI 员工" : "没有匹配的员工",
+                    systemImage: "person.2",
+                    description: Text(query.isEmpty ? "创建员工后，会在这里管理他的 Profile。" : "尝试其他姓名、岗位或部门。")
+                )
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 18) {
+                        ForEach(departments, id: \.self) { department in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(department)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(palette.muted)
+                                    .padding(.horizontal, 16)
+                                ForEach(employees.filter { $0.department == department }) { employee in
+                                    Button { store.selection = employee.id } label: {
+                                        EmployeeContextRow(employee: employee)
+                                            .padding(.horizontal, 11)
+                                            .padding(.vertical, 7)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contentShape(Rectangle())
+                                            .background(
+                                                store.selection == employee.id
+                                                    ? palette.primary.opacity(0.12)
+                                                    : Color.clear,
+                                                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                            )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.horizontal, 8)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 14)
+                }
+            }
+        }
+        .background(palette.surfaceSoft)
+        .task {
+            if store.employees.isEmpty, ContactsDemoData.current == nil {
+                await store.reload()
+            }
+        }
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
 private enum EmployeeProfileTab: String, CaseIterable, Identifiable {
@@ -190,15 +291,15 @@ private enum EmployeeProfileTab: String, CaseIterable, Identifiable {
 private struct EmployeeProfileView: View {
     let employee: Employee
     @ObservedObject var store: EmployeeStore
+    @ObservedObject var capabilityStore: CapabilityStore
     let capabilityProfile: EmployeeCapabilityProfile
+    let tasksEnabled: Bool
     let isDemo: Bool
     let compact: Bool
     let back: () -> Void
     let edit: () -> Void
     let openChat: () -> Void
     @State private var tab: EmployeeProfileTab = .identity
-    @State private var capabilityPicker: CapabilityPickerKind?
-    @State private var hiddenCapabilityIDs: Set<String> = []
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -228,19 +329,9 @@ private struct EmployeeProfileView: View {
             }
         }
         .background(palette.canvas)
-        .overlay {
-            if let kind = capabilityPicker {
-                CreamModalOverlay(close: { capabilityPicker = nil }, preferredWidth: 680, preferredHeight: 620) {
-                    CapabilityPickerSheet(
-                        kind: kind,
-                        employeeName: employee.name,
-                        items: kind == .skill ? capabilityProfile.skillCatalog : capabilityProfile.toolCatalog,
-                        initiallySelected: Set((kind == .skill ? capabilityProfile.selectedSkills : capabilityProfile.selectedTools).map(\.id)),
-                        isDemo: isDemo,
-                        close: { capabilityPicker = nil }
-                    )
-                }
-            }
+        .task(id: employee.id) {
+            guard !isDemo else { return }
+            await capabilityStore.reloadBoundSkills(for: employee.id)
         }
     }
 
@@ -274,29 +365,62 @@ private struct EmployeeProfileView: View {
 
     private var capabilityPage: some View {
         VStack(alignment: .leading, spacing: 30) {
-            capabilitySection(title: "技能", description: "来自技能库，定义员工可以采用的工作流程。", items: capabilityProfile.selectedSkills.filter { !hiddenCapabilityIDs.contains($0.id) }, add: { capabilityPicker = .skill })
-            capabilitySection(title: "工具", description: "来自工具库，定义员工可以请求调用的能力。", items: capabilityProfile.selectedTools.filter { !hiddenCapabilityIDs.contains($0.id) }, add: { capabilityPicker = .tool })
+            HStack(spacing: 8) {
+                if !isDemo {
+                    Text(tasksEnabled ? "Runtime 已接通" : "尚未接通 Runtime")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(tasksEnabled ? palette.success : palette.warning)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background((tasksEnabled ? palette.success : palette.warning).opacity(0.12), in: Capsule())
+                }
+                Text("在「编辑资料」中选择 Skill/Tool；此页只读展示。")
+                    .font(.caption)
+                    .foregroundStyle(palette.muted)
+            }
+            capabilitySection(
+                title: "技能",
+                description: capabilityProfile.selectedSkills.isEmpty
+                    ? "尚未绑定技能。打开编辑资料进行选择。"
+                    : "已绑定到该员工的 Skill Package。",
+                items: capabilityProfile.selectedSkills
+            )
+            capabilitySection(
+                title: "工具",
+                description: capabilityProfile.selectedTools.isEmpty
+                    ? "尚未选择工具。打开编辑资料进行选择。"
+                    : "该员工可请求调用的 Tool Package。",
+                items: capabilityProfile.selectedTools
+            )
             permissionSection
         }
     }
 
-    private func capabilitySection(title: String, description: String, items: [EmployeeCapabilityItem], add: @escaping () -> Void) -> some View {
+    private func capabilitySection(title: String, description: String, items: [EmployeeCapabilityItem]) -> some View {
         profileSection(title) {
             VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text(description).font(.callout).foregroundStyle(palette.muted)
-                    Spacer()
-                    Button(action: add) { Label("添加\(title)", systemImage: "plus") }.buttonStyle(CreamSecondaryButtonStyle())
-                }
+                Text(description).font(.callout).foregroundStyle(palette.muted)
                 if items.isEmpty {
                     HStack(spacing: 12) {
                         Image(systemName: title == "技能" ? "sparkles" : "wrench.and.screwdriver").foregroundStyle(palette.primaryActive)
-                        Text("尚未选择\(title)").font(.callout).foregroundStyle(palette.body)
+                        Text("当前未配置\(title)").font(.callout).foregroundStyle(palette.body)
                     }.padding(.vertical, 10)
                 } else {
                     VStack(spacing: 0) {
                         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                            capabilityRow(item) { hiddenCapabilityIDs.insert(item.id) }
+                            HStack(spacing: 12) {
+                                Image(systemName: item.kind == .skill ? "sparkles" : "wrench.and.screwdriver")
+                                    .foregroundStyle(palette.primaryActive).frame(width: 22)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    HStack(spacing: 7) {
+                                        Text(item.name).font(.callout.weight(.semibold)).foregroundStyle(palette.ink)
+                                        Text("v\(item.version)").font(.caption.monospaced()).foregroundStyle(palette.muted)
+                                    }
+                                    Text(item.detail).font(.caption).foregroundStyle(palette.muted).lineLimit(2)
+                                    Text(item.metadata).font(.caption2).foregroundStyle(palette.mutedSoft)
+                                }
+                                Spacer()
+                            }
+                            .padding(.vertical, 12)
                             if index < items.count - 1 { Divider().overlay(palette.hairlineSoft) }
                         }
                     }
@@ -305,56 +429,12 @@ private struct EmployeeProfileView: View {
         }
     }
 
-    private func capabilityRow(_ item: EmployeeCapabilityItem, remove: @escaping () -> Void) -> some View {
-        CapabilityProfileRow(item: item, remove: remove)
-    }
-
-    private struct CapabilityProfileRow: View {
-        let item: EmployeeCapabilityItem
-        let remove: () -> Void
-        @State private var isHovering = false
-        @State private var isConfirmingRemoval = false
-        @Environment(\.colorScheme) private var colorScheme
-        var body: some View { HStack(spacing: 12) {
-            Image(systemName: item.kind == .skill ? "sparkles" : "wrench.and.screwdriver").foregroundStyle(palette.primaryActive).frame(width: 22)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 7) { Text(item.name).font(.callout.weight(.semibold)).foregroundStyle(palette.ink); Text("v\(item.version)").font(.caption.monospaced()).foregroundStyle(palette.muted) }
-                Text(item.detail).font(.caption).foregroundStyle(palette.muted).lineLimit(2)
-                Text(item.metadata).font(.caption2).foregroundStyle(palette.mutedSoft)
-            }
-            Spacer()
-            Button {
-                if isConfirmingRemoval { remove() }
-                else { withAnimation(.easeInOut(duration: AppTheme.Motion.fast)) { isConfirmingRemoval = true } }
-            } label: {
-                Group {
-                    if isConfirmingRemoval {
-                        Label("确认移除", systemImage: "trash")
-                            .font(.caption.weight(.semibold)).padding(.horizontal, 9).frame(height: 26)
-                    } else {
-                        Image(systemName: "trash").font(.system(size: 10, weight: .semibold)).frame(width: 26, height: 26)
-                    }
-                }
-                .foregroundStyle(palette.error)
-                .background(palette.error.opacity(isConfirmingRemoval ? 0.14 : 0.08), in: RoundedRectangle(cornerRadius: 7))
-            }
-            .buttonStyle(.plain)
-            .opacity(isHovering || isConfirmingRemoval ? 1 : 0)
-            .help(isConfirmingRemoval ? "再次点击确认移除" : "移除")
-        }
-        .padding(.vertical, 12)
-        .contentShape(Rectangle())
-        .onHover { hovering in
-            isHovering = hovering
-            if !hovering { isConfirmingRemoval = false }
-        } }
-        private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
-    }
-
     private var permissionSection: some View {
         profileSection("权限") {
             if capabilityProfile.permissions.isEmpty {
-                Label("尚无可配置权限", systemImage: "lock.shield").foregroundStyle(palette.body).padding(.vertical, 10)
+                Label(isDemo ? "尚无可配置权限" : "当前无额外权限；普通对话不请求本地系统能力", systemImage: "lock.shield")
+                    .foregroundStyle(palette.body)
+                    .padding(.vertical, 10)
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(capabilityProfile.permissions.enumerated()), id: \.element.id) { index, permission in
@@ -400,7 +480,7 @@ struct EmployeeAvatar: View {
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
-private enum CapabilityPickerKind: String, Identifiable {
+enum CapabilityPickerKind: String, Identifiable {
     case skill, tool
     var id: String { rawValue }
     var title: String { self == .skill ? "添加技能" : "添加工具" }
@@ -408,22 +488,24 @@ private enum CapabilityPickerKind: String, Identifiable {
     var icon: String { self == .skill ? "sparkles" : "wrench.and.screwdriver" }
 }
 
-private struct CapabilityPickerSheet: View {
+struct CapabilityPickerSheet: View {
     let kind: CapabilityPickerKind
     let employeeName: String
     let items: [EmployeeCapabilityItem]
     let isDemo: Bool
     let close: () -> Void
+    let apply: (Set<String>) -> Void
     @State private var selectedIDs: Set<String>
     @State private var query = ""
     @Environment(\.colorScheme) private var colorScheme
 
-    init(kind: CapabilityPickerKind, employeeName: String, items: [EmployeeCapabilityItem], initiallySelected: Set<String>, isDemo: Bool, close: @escaping () -> Void) {
+    init(kind: CapabilityPickerKind, employeeName: String, items: [EmployeeCapabilityItem], initiallySelected: Set<String>, isDemo: Bool, close: @escaping () -> Void, apply: @escaping (Set<String>) -> Void) {
         self.kind = kind
         self.employeeName = employeeName
         self.items = items
         self.isDemo = isDemo
         self.close = close
+        self.apply = apply
         _selectedIDs = State(initialValue: initiallySelected)
     }
 
@@ -465,10 +547,12 @@ private struct CapabilityPickerSheet: View {
             }
             Divider().overlay(palette.hairlineSoft)
             HStack {
-                if isDemo { Text("演示模式不会保存选择").font(.caption).foregroundStyle(palette.warning) }
+                if isDemo { Text("演示模式仅更新本页展示").font(.caption).foregroundStyle(palette.warning) }
                 Spacer()
                 Button("取消", action: close).buttonStyle(CreamSecondaryButtonStyle())
-                Button("添加 \(selectedIDs.count) 项", action: close).buttonStyle(CreamPrimaryButtonStyle()).disabled(items.isEmpty || isDemo)
+                Button("添加 \(selectedIDs.count) 项") { apply(selectedIDs) }
+                    .buttonStyle(CreamPrimaryButtonStyle())
+                    .disabled(items.isEmpty)
             }.padding(16)
         }
         .frame(minWidth: 520, idealWidth: 680, minHeight: 420, idealHeight: 620)

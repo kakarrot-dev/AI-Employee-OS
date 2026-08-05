@@ -48,6 +48,42 @@ struct CreamMenuLabel: View {
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
+struct CreamSegmentedControl<Option: Hashable & Identifiable>: View {
+    let options: [Option]
+    @Binding var selection: Option
+    let title: (Option) -> String
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(options) { option in
+                Button {
+                    selection = option
+                } label: {
+                    Text(title(option))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(selection == option ? palette.primaryActive : palette.muted)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 28)
+                        .background(
+                            selection == option ? palette.primary.opacity(0.11) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(3)
+        .background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(palette.hairlineSoft)
+        }
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
 struct CreamTabBar<Item: Identifiable & Equatable>: View {
     let items: [Item]
     @Binding var selection: Item
@@ -80,6 +116,38 @@ struct CreamTabBar<Item: Identifiable & Equatable>: View {
         .overlay(alignment: .bottom) { Rectangle().fill(palette.hairlineSoft).frame(height: 1) }
     }
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+/// 顶栏居中标题：图标 + 文案，与侧栏模块图标一致。
+struct ModuleToolbarTitle: View {
+    let title: String
+    let systemImage: String
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .labelStyle(.titleAndIcon)
+            .font(.headline)
+            .foregroundStyle(palette.ink)
+            .imageScale(.medium)
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+extension View {
+    func moduleNavigationTitle(_ title: String, systemImage: String) -> some View {
+        navigationTitle(title)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    ModuleToolbarTitle(title: title, systemImage: systemImage)
+                }
+            }
+    }
+
+    func moduleNavigationTitle(_ destination: AppDestination) -> some View {
+        moduleNavigationTitle(destination.title, systemImage: destination.systemImage)
+    }
 }
 
 struct CreamModalOverlay<Content: View>: View {

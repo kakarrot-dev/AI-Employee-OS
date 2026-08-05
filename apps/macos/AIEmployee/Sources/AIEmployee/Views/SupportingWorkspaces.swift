@@ -19,7 +19,7 @@ struct ContactsWorkspaceView: View {
                     }
                 }.buttonStyle(.plain)
             }
-        }.navigationTitle("通讯录")
+        }.moduleNavigationTitle(.contacts)
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
@@ -37,6 +37,7 @@ enum CapabilityLibraryScope: Equatable {
 
 struct CapabilityLibraryWorkspaceView: View {
     let scope: CapabilityLibraryScope
+    @ObservedObject var capabilityStore: CapabilityStore
     @State private var query = ""
     @State private var selectedID: String?
     @State private var tab: CapabilityDetailTab = .document
@@ -44,7 +45,11 @@ struct CapabilityLibraryWorkspaceView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     private var capabilities: [CapabilityLibraryItem] {
-        CapabilityLibraryDemoData.current(for: scope) ?? []
+        capabilityStore.libraryItems(for: scope)
+    }
+
+    private var isDisconnected: Bool {
+        CapabilityLibraryDemoData.current(for: scope) == nil && capabilities.isEmpty
     }
 
     private var filteredCapabilities: [CapabilityLibraryItem] {
@@ -62,7 +67,7 @@ struct CapabilityLibraryWorkspaceView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            if capabilities.isEmpty {
+            if isDisconnected {
                 emptyState
             } else if proxy.size.width >= 700 {
                 HStack(spacing: 0) {
@@ -77,10 +82,11 @@ struct CapabilityLibraryWorkspaceView: View {
             }
         }
         .background(palette.canvas)
-        .navigationTitle(scope.title)
+        .moduleNavigationTitle(scope.title, systemImage: scope.icon)
         .onAppear {
             if selectedID == nil { selectedID = capabilities.first?.id }
             tab = scope == .skills ? .structure : .document
+            Task { await capabilityStore.reload() }
         }
         .onChange(of: selectedID) { _, _ in tab = scope == .skills ? .structure : .document }
     }
@@ -139,13 +145,26 @@ struct CapabilityLibraryWorkspaceView: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Image(systemName: scope.icon).font(.system(size: 25, weight: .light)).foregroundStyle(palette.primaryActive)
+            HStack(spacing: 10) {
+                Image(systemName: scope.icon).font(.system(size: 25, weight: .light)).foregroundStyle(palette.primaryActive)
+                Text("尚未接通 Runtime")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.warning)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(palette.warning.opacity(0.12), in: Capsule())
+            }
             VStack(alignment: .leading, spacing: 6) {
                 Text(scope.emptyTitle).font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
-                Text(scope.emptyDetail).foregroundStyle(palette.muted).frame(maxWidth: 440, alignment: .leading)
+                Text(scope == .skills
+                     ? "当前没有已安装的 Skill Package。请在仓库 packages/skills 中创建并安装后，这里会只读展示。"
+                     : "当前没有已安装的 Tool Package。请在仓库 packages/tools 中创建并安装后，这里会只读展示。")
+                    .foregroundStyle(palette.muted).frame(maxWidth: 440, alignment: .leading)
             }
-            Text("此页面仅用于查看，能力选择请前往员工资料。")
+            Text("此页面仅用于查看，客户端不提供创建入口。")
                 .font(.callout).foregroundStyle(palette.muted)
+            if let error = capabilityStore.loadError {
+                Text(error).font(.caption).foregroundStyle(palette.error)
+            }
         }
         .padding(36).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }

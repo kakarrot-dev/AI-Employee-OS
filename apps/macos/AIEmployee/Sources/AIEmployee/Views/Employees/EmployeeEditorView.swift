@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct EmployeeEditorView: View {
     @State var employee: Employee
     @ObservedObject var store: EmployeeStore
+    @ObservedObject var capabilityStore: CapabilityStore
     let isDemo: Bool
     let close: () -> Void
     @State private var section: EmployeeEditorSection = .profile
@@ -12,11 +13,41 @@ struct EmployeeEditorView: View {
     @State private var previewMode = false
     @State private var isChoosingAvatar = false
     @State private var avatarError: String?
+    @State private var selectedSkillIDs: Set<String> = []
+    @State private var selectedToolIDs: Set<String> = []
+    @State private var capabilityPicker: CapabilityPickerKind?
+    @State private var saveError: String?
     @Environment(\.colorScheme) private var colorScheme
 
     private var isNew: Bool { store.employees.allSatisfy { $0.id != employee.id } }
     private var canSave: Bool {
         (3...64).contains(employee.id.count) && !employee.name.isEmpty && !employee.role.isEmpty && !employee.department.isEmpty && !employee.basePrompt.isEmpty && !soulPrompt.isEmpty && !isSaving
+    }
+
+    private var skillCatalog: [EmployeeCapabilityItem] {
+        if isDemo {
+            return ContactsDemoData.current?.capabilities[employee.id]?.skillCatalog
+                ?? ContactsDemoData.current?.capabilities.values.first?.skillCatalog
+                ?? []
+        }
+        return capabilityStore.capabilityProfile(for: employee.id).skillCatalog
+    }
+
+    private var toolCatalog: [EmployeeCapabilityItem] {
+        if isDemo {
+            return ContactsDemoData.current?.capabilities[employee.id]?.toolCatalog
+                ?? ContactsDemoData.current?.capabilities.values.first?.toolCatalog
+                ?? []
+        }
+        return capabilityStore.capabilityProfile(for: employee.id).toolCatalog
+    }
+
+    private var selectedSkills: [EmployeeCapabilityItem] {
+        skillCatalog.filter { selectedSkillIDs.contains($0.id) }
+    }
+
+    private var selectedTools: [EmployeeCapabilityItem] {
+        toolCatalog.filter { selectedToolIDs.contains($0.id) }
     }
 
     var body: some View {
@@ -52,6 +83,12 @@ struct EmployeeEditorView: View {
         .background(palette.canvas)
         .onAppear {
             soulPrompt = employee.soul.joined(separator: "\n\n")
+            seedCapabilitySelection()
+        }
+        .task(id: employee.id) {
+            guard !isDemo else { return }
+            await capabilityStore.reloadBoundSkills(for: employee.id)
+            seedCapabilitySelection()
         }
         .fileImporter(isPresented: $isChoosingAvatar, allowedContentTypes: [.png, .jpeg, .heic, .webP], allowsMultipleSelection: false) { result in
             do {
@@ -63,6 +100,27 @@ struct EmployeeEditorView: View {
         .alert("无法使用这张图片", isPresented: Binding(get: { avatarError != nil }, set: { if !$0 { avatarError = nil } })) {
             Button("好") { avatarError = nil }
         } message: { Text(avatarError ?? "") }
+        .alert("无法保存", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+            Button("好") { saveError = nil }
+        } message: { Text(saveError ?? "") }
+        .overlay {
+            if let kind = capabilityPicker {
+                CreamModalOverlay(close: { capabilityPicker = nil }, preferredWidth: 680, preferredHeight: 620) {
+                    CapabilityPickerSheet(
+                        kind: kind,
+                        employeeName: employee.name.isEmpty ? "新员工" : employee.name,
+                        items: kind == .skill ? skillCatalog : toolCatalog,
+                        initiallySelected: kind == .skill ? selectedSkillIDs : selectedToolIDs,
+                        isDemo: isDemo,
+                        close: { capabilityPicker = nil },
+                        apply: { ids in
+                            if kind == .skill { selectedSkillIDs = ids } else { selectedToolIDs = ids }
+                            capabilityPicker = nil
+                        }
+                    )
+                }
+            }
+        }
     }
 
     private var header: some View {
@@ -70,7 +128,7 @@ struct EmployeeEditorView: View {
             EmployeeAvatar(name: employee.name.isEmpty ? "A" : employee.name, size: 42)
             VStack(alignment: .leading, spacing: 2) {
                 Text(isNew ? "新建 AI 员工" : "编辑 \(employee.name) 资料").font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
-                Text("身份提示词、灵魂提示词与能力配置共同决定员工的工作方式").font(.caption).foregroundStyle(palette.muted)
+                Text("身份、灵魂与能力配置保存后生效").font(.caption).foregroundStyle(palette.muted)
             }
             Spacer()
         }.padding(.horizontal, 20).frame(height: 72)
@@ -100,6 +158,7 @@ struct EmployeeEditorView: View {
                 case .profile: profileForm
                 case .identity: promptEditor(title: "身份提示词", detail: "定义员工是谁、负责什么，以及必须遵守的工作边界。", text: $employee.basePrompt)
                 case .soul: promptEditor(title: "灵魂提示词", detail: "定义员工如何思考、判断、沟通和行动。", text: $soulPrompt)
+                case .capabilities: capabilitiesForm
                 }
             }
             .frame(maxWidth: 820, alignment: .leading).padding(width < 620 ? 18 : 28).frame(maxWidth: .infinity)
@@ -144,6 +203,90 @@ struct EmployeeEditorView: View {
                     .tint(palette.primaryActive)
                     .help(employee.status == "active" ? "停用员工" : "启用员工")
                 }.frame(minHeight: 46)
+            }
+        }
+    }
+
+    private var capabilitiesForm: some View {
+        VStack(alignment: .leading, spacing: 26) {
+            formHeading("能力配置", isDemo
+                        ? "演示模式下可选择技能与工具，仅影响本页展示。"
+                        : "从已安装 Package 中为该员工选择 Skill 与 Tool；客户端不提供创建入口。")
+            if !isDemo {
+                Text(capabilityStore.tasksEnabled ? "Runtime 已接通" : "尚未接通 Runtime 时，可先选择，保存时再写入绑定。")
+                    .font(.caption)
+                    .foregroundStyle(capabilityStore.tasksEnabled ? palette.success : palette.warning)
+            }
+            capabilityEditorSection(
+                title: "技能",
+                empty: "尚未选择技能",
+                items: selectedSkills,
+                add: { capabilityPicker = .skill },
+                remove: { selectedSkillIDs.remove($0.id) }
+            )
+            capabilityEditorSection(
+                title: "工具",
+                empty: "尚未选择工具",
+                items: selectedTools,
+                add: { capabilityPicker = .tool },
+                remove: { selectedToolIDs.remove($0.id) }
+            )
+        }
+    }
+
+    private func capabilityEditorSection(
+        title: String,
+        empty: String,
+        items: [EmployeeCapabilityItem],
+        add: @escaping () -> Void,
+        remove: @escaping (EmployeeCapabilityItem) -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(title).font(.headline).foregroundStyle(palette.ink)
+                Spacer()
+                Button(action: add) { Label("选择\(title)", systemImage: "plus") }.buttonStyle(CreamSecondaryButtonStyle())
+            }
+            if items.isEmpty {
+                HStack(spacing: 12) {
+                    Image(systemName: title == "技能" ? "sparkles" : "wrench.and.screwdriver").foregroundStyle(palette.primaryActive)
+                    Text(empty).font(.callout).foregroundStyle(palette.body)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
+                .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.xl).stroke(palette.hairlineSoft) }
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        HStack(spacing: 12) {
+                            Image(systemName: item.kind == .skill ? "sparkles" : "wrench.and.screwdriver")
+                                .foregroundStyle(palette.primaryActive).frame(width: 22)
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack(spacing: 7) {
+                                    Text(item.name).font(.callout.weight(.semibold)).foregroundStyle(palette.ink)
+                                    Text("v\(item.version)").font(.caption.monospaced()).foregroundStyle(palette.muted)
+                                }
+                                Text(item.detail).font(.caption).foregroundStyle(palette.muted).lineLimit(2)
+                            }
+                            Spacer()
+                            Button { remove(item) } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(palette.error)
+                                    .frame(width: 26, height: 26)
+                                    .background(palette.error.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+                            }
+                            .buttonStyle(.plain)
+                            .help("移除")
+                        }
+                        .padding(.vertical, 12)
+                        if index < items.count - 1 { Divider().overlay(palette.hairlineSoft) }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
+                .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.xl).stroke(palette.hairlineSoft) }
             }
         }
     }
@@ -195,17 +338,45 @@ struct EmployeeEditorView: View {
     private func formGroup<Content: View>(@ViewBuilder content: () -> Content) -> some View { VStack(spacing: 0) { content() }.padding(.horizontal, 14).background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl)).overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.xl).stroke(palette.hairlineSoft) } }
     private func profileField(_ label: String, text: Binding<String>, prompt: String) -> some View { HStack(spacing: 18) { Text(label).font(.callout).foregroundStyle(palette.muted).frame(width: 86, alignment: .leading); TextField(prompt, text: text).textFieldStyle(.plain).foregroundStyle(palette.body) }.frame(minHeight: 46) }
     private var formDivider: some View { Divider().overlay(palette.hairlineSoft).padding(.leading, 104) }
+
+    private func seedCapabilitySelection() {
+        if isDemo {
+            if let profile = ContactsDemoData.current?.capabilities[employee.id] {
+                selectedSkillIDs = Set(profile.selectedSkills.map(\.id))
+                selectedToolIDs = Set(profile.selectedTools.map(\.id))
+            }
+            return
+        }
+        let profile = capabilityStore.capabilityProfile(for: employee.id)
+        selectedSkillIDs = Set(profile.selectedSkills.map(\.id))
+        selectedToolIDs = Set(profile.selectedTools.map(\.id))
+    }
+
     private func save() {
         employee.id = employee.id.lowercased().replacingOccurrences(of: " ", with: "-")
-        // Runtime v1.0 still requires these legacy columns. They are kept internal
-        // until the employee contract migrates to Identity/Soul as the only prompts.
-        employee.mission = employee.basePrompt
+        employee.soul = markdownSections(soulPrompt)
+        // Legacy columns are derived by Runtime from Identity/Soul; keep local mirrors empty.
+        employee.mission = ""
         employee.responsibilities = []
         employee.boundaries = []
-        employee.soul = markdownSections(soulPrompt)
         if isDemo { close(); return }
         isSaving = true
-        Task { _ = await store.save(employee); isSaving = false }
+        Task {
+            let saved = await store.save(employee)
+            if saved {
+                await capabilityStore.syncSkills(for: employee.id, selectedIDs: selectedSkillIDs)
+                capabilityStore.setSelectedTools(for: employee.id, ids: selectedToolIDs)
+                if let error = capabilityStore.actionError {
+                    saveError = error
+                    isSaving = false
+                    return
+                }
+                close()
+            } else {
+                saveError = store.error ?? "保存员工资料失败"
+            }
+            isSaving = false
+        }
     }
     private func markdownSections(_ value: String) -> [String] { value.components(separatedBy: "\n\n").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty } }
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
@@ -224,8 +395,22 @@ private struct CreamPromptModeButtonStyle: ButtonStyle {
 }
 
 private enum EmployeeEditorSection: String, CaseIterable, Identifiable {
-    case profile, identity, soul
+    case profile, identity, soul, capabilities
     var id: String { rawValue }
-    var title: String { switch self { case .profile: "基础信息"; case .identity: "身份提示词"; case .soul: "灵魂提示词" } }
-    var icon: String { switch self { case .profile: "person.text.rectangle"; case .identity: "person.crop.rectangle"; case .soul: "heart.text.square" } }
+    var title: String {
+        switch self {
+        case .profile: "基础信息"
+        case .identity: "身份提示词"
+        case .soul: "灵魂提示词"
+        case .capabilities: "能力"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .profile: "person.text.rectangle"
+        case .identity: "person.crop.rectangle"
+        case .soul: "heart.text.square"
+        case .capabilities: "slider.horizontal.3"
+        }
+    }
 }

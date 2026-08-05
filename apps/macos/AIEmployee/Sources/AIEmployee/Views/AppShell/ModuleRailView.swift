@@ -13,21 +13,22 @@ struct MainSidebarView: View {
                 .frame(height: 1)
                 .padding(.horizontal, AppTheme.Spacing.sm)
 
-            ScrollView {
-                LazyVStack(spacing: AppTheme.Spacing.xxs) {
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 2) {
                     ForEach(AppDestination.primary) { destination in
                         navigationButton(destination)
                     }
                 }
                 .padding(.horizontal, AppTheme.Spacing.sm)
-                .padding(.top, AppTheme.Spacing.sm)
+                .padding(.vertical, AppTheme.Spacing.sm)
             }
 
             Divider().overlay(palette.hairlineSoft)
 
             navigationButton(.settings)
-            .padding(AppTheme.Spacing.sm)
-            .help("设置（⌘,）")
+                .padding(.horizontal, AppTheme.Spacing.sm)
+                .padding(.vertical, AppTheme.Spacing.sm)
+                .help("设置（⌘,）")
         }
         .background(.ultraThinMaterial)
         .overlay(alignment: .trailing) {
@@ -54,30 +55,32 @@ struct MainSidebarView: View {
     }
 
     private func navigationButton(_ destination: AppDestination) -> some View {
-        Button {
+        let selected = selection == destination
+        return Button {
             selection = destination
         } label: {
             HStack(spacing: 11) {
                 Image(systemName: destination.systemImage)
-                    .font(.system(size: 14, weight: selection == destination ? .semibold : .regular))
-                    .foregroundStyle(selection == destination ? palette.primaryActive : palette.muted)
-                    .frame(width: 18)
+                    .font(.system(size: 14, weight: selected ? .semibold : .regular))
+                    .foregroundStyle(selected ? palette.primaryActive : palette.muted)
+                    .frame(width: 18, alignment: .center)
                 Text(destination.title)
-                    .font(.callout.weight(selection == destination ? .semibold : .regular))
-                    .foregroundStyle(selection == destination ? palette.ink : palette.body)
+                    .font(.callout.weight(selected ? .semibold : .regular))
+                    .foregroundStyle(selected ? palette.ink : palette.body)
+                    .lineLimit(1)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, AppTheme.Spacing.sm)
-            .frame(height: 38)
+            .frame(maxWidth: .infinity, minHeight: 36, maxHeight: 36, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .background(
-            selection == destination ? palette.primary.opacity(0.12) : .clear,
+            selected ? palette.primary.opacity(0.12) : .clear,
             in: RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
         )
         .accessibilityLabel(destination.title)
-        .accessibilityAddTraits(selection == destination ? .isSelected : [])
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }

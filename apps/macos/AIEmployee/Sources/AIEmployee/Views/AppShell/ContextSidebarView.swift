@@ -60,55 +60,100 @@ struct WorkConversationList: View {
     private var employees: [Employee] {
         let source = ContactsDemoData.current?.employees ?? employeeStore.employees
         guard !query.isEmpty else { return source }
-        return source.filter { $0.name.localizedCaseInsensitiveContains(query) || $0.role.localizedCaseInsensitiveContains(query) || $0.department.localizedCaseInsensitiveContains(query) }
+        return source.filter {
+            $0.name.localizedCaseInsensitiveContains(query)
+                || $0.role.localizedCaseInsensitiveContains(query)
+                || $0.department.localizedCaseInsensitiveContains(query)
+        }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("会话").font(.title3.weight(.semibold))
-                Spacer()
-                Text("\(employees.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-            }.padding(.horizontal, 14).frame(height: 46)
-            Divider()
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
-                TextField("搜索员工或会话", text: $query).textFieldStyle(.plain)
-                if !query.isEmpty {
-                    Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
-                        .buttonStyle(.plain).foregroundStyle(.tertiary).help("清除搜索")
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("员工会话")
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(palette.ink)
+                    Spacer()
+                    Text("\(employees.count)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(palette.muted)
                 }
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(palette.mutedSoft)
+                    TextField("搜索员工或会话", text: $query).textFieldStyle(.plain)
+                    if !query.isEmpty {
+                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(palette.mutedSoft)
+                            .help("清除搜索")
+                    }
+                }
+                .padding(.horizontal, 11)
+                .frame(height: 34)
+                .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: 9).stroke(palette.hairlineSoft) }
             }
-            .padding(.horizontal, 11).frame(height: 34).background(.background, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .padding(12)
-            Divider()
+            .padding(16)
+
+            Divider().overlay(palette.hairlineSoft)
 
             if employeeStore.isLoading && employees.isEmpty {
-                ProgressView("正在加载会话…").controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+                ProgressView("正在加载会话…")
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = employeeStore.error, employees.isEmpty {
+                ContentUnavailableView(
+                    "无法读取员工",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text(error)
+                )
             } else if employees.isEmpty {
-                ContentUnavailableView(query.isEmpty ? "还没有 AI 员工" : "没有匹配结果", systemImage: query.isEmpty ? "person.2" : "magnifyingglass")
+                ContentUnavailableView(
+                    query.isEmpty ? "还没有 AI 员工" : "没有匹配结果",
+                    systemImage: query.isEmpty ? "person.2" : "magnifyingglass",
+                    description: Text(query.isEmpty ? "先在通讯录创建员工，再回到这里继续对话。" : "尝试其他姓名、岗位或部门。")
+                )
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        Text("持续会话").font(.caption.weight(.medium)).foregroundStyle(palette.muted)
-                            .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 6)
+                        Text("持续会话")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(palette.muted)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 14)
+                            .padding(.bottom, 6)
                         ForEach(employees) { employee in
-                            Button { employeeStore.selection = employee.id } label: {
+                            Button {
+                                employeeStore.selection = employee.id
+                                conversationStore.select(employee: employee)
+                            } label: {
                                 WorkConversationRow(
                                     employee: employee,
                                     preview: preview(for: employee),
                                     state: state(for: employee),
                                     relativeTime: relativeTime(for: employee)
                                 )
-                                .padding(.horizontal, 11).padding(.vertical, 7).contentShape(Rectangle())
-                                .background(employeeStore.selection == employee.id ? palette.primary.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 7)
+                                .contentShape(Rectangle())
+                                .background(
+                                    employeeStore.selection == employee.id
+                                        ? palette.primary.opacity(0.12)
+                                        : Color.clear,
+                                    in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                )
                             }
-                            .buttonStyle(.plain).padding(.horizontal, 8).padding(.vertical, 1)
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 1)
                         }
                     }
+                    .padding(.bottom, 14)
                 }
             }
         }
+        .background(palette.surfaceSoft)
         .onChange(of: employeeStore.selection) { _, id in
             guard let id, let employee = employees.first(where: { $0.id == id }) else { return }
             conversationStore.select(employee: employee)
@@ -116,27 +161,42 @@ struct WorkConversationList: View {
         .task(id: employees.map(\.id).joined(separator: ",")) {
             await conversationStore.preloadSummaries(for: employees)
         }
+        .task {
+            if employeeStore.employees.isEmpty, ContactsDemoData.current == nil {
+                await employeeStore.reload()
+            }
+        }
     }
 
     private func preview(for employee: Employee) -> String {
         if let preview = WorkLibraryDemoData.current?.previews[employee.id] { return preview }
-        if employee.id == "ai-product-manager", let active = store.runs.first(where: { $0.status == .running || $0.status == .pending }) { return active.input }
+        if employee.id == "ai-product-manager",
+           let active = store.runs.first(where: { $0.status == .running || $0.status == .pending }) {
+            return active.input
+        }
         if let preview = conversationStore.latestPreviewByEmployee[employee.id] { return preview }
-        if employee.id == conversationStore.employeeID { return conversationStore.messages.last?.content ?? "还没有消息" }
+        if employee.id == conversationStore.employeeID {
+            return conversationStore.messages.last?.content ?? "还没有消息"
+        }
         return employee.role
     }
 
     private func state(for employee: Employee) -> WorkConversationRow.State {
         if employee.status != "active" { return .disabled }
         guard employee.id == "ai-product-manager" else { return .idle }
-        if store.runs.contains(where: { $0.actions.contains(where: { $0.status == "blocked" }) }) { return .waiting }
-        if store.runs.contains(where: { $0.status == .running || $0.status == .pending }) { return .working }
+        if store.runs.contains(where: { $0.actions.contains(where: { $0.status == "blocked" }) }) {
+            return .waiting
+        }
+        if store.runs.contains(where: { $0.status == .running || $0.status == .pending }) {
+            return .working
+        }
         if store.runs.first?.status == .failed { return .failed }
         return .idle
     }
 
     private func relativeTime(for employee: Employee) -> String? {
-        let value = WorkLibraryDemoData.current?.lastActivity[employee.id] ?? conversationStore.lastActivityByEmployee[employee.id]
+        let value = WorkLibraryDemoData.current?.lastActivity[employee.id]
+            ?? conversationStore.lastActivityByEmployee[employee.id]
         return WorkRelativeTime.label(value)
     }
 

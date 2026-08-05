@@ -7,14 +7,25 @@ struct AIEmployeeApp: App {
     @StateObject private var store = TaskStore(service: RuntimeService.live())
     @StateObject private var conversationStore = ConversationStore(service: RuntimeService.live())
     @StateObject private var employeeStore = EmployeeStore(service: RuntimeService.live())
+    @StateObject private var capabilityStore = CapabilityStore(service: RuntimeService.live())
     @AppStorage("appDestination") private var destinationRaw = AppDestination.office.rawValue
     @AppStorage("appAppearance") private var appearanceRaw = AppAppearance.system.rawValue
+    /// 系统主题变更时递增，迫使跟随系统模式重新解析 ColorScheme。
+    @State private var systemAppearanceEpoch = 0
     var body: some Scene {
         Window("AI Employee OS", id: "main") {
-            ContentView(store: store, conversationStore: conversationStore, employeeStore: employeeStore)
+            ContentView(
+                store: store,
+                conversationStore: conversationStore,
+                employeeStore: employeeStore,
+                capabilityStore: capabilityStore
+            )
                 .frame(minWidth: 720, minHeight: 520)
                 .fontDesign(.default)
-                .preferredColorScheme(appearance.colorScheme)
+                .preferredColorScheme(resolvedColorScheme)
+                .onReceive(DistributedNotificationCenter.default.publisher(for: SystemColorScheme.didChangeNotification)) { _ in
+                    systemAppearanceEpoch &+= 1
+                }
         }
         .defaultSize(width: 1280, height: 820)
         .commands {
@@ -48,6 +59,11 @@ struct AIEmployeeApp: App {
 
     private var appearance: AppAppearance {
         AppAppearance(rawValue: appearanceRaw) ?? .system
+    }
+
+    private var resolvedColorScheme: ColorScheme {
+        let _ = systemAppearanceEpoch
+        return appearance.resolvedColorScheme(system: SystemColorScheme.current)
     }
 }
 

@@ -2,12 +2,21 @@
 
 ## ADR-027：普通对话与任务执行分离
 
-Alex 的 Conversation/Message 是连续交流事实，Task/Action 是受控执行事实，两者不得互相冒充。当前 Alex 不绑定 Skill 或 Tool，真实回复由 DeepSeek 官方 API 生成；普通对话不会触发 ToolExecutor。多轮上下文由 Runtime 从 SQLite 按顺序重建，模型 reasoning 不持久化、不展示。API Key 只允许来自 macOS Keychain 注入的受控进程环境。
+Alex 的 Conversation/Message 是连续交流事实，Task/Action 是受控执行事实，两者不得互相冒充。闲聊由 DeepSeek 官方 API 生成；工作走 `run-task` / Skill Graph / ToolExecutor，见 ADR-031。多轮上下文由 Runtime 从 SQLite 按顺序重建，模型 reasoning 不持久化、不展示。API Key 只允许来自 macOS Keychain 注入的受控进程环境。
+
+`chat-send` 在回复前做意图识别（启发式 + 可选 LLM）：`chat` 走对话 worker；`task` 且 `tasks_enabled` 时在同一会话中执行工作并写入助手说明，副作用仍只经 Rust ToolExecutor。未接通能力时工作意图降级为闲聊并提示。
 
 ## ADR-028：员工定义分层与 Effective Prompt 单向编译
 
-员工定义拆分为 Identity、Soul、Persona 和基础 Prompt。`agents` 与 `employee_profiles` 表达 Identity/Soul，`personas` 表达沟通、思考、决策与习惯；Swift 只编辑这些结构化输入。Rust Runtime 单向编译 Effective Prompt，并为每次 ModelCall 保存员工配置版本与 Prompt SHA-256。Skill、Tool、Memory 与安全规则后续只能作为编译输入加入，禁止客户端维护第二套 System Prompt 或绕过 Runtime 安全边界。
+员工定义拆分为 Identity、Soul、Persona。`agents` 与 `employee_profiles` 表达基础身份与提示词，`personas` 表达沟通、思考、决策与习惯。Swift 只编辑结构化输入；Rust Runtime 单向编译 Effective Prompt，并为每次 ModelCall 保存员工配置版本与 Prompt SHA-256。Skill、Tool、Memory 与安全规则后续只能作为编译输入加入，禁止客户端维护第二套 System Prompt 或绕过 Runtime 安全边界。
 
+## ADR-029：Identity / Soul 为唯一用户提示词
+
+客户端以「身份提示词」(`base_prompt`) 与「灵魂提示词」(`soul_json` 段落) 作为唯一可编辑提示词。Effective Prompt 由姓名/岗位/部门 + `base_prompt` + `soul` + `persona` 编译；`mission` / `responsibilities` / `boundaries` 仅为 DB 遗留列，由 Runtime 在保存时填充兼容值，不再驱动 Prompt，也不再作为 Client 编辑面。用户修改提示词后，下一次 `chat-send` 必须使用递增后的 `config_version` 与新 Prompt。
+
+## ADR-030：Skill/Tool 仓库安装，Client 只读
+
+Skill 与 Tool 不在 macOS 客户端创建或编辑。Package 放入仓库 `packages/skills`、`packages/tools` 后由 Runtime 安装并列表；未安装时 Client 六宫格保留入口但标注「尚未接通 Runtime」。工作执行（Task）仅在员工绑定了可用 Skill 且存在 active Tool 时启用。MVP 工作执行编排见 ADR-031。
 目标：
 
 记录关键架构选择背后的原因，避免后续开发过程中出现：
@@ -1135,6 +1144,28 @@ Task 生命周期事件追加写入 `runtime_events`，`sequence` 在单个 Task
 
 数据库通过追加 Migration `007_runtime_events_and_cancellation.sql` 演进；旧 Migration 不修改。
 
+# ADR-031：MVP 工作执行复用自研 Graph + Golden Path 编排
+
+## 状态
+
+Accepted
+
+## 背景
+
+ADR-003 选择 Deep Agents + LangGraph 作为长期 Agent Engine。MVP 工作执行需要尽快接通 Client `run-task`、Skill/Tool Package、Graph Action 与 ToolExecutor，同时禁止引入第二套节点状态。
+
+## 决策
+
+1. CLI `run-task` 挂接自研 `golden_path` 编排（原 `run-golden`），复用 `TaskService`、`GraphPlan`、`ToolExecutor` 与 Python Worker；不在 MVP 引入 LangGraph Checkpoint。
+2. 仓库 Package（`file-tool`、`document-tool`、`prd-generation`、`requirement-analysis`）由 Runtime bootstrap 安装，并通过 `agent_skills` 绑定 Alex，使 `tasks_enabled` 为真。
+3. Client 工作确认是本地 UX（`awaitingWorkConfirmation`），写入类高风险动作仍通过 `--approve-write` 预置 `approvals`；完整 pending→approve 交互审批留待后续。
+4. Knowledge 检索 MVP 暴露关键词 `knowledge-import` / `knowledge-search`；`embedding_ref` 保持空，FastEmbed 仍按 ADR-010 为后置能力。
+
+## 边界
+
+- Deep Agents / LangGraph 仍可作为后续 Python 规划器插件评估，不得成为 Task/Action 状态源。
+- Client 不创建 Skill/Tool Package；安装入口为 Runtime CLI。
+
 # ADR 总结
 
 最终技术原则：
@@ -1187,11 +1218,11 @@ AI Employee OS v1.0 Architecture Freeze
 |---|---|
 |客户端|SwiftUI + AppKit|
 |Runtime|Rust|
-|Agent Engine|Deep Agents + LangGraph|
+|Agent Engine|MVP：自研 Graph + Golden Path；目标：Deep Agents + LangGraph|
 |模型|DeepSeek 官方 API 主源 + Poe API 受控兜底|
 |Skill|Skill Runtime|
 |Tool|Native + MCP + Plugin|
-|Storage|SQLite + FastEmbed|
+|Storage|SQLite；向量检索后置 FastEmbed；MVP Knowledge 为关键词|
 |Memory|Hybrid Memory|
 |State|Dual State|
 |安全|Permission + Sandbox + Approval|

@@ -1,0 +1,11 @@
+{
+  "id": "prd-generation",
+  "version": "1.0.0",
+  "required_categories": {
+    "standard": 4,
+    "missing_information": 3,
+    "conflicting_sources": 2,
+    "tool_failure": 2,
+    "memory_conflict": 1
+  }
+}

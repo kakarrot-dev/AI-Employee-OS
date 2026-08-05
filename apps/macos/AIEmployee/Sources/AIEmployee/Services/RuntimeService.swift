@@ -33,6 +33,11 @@ struct RuntimeService: Sendable {
     let employeeSave: @Sendable (Employee) async throws -> EmployeeSaveResponse
     let employeeDelete: @Sendable (String) async throws -> EmployeeDeleteResponse
     let effectivePrompt: @Sendable (String) async throws -> EffectivePromptResponse
+    let capabilities: @Sendable () async throws -> RuntimeCapabilities
+    let skillsList: @Sendable (String?) async throws -> SkillsListResponse
+    let toolsList: @Sendable () async throws -> ToolsListResponse
+    let bindSkill: @Sendable (String, String, String) async throws -> BindSkillResponse
+    let unbindSkill: @Sendable (String, String) async throws -> UnbindSkillResponse
 
     static func live() -> Self {
         Self(run: { taskID, input in
@@ -47,7 +52,7 @@ struct RuntimeService: Sendable {
                 let process = Process()
                 process.executableURL = layout.binary
                 process.arguments = [
-                    "run-golden", "--repository-root", layout.resourceRoot.path,
+                    "run-task", "--repository-root", layout.resourceRoot.path,
                     "--database", layout.database.path,
                     "--output-dir", layout.outputDirectory.path,
                     "--input", input, "--task-id", taskID, "--approve-write"
@@ -113,6 +118,31 @@ struct RuntimeService: Sendable {
             try await decodeCommand(["employee-delete", "--database", try databaseURL().path, "--employee-id", id], as: EmployeeDeleteResponse.self)
         }, effectivePrompt: { id in
             try await decodeCommand(["effective-prompt", "--database", try databaseURL().path, "--employee-id", id], as: EffectivePromptResponse.self)
+        }, capabilities: {
+            try await decodeCommand(["capabilities", "--repository-root", try runtimeLayout().resourceRoot.path, "--database", try databaseURL().path], as: RuntimeCapabilities.self)
+        }, skillsList: { agentID in
+            var args = ["skills-list", "--repository-root", try runtimeLayout().resourceRoot.path, "--database", try databaseURL().path]
+            if let agentID {
+                args.append(contentsOf: ["--agent-id", agentID])
+            }
+            return try await decodeCommand(args, as: SkillsListResponse.self)
+        }, toolsList: {
+            try await decodeCommand(["tools-list", "--repository-root", try runtimeLayout().resourceRoot.path, "--database", try databaseURL().path], as: ToolsListResponse.self)
+        }, bindSkill: { agentID, skillID, skillVersion in
+            try await decodeCommand([
+                "bind-skill",
+                "--database", try databaseURL().path,
+                "--agent-id", agentID,
+                "--skill-id", skillID,
+                "--skill-version", skillVersion
+            ], as: BindSkillResponse.self)
+        }, unbindSkill: { agentID, skillID in
+            try await decodeCommand([
+                "unbind-skill",
+                "--database", try databaseURL().path,
+                "--agent-id", agentID,
+                "--skill-id", skillID
+            ], as: UnbindSkillResponse.self)
         })
     }
 

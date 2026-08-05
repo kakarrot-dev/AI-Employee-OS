@@ -18,6 +18,24 @@ struct OfficeSnapshot {
         let points: [UsagePoint]
 
         var totalTokens: Int { inputTokens + outputTokens }
+
+        static var emptyPlaceholder: Self {
+            let calendar = Calendar.current
+            let today = Date()
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "zh_CN")
+            formatter.dateFormat = "M/d"
+            let points = (0..<7).reversed().map { offset -> UsagePoint in
+                let day = calendar.date(byAdding: .day, value: -offset, to: today) ?? today
+                return UsagePoint(
+                    id: "empty-\(offset)",
+                    label: offset == 0 ? "今天" : formatter.string(from: day),
+                    inputTokens: 0,
+                    outputTokens: 0
+                )
+            }
+            return Self(inputTokens: 0, outputTokens: 0, estimatedCost: 0, modelCalls: 0, points: points)
+        }
     }
 
     struct EmployeeItem: Identifiable {
@@ -29,7 +47,7 @@ struct OfficeSnapshot {
 
     struct WorkItem: Identifiable {
         enum State {
-            case pending, running, approval, resultUnknown, failed
+            case pending, running, blocked, resultUnknown, failed
         }
 
         let id: String
@@ -67,7 +85,7 @@ struct OfficeSnapshot {
             let blocked = run.actions.contains { $0.status == "blocked" }
             let state: WorkItem.State
             if unknown { state = .resultUnknown }
-            else if blocked { state = .approval }
+            else if blocked { state = .blocked }
             else if run.status == .failed { state = .failed }
             else if run.status == .running { state = .running }
             else if run.status == .pending { state = .pending }
@@ -101,7 +119,7 @@ struct OfficeSnapshot {
         switch state {
         case .pending: "任务已创建，正在等待 Runtime 接手"
         case .running: run.actions.last.map { "正在执行：\($0.outputAs)" } ?? "正在理解目标并制定执行计划"
-        case .approval: "有一项操作需要你确认后才能继续"
+        case .blocked: "有一项操作需要你确认后才能继续"
         case .resultUnknown: "外部操作结果未知，需要人工核验"
         case .failed: run.error ?? "执行失败，请打开工作查看原因"
         }
@@ -109,7 +127,7 @@ struct OfficeSnapshot {
 }
 
 enum OfficeDemoScene: String {
-    case empty, ready, running, approval, failed
+    case empty, ready, running, blocked, failed
     case resultUnknown = "result-unknown"
     case delivered
     case runtimeOffline = "runtime-offline"
@@ -120,7 +138,12 @@ enum OfficeDemoScene: String {
         guard let index = arguments.firstIndex(of: "--ui-demo"), arguments.indices.contains(index + 1) else { return nil }
         let value = arguments[index + 1]
         if value == "office" { return .running }
-        if value.hasPrefix("office:") { return Self(rawValue: String(value.dropFirst("office:".count))) }
+        if value.hasPrefix("office:") {
+            let scene = String(value.dropFirst("office:".count))
+            // 兼容旧 demo 参数 office:approval
+            if scene == "approval" { return .blocked }
+            return Self(rawValue: scene)
+        }
 #endif
         return nil
     }
@@ -165,8 +188,8 @@ enum OfficeDemoScene: String {
             work = []; demoEmployees = employees; demoDeliveries = []; runtimeMessage = nil
         case .running:
             work = [running, research]; demoEmployees = employees; demoDeliveries = deliveries; runtimeMessage = nil
-        case .approval:
-            work = [.init(id: "demo-approval", employeeName: "Alex", goal: running.goal, state: .approval, detail: "需要读取本地访谈资料目录", progress: 0.42, createdAt: running.createdAt)]; demoEmployees = employees; demoDeliveries = deliveries; runtimeMessage = nil
+        case .blocked:
+            work = [.init(id: "demo-blocked", employeeName: "Alex", goal: running.goal, state: .blocked, detail: "需要读取本地访谈资料目录", progress: 0.42, createdAt: running.createdAt)]; demoEmployees = employees; demoDeliveries = deliveries; runtimeMessage = nil
         case .failed:
             work = [.init(id: "demo-failed", employeeName: "Leo", goal: "计算最近 30 天的激活转化漏斗", state: .failed, detail: "数据文件缺少必要的 user_id 字段", progress: 0.20, createdAt: running.createdAt)]; demoEmployees = employees; demoDeliveries = deliveries; runtimeMessage = nil
         case .resultUnknown:

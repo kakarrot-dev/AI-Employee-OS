@@ -16,7 +16,7 @@ struct ChatAttachmentPresentation: Identifiable, Hashable {
     }
 }
 
-struct WorkApprovalRequest {
+struct DemoActionApprovalRequest {
     let taskID: String
     let action: String
     let tool: String
@@ -32,7 +32,7 @@ struct WorkLibraryDemoData {
     let previews: [String: String]
     let artifacts: [String: String]
     let messageAttachments: [String: [ChatAttachmentPresentation]]
-    let approval: WorkApprovalRequest?
+    let demoActionApproval: DemoActionApprovalRequest?
 
     static var current: Self? {
 #if DEBUG
@@ -67,6 +67,7 @@ struct WorkLibraryDemoData {
 
         let completed = TaskRun(
             id: "demo-work-completed",
+            agentID: "ai-product-manager",
             input: "输出工作库的信息架构与自适应布局说明",
             createdAt: stamp(10_800),
             status: .succeeded,
@@ -80,6 +81,7 @@ struct WorkLibraryDemoData {
         )
         let running = TaskRun(
             id: "demo-work-running",
+            agentID: "ai-product-manager",
             input: "完善工作库的会话时间、运行进度与交付物展示",
             createdAt: stamp(160),
             status: .running,
@@ -121,7 +123,7 @@ struct WorkLibraryDemoData {
                     .init(name: "用户访谈记录.zip", kind: "ZIP 归档", size: "3.8 MB")
                 ]
             ],
-            approval: .init(
+            demoActionApproval: .init(
                 taskID: "demo-work-running",
                 action: "允许写入工作库设计说明",
                 tool: "filesystem.write",

@@ -14,6 +14,7 @@ CLIENT_CHECK_BINARY="${TMPDIR:-/tmp}/ai-employee-client-model-checks"
 swiftc \
   apps/macos/AIEmployee/Sources/AIEmployee/Models/TaskRun.swift \
   apps/macos/AIEmployee/Sources/AIEmployee/Models/Employee.swift \
+  apps/macos/AIEmployee/Sources/AIEmployee/Models/Conversation.swift \
   apps/macos/AIEmployee/Sources/AIEmployee/Models/AppDestination.swift \
   apps/macos/AIEmployee/Sources/AIEmployee/Support/EmployeePresentation.swift \
   apps/macos/AIEmployee/Sources/AIEmployee/Support/MarkdownBlock.swift \

@@ -87,13 +87,23 @@ enum AppAppearance: String, CaseIterable, Identifiable {
         }
     }
 
-    var colorScheme: ColorScheme? {
+    /// 解析为明确的 ColorScheme。跟随系统时读 OS 偏好，避免向 preferredColorScheme 传入 nil（SwiftUI 已知会半屏错色）。
+    func resolvedColorScheme(system: ColorScheme) -> ColorScheme {
         switch self {
-        case .system: nil
+        case .system: system
         case .light: .light
         case .dark: .dark
         }
     }
+}
+
+enum SystemColorScheme {
+    /// 读系统外观偏好，不受应用 preferredColorScheme 覆盖影响。
+    static var current: ColorScheme {
+        UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark" ? .dark : .light
+    }
+
+    static let didChangeNotification = Notification.Name("AppleInterfaceThemeChangedNotification")
 }
 
 extension Color {

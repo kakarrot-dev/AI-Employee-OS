@@ -40,9 +40,14 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_CONTENTS/MacOS"
 cp "$BUILD_BINARY" "$APP_BINARY"
 cp "$ROOT_DIR/target/debug/ai-employee-runtime" "$RUNTIME_BINARY"
-mkdir -p "$RUNTIME_RESOURCES/runtime" "$RUNTIME_RESOURCES/packages/agents"
+mkdir -p "$RUNTIME_RESOURCES/runtime" \
+  "$RUNTIME_RESOURCES/packages/agents" \
+  "$RUNTIME_RESOURCES/packages/skills" \
+  "$RUNTIME_RESOURCES/packages/tools"
 rsync -a --exclude '__pycache__' --exclude '*.pyc' "$ROOT_DIR/runtime/python-agent/" "$RUNTIME_RESOURCES/runtime/python-agent/"
 cp -R "$ROOT_DIR/packages/agents/ai-product-manager" "$RUNTIME_RESOURCES/packages/agents/ai-product-manager"
+rsync -a --exclude '.DS_Store' "$ROOT_DIR/packages/skills/" "$RUNTIME_RESOURCES/packages/skills/"
+rsync -a --exclude '.DS_Store' "$ROOT_DIR/packages/tools/" "$RUNTIME_RESOURCES/packages/tools/"
 chmod +x "$APP_BINARY"
 chmod +x "$RUNTIME_BINARY"
 sed -e "s/__APP_NAME__/$APP_NAME/g" -e "s/__BUNDLE_ID__/$BUNDLE_ID/g" \

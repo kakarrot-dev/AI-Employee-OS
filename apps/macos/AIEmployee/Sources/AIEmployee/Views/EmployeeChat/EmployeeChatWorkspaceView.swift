@@ -6,6 +6,7 @@ struct EmployeeChatWorkspaceView: View {
     @ObservedObject var store: TaskStore
     @ObservedObject var conversationStore: ConversationStore
     @ObservedObject var employeeStore: EmployeeStore
+    @ObservedObject var capabilityStore: CapabilityStore
     let employee: Employee?
     @Binding var isCreatingWork: Bool
 
@@ -38,7 +39,7 @@ struct EmployeeChatWorkspaceView: View {
     }
 
     private var supportsTasks: Bool {
-        (employee?.id ?? conversationStore.employeeID) == "ai-product-manager"
+        capabilityStore.tasksEnabled
     }
 
     var body: some View {
@@ -63,7 +64,7 @@ struct EmployeeChatWorkspaceView: View {
             .background(palette.canvas)
 
             if showsInspector {
-                TaskInspectorView(run: selectedRun)
+                TaskInspectorView(run: selectedRun, employee: employee)
                     .frame(minWidth: 280, idealWidth: inspectorWidth, maxWidth: 420)
                     .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { newWidth in
                         inspectorWidth = min(max(newWidth, 280), 420)
@@ -71,6 +72,11 @@ struct EmployeeChatWorkspaceView: View {
             }
         }
         .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { workspaceWidth = $0 }
+        .onChange(of: conversationStore.pendingTaskRefresh) { _, pending in
+            guard pending else { return }
+            conversationStore.clearPendingTaskRefresh()
+            store.retryHistory()
+        }
         .navigationTitle("")
         .toolbar {
             ToolbarItem(placement: .navigation) {
@@ -127,7 +133,7 @@ private struct EmployeeToolbarTitle: View {
                 Text("\(employee?.role ?? "AI 产品经理") · \(employee?.department ?? "产品部")").font(.callout).foregroundStyle(.secondary)
                 Divider()
                 Label(employee?.status == "active" ? "可用" : "已停用", systemImage: employee?.status == "active" ? "checkmark.circle" : "pause.circle")
-                Text("消息和正式工作会保留在这名员工的持续会话中。")
+                Text("消息和工作会保留在这名员工的持续会话中。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -226,7 +232,7 @@ private struct EmptyConversationView: View {
             Text("和 \(employeeName) 聊聊")
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(palette.ink)
-            Text(supportsTasks ? "可以先讨论想法、补充背景或澄清问题。需要正式执行时，再明确交给 \(employeeName) 一项工作。" : "可以先讨论想法、补充背景或澄清问题。消息会保留在与 \(employeeName) 的持续会话中。")
+            Text("可以先讨论想法、补充背景或澄清问题。消息会保留在与 \(employeeName) 的持续会话中。")
                 .font(.body)
                 .foregroundStyle(palette.muted)
                 .frame(maxWidth: 560, alignment: .leading)
@@ -664,10 +670,10 @@ private struct EmployeeComposerContainer: View {
     var body: some View {
         Group {
             if supportsTasks,
-               let request = WorkLibraryDemoData.current?.approval,
+               let request = WorkLibraryDemoData.current?.demoActionApproval,
                activeRun?.id == request.taskID {
-                HumanApprovalBar(request: request, employeeName: employeeName)
-            } else if supportsTasks, store.awaitingApproval {
+                DemoActionApprovalBar(request: request, employeeName: employeeName)
+            } else if supportsTasks, store.awaitingWorkConfirmation {
                 WorkSubmissionConfirmationBar(store: store, employeeName: employeeName)
             } else if supportsTasks, let activeRun {
                 WorkingStatusBar(run: activeRun, employeeName: employeeName, stop: { store.cancel(activeRun.id) })
@@ -683,8 +689,8 @@ private struct EmployeeComposerContainer: View {
         }
         .padding(.horizontal, AppTheme.Spacing.lg)
         .padding(.bottom, AppTheme.Spacing.md)
-        .onChange(of: store.awaitingApproval) { _, awaitingApproval in
-            if awaitingApproval { isCreatingWork = false }
+        .onChange(of: store.awaitingWorkConfirmation) { _, awaitingConfirmation in
+            if awaitingConfirmation { isCreatingWork = false }
         }
         .onChange(of: supportsTasks) { _, canCreateTasks in
             if !canCreateTasks { isCreatingWork = false }
@@ -692,8 +698,8 @@ private struct EmployeeComposerContainer: View {
     }
 }
 
-private struct HumanApprovalBar: View {
-    let request: WorkApprovalRequest
+private struct DemoActionApprovalBar: View {
+    let request: DemoActionApprovalRequest
     let employeeName: String
     @State private var expanded = false
     @State private var decision: Decision?
@@ -825,7 +831,7 @@ private struct EmployeeUnifiedComposer: View {
             if isCreatingWork {
                 HStack(spacing: 7) {
                     Image(systemName: "briefcase.fill").foregroundStyle(palette.primaryActive)
-                    Text("正式工作").font(.caption.weight(.semibold)).foregroundStyle(palette.ink)
+                    Text("工作").font(.caption.weight(.semibold)).foregroundStyle(palette.ink)
                     Text("将创建可追踪的执行记录").font(.caption).foregroundStyle(palette.muted)
                 }
             }
@@ -871,12 +877,19 @@ private struct EmployeeUnifiedComposer: View {
 
                 if supportsTasks {
                     Button { isCreatingWork.toggle(); focused = true } label: {
-                        Label(isCreatingWork ? "返回普通消息" : "作为正式工作执行", systemImage: isCreatingWork ? "bubble.left" : "briefcase")
+                        Label(isCreatingWork ? "返回闲聊" : "作为工作执行", systemImage: isCreatingWork ? "bubble.left" : "briefcase")
                     }
                     .buttonStyle(.plain)
                     .font(.caption)
                     .foregroundStyle(palette.muted)
                     .disabled(conversationStore.isSending || taskStore.isSubmitting)
+                } else {
+                    Text("工作 · 尚未接通 Runtime")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(palette.warning)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(palette.warning.opacity(0.12), in: Capsule())
+                        .help("安装并绑定 Skill/Tool Package 后即可执行工作；客户端不提供创建入口。")
                 }
 
                 Spacer()
@@ -899,7 +912,7 @@ private struct EmployeeUnifiedComposer: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!canSubmit)
-                .help(isCreatingWork ? "确认正式工作" : "发送消息")
+                .help(isCreatingWork ? "确认工作" : "发送消息")
             }
         }
         .padding(AppTheme.Spacing.sm)
@@ -1016,13 +1029,13 @@ private struct WorkSubmissionConfirmationBar: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    Text("正式工作 · 保留执行记录与交付物")
+                    Text("工作 · 保留执行记录与交付物")
                         .font(.caption)
                         .foregroundStyle(palette.muted)
                 }
                 Spacer()
-                Button("返回修改", action: store.cancelApproval).buttonStyle(CreamSecondaryButtonStyle())
-                Button("确认交办", action: store.approveAndRun).buttonStyle(CreamPrimaryButtonStyle())
+                Button("返回修改", action: store.cancelWorkConfirmation).buttonStyle(CreamSecondaryButtonStyle())
+                Button("确认执行", action: store.confirmAndRun).buttonStyle(CreamPrimaryButtonStyle())
             }
         }
         .padding(AppTheme.Spacing.md)

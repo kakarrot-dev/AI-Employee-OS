@@ -2,9 +2,14 @@ import SwiftUI
 
 struct TaskInspectorView: View {
     let run: TaskRun?
+    let employee: Employee?
 
     @State private var diagnosticsExpanded = false
     @Environment(\.colorScheme) private var colorScheme
+
+    private var employeeName: String { employee?.name ?? run.map { displayName(for: $0.agentID) } ?? "员工" }
+    private var employeeRole: String { employee?.role ?? "AI 员工" }
+    private var employeeDepartment: String { employee?.department ?? "" }
 
     var body: some View {
         ScrollView {
@@ -25,7 +30,7 @@ struct TaskInspectorView: View {
                     inspectorDivider
                     diagnostics(run)
                 } else {
-                    Text("Alex 当前没有正在处理的工作。")
+                    Text("\(employeeName) 当前没有正在处理的工作。")
                         .font(.callout)
                         .foregroundStyle(palette.muted)
                         .padding(AppTheme.Spacing.md)
@@ -37,13 +42,22 @@ struct TaskInspectorView: View {
 
     private var inspectorHeader: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-            Text("Alex").font(.headline)
-            Text("AI 产品经理 · 产品部")
+            Text(employeeName).font(.headline)
+            Text(employeeDepartment.isEmpty ? employeeRole : "\(employeeRole) · \(employeeDepartment)")
                 .font(.caption)
                 .foregroundStyle(palette.muted)
+            if let agentID = run?.agentID ?? employee?.id {
+                Text(agentID)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(palette.mutedSoft)
+            }
         }
         .padding(AppTheme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func displayName(for agentID: String) -> String {
+        agentID == "ai-product-manager" ? "Alex" : agentID
     }
 
     private func currentWork(_ run: TaskRun) -> some View {

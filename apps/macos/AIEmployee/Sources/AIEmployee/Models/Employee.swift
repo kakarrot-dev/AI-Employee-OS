@@ -7,10 +7,10 @@ struct EmployeePersona: Codable, Sendable {
         var response = "conclusion_first"
     }
     struct Thinking: Codable, Sendable {
-        var approach = "first_principles"
+        var approach = "user_value_first"
         var evidence = "distinguish_fact_inference_unknown"
     }
-    struct Decision: Codable, Sendable { var priorities = ["user_value", "feasibility"] }
+    struct Decision: Codable, Sendable { var priorities = ["user_value", "feasibility", "business_value"] }
     struct Habit: Codable, Sendable {
         var outputFormat = "markdown"
         var includeAcceptanceCriteria = true

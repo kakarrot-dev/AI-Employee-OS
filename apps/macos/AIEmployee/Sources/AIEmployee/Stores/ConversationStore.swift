@@ -12,6 +12,7 @@ final class ConversationStore: ObservableObject {
     @Published var error: String?
     @Published private(set) var lastActivityByEmployee: [String: String] = [:]
     @Published private(set) var latestPreviewByEmployee: [String: String] = [:]
+    @Published private(set) var pendingTaskRefresh = false
     private var selectionGeneration = 0
 
     init(service: RuntimeService) {
@@ -76,8 +77,12 @@ final class ConversationStore: ObservableObject {
         messages.append(optimistic)
         Task {
             do {
-                _ = try await service.chatSend(targetConversationID, targetEmployeeID, content, key)
+                let response = try await service.chatSend(targetConversationID, targetEmployeeID, content, key)
                 await reload(generation: generation, conversationID: targetConversationID)
+                if generation == selectionGeneration, targetConversationID == conversationID,
+                   response.routedTo == "task" {
+                    pendingTaskRefresh = true
+                }
             } catch {
                 if generation == selectionGeneration, targetConversationID == conversationID {
                     self.error = error.localizedDescription
@@ -89,6 +94,8 @@ final class ConversationStore: ObservableObject {
             }
         }
     }
+
+    func clearPendingTaskRefresh() { pendingTaskRefresh = false }
 
     func deleteHistory() async {
         guard !isSending else { return }

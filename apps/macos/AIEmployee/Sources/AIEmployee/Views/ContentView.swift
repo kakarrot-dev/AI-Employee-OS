@@ -4,6 +4,7 @@ struct ContentView: View {
     @ObservedObject var store: TaskStore
     @ObservedObject var conversationStore: ConversationStore
     @ObservedObject var employeeStore: EmployeeStore
+    @ObservedObject var capabilityStore: CapabilityStore
     @AppStorage("appDestination") private var destinationRaw = AppDestination.office.rawValue
     @SceneStorage("workComposerPresented") private var workComposerPresented = false
     @State private var demoEditorEmployee: Employee?
@@ -45,6 +46,7 @@ struct ContentView: View {
                     EmployeeEditorView(
                         employee: employee,
                         store: employeeStore,
+                        capabilityStore: capabilityStore,
                         isDemo: false,
                         close: { employeeStore.isPresentingEditor = false }
                     )
@@ -56,6 +58,7 @@ struct ContentView: View {
                     EmployeeEditorView(
                         employee: employee,
                         store: employeeStore,
+                        capabilityStore: capabilityStore,
                         isDemo: true,
                         close: { demoEditorEmployee = nil }
                     )
@@ -82,6 +85,10 @@ struct ContentView: View {
                 if scene.hasPrefix("work") { destinationRaw = AppDestination.work.rawValue }
             }
 #endif
+            Task {
+                await employeeStore.reload()
+                await capabilityStore.reload()
+            }
         }
     }
 
@@ -93,6 +100,7 @@ struct ContentView: View {
         case .contacts:
             EmployeeDirectoryView(
                 store: employeeStore,
+                capabilityStore: capabilityStore,
                 openChat: { employee in openConversation(employee) },
                 editDemoEmployee: { demoEditorEmployee = $0 }
             )
@@ -101,13 +109,14 @@ struct ContentView: View {
                 store: store,
                 conversationStore: conversationStore,
                 employeeStore: employeeStore,
+                capabilityStore: capabilityStore,
                 employee: selectedEmployee,
                 isCreatingWork: $workComposerPresented
             )
         case .skills:
-            CapabilityLibraryWorkspaceView(scope: .skills)
+            CapabilityLibraryWorkspaceView(scope: .skills, capabilityStore: capabilityStore)
         case .tools:
-            CapabilityLibraryWorkspaceView(scope: .tools)
+            CapabilityLibraryWorkspaceView(scope: .tools, capabilityStore: capabilityStore)
         case .settings:
             SettingsView()
         }
@@ -133,7 +142,7 @@ struct ContentView: View {
             conversationStore.select(employee: alex)
         }
         destination.wrappedValue = .work
-        workComposerPresented = true
+        workComposerPresented = capabilityStore.tasksEnabled
     }
 
     private var isModalPresented: Bool {

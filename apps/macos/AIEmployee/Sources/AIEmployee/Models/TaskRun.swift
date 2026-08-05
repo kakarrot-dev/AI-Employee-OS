@@ -45,6 +45,7 @@ struct RuntimeResponse: Codable, Sendable {
 struct TaskHistoryResponse: Codable, Sendable {
     struct Item: Codable, Sendable {
         let taskID: String
+        let agentID: String
         let input: String
         let status: TaskRunStatus
         let createdAt: String
@@ -57,6 +58,7 @@ struct TaskHistoryResponse: Codable, Sendable {
 
         enum CodingKeys: String, CodingKey {
             case taskID = "task_id"
+            case agentID = "agent_id"
             case input, status, actions, evaluation, events
             case createdAt = "created_at"
             case updatedAt = "updated_at"
@@ -109,6 +111,7 @@ struct RuntimeEventsResponse: Codable, Sendable {
 
 struct TaskRun: Identifiable {
     let id: String
+    let agentID: String
     let input: String
     let createdAt: String
     var status: TaskRunStatus
