@@ -1,5 +1,7 @@
 # Claude Cream macOS UI
 
+> 页面级事实源：Office 与 Employee Chat 的目标结构、Light Mode 范围和验收以 [AI Employee macOS Office and Employee Chat UI Spec v1.0](./AI%20Employee%20macOS%20Office%20and%20Employee%20Chat%20UI%20Spec%20v1.0.md) 为准。本文件继续维护 Claude Cream Token、业务状态颜色和通用 macOS 组件原则。下文 `Company / Alex / Tasks / Artifacts / Knowledge` 是 Release 3 已实现基线，不再作为下一轮页面结构约束。
+
 ## 定位
 
 AI Employee macOS Client 使用 Claude Cream 作为唯一自定义视觉 Token。SwiftUI 继续保留原生 Sidebar、Toolbar、Sheet、Alert、菜单和辅助功能行为，不以自绘控件替代系统交互。
@@ -23,22 +25,22 @@ AI Employee macOS Client 使用 Claude Cream 作为唯一自定义视觉 Token�
 
 间距只使用 `4 / 8 / 12 / 16 / 24 / 32 / 48`。内容表面圆角使用 `12`，普通按钮、输入和窗口控件服从 macOS 系统样式。中文使用系统 PingFang SC，正文基准为 16pt。
 
-## 页面规则
+## 通用页面规则
 
-- App Shell 固定为 `Company / Alex / Tasks / Artifacts / Knowledge`，Settings 使用独立 macOS Scene，不作为普通内容页。
+- 目标 App Shell 为 `办公室 / 通讯录 / 工作 / 能力库`，四项平铺；Settings 使用独立 macOS Scene，不作为普通内容页。
 - Task Workspace 的扫描顺序固定为：目标、状态、执行进度、交付结果、Artifact、运行诊断。
 - Artifact 是完成页的视觉主锚点；原始 Event 和 Task ID 默认折叠。
 - Sidebar Row 保持一个状态图标、一行任务标题和一行中文状态，不承载完整证据。
 - Primary 只用于主要交互、焦点和关键图标；正文强调不得滥用 Primary。
 - 禁止在 Feature View 中直接使用 `.blue`、`.green`、`.orange`、`.red` 表达业务语义，必须使用 `AppTheme`。
-- Light 与 Dark 使用同名语义 Token，不建立两套页面结构。
+- Light 与 Dark Token 保持同名语义角色，但当前 Office 与 Employee Chat MVP 只实现并验收 Light Mode，不对未设计的 Dark Mode 自动反色。
 - Sidebar 选中背景遵循用户的 macOS 系统强调色，Claude Cream Primary 用于内容操作、焦点和状态锚点，不自绘 List Selection。
 
-## 当前 MVP 裁决
+## Release 3 历史基线
 
-外部 v0.1 设计材料中的 Nova、Agent-Reach、Mock-first、Multi-Agent 和 Xcode Workspace 拆包不进入当前 Alex MVP。当前仓库的 Unified Data Model、Contract、Runtime API 和 MVP 边界优先；设计材料只提供 UI、交互和组件约束。
+Release 3 只实现单 Alex Golden Path。外部 v0.1 设计材料中的 Nova、Agent-Reach、Mock-first、Multi-Agent 和 Xcode Workspace 拆包未进入该版本。当前仓库的 Unified Data Model、Contract、Runtime API 和 MVP 边界继续优先；新的 Office 与 Employee Chat 页面也不能用 Mock 冒充尚不存在的多员工、Conversation 或流式模型能力。
 
-## v0.1 体验方向
+## Release 3 已实现体验方向
 
 **视觉命题**：温暖、克制、高密度的 macOS 原生工作台。Claude Cream 只承担品牌识别、焦点和关键状态，不用大面积卡片或装饰制造“AI 感”。
 
@@ -46,7 +48,7 @@ AI Employee macOS Client 使用 Claude Cream 作为唯一自定义视觉 Token�
 
 **交互命题**：系统控件保持原生；工作中的 Action 使用系统 ProgressView 表达；页面切换和状态变化保持快速、安静，并服从 Reduce Motion。Artifact 完成后成为页面视觉主锚点。
 
-## 页面结构
+## Release 3 已实现页面结构
 
 ### 公司
 
@@ -90,7 +92,7 @@ UI 不持久化 `Available / Planning / Reviewing / Completed / Error` 等第二
 
 - 默认窗口 `1280 × 820`，最小窗口 `960 × 640`。
 - 首屏不依赖统计卡片也能回答：Alex 是否在工作、做什么、做到哪里、最近交付了什么。
-- Light 与 Dark 保持同一信息层级，相邻表面可分辨。
+- 当前目标页面只验收 Light Mode；未来 Dark Mode 必须保持同一信息层级且相邻表面可分辨，不能直接自动反色。
 - 业务颜色全部来自 `AppTheme`，系统 Sidebar 选中态继续服从 macOS。
 - 审批、取消、失败、`blocked`、`result_unknown` 和 Artifact 操作语义不因视觉改版而丢失。
 

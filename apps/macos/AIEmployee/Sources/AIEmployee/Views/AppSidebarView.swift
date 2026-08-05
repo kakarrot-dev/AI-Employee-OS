@@ -5,23 +5,12 @@ struct AppSidebarView: View {
 
     var body: some View {
         List(selection: $selection) {
-            Section("工作空间") {
-                destination(.company)
-                destination(.alex)
-            }
-            Section("资料") {
-                destination(.tasks)
-                destination(.artifacts)
-                destination(.knowledge)
-            }
-            Section {
-                SettingsLink {
-                    Label("设置", systemImage: "gearshape")
-                }
+            ForEach(AppDestination.allCases) { destination in
+                self.destination(destination)
             }
         }
         .listStyle(.sidebar)
-        .navigationTitle("Alex Office")
+        .navigationTitle("")
     }
 
     private func destination(_ destination: AppDestination) -> some View {

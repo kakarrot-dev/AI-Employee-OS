@@ -30,6 +30,27 @@ enum ClientModelChecks {
             MarkdownBlock.parse("```\nline one\nline two") == [.code("line one\nline two")],
             "unclosed code block preservation"
         )
+        expect(
+            EmployeePresence.resolve(activeRun: nil, latestRun: nil) == .available,
+            "employee is available without active work"
+        )
+        let blocked = TaskRun(
+            id: "task-1",
+            input: "生成 PRD",
+            createdAt: "2026-08-05T00:00:00Z",
+            status: .running,
+            actions: [GraphNodeEvidence(stepID: "write", actionID: "action-1", status: "blocked", outputAs: "prd")],
+            events: [],
+            response: nil,
+            error: nil,
+            artifactPath: nil,
+            evaluation: nil,
+            isCancellationRequested: false
+        )
+        expect(
+            EmployeePresence.resolve(activeRun: blocked, latestRun: blocked) == .attention,
+            "blocked action requires attention"
+        )
         print("client model checks passed")
     }
 

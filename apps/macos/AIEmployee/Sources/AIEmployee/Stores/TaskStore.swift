@@ -9,7 +9,6 @@ final class TaskStore: ObservableObject {
     @Published var runs: [TaskRun] = []
     @Published var selection: String?
     @Published var draft = ""
-    @Published var isComposing = false
     @Published var isCommandPalettePresented = false
     @Published var awaitingApproval = false
     @Published private(set) var historyError: String?
@@ -20,12 +19,6 @@ final class TaskStore: ObservableObject {
     init(service: RuntimeService) {
         self.service = service
         Task { await restoreHistory() }
-    }
-
-    func beginComposing() {
-        draft = ""
-        isComposing = true
-        logger.info("Opened task composer")
     }
 
     func presentCommandPalette() {
@@ -40,14 +33,12 @@ final class TaskStore: ObservableObject {
     func requestRun() {
         guard !isSubmitting else { return }
         guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        isComposing = false
         awaitingApproval = true
     }
 
     func approveAndRun() {
         guard !isSubmitting else { return }
         awaitingApproval = false
-        isComposing = false
         isSubmitting = true
         let id = "task_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
         let input = draft.trimmingCharacters(in: .whitespacesAndNewlines)

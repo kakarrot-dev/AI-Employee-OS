@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct CommandPaletteView: View {
-    @ObservedObject var store: TaskStore
     let navigate: (AppDestination) -> Void
+    let newWork: () -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
@@ -10,12 +10,11 @@ struct CommandPaletteView: View {
 
     private var commands: [PaletteCommand] {
         let all = [
-            PaletteCommand(title: "交给 Alex 新任务", subtitle: "创建一项需要审批的本地任务", image: "plus", action: newTask),
-            destination("打开公司工作台", "查看 Alex 和最近工作", "building.2", .company),
-            destination("打开任务", "查看执行状态、交付和诊断", "checklist", .tasks),
-            destination("打开成果", "浏览已经生成的 PRD", "shippingbox", .artifacts),
-            destination("打开知识", "查看本地资料的使用边界", "books.vertical", .knowledge),
-            destination("查看 Alex", "查看职责、能力和运行边界", "person.crop.circle", .alex)
+            PaletteCommand(title: "交给 Alex 新工作", subtitle: "进入员工聊天并开始工作", image: "plus", action: newTask),
+            destination("打开办公室", "查看 Alex 的当前状态", "building.2", .office),
+            destination("打开通讯录", "按部门查找员工", "person.2", .contacts),
+            destination("打开工作", "查看与 Alex 的工作记录", "bubble.left.and.bubble.right", .work),
+            destination("打开能力库", "查看内置 Skills 与 Tools", "square.grid.2x2", .capabilities)
         ]
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty else { return all }
@@ -78,8 +77,8 @@ struct CommandPaletteView: View {
     }
 
     private func newTask() {
+        newWork()
         dismiss()
-        store.beginComposing()
     }
 }
 

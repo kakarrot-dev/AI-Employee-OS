@@ -1,17 +1,11 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @AppStorage("themeMode") private var themeModeRaw = ThemeMode.system.rawValue
-
     var body: some View {
         TabView {
             Form {
-                Picker("外观", selection: $themeModeRaw) {
-                    ForEach(ThemeMode.allCases) { mode in
-                        Text(mode.title).tag(mode.rawValue)
-                    }
-                }
-                Text("所有模式都使用 Claude Cream 语义 Token。")
+                LabeledContent("外观", value: "Claude Cream 浅色")
+                Text("当前版本只实现并验收浅色模式。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

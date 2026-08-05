@@ -4,6 +4,7 @@ import SwiftUI
 struct MenuBarStatusView: View {
     @ObservedObject var store: TaskStore
     @Environment(\.openWindow) private var openWindow
+    @AppStorage("appDestination") private var destinationRaw = AppDestination.office.rawValue
 
     private var runningCount: Int { store.runs.filter { $0.status == .running }.count }
 
@@ -14,10 +15,10 @@ struct MenuBarStatusView: View {
             openWindow(id: "main")
             NSApp.activate(ignoringOtherApps: true)
         }
-        Button("交给 Alex 新任务") {
+        Button("交给 Alex 新工作") {
+            destinationRaw = AppDestination.work.rawValue
             openWindow(id: "main")
             NSApp.activate(ignoringOtherApps: true)
-            store.beginComposing()
         }
         .disabled(store.isSubmitting)
         Divider()
@@ -25,6 +26,6 @@ struct MenuBarStatusView: View {
     }
 
     private var statusTitle: String {
-        runningCount > 0 ? "Alex 正在处理 \(runningCount) 个任务" : "Alex 可以接受新任务"
+        runningCount > 0 ? "Alex 正在处理工作" : "Alex 可以接受新工作"
     }
 }
