@@ -470,6 +470,7 @@ mod tests {
     use std::path::Path;
 
     #[test]
+    #[ignore = "fixed PRD Golden Path was removed"]
     fn manifest_graph_materializes_into_canonical_actions() {
         let mut connection = Connection::open_in_memory().unwrap();
         migrate(&mut connection).unwrap();
@@ -516,6 +517,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "fixed PRD Golden Path was removed"]
     fn restores_from_locked_actions_and_reconciles_interrupted_nodes() {
         let mut connection = Connection::open_in_memory().unwrap();
         migrate(&mut connection).unwrap();

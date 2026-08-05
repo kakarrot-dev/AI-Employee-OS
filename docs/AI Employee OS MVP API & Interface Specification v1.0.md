@@ -1,5 +1,7 @@
 # AI Employee OS MVP API & Interface Specification v1.0
 
+> 2026-08-05 扩展：Runtime 新增 `employees-list`、`employee-save`、`employee-delete`、`effective-prompt`、`chat-history` 与 `chat-send` 命令。员工保存输入遵循 `contracts/employee-profile.schema.json`；有历史的员工删除请求收敛为 disabled。`chat-send` 先持久化 User Message 和 ModelCall，再通过 Python Provider 调用 DeepSeek；只有非空成功响应才能追加 Assistant Message。Effective Prompt 只由 Rust 根据 Identity、Soul、Persona、基础 Prompt 与安全边界编译。DeepSeek API Key 仅由受控进程环境提供，不进入参数、数据库或日志。普通对话不创建 Task。
+
 目标：
 
 定义各模块之间的通信协议，使：

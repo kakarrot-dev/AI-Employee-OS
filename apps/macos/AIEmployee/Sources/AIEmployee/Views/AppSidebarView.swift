@@ -3,15 +3,9 @@ import SwiftUI
 struct AppSidebarView: View {
     @Binding var selection: AppDestination
     @ObservedObject var store: TaskStore
+    @ObservedObject var conversationStore: ConversationStore
+    @State private var confirmingHistoryDeletion = false
     @Environment(\.colorScheme) private var colorScheme
-
-    private var activeRun: TaskRun? {
-        store.runs.first { $0.status == .running || $0.status == .pending }
-    }
-
-    private var presence: EmployeePresence {
-        EmployeePresence.resolve(activeRun: activeRun, latestRun: store.runs.first)
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -20,15 +14,33 @@ struct AppSidebarView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
                     navigationSection
-                    employeeSection
                     recentSection
                 }
                 .padding(.horizontal, AppTheme.Spacing.xs)
                 .padding(.bottom, AppTheme.Spacing.md)
             }
+
+            Divider().overlay(palette.hairlineSoft)
+            sidebarButton(
+                title: AppDestination.settings.title,
+                systemImage: AppDestination.settings.systemImage,
+                selected: selection == .settings
+            ) {
+                selection = .settings
+            }
+            .padding(.horizontal, AppTheme.Spacing.xs)
+            .padding(.vertical, AppTheme.Spacing.xs)
         }
         .background(palette.surfaceSoft)
         .navigationTitle("")
+        .confirmationDialog("删除与 Alex 的聊天记录？", isPresented: $confirmingHistoryDeletion, titleVisibility: .visible) {
+            Button("删除聊天记录", role: .destructive) {
+                Task { await conversationStore.deleteHistory() }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("所有消息和对应模型调用记录都会从本机删除，此操作无法撤销。")
+        }
     }
 
     private var companyHeader: some View {
@@ -67,7 +79,7 @@ struct AppSidebarView: View {
 
     private var navigationSection: some View {
         VStack(spacing: 2) {
-            ForEach(AppDestination.allCases) { destination in
+            ForEach(AppDestination.allCases.filter { $0 != .settings }) { destination in
                 sidebarButton(
                     title: destination.title,
                     systemImage: destination.systemImage,
@@ -80,91 +92,55 @@ struct AppSidebarView: View {
         }
     }
 
-    private var employeeSection: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-            sectionLabel("产品部")
-
-            Button {
-                store.selection = nil
-                selection = .work
-            } label: {
-                HStack(spacing: AppTheme.Spacing.xs) {
-                    ZStack(alignment: .bottomTrailing) {
-                        Circle()
-                            .fill(palette.primary.opacity(0.14))
-                            .frame(width: 28, height: 28)
-                            .overlay {
-                                Text("A")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(palette.primaryActive)
-                            }
-                        Circle()
-                            .fill(presenceColor)
-                            .frame(width: 7, height: 7)
-                            .overlay { Circle().stroke(palette.surfaceSoft, lineWidth: 1.5) }
-                    }
-
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Alex")
-                            .font(.callout.weight(.medium))
-                            .foregroundStyle(palette.ink)
-                        Text(activeRun?.input ?? "AI 产品经理")
-                            .font(.caption)
-                            .foregroundStyle(palette.muted)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, AppTheme.Spacing.xs)
-                .frame(height: 42)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
     private var recentSection: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
             HStack {
                 sectionLabel("最近工作")
                 Spacer()
-                if !store.runs.isEmpty {
-                    Text("\(store.runs.count)")
+                if !conversationStore.messages.isEmpty {
+                    Text("\(conversationStore.messages.count)")
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(palette.mutedSoft)
                 }
             }
 
-            if store.runs.isEmpty {
-                Text("还没有工作记录")
+            if conversationStore.messages.isEmpty {
+                Text("还没有聊天记录")
                     .font(.caption)
                     .foregroundStyle(palette.mutedSoft)
                     .padding(.horizontal, AppTheme.Spacing.xs)
                     .padding(.vertical, 6)
             } else {
-                ForEach(store.runs.prefix(8)) { run in
+                HStack(spacing: AppTheme.Spacing.xxs) {
                     Button {
-                        store.selection = run.id
+                        store.selection = nil
                         selection = .work
                     } label: {
                         HStack(spacing: 7) {
-                            Circle()
-                                .fill(statusColor(run.status))
-                                .frame(width: 5, height: 5)
-                            Text(run.input)
+                            Circle().fill(palette.success).frame(width: 5, height: 5)
+                            Text("与 \(conversationStore.employeeName) 的对话")
                                 .font(.caption)
                                 .foregroundStyle(palette.body)
-                                .lineLimit(1)
                             Spacer(minLength: 0)
                         }
-                        .padding(.horizontal, AppTheme.Spacing.xs)
-                        .frame(height: 28)
+                        .padding(.leading, AppTheme.Spacing.xs)
+                        .frame(height: 30)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .background(store.selection == run.id && selection == .work ? palette.primary.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
-                    .help(run.input)
+
+                    Button {
+                        confirmingHistoryDeletion = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.caption)
+                            .foregroundStyle(palette.muted)
+                            .frame(width: 26, height: 26)
+                    }
+                    .buttonStyle(.plain)
+                    .help("删除聊天记录")
                 }
+                .background(selection == .work ? palette.primary.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
             }
         }
     }
@@ -192,25 +168,6 @@ struct AppSidebarView: View {
             .font(.caption2.weight(.medium))
             .foregroundStyle(palette.mutedSoft)
             .padding(.horizontal, AppTheme.Spacing.xs)
-    }
-
-    private var presenceColor: Color {
-        switch presence {
-        case .available: palette.success
-        case .working: palette.accentTeal
-        case .attention: palette.warning
-        case .failed: palette.error
-        case .disabled: palette.muted
-        }
-    }
-
-    private func statusColor(_ status: TaskRunStatus) -> Color {
-        switch status {
-        case .pending, .running: palette.accentTeal
-        case .succeeded: palette.success
-        case .failed: palette.error
-        case .cancelled: palette.muted
-        }
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }

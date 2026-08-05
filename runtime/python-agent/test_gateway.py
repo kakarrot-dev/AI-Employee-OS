@@ -122,7 +122,7 @@ class CrossProcessGatewayTests(unittest.TestCase):
     def _seed_database(self):
         with closing(sqlite3.connect(self.database)) as connection:
             connection.execute("PRAGMA foreign_keys = ON")
-            for migration in range(1, 5):
+            for migration in range(1, 10):
                 path = next((ROOT / "storage/migrations").glob(f"{migration:03d}_*.sql"))
                 connection.executescript(path.read_text(encoding="utf-8"))
             now = "2026-08-04T00:00:00Z"

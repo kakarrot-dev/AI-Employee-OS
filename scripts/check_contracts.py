@@ -167,6 +167,8 @@ VALID_CASES = (
     ("decision-context.schema.json", "examples/decision-context.valid.json"),
     ("eval-report.schema.json", "examples/eval-report.valid.json"),
     ("runtime-event.schema.json", "examples/runtime-event.valid.json"),
+    ("chat-message.schema.json", "examples/chat-message.valid.json"),
+    ("employee-profile.schema.json", "examples/employee-profile.valid.json"),
 )
 
 INVALID_CASES = (
@@ -178,6 +180,8 @@ INVALID_CASES = (
     ("decision-context.schema.json", "fixtures/decision-context.invalid-budget.json"),
     ("eval-report.schema.json", "fixtures/eval-report.invalid-score.json"),
     ("runtime-event.schema.json", "fixtures/runtime-event.invalid-type.json"),
+    ("chat-message.schema.json", "fixtures/chat-message.invalid-role.json"),
+    ("employee-profile.schema.json", "fixtures/employee-profile.invalid-status.json"),
 )
 
 for schema_name, payload_name in VALID_CASES:

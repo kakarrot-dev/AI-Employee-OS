@@ -14,7 +14,8 @@ struct CommandPaletteView: View {
             destination("打开办公室", "查看 Alex 的当前状态", "building.2", .office),
             destination("打开通讯录", "按部门查找员工", "person.2", .contacts),
             destination("打开工作", "查看与 Alex 的工作记录", "bubble.left.and.bubble.right", .work),
-            destination("打开能力库", "查看内置 Skills 与 Tools", "square.grid.2x2", .capabilities)
+            destination("打开能力库", "查看可用 Skills 与 Tools", "square.grid.2x2", .capabilities),
+            destination("打开设置", "配置模型、隐私与应用选项", "gearshape", .settings)
         ]
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty else { return all }

@@ -1,4 +1,6 @@
-use rusqlite::{Connection, Result};
+use std::time::Duration;
+
+use rusqlite::{Connection, Result, TransactionBehavior};
 
 pub const MIGRATION_001: &str = include_str!("../../../storage/migrations/001_initial.sql");
 pub const MIGRATION_002: &str = include_str!("../../../storage/migrations/002_tool_executions.sql");
@@ -11,23 +13,72 @@ pub const MIGRATION_006: &str =
     include_str!("../../../storage/migrations/006_memory_provenance.sql");
 pub const MIGRATION_007: &str =
     include_str!("../../../storage/migrations/007_runtime_events_and_cancellation.sql");
+pub const MIGRATION_008: &str = include_str!("../../../storage/migrations/008_conversations.sql");
+pub const MIGRATION_009: &str =
+    include_str!("../../../storage/migrations/009_employee_profiles.sql");
+const LATEST_SCHEMA_VERSION: i64 = 9;
 
 pub fn migrate(connection: &mut Connection) -> Result<()> {
+    connection.busy_timeout(Duration::from_secs(5))?;
     connection.execute_batch("PRAGMA foreign_keys = ON;")?;
-    let transaction = connection.transaction()?;
-    transaction.execute_batch(MIGRATION_001)?;
-    transaction.execute_batch(MIGRATION_002)?;
-    transaction.execute_batch(MIGRATION_003)?;
-    transaction.execute_batch(MIGRATION_004)?;
-    transaction.execute_batch(MIGRATION_005)?;
-    transaction.execute_batch(MIGRATION_006)?;
-    transaction.execute_batch(MIGRATION_007)?;
+    if current_schema_version(connection)? >= LATEST_SCHEMA_VERSION {
+        return Ok(());
+    }
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let current = current_schema_version(&transaction)?;
+    if current < 1 {
+        transaction.execute_batch(MIGRATION_001)?;
+    }
+    if current < 2 {
+        transaction.execute_batch(MIGRATION_002)?;
+    }
+    if current < 3 {
+        transaction.execute_batch(MIGRATION_003)?;
+    }
+    if current < 4 {
+        transaction.execute_batch(MIGRATION_004)?;
+    }
+    if current < 5 {
+        transaction.execute_batch(MIGRATION_005)?;
+    }
+    if current < 6 {
+        transaction.execute_batch(MIGRATION_006)?;
+    }
+    if current < 7 {
+        transaction.execute_batch(MIGRATION_007)?;
+    }
+    if current < 8 {
+        transaction.execute_batch(MIGRATION_008)?;
+    }
+    if current < 9 {
+        transaction.execute_batch(MIGRATION_009)?;
+    }
     transaction.commit()
+}
+
+fn current_schema_version(connection: &Connection) -> Result<i64> {
+    let exists: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !exists {
+        return Ok(0);
+    }
+    connection.query_row(
+        "SELECT COALESCE(MAX(version),0) FROM schema_migrations",
+        [],
+        |row| row.get(0),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     #[test]
     fn migration_creates_all_canonical_tables_and_is_replayable() {
@@ -42,7 +93,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 24); // 23 canonical tables plus schema_migrations.
+        assert_eq!(count, 29); // 28 canonical tables plus schema_migrations.
 
         let integrity: String = connection
             .query_row("PRAGMA integrity_check", [], |row| row.get(0))
@@ -54,7 +105,7 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(migration_count, 7);
+        assert_eq!(migration_count, 9);
     }
 
     #[test]
@@ -128,7 +179,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(index_count, 15);
+        assert_eq!(index_count, 18);
     }
 
     #[test]
@@ -155,6 +206,61 @@ mod tests {
             })
             .unwrap();
         assert_eq!(name, "Alex");
+    }
+
+    #[test]
+    fn current_schema_migration_does_not_compete_for_an_existing_write_lock() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("ai-employee-migration-lock-{nonce}.db"));
+        let mut first = Connection::open(&path).unwrap();
+        migrate(&mut first).unwrap();
+        let write = first
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        write
+            .execute("UPDATE agents SET updated_at=updated_at", [])
+            .unwrap();
+
+        let mut second = Connection::open(&path).unwrap();
+        second.busy_timeout(Duration::from_millis(25)).unwrap();
+        migrate(&mut second).unwrap();
+
+        drop(write);
+        drop(second);
+        drop(first);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn conversation_messages_require_monotonic_unique_sequence() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        migrate(&mut connection).unwrap();
+        connection
+            .execute(
+                "INSERT INTO agents VALUES ('alex','Alex','assistant','package','active','t','t')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO conversations VALUES ('conversation','alex','Chat','active','t','t')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO messages VALUES ('m1','conversation',1,'user','hello','t')",
+                [],
+            )
+            .unwrap();
+        let duplicate = connection.execute(
+            "INSERT INTO messages VALUES ('m2','conversation',1,'assistant','hi','t')",
+            [],
+        );
+        assert!(duplicate.is_err());
     }
 
     #[test]

@@ -26,6 +26,13 @@ struct RuntimeService: Sendable {
     let loadHistory: @Sendable () async throws -> TaskHistoryResponse
     let events: @Sendable (String, Int) async throws -> RuntimeEventsResponse
     let cancel: @Sendable (String) async throws -> Void
+    let chatHistory: @Sendable (String) async throws -> ChatHistoryResponse
+    let chatSend: @Sendable (String, String, String, String) async throws -> ChatSendResponse
+    let chatDelete: @Sendable (String) async throws -> ChatDeleteResponse
+    let employeeList: @Sendable () async throws -> EmployeeListResponse
+    let employeeSave: @Sendable (Employee) async throws -> EmployeeSaveResponse
+    let employeeDelete: @Sendable (String) async throws -> EmployeeDeleteResponse
+    let effectivePrompt: @Sendable (String) async throws -> EffectivePromptResponse
 
     static func live() -> Self {
         Self(run: { taskID, input in
@@ -90,25 +97,48 @@ struct RuntimeService: Sendable {
             try await decodeCommand(["events", "--database", try databaseURL().path, "--task-id", taskID, "--after", String(after)], as: RuntimeEventsResponse.self)
         }, cancel: { taskID in
             let _: CancelResponse = try await decodeCommand(["cancel-task", "--database", try databaseURL().path, "--task-id", taskID], as: CancelResponse.self)
+        }, chatHistory: { conversationID in
+            try await decodeCommand(["chat-history", "--database", try databaseURL().path, "--conversation-id", conversationID], as: ChatHistoryResponse.self)
+        }, chatSend: { conversationID, employeeID, input, key in
+            try await decodeCommand(["chat-send", "--repository-root", try runtimeLayout().resourceRoot.path, "--database", try databaseURL().path, "--conversation-id", conversationID, "--employee-id", employeeID, "--input", input], environment: ["DEEPSEEK_API_KEY": key], as: ChatSendResponse.self)
+        }, chatDelete: { conversationID in
+            try await decodeCommand(["chat-delete", "--database", try databaseURL().path, "--conversation-id", conversationID], as: ChatDeleteResponse.self)
+        }, employeeList: {
+            try await decodeCommand(["employees-list", "--repository-root", try runtimeLayout().resourceRoot.path, "--database", try databaseURL().path], as: EmployeeListResponse.self)
+        }, employeeSave: { employee in
+            let data = try JSONEncoder().encode(employee)
+            let payload = String(decoding: data, as: UTF8.self)
+            return try await decodeCommand(["employee-save", "--database", try databaseURL().path, "--payload", payload], as: EmployeeSaveResponse.self)
+        }, employeeDelete: { id in
+            try await decodeCommand(["employee-delete", "--database", try databaseURL().path, "--employee-id", id], as: EmployeeDeleteResponse.self)
+        }, effectivePrompt: { id in
+            try await decodeCommand(["effective-prompt", "--database", try databaseURL().path, "--employee-id", id], as: EffectivePromptResponse.self)
         })
     }
 
     private struct CancelResponse: Codable, Sendable { let status: String }
 
     private static func databaseURL() throws -> URL {
-        try runtimeLayout().database
+        let database = try runtimeLayout().database
+        do {
+            try FileManager.default.createDirectory(at: database.deletingLastPathComponent(), withIntermediateDirectories: true)
+        } catch {
+            throw RuntimeError.storageUnavailable(error.localizedDescription)
+        }
+        return database
     }
 
     static func authorizedOutputDirectory() throws -> URL {
         try runtimeLayout().outputDirectory
     }
 
-    private static func decodeCommand<T: Decodable & Sendable>(_ arguments: [String], as type: T.Type) async throws -> T {
+    private static func decodeCommand<T: Decodable & Sendable>(_ arguments: [String], environment: [String: String] = [:], as type: T.Type) async throws -> T {
         try await Task.detached(priority: .utility) {
             let binary = try runtimeLayout().binary
             let process = Process()
             process.executableURL = binary
             process.arguments = arguments
+            process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
             let stdout = Pipe(); let stderr = Pipe()
             process.standardOutput = stdout; process.standardError = stderr
             do { try process.run() }
@@ -146,7 +176,7 @@ struct RuntimeService: Sendable {
     private static func runtimeLayout() throws -> RuntimeLayout {
         let bundleRoot = Bundle.main.bundleURL.appending(path: "Contents/Resources/AIEmployeeRuntime")
         let bundleBinary = Bundle.main.bundleURL.appending(path: "Contents/MacOS/ai-employee-runtime")
-        if FileManager.default.fileExists(atPath: bundleRoot.appending(path: "runtime/python-agent/app/worker.py").path),
+        if FileManager.default.fileExists(atPath: bundleRoot.appending(path: "runtime/python-agent/app/chat_worker.py").path),
            FileManager.default.isExecutableFile(atPath: bundleBinary.path) {
             let applicationSupport = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
                 .appending(path: "AIEmployee", directoryHint: .isDirectory)

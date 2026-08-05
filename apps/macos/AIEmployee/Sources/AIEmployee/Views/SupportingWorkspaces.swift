@@ -29,12 +29,22 @@ struct ContactsWorkspaceView: View {
 }
 
 struct CapabilityLibraryWorkspaceView: View {
+    let employee: Employee?
     var body: some View {
-        ContentUnavailableView(
-            "能力库尚未开放",
-            systemImage: "square.grid.2x2",
-            description: Text("员工当前使用的 Skills 与 Tools 仍由 Runtime 的版本化 Package 提供。")
-        )
-        .navigationTitle("能力库")
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                Text(employee?.name ?? "当前员工").font(.largeTitle.weight(.semibold))
+                Text("能力基线").font(.title3).foregroundStyle(.secondary)
+            }
+            Divider()
+            LabeledContent("Skills", value: "0 个")
+            LabeledContent("Tools", value: "0 个")
+            Text("当前阶段刻意保持无 Skill、无 Tool，用于测量员工的基础对话能力。后续安装能力时，这里将显示版本、状态、权限和对比结果。").foregroundStyle(.secondary)
+            Spacer()
+        }
+        .frame(maxWidth: 720, maxHeight: .infinity, alignment: .topLeading)
+        .padding(AppTheme.Spacing.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .navigationTitle("能力")
     }
 }

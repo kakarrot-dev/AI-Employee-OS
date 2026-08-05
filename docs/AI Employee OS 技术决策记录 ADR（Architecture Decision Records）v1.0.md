@@ -1,5 +1,13 @@
 # AI Employee OS 技术决策记录 ADR（Architecture Decision Records）v1.0
 
+## ADR-027：普通对话与任务执行分离
+
+Alex 的 Conversation/Message 是连续交流事实，Task/Action 是受控执行事实，两者不得互相冒充。当前 Alex 不绑定 Skill 或 Tool，真实回复由 DeepSeek 官方 API 生成；普通对话不会触发 ToolExecutor。多轮上下文由 Runtime 从 SQLite 按顺序重建，模型 reasoning 不持久化、不展示。API Key 只允许来自 macOS Keychain 注入的受控进程环境。
+
+## ADR-028：员工定义分层与 Effective Prompt 单向编译
+
+员工定义拆分为 Identity、Soul、Persona 和基础 Prompt。`agents` 与 `employee_profiles` 表达 Identity/Soul，`personas` 表达沟通、思考、决策与习惯；Swift 只编辑这些结构化输入。Rust Runtime 单向编译 Effective Prompt，并为每次 ModelCall 保存员工配置版本与 Prompt SHA-256。Skill、Tool、Memory 与安全规则后续只能作为编译输入加入，禁止客户端维护第二套 System Prompt 或绕过 Runtime 安全边界。
+
 目标：
 
 记录关键架构选择背后的原因，避免后续开发过程中出现：

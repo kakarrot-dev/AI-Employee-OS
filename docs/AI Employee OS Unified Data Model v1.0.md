@@ -21,10 +21,28 @@ confidence: high
 
 ## 1. 模型边界
 
-MVP 数据模型包含 19 张表：
+MVP canonical 数据模型现包含 28 张表；Conversation 扩展由追加 Migration 008 引入，Employee Profile 与 Prompt 追溯由追加 Migration 009 引入。
+
+### 1.1 Conversation 扩展（2026-08-05）
+
+- `conversations`：AI 员工的本地持久化对话。当前每名员工使用一个 active Conversation。
+- `messages`：只保存用户和 Assistant 最终文本；不保存 reasoning、Secret 或 Tool 消息。
+- `model_calls`：记录 DeepSeek 调用状态、模型、脱敏错误码和 Token 用量。
+- Conversation 与 Task 相互独立。普通聊天不创建 Task，也不触发 Skill、Tool、Approval 或外部副作用。
+- 当前员工默认不绑定 Skill 或 Tool；旧数据库中的已引用能力记录保留为 disabled 历史事实。
+
+### 1.2 Employee Profile 与 Prompt 追溯（2026-08-05）
+
+- `agents` 继续保存员工根身份和生命周期，`personas` 继续保存沟通、思考、决策和习惯配置。
+- `employee_profiles` 保存部门、使命、职责、边界、Soul、基础 Prompt 和单调递增的配置版本。
+- Identity、Soul、Persona、基础 Prompt 与 Runtime 安全边界共同编译为 Effective Prompt；Swift 不拼装 System Prompt。
+- `model_call_configs` 按 ModelCall 保存员工、配置版本和 Prompt SHA-256，不保存第二份 Prompt 正文或 Secret。
+- 有 Conversation 或 Task 历史的员工禁止硬删除，只能停用；无引用员工允许确认后删除。
+
+此前定义的核心表如下：
 
 - Identity：`subjects`
-- Agent：`agents`、`personas`
+- Agent：`agents`、`personas`、`employee_profiles`
 - Capability：`skills`、`agent_skills`、`tools`
 - Execution：`tasks`、`actions`、`tool_executions`、`task_execution_snapshots`
 - Context：`memories`、`knowledge_sources`、`knowledge_chunks`

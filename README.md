@@ -1,10 +1,10 @@
 # AI Employee OS
 
-AI Employee OS 是一个 Local-first 的 macOS AI 员工运行平台。MVP 以 AI 产品经理 Alex 为首个角色，验证从任务输入、Agent 规划、受控工具执行到 PRD 交付和经验沉淀的完整闭环。
+AI Employee OS 是一个 Local-first 的 macOS AI 员工运行平台。当前产品只保留 Alex 一个 AI 员工，优先验证由 DeepSeek 驱动、SQLite 持久化并可跨重启恢复的真实多轮对话。
 
 ## 当前状态
 
-项目已完成安全 Golden Path、Release 1 Decision Substrate 和 Release 2 Execution + Evidence；Release 3 的 SwiftUI Client、运行遥测和本地分发验证正在建设。Runtime 已能以 deterministic Provider 跑通版本锁定的 Skill DAG、Task/Action、版本化 Prompt、预算化 Context、带来源 Knowledge、Memory 读写、受限 Tool Loop、Rust ToolExecutor、PRD 产物、Evaluation 和终态持久化。
+Alex 当前不绑定任何 Skill 或 Tool，固定 PRD Golden Path 已移除。用户在 macOS Keychain 配置 DeepSeek API Key 后，可与 Alex 进行真实多轮对话；Conversation、Message 与脱敏 ModelCall 状态由 Rust Runtime 持久化。
 
 ## 架构
 
@@ -61,22 +61,9 @@ scripts/                    本地验证入口
 cargo test --manifest-path runtime/rust-core/Cargo.toml
 ```
 
-## 运行 Golden Path
+## 运行对话
 
-该命令不访问网络，也不调用付费模型。`--approve-write` 表示用户明确批准本次 Markdown 写入；省略时 Runtime 默认拒绝执行。
-
-```bash
-cargo build --bins
-mkdir -p /tmp/ai-employee-os/output
-./target/debug/ai-employee-runtime run-golden \
-  --repository-root "$PWD" \
-  --database /tmp/ai-employee-os/runtime.sqlite3 \
-  --output-dir /tmp/ai-employee-os/output \
-  --input "为企业 AI 知识库设计一个 PRD" \
-  --approve-write
-```
-
-成功时 stdout 返回结构化 JSON，其中包含 `task_id`、`artifact_path`、Decision Context、Memory Outcome、Evaluation、Worker Metrics 和有序事件。数据库中的 Task、Action 与 Tool Execution 均应收敛为 `succeeded`。
+通过 App 设置页把 DeepSeek API Key 保存到 macOS Keychain，然后在“工作”页与 Alex 对话。DeepSeek Chat Completions 是无状态接口，Runtime 会从 SQLite 重建当前 Conversation 的有序消息并随每轮请求提交。
 
 ## 事实源
 

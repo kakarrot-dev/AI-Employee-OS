@@ -207,29 +207,4 @@ mod tests {
         assert!(record_feedback(&connection, "feedback", "task", 5, Some(" useful "), "t").is_ok());
         assert!(record_feedback(&connection, "bad", "task", 0, None, "t").is_err());
     }
-
-    #[test]
-    fn fixed_eval_set_covers_all_required_failure_classes() {
-        let cases: Vec<EvalCase> = serde_json::from_str(include_str!(
-            "../../../packages/skills/prd-generation/evals/cases.json"
-        ))
-        .unwrap();
-        assert!(cases.len() >= 12);
-        for (category, minimum) in [
-            ("standard", 4),
-            ("missing_information", 3),
-            ("conflicting_sources", 2),
-            ("tool_failure", 2),
-            ("memory_conflict", 1),
-        ] {
-            assert!(
-                cases
-                    .iter()
-                    .filter(|case| case.category == category)
-                    .count()
-                    >= minimum,
-                "missing eval coverage for {category}"
-            );
-        }
-    }
 }

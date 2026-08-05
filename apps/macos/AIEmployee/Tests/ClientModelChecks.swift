@@ -51,6 +51,10 @@ enum ClientModelChecks {
             EmployeePresence.resolve(activeRun: blocked, latestRun: blocked) == .attention,
             "blocked action requires attention"
         )
+        let employee = Employee.draft()
+        expect(employee.schemaVersion == "1.0" && employee.status == "active", "employee draft uses canonical defaults")
+        let encoded = try! JSONEncoder().encode(employee)
+        expect((try? JSONDecoder().decode(Employee.self, from: encoded))?.basePrompt == employee.basePrompt, "employee contract round trip")
         print("client model checks passed")
     }
 

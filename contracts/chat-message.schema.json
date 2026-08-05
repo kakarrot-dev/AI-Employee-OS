@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-employee.local/contracts/chat-message.schema.json",
+  "title": "ChatMessage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "role", "content", "created_at"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "role": {"enum": ["user", "assistant"]},
+    "content": {"type": "string", "minLength": 1},
+    "created_at": {"type": "string", "minLength": 1}
+  }
+}
