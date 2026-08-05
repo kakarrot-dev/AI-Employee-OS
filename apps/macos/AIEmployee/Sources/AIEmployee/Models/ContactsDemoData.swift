@@ -38,7 +38,7 @@ struct ContactsDemoData {
 #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         guard let index = arguments.firstIndex(of: "--ui-demo"), arguments.indices.contains(index + 1) else { return nil }
-        guard arguments[index + 1].hasPrefix("contacts") else { return nil }
+        guard arguments[index + 1].hasPrefix("contacts") || arguments[index + 1].hasPrefix("work") else { return nil }
         return sample
 #else
         return nil
@@ -72,12 +72,12 @@ struct ContactsDemoData {
         ]
 
         let employees = [
-            employee(id: "alex", name: "Alex", role: "AI 产品经理", department: "产品部", identity: "# Alex\n\n你是一名 AI 产品经理，负责把模糊目标转化为可执行、可验收的产品方案。\n\n## 工作范围\n\n- 澄清业务目标与用户问题\n- 输出结构化产品需求文档\n- 定义状态、异常流程和验收标准", soul: "# 工作原则\n\n- 坚持第一性原理\n- 区分事实、推测与未知\n- 结论必须可执行、可验证"),
+            employee(id: "ai-product-manager", name: "Alex", role: "AI 产品经理", department: "产品部", identity: "# Alex\n\n你是一名 AI 产品经理，负责把模糊目标转化为可执行、可验收的产品方案。\n\n## 工作范围\n\n- 澄清业务目标与用户问题\n- 输出结构化产品需求文档\n- 定义状态、异常流程和验收标准", soul: "# 工作原则\n\n- 坚持第一性原理\n- 区分事实、推测与未知\n- 结论必须可执行、可验证"),
             employee(id: "maya", name: "Maya", role: "AI 用户研究员", department: "产品部", identity: "# Maya\n\n你是一名 AI 用户研究员，负责从访谈、反馈与行为材料中提取可靠洞察。\n\n## 工作范围\n\n- 设计研究问题\n- 编码访谈材料\n- 识别证据强度与样本限制", soul: "# 工作原则\n\n- 不把个例包装成普遍结论\n- 保留反例和原始证据\n- 使用清晰、克制的研究语言"),
             employee(id: "leo", name: "Leo", role: "AI 数据分析师", department: "数据部", identity: "# Leo\n\n你是一名 AI 数据分析师，负责把业务问题转化为可复现的数据分析。\n\n## 工作范围\n\n- 定义指标口径\n- 检查数据质量\n- 输出结论、限制与复现步骤", soul: "# 工作原则\n\n- 先检查数据，再计算指标\n- 区分相关性与因果关系\n- 不隐藏缺失值和口径变化")
         ]
         return Self(employees: employees, capabilities: [
-            "alex": .init(selectedSkills: [productSkill], selectedTools: [fileTool, documentTool], permissions: alexPermissions, skillCatalog: skillCatalog, toolCatalog: toolCatalog),
+            "ai-product-manager": .init(selectedSkills: [productSkill], selectedTools: [fileTool, documentTool], permissions: alexPermissions, skillCatalog: skillCatalog, toolCatalog: toolCatalog),
             "maya": .init(selectedSkills: [researchSkill], selectedTools: [fileTool], permissions: mayaPermissions, skillCatalog: skillCatalog, toolCatalog: toolCatalog),
             "leo": .init(selectedSkills: [analysisSkill], selectedTools: [fileTool, sheetTool], permissions: leoPermissions, skillCatalog: skillCatalog, toolCatalog: toolCatalog)
         ])

@@ -6,6 +6,7 @@ struct ContentView: View {
     @ObservedObject var employeeStore: EmployeeStore
     @AppStorage("appDestination") private var destinationRaw = AppDestination.office.rawValue
     @SceneStorage("workComposerPresented") private var workComposerPresented = false
+    @State private var demoEditorEmployee: Employee?
     @Environment(\.colorScheme) private var colorScheme
 
     private var destination: Binding<AppDestination> {
@@ -49,9 +50,38 @@ struct ContentView: View {
                     )
                 }
             }
+
+            if let employee = demoEditorEmployee {
+                CreamModalOverlay(close: { demoEditorEmployee = nil }, preferredWidth: 820, preferredHeight: 660) {
+                    EmployeeEditorView(
+                        employee: employee,
+                        store: employeeStore,
+                        isDemo: true,
+                        close: { demoEditorEmployee = nil }
+                    )
+                }
+            }
+
+            WindowTitlebarScrim(
+                isPresented: isModalPresented,
+                opacity: colorScheme == .dark ? 0.24 : 0.10,
+                close: closeActiveModal
+            )
+            .frame(width: 0, height: 0)
         }
         .onChange(of: employeeStore.selection) { _, _ in
             if let employee = employeeStore.selected { conversationStore.select(employee: employee) }
+        }
+        .onAppear {
+#if DEBUG
+            let arguments = ProcessInfo.processInfo.arguments
+            if let index = arguments.firstIndex(of: "--ui-demo"), arguments.indices.contains(index + 1) {
+                let scene = arguments[index + 1]
+                if scene.hasPrefix("skills") { destinationRaw = AppDestination.skills.rawValue }
+                if scene.hasPrefix("tools") { destinationRaw = AppDestination.tools.rawValue }
+                if scene.hasPrefix("work") { destinationRaw = AppDestination.work.rawValue }
+            }
+#endif
         }
     }
 
@@ -61,12 +91,17 @@ struct ContentView: View {
         case .office:
             OfficeWorkspaceView(store: store, employeeStore: employeeStore, openChat: { destination.wrappedValue = .work })
         case .contacts:
-            EmployeeDirectoryView(store: employeeStore) { employee in openConversation(employee) }
+            EmployeeDirectoryView(
+                store: employeeStore,
+                openChat: { employee in openConversation(employee) },
+                editDemoEmployee: { demoEditorEmployee = $0 }
+            )
         case .work:
             EmployeeChatWorkspaceView(
                 store: store,
                 conversationStore: conversationStore,
-                employee: employeeStore.selected,
+                employeeStore: employeeStore,
+                employee: selectedEmployee,
                 isCreatingWork: $workComposerPresented
             )
         case .skills:
@@ -84,6 +119,14 @@ struct ContentView: View {
         destination.wrappedValue = .work
     }
 
+    private var selectedEmployee: Employee? {
+        if let demo = ContactsDemoData.current,
+           let employee = demo.employees.first(where: { $0.id == employeeStore.selection }) {
+            return employee
+        }
+        return employeeStore.selected
+    }
+
     private func beginWork() {
         if let alex = employeeStore.employees.first(where: { $0.id == "ai-product-manager" }) {
             employeeStore.selection = alex.id
@@ -91,5 +134,19 @@ struct ContentView: View {
         }
         destination.wrappedValue = .work
         workComposerPresented = true
+    }
+
+    private var isModalPresented: Bool {
+        store.isCommandPalettePresented || employeeStore.isPresentingEditor || demoEditorEmployee != nil
+    }
+
+    private func closeActiveModal() {
+        if demoEditorEmployee != nil {
+            demoEditorEmployee = nil
+        } else if employeeStore.isPresentingEditor {
+            employeeStore.isPresentingEditor = false
+        } else if store.isCommandPalettePresented {
+            store.isCommandPalettePresented = false
+        }
     }
 }

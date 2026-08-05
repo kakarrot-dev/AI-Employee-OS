@@ -4,10 +4,10 @@ import AppKit
 struct EmployeeDirectoryView: View {
     @ObservedObject var store: EmployeeStore
     let openChat: (Employee) -> Void
+    let editDemoEmployee: (Employee) -> Void
     @State private var query = ""
     @State private var compactShowsProfile = false
     @State private var confirmingRemoval: Employee?
-    @State private var demoEditorEmployee: Employee?
     @Environment(\.colorScheme) private var colorScheme
 
     private var demo: ContactsDemoData? { ContactsDemoData.current }
@@ -36,7 +36,7 @@ struct EmployeeDirectoryView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("新建员工", systemImage: "person.badge.plus") {
-                    if demo == nil { store.create() } else { demoEditorEmployee = .draft() }
+                    if demo == nil { store.create() } else { editDemoEmployee(.draft()) }
                 }
             }
         }
@@ -55,13 +55,6 @@ struct EmployeeDirectoryView: View {
         .onAppear {
             if let demo, !demo.employees.contains(where: { $0.id == store.selection }) {
                 store.selection = demo.employees.first?.id
-            }
-        }
-        .overlay {
-            if let employee = demoEditorEmployee {
-                CreamModalOverlay(close: { demoEditorEmployee = nil }, preferredWidth: 820, preferredHeight: 660) {
-                    EmployeeEditorView(employee: employee, store: store, isDemo: true, close: { demoEditorEmployee = nil })
-                }
             }
         }
     }
@@ -157,7 +150,7 @@ struct EmployeeDirectoryView: View {
                 compact: compact,
                 back: { compactShowsProfile = false },
                 edit: {
-                    if demo == nil { store.edit(employee) } else { demoEditorEmployee = employee }
+                    if demo == nil { store.edit(employee) } else { editDemoEmployee(employee) }
                 },
                 openChat: { if demo == nil { openChat(employee) } }
             )

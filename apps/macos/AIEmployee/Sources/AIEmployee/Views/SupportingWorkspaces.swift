@@ -9,8 +9,7 @@ struct ContactsWorkspaceView: View {
             Section("产品部") {
                 Button(action: openChat) {
                     HStack(spacing: AppTheme.Spacing.sm) {
-                        Image(systemName: "person.crop.circle")
-                            .foregroundStyle(palette.primary)
+                        Image(systemName: "person.crop.circle").foregroundStyle(palette.primary)
                         VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
                             Text("Alex").font(.body.weight(.medium))
                             Text("AI 产品经理").font(.caption).foregroundStyle(palette.muted)
@@ -18,128 +17,430 @@ struct ContactsWorkspaceView: View {
                         Spacer()
                         Image(systemName: "chevron.right").foregroundStyle(.tertiary)
                     }
-                }
-                .buttonStyle(.plain)
+                }.buttonStyle(.plain)
             }
-        }
-        .navigationTitle("通讯录")
+        }.navigationTitle("通讯录")
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
-enum CapabilityLibraryScope {
+enum CapabilityLibraryScope: Equatable {
     case skills, tools
 
     var title: String { self == .skills ? "技能库" : "工具库" }
-    var subtitle: String { self == .skills ? "管理 AI 员工可使用的 Skills" : "管理 Tools、连接状态与权限范围" }
-    var filter: CapabilityFilter { self == .skills ? .skills : .tools }
+    var subtitle: String { self == .skills ? "浏览已安装技能的说明与目录" : "查看工具能力、权限与风险" }
+    var icon: String { self == .skills ? "sparkles" : "wrench.and.screwdriver" }
+    var emptyTitle: String { self == .skills ? "还没有已安装技能" : "还没有可用工具" }
+    var emptyDetail: String { self == .skills ? "安装 Skill 后，可以在这里阅读说明文档和查看包目录。" : "Runtime 注册 Tool 后，可以在这里查看能力、权限和风险。" }
 }
 
 struct CapabilityLibraryWorkspaceView: View {
     let scope: CapabilityLibraryScope
+    @State private var query = ""
+    @State private var selectedID: String?
+    @State private var tab: CapabilityDetailTab = .document
+    @State private var compactShowsDetail = false
     @Environment(\.colorScheme) private var colorScheme
 
-    private var capabilities: [CapabilityRecord] {
-        // Runtime 尚未提供全局能力目录接口。保持空数据，避免把任务执行记录
-        // 或当前员工配置误称为系统中已安装的完整 Skill / Tool 清单。
-        []
+    private var capabilities: [CapabilityLibraryItem] {
+        CapabilityLibraryDemoData.current(for: scope) ?? []
+    }
+
+    private var filteredCapabilities: [CapabilityLibraryItem] {
+        guard !query.isEmpty else { return capabilities }
+        return capabilities.filter {
+            $0.name.localizedCaseInsensitiveContains(query) ||
+            $0.summary.localizedCaseInsensitiveContains(query) ||
+            $0.category.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private var selected: CapabilityLibraryItem? {
+        capabilities.first { $0.id == selectedID }
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: AppTheme.Spacing.md) {
-                VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                    Text(scope.title).font(.largeTitle.weight(.semibold)).foregroundStyle(palette.ink)
-                    Text(scope.subtitle).foregroundStyle(palette.muted)
-                }
-                Spacer()
-            }
-            .padding(.horizontal, AppTheme.Spacing.xl)
-            .padding(.vertical, AppTheme.Spacing.lg)
-
-            Divider().overlay(palette.hairlineSoft)
-
+        GeometryReader { proxy in
             if capabilities.isEmpty {
-                VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
-                    Image(systemName: scope.filter.systemImage)
-                        .font(.system(size: 26, weight: .light))
-                        .foregroundStyle(palette.primaryActive)
-                        .frame(width: 52, height: 52)
-                        .background(palette.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
-
-                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                        Text(scope.filter.emptyTitle)
-                            .font(.title2.weight(.semibold))
-                            .foregroundStyle(palette.ink)
-                        Text(scope.filter.emptyDetail)
-                            .foregroundStyle(palette.muted)
-                            .frame(maxWidth: 460, alignment: .leading)
-                    }
-
+                emptyState
+            } else if proxy.size.width >= 700 {
+                HStack(spacing: 0) {
+                    catalogList.frame(width: min(286, proxy.size.width * 0.36))
                     Divider().overlay(palette.hairlineSoft)
-
-                    VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                        Label("安装后显示版本与可用状态", systemImage: "checkmark.circle")
-                        Label("权限范围由 Runtime 统一校验", systemImage: "lock.shield")
-                        Label("不会用任务记录冒充能力目录", systemImage: "checkmark.seal")
-                    }
-                    .font(.callout)
-                    .foregroundStyle(palette.body)
+                    detail(showsBack: false)
                 }
-                .padding(AppTheme.Spacing.xl)
-                .frame(maxWidth: 620, alignment: .leading)
-                .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous)
-                        .stroke(palette.hairlineSoft, lineWidth: 1)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if compactShowsDetail {
+                detail(showsBack: true)
             } else {
-                List(capabilities) { capability in
-                    HStack(spacing: AppTheme.Spacing.md) {
-                        Image(systemName: capability.kind.systemImage)
-                            .frame(width: 28, height: 28)
-                            .foregroundStyle(palette.primaryActive)
-                        VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                            Text(capability.name).font(.body.weight(.medium))
-                            Text(capability.detail).font(.caption).foregroundStyle(palette.muted)
-                        }
-                        Spacer()
-                        Text(capability.version).font(.caption.monospaced()).foregroundStyle(palette.muted)
-                        Text(capability.kind.title).font(.caption.weight(.medium)).foregroundStyle(palette.primaryActive)
-                    }
-                    .padding(.vertical, AppTheme.Spacing.xs)
-                }
-                .listStyle(.inset)
+                catalogList
             }
         }
         .background(palette.canvas)
         .navigationTitle(scope.title)
+        .onAppear {
+            if selectedID == nil { selectedID = capabilities.first?.id }
+            tab = scope == .skills ? .structure : .document
+        }
+        .onChange(of: selectedID) { _, _ in tab = scope == .skills ? .structure : .document }
+    }
+
+    private var catalogList: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(scope.title).font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
+                    Spacer()
+                    Text("\(filteredCapabilities.count)").font(.caption.monospacedDigit()).foregroundStyle(palette.muted)
+                }
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(palette.mutedSoft)
+                    TextField(scope == .skills ? "搜索技能" : "搜索工具", text: $query).textFieldStyle(.plain)
+                    if !query.isEmpty {
+                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
+                            .buttonStyle(.plain).foregroundStyle(palette.mutedSoft).help("清除搜索")
+                    }
+                }
+                .padding(.horizontal, 11).frame(height: 34)
+                .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.md).stroke(palette.hairlineSoft) }
+            }
+            .padding(16)
+
+            Divider().overlay(palette.hairlineSoft)
+
+            if filteredCapabilities.isEmpty {
+                ContentUnavailableView("没有匹配结果", systemImage: "magnifyingglass", description: Text("换一个名称或分类试试。"))
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(filteredCapabilities) { item in
+                            CapabilityCatalogRow(item: item, isSelected: selectedID == item.id) {
+                                selectedID = item.id
+                                compactShowsDetail = true
+                            }
+                            Divider().overlay(palette.hairlineSoft).padding(.leading, 54)
+                        }
+                    }
+                }
+            }
+        }
+        .background(palette.surfaceSoft)
+    }
+
+    @ViewBuilder private func detail(showsBack: Bool) -> some View {
+        if let selected {
+            CapabilityDetailView(scope: scope, item: selected, tab: $tab, showsBack: showsBack, close: { compactShowsDetail = false })
+        } else {
+            ContentUnavailableView("选择一项查看", systemImage: scope.icon)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Image(systemName: scope.icon).font(.system(size: 25, weight: .light)).foregroundStyle(palette.primaryActive)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(scope.emptyTitle).font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
+                Text(scope.emptyDetail).foregroundStyle(palette.muted).frame(maxWidth: 440, alignment: .leading)
+            }
+            Text("此页面仅用于查看，能力选择请前往员工资料。")
+                .font(.callout).foregroundStyle(palette.muted)
+        }
+        .padding(36).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
-enum CapabilityFilter: String, CaseIterable, Identifiable {
-    case all, skills, tools
+private struct CapabilityCatalogRow: View {
+    let item: CapabilityLibraryItem
+    let isSelected: Bool
+    let select: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Button(action: select) {
+            HStack(alignment: .top, spacing: 11) {
+                Image(systemName: item.icon)
+                    .font(.system(size: 14, weight: .medium)).foregroundStyle(palette.primaryActive)
+                    .frame(width: 32, height: 32).background(palette.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(item.name).font(.callout.weight(.semibold)).foregroundStyle(palette.ink).lineLimit(1)
+                        Text("v\(item.version)").font(.caption2.monospaced()).foregroundStyle(palette.mutedSoft)
+                    }
+                    Text(item.summary).font(.caption).foregroundStyle(palette.muted).lineLimit(2)
+                    Text(item.category).font(.caption2.weight(.medium)).foregroundStyle(item.statusColor(palette))
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 11).contentShape(Rectangle())
+            .background(isSelected ? palette.primary.opacity(0.11) : Color.clear)
+        }.buttonStyle(.plain)
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private enum CapabilityDetailTab: String, CaseIterable, Identifiable {
+    case document, structure, dependencies, capabilities, security
     var id: String { rawValue }
-    var title: String { switch self { case .all: "全部"; case .skills: "Skills"; case .tools: "Tools" } }
-    var systemImage: String { switch self { case .all: "square.grid.2x2"; case .skills: "sparkles"; case .tools: "wrench.and.screwdriver" } }
-    var emptyTitle: String { switch self { case .all: "还没有可用能力"; case .skills: "还没有 Skill"; case .tools: "还没有 Tool" } }
-    var emptyDetail: String { switch self { case .all: "安装 Skill 或 Tool 后，它们会统一出现在这里。"; case .skills: "安装 Skill 后会显示版本、状态和适用范围。"; case .tools: "连接 Tool 后会显示权限、状态和可用范围。" } }
+    var title: String {
+        switch self {
+        case .document: "说明文档"
+        case .structure: "技能文件"
+        case .dependencies: "依赖信息"
+        case .capabilities: "能力信息"
+        case .security: "权限与风险"
+        }
+    }
 }
 
-private enum CapabilityKind {
-    case skill, tool
-    var title: String { self == .skill ? "Skill" : "Tool" }
-    var systemImage: String { self == .skill ? "sparkles" : "wrench.and.screwdriver" }
+private struct CapabilityDetailView: View {
+    let scope: CapabilityLibraryScope
+    let item: CapabilityLibraryItem
+    @Binding var tab: CapabilityDetailTab
+    let showsBack: Bool
+    let close: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var tabs: [CapabilityDetailTab] {
+        scope == .skills ? [.structure, .dependencies] : [.document, .capabilities, .security]
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 14) {
+                    if showsBack {
+                        Button(action: close) { Image(systemName: "chevron.left") }
+                            .buttonStyle(.plain).foregroundStyle(palette.body).help("返回列表")
+                    }
+                    Image(systemName: item.icon).font(.system(size: 20, weight: .medium)).foregroundStyle(palette.primaryActive)
+                        .frame(width: 46, height: 46).background(palette.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: 13))
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 8) {
+                            Text(item.name).font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
+                            Text("v\(item.version)").font(.caption.monospaced()).foregroundStyle(palette.muted)
+                        }
+                        Text(item.summary).font(.callout).foregroundStyle(palette.muted)
+                    }
+                    Spacer()
+                    Text(item.status).font(.caption.weight(.semibold)).foregroundStyle(item.statusColor(palette))
+                        .padding(.horizontal, 9).frame(height: 25).background(item.statusColor(palette).opacity(0.09), in: Capsule())
+                }
+                CreamTabBar(items: tabs, selection: $tab, title: \ .title)
+            }
+            .padding(.horizontal, 28).padding(.top, 24)
+
+            if scope == .skills, tab == .structure {
+                SkillPackageBrowser(item: item).id(item.id)
+            } else {
+                ScrollView {
+                    Group {
+                        switch tab {
+                        case .document: CapabilityMarkdownPreview(source: item.markdown)
+                        case .dependencies: CapabilityMetadataView(sections: item.dependencySections)
+                        case .capabilities: CapabilityMetadataView(sections: item.capabilitySections)
+                        case .security: CapabilitySecurityView(actions: item.actions)
+                        case .structure: EmptyView()
+                        }
+                    }
+                    .frame(maxWidth: 780, alignment: .leading).padding(.horizontal, 28).padding(.vertical, 24)
+                }
+            }
+        }.background(palette.canvas)
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
-private struct CapabilityRecord: Identifiable {
-    let id: String
-    let name: String
-    let kind: CapabilityKind
-    let version: String
-    let detail: String
+private struct CapabilityMarkdownPreview: View {
+    let source: String
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            ForEach(Array(MarkdownBlock.parse(source).enumerated()), id: \.offset) { _, block in blockView(block) }
+        }.frame(maxWidth: 680, alignment: .leading).textSelection(.enabled)
+    }
+
+    @ViewBuilder private func blockView(_ block: MarkdownBlock) -> some View {
+        switch block {
+        case .heading(let level, let text): Text(text).font(level == 1 ? .title.weight(.semibold) : level == 2 ? .title2.weight(.semibold) : .headline).foregroundStyle(palette.ink).padding(.top, level == 1 ? 0 : 12)
+        case .paragraph(let text): Text(inline(text)).font(.body).foregroundStyle(palette.body).lineSpacing(5)
+        case .bullet(let text): HStack(alignment: .firstTextBaseline, spacing: 10) { Circle().fill(palette.primaryActive).frame(width: 5, height: 5); Text(inline(text)).foregroundStyle(palette.body).lineSpacing(4) }
+        case .numbered(let text): Text(inline(text)).foregroundStyle(palette.body).lineSpacing(4)
+        case .quote(let text): Text(inline(text)).foregroundStyle(palette.muted).padding(.leading, 12).overlay(alignment: .leading) { Rectangle().fill(palette.primary.opacity(0.45)).frame(width: 2) }
+        case .code(let text): Text(text).font(.system(.caption, design: .monospaced)).foregroundStyle(palette.body).padding(14).frame(maxWidth: .infinity, alignment: .leading).background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+        case .divider: Divider().overlay(palette.hairline)
+        case .spacing: Color.clear.frame(height: 3)
+        }
+    }
+
+    private func inline(_ text: String) -> AttributedString { (try? AttributedString(markdown: text)) ?? AttributedString(text) }
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct SkillPackageBrowser: View {
+    let item: CapabilityLibraryItem
+    @State private var selectedDocumentID: String?
+    @State private var expandedFolders: Set<String> = []
+    @State private var compactShowsDocument = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var selectedSource: String? {
+        guard let selectedDocumentID else { return nil }
+        return item.documents[selectedDocumentID]
+    }
+
+    private var selectedName: String {
+        item.directory.first { $0.id == selectedDocumentID }?.name ?? "SKILL.md"
+    }
+
+    private var visibleRows: [CapabilityDirectoryRow] {
+        item.directory.filter { row in
+            var parent = row.parentID
+            while let parentID = parent {
+                guard expandedFolders.contains(parentID) else { return false }
+                parent = item.directory.first { $0.id == parentID }?.parentID
+            }
+            return true
+        }
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            if proxy.size.width >= 620 {
+                HStack(spacing: 0) {
+                    directory.frame(width: min(230, proxy.size.width * 0.32))
+                    Divider().overlay(palette.hairlineSoft)
+                    document(showsBack: false)
+                }
+            } else if compactShowsDocument {
+                document(showsBack: true)
+            } else {
+                directory
+            }
+        }
+        .onAppear {
+            expandedFolders = Set(item.directory.filter(\.isFolder).map(\.id))
+            selectedDocumentID = item.directory.first { $0.name == "SKILL.md" }?.id
+        }
+    }
+
+    private var directory: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("包目录").font(.callout.weight(.semibold)).foregroundStyle(palette.ink)
+                Spacer()
+                Text("\(item.directory.count) 项").font(.caption).foregroundStyle(palette.mutedSoft)
+            }.padding(.horizontal, 16).frame(height: 42)
+            Divider().overlay(palette.hairlineSoft)
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(visibleRows) { row in
+                        Button { select(row) } label: {
+                            HStack(spacing: 7) {
+                                if row.isFolder {
+                                    Image(systemName: expandedFolders.contains(row.id) ? "chevron.down" : "chevron.right")
+                                        .font(.system(size: 8, weight: .semibold)).foregroundStyle(palette.mutedSoft).frame(width: 10)
+                                } else {
+                                    Color.clear.frame(width: 10, height: 1)
+                                }
+                                Image(systemName: row.isFolder ? "folder" : row.icon)
+                                    .foregroundStyle(row.isFolder ? palette.primaryActive : palette.muted).frame(width: 17)
+                                Text(row.name).font(.system(.caption, design: .monospaced)).foregroundStyle(palette.body).lineLimit(1)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.leading, CGFloat(row.depth * 15) + 10).padding(.trailing, 10).frame(height: 31)
+                            .background(selectedDocumentID == row.id ? palette.primary.opacity(0.11) : Color.clear)
+                            .contentShape(Rectangle())
+                        }.buttonStyle(.plain)
+                    }
+                }.padding(.vertical, 6)
+            }
+        }.background(palette.surfaceSoft)
+    }
+
+    private func document(showsBack: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                if showsBack {
+                    Button { compactShowsDocument = false } label: { Image(systemName: "chevron.left") }
+                        .buttonStyle(.plain).foregroundStyle(palette.body).help("返回目录")
+                }
+                Image(systemName: "doc.richtext").foregroundStyle(palette.primaryActive)
+                Text(selectedName).font(.callout.weight(.semibold)).foregroundStyle(palette.ink)
+                Spacer()
+                Text("只读预览").font(.caption).foregroundStyle(palette.mutedSoft)
+            }.padding(.horizontal, 20).frame(height: 42)
+            Divider().overlay(palette.hairlineSoft)
+            if let selectedSource {
+                ScrollView {
+                    CapabilityMarkdownPreview(source: selectedSource)
+                        .frame(maxWidth: 700, alignment: .leading).padding(.horizontal, 28).padding(.vertical, 24)
+                }
+            } else {
+                ContentUnavailableView("此文件暂不支持预览", systemImage: "doc", description: Text("当前只展示 Markdown 文档内容。"))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }.background(palette.canvas)
+    }
+
+    private func select(_ row: CapabilityDirectoryRow) {
+        if row.isFolder {
+            if expandedFolders.contains(row.id) { expandedFolders.remove(row.id) } else { expandedFolders.insert(row.id) }
+        } else {
+            selectedDocumentID = row.id
+            compactShowsDocument = true
+        }
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct CapabilityMetadataView: View {
+    let sections: [CapabilityMetadataSection]
+    @Environment(\.colorScheme) private var colorScheme
+    var body: some View {
+        VStack(alignment: .leading, spacing: 28) {
+            ForEach(sections) { section in
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(section.title).font(.headline).foregroundStyle(palette.ink).padding(.bottom, 10)
+                    ForEach(section.rows) { row in
+                        HStack(alignment: .top, spacing: 18) {
+                            Text(row.label).font(.callout).foregroundStyle(palette.muted).frame(width: 116, alignment: .leading)
+                            Text(row.value).font(.callout).foregroundStyle(palette.body).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+                        }.padding(.vertical, 10)
+                        Divider().overlay(palette.hairlineSoft)
+                    }
+                }
+            }
+        }
+    }
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct CapabilitySecurityView: View {
+    let actions: [CapabilityAction]
+    @Environment(\.colorScheme) private var colorScheme
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            ForEach(actions) { action in
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack { Text(action.name).font(.headline).foregroundStyle(palette.ink); Spacer(); Text("风险 \(action.risk)").font(.caption.weight(.semibold)).foregroundStyle(action.risk >= 2 ? palette.error : palette.warning) }
+                    Text(action.summary).font(.callout).foregroundStyle(palette.muted)
+                    ForEach(action.rows) { row in
+                        HStack(alignment: .top, spacing: 18) {
+                            Text(row.label).foregroundStyle(palette.muted).frame(width: 116, alignment: .leading)
+                            Text(row.value).foregroundStyle(palette.body).frame(maxWidth: .infinity, alignment: .leading)
+                        }.font(.callout)
+                    }
+                }.padding(.bottom, 20).overlay(alignment: .bottom) { Divider().overlay(palette.hairlineSoft) }
+            }
+        }
+    }
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }

@@ -8,10 +8,6 @@ struct ContextSidebarView: View {
     let newWork: () -> Void
     @Environment(\.colorScheme) private var colorScheme
 
-    private var supportsTasks: Bool {
-        conversationStore.employeeID == "ai-product-manager"
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -28,11 +24,7 @@ struct ContextSidebarView: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(palette.ink)
             Spacer()
-            if selection == .work, supportsTasks {
-                Button(action: newWork) { Image(systemName: "square.and.pencil") }
-                    .buttonStyle(.plain)
-                    .help("新建工作")
-            } else if selection == .contacts {
+            if selection == .contacts {
                 Button(action: employeeStore.create) { Image(systemName: "person.badge.plus") }
                     .buttonStyle(.plain)
                     .help("新建员工")
@@ -49,7 +41,7 @@ struct ContextSidebarView: View {
         case .contacts:
             EmployeeDirectorySidebar(store: employeeStore)
         case .work:
-            WorkContextList(store: store, conversationStore: conversationStore, showsTasks: supportsTasks)
+            WorkConversationList(store: store, conversationStore: conversationStore, employeeStore: employeeStore)
         case .office, .skills, .tools, .settings:
             EmptyView()
         }
@@ -58,47 +50,133 @@ struct ContextSidebarView: View {
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
-private struct WorkContextList: View {
+struct WorkConversationList: View {
     @ObservedObject var store: TaskStore
     @ObservedObject var conversationStore: ConversationStore
-    let showsTasks: Bool
-    @State private var confirmingDelete = false
+    @ObservedObject var employeeStore: EmployeeStore
+    @State private var query = ""
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var employees: [Employee] {
+        let source = ContactsDemoData.current?.employees ?? employeeStore.employees
+        guard !query.isEmpty else { return source }
+        return source.filter { $0.name.localizedCaseInsensitiveContains(query) || $0.role.localizedCaseInsensitiveContains(query) || $0.department.localizedCaseInsensitiveContains(query) }
+    }
 
     var body: some View {
-        List(selection: $store.selection) {
-            Section("与 \(conversationStore.employeeName) 的对话") {
-                Label("连续会话", systemImage: "bubble.left.and.bubble.right")
-                    .badge(conversationStore.messages.count)
-                    .contextMenu {
-                        Button("清除聊天记录", role: .destructive) { confirmingDelete = true }
-                    }
+        VStack(spacing: 0) {
+            HStack {
+                Text("会话").font(.title3.weight(.semibold))
+                Spacer()
+                Text("\(employees.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            }.padding(.horizontal, 14).frame(height: 46)
+            Divider()
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)
+                TextField("搜索员工或会话", text: $query).textFieldStyle(.plain)
+                if !query.isEmpty {
+                    Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.plain).foregroundStyle(.tertiary).help("清除搜索")
+                }
             }
-            if showsTasks {
-                Section("任务") {
-                    if store.runs.isEmpty {
-                        Text("还没有任务").foregroundStyle(.secondary)
-                    } else {
-                        ForEach(store.runs) { run in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(run.input).lineLimit(1)
-                                Text(run.status.title).font(.caption).foregroundStyle(.secondary)
+            .padding(.horizontal, 11).frame(height: 34).background(.background, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .padding(12)
+            Divider()
+
+            if employeeStore.isLoading && employees.isEmpty {
+                ProgressView("正在加载会话…").controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if employees.isEmpty {
+                ContentUnavailableView(query.isEmpty ? "还没有 AI 员工" : "没有匹配结果", systemImage: query.isEmpty ? "person.2" : "magnifyingglass")
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        Text("持续会话").font(.caption.weight(.medium)).foregroundStyle(palette.muted)
+                            .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 6)
+                        ForEach(employees) { employee in
+                            Button { employeeStore.selection = employee.id } label: {
+                                WorkConversationRow(
+                                    employee: employee,
+                                    preview: preview(for: employee),
+                                    state: state(for: employee),
+                                    relativeTime: relativeTime(for: employee)
+                                )
+                                .padding(.horizontal, 11).padding(.vertical, 7).contentShape(Rectangle())
+                                .background(employeeStore.selection == employee.id ? palette.primary.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                             }
-                            .tag(run.id)
+                            .buttonStyle(.plain).padding(.horizontal, 8).padding(.vertical, 1)
                         }
                     }
                 }
             }
         }
-        .listStyle(.sidebar)
-        .confirmationDialog("清除与 \(conversationStore.employeeName) 的聊天记录？", isPresented: $confirmingDelete) {
-            Button("清除聊天记录", role: .destructive) {
-                Task { await conversationStore.deleteHistory() }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("此操作会删除当前连续会话中的消息，不会删除任务、审批记录或交付物。")
+        .onChange(of: employeeStore.selection) { _, id in
+            guard let id, let employee = employees.first(where: { $0.id == id }) else { return }
+            conversationStore.select(employee: employee)
+        }
+        .task(id: employees.map(\.id).joined(separator: ",")) {
+            await conversationStore.preloadSummaries(for: employees)
         }
     }
+
+    private func preview(for employee: Employee) -> String {
+        if let preview = WorkLibraryDemoData.current?.previews[employee.id] { return preview }
+        if employee.id == "ai-product-manager", let active = store.runs.first(where: { $0.status == .running || $0.status == .pending }) { return active.input }
+        if let preview = conversationStore.latestPreviewByEmployee[employee.id] { return preview }
+        if employee.id == conversationStore.employeeID { return conversationStore.messages.last?.content ?? "还没有消息" }
+        return employee.role
+    }
+
+    private func state(for employee: Employee) -> WorkConversationRow.State {
+        if employee.status != "active" { return .disabled }
+        guard employee.id == "ai-product-manager" else { return .idle }
+        if store.runs.contains(where: { $0.actions.contains(where: { $0.status == "blocked" }) }) { return .waiting }
+        if store.runs.contains(where: { $0.status == .running || $0.status == .pending }) { return .working }
+        if store.runs.first?.status == .failed { return .failed }
+        return .idle
+    }
+
+    private func relativeTime(for employee: Employee) -> String? {
+        let value = WorkLibraryDemoData.current?.lastActivity[employee.id] ?? conversationStore.lastActivityByEmployee[employee.id]
+        return WorkRelativeTime.label(value)
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct WorkConversationRow: View {
+    enum State { case idle, working, waiting, failed, disabled }
+    let employee: Employee
+    let preview: String
+    let state: State
+    let relativeTime: String?
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Circle().fill(palette.primary.opacity(0.15)).frame(width: 34, height: 34)
+                .overlay { Text(employee.name.prefix(1)).font(.caption.weight(.semibold)).foregroundStyle(palette.primaryActive) }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(employee.name).font(.callout.weight(.semibold)).foregroundStyle(palette.ink).lineLimit(1)
+                    Circle().fill(stateColor).frame(width: 6, height: 6)
+                    Spacer(minLength: 0)
+                    if let relativeTime { Text(relativeTime).font(.caption2.monospacedDigit()).foregroundStyle(palette.mutedSoft) }
+                }
+                Text(preview).font(.caption).foregroundStyle(palette.muted).lineLimit(2)
+            }
+        }.padding(.vertical, 4)
+    }
+
+    private var stateColor: Color {
+        switch state {
+        case .idle: palette.success
+        case .working: palette.accentTeal
+        case .waiting: palette.warning
+        case .failed: palette.error
+        case .disabled: palette.mutedSoft
+        }
+    }
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
 struct EmployeeContextRow: View {

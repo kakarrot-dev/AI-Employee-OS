@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct CreamPrimaryButtonStyle: ButtonStyle {
@@ -108,4 +109,84 @@ struct CreamModalOverlay<Content: View>: View {
         }
         .zIndex(100)
     }
+
+}
+
+struct WindowTitlebarScrim: NSViewRepresentable {
+    let isPresented: Bool
+    let opacity: CGFloat
+    let close: () -> Void
+
+    func makeNSView(context: Context) -> TitlebarScrimAnchorView {
+        let view = TitlebarScrimAnchorView()
+        view.configure(isPresented: isPresented, opacity: opacity, close: close)
+        return view
+    }
+
+    func updateNSView(_ nsView: TitlebarScrimAnchorView, context: Context) {
+        nsView.configure(isPresented: isPresented, opacity: opacity, close: close)
+    }
+
+    static func dismantleNSView(_ nsView: TitlebarScrimAnchorView, coordinator: ()) {
+        nsView.removeScrim()
+    }
+}
+
+final class TitlebarScrimAnchorView: NSView {
+    private var isPresented = false
+    private var opacity: CGFloat = 0.10
+    private var close: () -> Void = {}
+    private weak var installedWindow: NSWindow?
+    private var scrim: TitlebarScrimView?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateScrim()
+    }
+
+    func configure(isPresented: Bool, opacity: CGFloat, close: @escaping () -> Void) {
+        self.isPresented = isPresented
+        self.opacity = opacity
+        self.close = close
+        updateScrim()
+    }
+
+    func removeScrim() {
+        scrim?.removeFromSuperview()
+        scrim = nil
+        installedWindow = nil
+    }
+
+    private func updateScrim() {
+        guard isPresented, let window, let themeFrame = window.contentView?.superview else {
+            removeScrim()
+            return
+        }
+
+        if installedWindow !== window { removeScrim() }
+        let overlay = scrim ?? TitlebarScrimView()
+        overlay.close = close
+        overlay.wantsLayer = true
+        overlay.layer?.backgroundColor = NSColor.black.withAlphaComponent(opacity).cgColor
+
+        let titlebarHeight = max(0, window.frame.height - window.contentLayoutRect.height)
+        overlay.frame = NSRect(
+            x: themeFrame.bounds.minX,
+            y: themeFrame.bounds.maxY - titlebarHeight,
+            width: themeFrame.bounds.width,
+            height: titlebarHeight
+        )
+        overlay.autoresizingMask = [.width, .minYMargin]
+
+        if overlay.superview == nil {
+            themeFrame.addSubview(overlay, positioned: .above, relativeTo: nil)
+        }
+        scrim = overlay
+        installedWindow = window
+    }
+}
+
+final class TitlebarScrimView: NSView {
+    var close: () -> Void = {}
+    override func mouseDown(with event: NSEvent) { close() }
 }

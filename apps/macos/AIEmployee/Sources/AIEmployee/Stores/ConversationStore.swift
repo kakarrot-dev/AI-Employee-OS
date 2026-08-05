@@ -10,10 +10,18 @@ final class ConversationStore: ObservableObject {
     @Published var draft = ""
     @Published var isSending = false
     @Published var error: String?
+    @Published private(set) var lastActivityByEmployee: [String: String] = [:]
+    @Published private(set) var latestPreviewByEmployee: [String: String] = [:]
     private var selectionGeneration = 0
 
     init(service: RuntimeService) {
         self.service = service
+        if let demo = WorkLibraryDemoData.current {
+            messages = demo.messages[employeeID] ?? []
+            lastActivityByEmployee = demo.lastActivity
+            latestPreviewByEmployee = demo.previews
+            return
+        }
         Task { await reload() }
     }
 
@@ -28,6 +36,10 @@ final class ConversationStore: ObservableObject {
         draft = ""
         isSending = false
         error = nil
+        if let demo = WorkLibraryDemoData.current {
+            messages = demo.messages[employee.id] ?? []
+            return
+        }
         let generation = selectionGeneration
         let targetConversationID = conversationID
         Task { await reload(generation: generation, conversationID: targetConversationID) }
@@ -35,6 +47,21 @@ final class ConversationStore: ObservableObject {
 
     func reload() async {
         await reload(generation: selectionGeneration, conversationID: conversationID)
+    }
+
+    func preloadSummaries(for employees: [Employee]) async {
+        guard WorkLibraryDemoData.current == nil else { return }
+        for employee in employees where lastActivityByEmployee[employee.id] == nil {
+            do {
+                let history = try await service.chatHistory("conversation_\(employee.id)_primary").messages
+                if let latest = history.max(by: { $0.createdAt < $1.createdAt }) {
+                    lastActivityByEmployee[employee.id] = latest.createdAt
+                    latestPreviewByEmployee[employee.id] = latest.content
+                }
+            } catch {
+                continue
+            }
+        }
     }
 
     func send() {
@@ -85,6 +112,10 @@ final class ConversationStore: ObservableObject {
             let loaded = try await service.chatHistory(targetConversationID).messages
             guard generation == selectionGeneration, targetConversationID == conversationID else { return }
             messages = loaded
+            if let latest = loaded.max(by: { $0.createdAt < $1.createdAt }) {
+                lastActivityByEmployee[employeeID] = latest.createdAt
+                latestPreviewByEmployee[employeeID] = latest.content
+            }
         } catch {
             guard generation == selectionGeneration, targetConversationID == conversationID else { return }
             self.error = error.localizedDescription

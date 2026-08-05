@@ -1,3 +1,4 @@
+import Charts
 import SwiftUI
 
 struct OfficeWorkspaceView: View {
@@ -5,8 +6,6 @@ struct OfficeWorkspaceView: View {
     @ObservedObject var employeeStore: EmployeeStore
     let openChat: () -> Void
 
-    @State private var isComposing = false
-    @State private var selectedEmployeeID = ""
     @Environment(\.colorScheme) private var colorScheme
 
     private var snapshot: OfficeSnapshot {
@@ -21,57 +20,90 @@ struct OfficeWorkspaceView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let compact = proxy.size.width < 600
+            let compact = proxy.size.width < 700
             ScrollView {
-                VStack(alignment: .leading, spacing: compact ? 28 : 40) {
+                VStack(alignment: .leading, spacing: compact ? 28 : 36) {
                     pageHeader(compact: compact)
                     if let message = snapshot.runtimeMessage { runtimeBanner(message) }
-                    if isComposing { composer(compact: compact) }
                     if snapshot.isLoading { loadingState }
                     else {
                         responsiveSections(width: proxy.size.width, compact: compact)
+                        usageSection(compact: compact)
                         deliveriesSection(compact: compact)
                     }
                 }
-                .frame(maxWidth: 1120, alignment: .leading)
-                .padding(.horizontal, compact ? 20 : 28)
-                .padding(.top, compact ? 28 : 40)
+                .frame(maxWidth: 1180, alignment: .leading)
+                .padding(.horizontal, compact ? 20 : 32)
+                .padding(.top, compact ? 26 : 34)
                 .padding(.bottom, 64)
                 .frame(maxWidth: .infinity)
             }
         }
         .background(palette.canvas)
         .navigationTitle("办公室")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button { withAnimation(.easeInOut(duration: AppTheme.Motion.standard)) { isComposing.toggle() } } label: {
-                    Label("新建工作", systemImage: "plus")
-                }
-                .keyboardShortcut("n", modifiers: [.command, .shift])
-            }
-        }
-        .onAppear { selectedEmployeeID = selectedEmployeeID.isEmpty ? (snapshot.employees.first?.id ?? "") : selectedEmployeeID }
     }
 
     private func pageHeader(compact: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Text("今天的办公室")
-                    .font(.system(size: compact ? 26 : 32, weight: .semibold, design: .rounded))
-                    .foregroundStyle(palette.ink)
-                if snapshot.isDemo {
-                    Label("演示数据", systemImage: "theatermasks")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(palette.warning)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(palette.primary.opacity(0.10), in: Capsule())
+        VStack(alignment: .leading, spacing: compact ? 22 : 26) {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack(spacing: 10) {
+                        Text("今天的办公室")
+                            .font(.system(size: compact ? 27 : 34, weight: .semibold, design: .rounded))
+                            .foregroundStyle(palette.ink)
+                        if snapshot.isDemo {
+                            Text("演示")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(palette.warning)
+                                .padding(.horizontal, 7).padding(.vertical, 3)
+                                .background(palette.primary.opacity(0.10), in: Capsule())
+                        }
+                    }
+                    Text(todaySummary)
+                        .font(.body)
+                        .foregroundStyle(palette.muted)
+                        .lineSpacing(3)
+                }
+                Spacer(minLength: 12)
+                if !compact {
+                    Text(Self.dayFormatter.string(from: Date()))
+                        .font(.callout)
+                        .foregroundStyle(palette.mutedSoft)
+                        .padding(.top, 7)
                 }
             }
-            Text(todaySummary)
-                .font(.body)
-                .foregroundStyle(palette.muted)
-                .lineSpacing(3)
+            officePulse(compact: compact)
         }
+    }
+
+    private func officePulse(compact: Bool) -> some View {
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: compact ? 2 : 3)
+        return LazyVGrid(columns: columns, spacing: 0) {
+            pulseItem(value: "\(snapshot.currentWork.count)", label: "进行中的工作", color: snapshot.currentWork.isEmpty ? palette.mutedSoft : palette.accentTeal)
+            pulseItem(value: "\(attentionCount)", label: "需要你处理", color: attentionCount == 0 ? palette.mutedSoft : palette.warning)
+            pulseItem(value: "\(snapshot.deliveries.count)", label: "最近交付", color: palette.primaryActive)
+        }
+        .padding(.vertical, 16)
+        .background(palette.surfaceSoft.opacity(0.72), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg).stroke(palette.hairlineSoft) }
+    }
+
+    private func pulseItem(value: String, label: String, color: Color) -> some View {
+        HStack(spacing: 11) {
+            Circle().fill(color).frame(width: 7, height: 7)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(value).font(.system(size: 19, weight: .semibold, design: .rounded)).foregroundStyle(palette.ink)
+                Text(label).font(.caption).foregroundStyle(palette.muted)
+            }
+            Spacer(minLength: 4)
+        }
+        .padding(.horizontal, 18)
+    }
+
+    private var attentionCount: Int {
+        snapshot.currentWork.filter { item in
+            switch item.state { case .approval, .resultUnknown, .failed: true; case .pending, .running: false }
+        }.count
     }
 
     private var todaySummary: String {
@@ -84,10 +116,10 @@ struct OfficeWorkspaceView: View {
 
     @ViewBuilder
     private func responsiveSections(width: CGFloat, compact: Bool) -> some View {
-        if width >= 860 {
-            HStack(alignment: .top, spacing: 28) {
+        if width >= 900 {
+            HStack(alignment: .top, spacing: 36) {
                 currentWorkSection(compact: compact).frame(maxWidth: .infinity)
-                employeesSection(compact: compact).frame(width: 300)
+                employeesSection(compact: compact).frame(width: 282)
             }
         } else {
             VStack(alignment: .leading, spacing: 36) {
@@ -98,7 +130,7 @@ struct OfficeWorkspaceView: View {
     }
 
     private func currentWorkSection(compact: Bool) -> some View {
-        section(title: "当前工作", subtitle: snapshot.currentWork.isEmpty ? "没有需要持续关注的工作" : "实时状态来自任务与操作记录") {
+        section(title: "正在推进", subtitle: snapshot.currentWork.isEmpty ? "办公室目前很安静" : "进度、等待确认和异常会在这里汇总") {
             if snapshot.currentWork.isEmpty { emptyCurrentWork }
             else {
                 VStack(spacing: 0) {
@@ -107,10 +139,10 @@ struct OfficeWorkspaceView: View {
                         if index < snapshot.currentWork.count - 1 { Divider().overlay(palette.hairlineSoft) }
                     }
                 }
-                .padding(.horizontal, compact ? 16 : 20)
+                .padding(.horizontal, compact ? 16 : 22)
                 .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous))
                 .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.xl).stroke(palette.hairlineSoft) }
-                .shadow(color: palette.shadow, radius: 16, y: 7)
+                .shadow(color: palette.shadow, radius: 12, y: 5)
             }
         }
     }
@@ -121,12 +153,15 @@ struct OfficeWorkspaceView: View {
             store.selection = item.id
             openChat()
         } label: {
-            VStack(alignment: .leading, spacing: 13) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Label(workStateTitle(item.state), systemImage: workStateIcon(item.state))
                         .font(.callout.weight(.semibold)).foregroundStyle(workStateColor(item.state))
                     Spacer()
-                    Text(item.employeeName).font(.callout.weight(.medium)).foregroundStyle(palette.body)
+                    HStack(spacing: 7) {
+                        employeeMark(item.employeeName, size: 24)
+                        Text(item.employeeName).font(.callout.weight(.medium)).foregroundStyle(palette.body)
+                    }
                 }
                 Text(item.goal)
                     .font(.system(size: compact ? 17 : 19, weight: .medium))
@@ -134,7 +169,9 @@ struct OfficeWorkspaceView: View {
                     .multilineTextAlignment(.leading)
                 HStack(spacing: 10) {
                     if let progress = item.progress {
-                        ProgressView(value: progress).tint(workStateColor(item.state)).frame(maxWidth: compact ? 88 : 150)
+                        ProgressView(value: progress).tint(workStateColor(item.state)).frame(maxWidth: compact ? 76 : 128)
+                        Text("\(Int(progress * 100))%")
+                            .font(.caption2.monospacedDigit()).foregroundStyle(palette.mutedSoft)
                     }
                     Text(item.detail).font(.caption).foregroundStyle(palette.muted).lineLimit(1)
                     Spacer(minLength: 0)
@@ -149,32 +186,42 @@ struct OfficeWorkspaceView: View {
     }
 
     private var emptyCurrentWork: some View {
-        HStack(spacing: 14) {
-            Image(systemName: "checkmark.circle").font(.title2).foregroundStyle(palette.success)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("当前没有进行中的工作").font(.headline).foregroundStyle(palette.ink)
-                Text("新建工作后，执行进度、审批和异常会集中显示在这里。")
-                    .font(.callout).foregroundStyle(palette.muted)
+        HStack(alignment: .top, spacing: 15) {
+            Image(systemName: "checkmark.seal")
+                .font(.system(size: 21)).foregroundStyle(palette.success)
+                .frame(width: 38, height: 38)
+                .background(palette.success.opacity(0.09), in: RoundedRectangle(cornerRadius: 11))
+            VStack(alignment: .leading, spacing: 5) {
+                Text("所有工作都已告一段落").font(.headline).foregroundStyle(palette.ink)
+                Text("创建新工作后，这里会显示执行进度、待确认事项和异常。")
+                    .font(.callout).foregroundStyle(palette.muted).fixedSize(horizontal: false, vertical: true)
             }
-        }.padding(.vertical, 8)
+            Spacer(minLength: 0)
+        }
+        .padding(20)
+        .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
+        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.xl).stroke(palette.hairlineSoft) }
     }
 
     private func employeesSection(compact: Bool) -> some View {
-        section(title: "AI 员工", subtitle: "\(snapshot.employees.count) 位可用") {
+        section(title: "团队状态", subtitle: "\(snapshot.employees.count) 位员工已启用") {
             if snapshot.employees.isEmpty {
                 Text("通讯录中还没有可工作的 AI 员工。")
                     .font(.callout).foregroundStyle(palette.muted).padding(.vertical, 8)
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(snapshot.employees.enumerated()), id: \.element.id) { index, employee in
-                        HStack(spacing: 12) {
+                        HStack(spacing: 11) {
                             employeeMark(employee.name)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(employee.name).font(.headline).foregroundStyle(palette.ink)
                                 Text(employee.role).font(.caption).foregroundStyle(palette.muted).lineLimit(1)
                             }
                             Spacer()
-                            Text(employee.status).font(.caption).foregroundStyle(employee.status == "工作中" ? palette.accentTeal : palette.muted)
+                            HStack(spacing: 5) {
+                                Circle().fill(employee.status == "工作中" ? palette.accentTeal : palette.success).frame(width: 6, height: 6)
+                                Text(employee.status).font(.caption).foregroundStyle(employee.status == "工作中" ? palette.accentTeal : palette.muted)
+                            }
                         }.padding(.vertical, 12)
                         if index < snapshot.employees.count - 1 { Divider().overlay(palette.hairlineSoft) }
                     }
@@ -184,7 +231,7 @@ struct OfficeWorkspaceView: View {
     }
 
     private func deliveriesSection(compact: Bool) -> some View {
-        section(title: "最近交付", subtitle: "已产生并可回看的工作成果") {
+        section(title: "最近交付", subtitle: "由 AI 员工完成并可继续回看的成果") {
             if snapshot.deliveries.isEmpty {
                 Text("完成工作并生成交付物后，会出现在这里。")
                     .font(.callout).foregroundStyle(palette.muted).padding(.vertical, 8)
@@ -196,7 +243,10 @@ struct OfficeWorkspaceView: View {
                             store.selection = item.id; openChat()
                         } label: {
                             HStack(spacing: 14) {
-                                Image(systemName: "doc.text").foregroundStyle(palette.primaryActive).frame(width: 20)
+                                Image(systemName: fileIcon(item.artifactName))
+                                    .font(.callout).foregroundStyle(palette.primaryActive)
+                                    .frame(width: 34, height: 34)
+                                    .background(palette.primary.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(item.title).font(.callout.weight(.medium)).foregroundStyle(palette.ink).lineLimit(compact ? 2 : 1)
                                     Text("\(item.employeeName) · \(item.artifactName)").font(.caption).foregroundStyle(palette.muted).lineLimit(1)
@@ -204,7 +254,7 @@ struct OfficeWorkspaceView: View {
                                 Spacer()
                                 if !compact { Text(TaskPresentation.date(item.createdAt)).font(.caption).foregroundStyle(palette.mutedSoft) }
                                 Image(systemName: "chevron.right").font(.caption2).foregroundStyle(palette.mutedSoft)
-                            }.padding(.vertical, 13).contentShape(Rectangle())
+                            }.padding(.vertical, 11).contentShape(Rectangle())
                         }.buttonStyle(.plain)
                         if index < snapshot.deliveries.count - 1 { Divider().overlay(palette.hairlineSoft) }
                     }
@@ -213,50 +263,128 @@ struct OfficeWorkspaceView: View {
         }
     }
 
-    private func composer(compact: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("新建工作").font(.headline).foregroundStyle(palette.ink)
-                Spacer()
-                Button { withAnimation { isComposing = false } } label: { Image(systemName: "xmark") }.buttonStyle(.plain)
-            }
-            if compact {
-                VStack(alignment: .leading, spacing: 12) { employeePicker; goalField }
+    private func usageSection(compact: Bool) -> some View {
+        section(title: "用量概览", subtitle: "最近 7 天的模型调用与 Token 消耗") {
+            if let usage = snapshot.usage {
+                VStack(alignment: .leading, spacing: 20) {
+                    LazyVGrid(
+                        columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: compact ? 2 : 4),
+                        alignment: .leading,
+                        spacing: 18
+                    ) {
+                        usageMetric("总 Token", value: abbreviated(usage.totalTokens), note: "输入 + 输出")
+                        usageMetric("输入", value: abbreviated(usage.inputTokens), note: "上下文与提示词")
+                        usageMetric("输出", value: abbreviated(usage.outputTokens), note: "模型生成内容")
+                        usageMetric("预估成本", value: currency(usage.estimatedCost), note: "\(usage.modelCalls) 次模型调用")
+                    }
+
+                    Divider().overlay(palette.hairlineSoft)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("Token 趋势")
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(palette.body)
+                            Spacer()
+                            HStack(spacing: 14) {
+                                chartLegend("输入", color: palette.accentTeal)
+                                chartLegend("输出", color: palette.primaryActive)
+                            }
+                        }
+                        usageChart(usage.points)
+                            .frame(height: compact ? 150 : 176)
+                    }
+                }
+                .padding(compact ? 16 : 20)
+                .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.xl).stroke(palette.hairlineSoft) }
             } else {
-                HStack(alignment: .top, spacing: 14) { employeePicker.frame(width: 190); goalField }
-            }
-            HStack {
-                if snapshot.isDemo { Text("演示模式不会提交真实任务").font(.caption).foregroundStyle(palette.warning) }
-                Spacer()
-                Button("取消") { isComposing = false }.buttonStyle(.plain)
-                Button("继续") { submitWork() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(snapshot.isDemo || selectedEmployeeID.isEmpty || store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                HStack(alignment: .top, spacing: 14) {
+                    Image(systemName: "chart.xyaxis.line")
+                        .font(.title3).foregroundStyle(palette.mutedSoft)
+                        .frame(width: 38, height: 38)
+                        .background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: 11))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("用量数据尚未接入").font(.headline).foregroundStyle(palette.ink)
+                        Text("Runtime 已记录 Token，但任务历史接口还没有提供聚合用量与模型价格快照。")
+                            .font(.callout).foregroundStyle(palette.muted).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(20)
+                .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
+                .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.xl).stroke(palette.hairlineSoft) }
             }
         }
-        .padding(compact ? 16 : 20)
-        .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.xl).stroke(palette.hairline) }
     }
 
-    private var employeePicker: some View {
-        Picker("交给", selection: $selectedEmployeeID) {
-            ForEach(snapshot.employees) { Text("\($0.name) · \($0.role)").tag($0.id) }
-        }.labelsHidden()
+    private func usageMetric(_ label: String, value: String, note: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(.caption).foregroundStyle(palette.muted)
+            Text(value)
+                .font(.system(size: 22, weight: .semibold, design: .rounded).monospacedDigit())
+                .foregroundStyle(palette.ink)
+            Text(note).font(.caption2).foregroundStyle(palette.mutedSoft).lineLimit(1)
+        }
     }
 
-    private var goalField: some View {
-        TextField("描述目标、背景和希望得到的交付物…", text: $store.draft, axis: .vertical)
-            .textFieldStyle(.plain).lineLimit(2...6).padding(10)
-            .background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
+    private func usageChart(_ points: [OfficeSnapshot.UsagePoint]) -> some View {
+        Chart(points) { point in
+            LineMark(
+                x: .value("日期", point.label),
+                y: .value("输入 Token", point.inputTokens),
+                series: .value("类型", "输入")
+            )
+            .foregroundStyle(palette.accentTeal)
+            .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            .interpolationMethod(.catmullRom)
+
+            LineMark(
+                x: .value("日期", point.label),
+                y: .value("输出 Token", point.outputTokens),
+                series: .value("类型", "输出")
+            )
+            .foregroundStyle(palette.primaryActive)
+            .lineStyle(StrokeStyle(lineWidth: 1.7, lineCap: .round, lineJoin: .round))
+            .interpolationMethod(.catmullRom)
+        }
+        .chartLegend(.hidden)
+        .chartXAxis {
+            AxisMarks { value in
+                AxisValueLabel {
+                    if let label = value.as(String.self) {
+                        Text(label).font(.caption2).foregroundStyle(palette.mutedSoft)
+                    }
+                }
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { value in
+                AxisGridLine().foregroundStyle(palette.hairlineSoft)
+                AxisValueLabel {
+                    if let amount = value.as(Int.self) {
+                        Text(abbreviated(amount)).font(.caption2.monospacedDigit()).foregroundStyle(palette.mutedSoft)
+                    }
+                }
+            }
+        }
     }
 
-    private func submitWork() {
-        guard !snapshot.isDemo else { return }
-        if employeeStore.employees.contains(where: { $0.id == selectedEmployeeID }) { employeeStore.selection = selectedEmployeeID }
-        store.requestRun()
-        isComposing = false
-        openChat()
+    private func chartLegend(_ title: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Capsule().fill(color).frame(width: 12, height: 3)
+            Text(title).font(.caption2).foregroundStyle(palette.muted)
+        }
+    }
+
+    private func abbreviated(_ value: Int) -> String {
+        if value >= 1_000_000 { return String(format: "%.1fM", Double(value) / 1_000_000) }
+        if value >= 1_000 { return String(format: "%.1fK", Double(value) / 1_000) }
+        return "\(value)"
+    }
+
+    private func currency(_ value: Double) -> String {
+        String(format: "$%.2f", value)
     }
 
     private func section<Content: View>(title: String, subtitle: String, @ViewBuilder content: () -> Content) -> some View {
@@ -283,9 +411,29 @@ struct OfficeWorkspaceView: View {
     }
 
     private func employeeMark(_ name: String) -> some View {
-        Text(String(name.prefix(1)).uppercased()).font(.callout.weight(.semibold)).foregroundStyle(palette.primaryActive)
-            .frame(width: 34, height: 34).background(palette.primary.opacity(0.11), in: RoundedRectangle(cornerRadius: 10))
+        employeeMark(name, size: 34)
     }
+
+    private func employeeMark(_ name: String, size: CGFloat) -> some View {
+        Text(String(name.prefix(1)).uppercased()).font(.callout.weight(.semibold)).foregroundStyle(palette.primaryActive)
+            .frame(width: size, height: size).background(palette.primary.opacity(0.11), in: RoundedRectangle(cornerRadius: size * 0.29))
+    }
+
+    private func fileIcon(_ filename: String) -> String {
+        let ext = URL(fileURLWithPath: filename).pathExtension.lowercased()
+        switch ext {
+        case "csv", "xlsx": return "tablecells"
+        case "pdf": return "doc.richtext"
+        default: return "doc.text"
+        }
+    }
+
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "M 月 d 日  EEEE"
+        return formatter
+    }()
 
     private func workStateTitle(_ state: OfficeSnapshot.WorkItem.State) -> String {
         switch state { case .pending: "等待开始"; case .running: "进行中"; case .approval: "等待确认"; case .resultUnknown: "需要核验"; case .failed: "执行失败" }

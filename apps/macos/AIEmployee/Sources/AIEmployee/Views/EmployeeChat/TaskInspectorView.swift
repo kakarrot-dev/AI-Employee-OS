@@ -3,7 +3,6 @@ import SwiftUI
 struct TaskInspectorView: View {
     let run: TaskRun?
 
-    @State private var planExpanded = false
     @State private var diagnosticsExpanded = false
     @Environment(\.colorScheme) private var colorScheme
 
@@ -63,48 +62,51 @@ struct TaskInspectorView: View {
 
     private func plan(_ run: TaskRun) -> some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-            Button {
-                planExpanded.toggle()
-            } label: {
-                HStack {
-                    inspectorTitle("执行计划")
-                    Spacer()
-                    Text("\(completedCount(run)) / \(run.actions.count)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(palette.muted)
-                    Image(systemName: planExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
+            HStack {
+                inspectorTitle("执行计划")
+                Spacer()
+                Text("\(completedCount(run)) / \(run.actions.count)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(palette.muted)
             }
-            .buttonStyle(.plain)
 
             if run.actions.isEmpty {
                 Text("等待 Runtime 返回执行计划")
                     .font(.caption)
                     .foregroundStyle(palette.muted)
             } else {
-                StepDotProgress(nodes: run.actions)
-                Text(currentStep(run))
-                    .font(.caption)
-                    .foregroundStyle(palette.muted)
-
-                if planExpanded {
-                    VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                        ForEach(run.actions) { node in
-                            HStack(alignment: .top, spacing: AppTheme.Spacing.xs) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(run.actions.enumerated()), id: \.element.id) { index, node in
+                        HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+                            VStack(spacing: 0) {
                                 Image(systemName: stepSymbol(node.status))
-                                    .font(.caption)
+                                    .font(.caption.weight(.semibold))
                                     .foregroundStyle(stepColor(node.status))
-                                    .frame(width: 14)
-                                VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                                    Text(TaskPresentation.actionTitle(node.stepID)).font(.caption.weight(.medium))
-                                    Text(TaskPresentation.actionStatus(node.status)).font(.caption2).foregroundStyle(palette.muted)
+                                    .frame(width: 16, height: 18)
+                                if index < run.actions.count - 1 {
+                                    Rectangle()
+                                        .fill(node.status == "succeeded" ? palette.success.opacity(0.46) : palette.hairline)
+                                        .frame(width: 1, height: 30)
                                 }
                             }
+                            VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                                Text(TaskPresentation.actionTitle(node.stepID))
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(palette.body)
+                                Text(TaskPresentation.actionStatus(node.status))
+                                    .font(.caption2)
+                                    .foregroundStyle(stepColor(node.status))
+                                if !node.outputAs.isEmpty {
+                                    Text(node.outputAs)
+                                        .font(.caption2)
+                                        .foregroundStyle(palette.muted)
+                                        .lineLimit(2)
+                                }
+                            }
+                            .padding(.top, 1)
+                            Spacer(minLength: 0)
                         }
                     }
-                    .padding(.top, AppTheme.Spacing.xs)
                 }
             }
         }
@@ -160,14 +162,6 @@ struct TaskInspectorView: View {
         run.actions.filter { $0.status == "succeeded" }.count
     }
 
-    private func currentStep(_ run: TaskRun) -> String {
-        if let node = run.actions.first(where: { $0.status == "running" }) {
-            return TaskPresentation.actionTitle(node.stepID)
-        }
-        if run.status == .succeeded { return "全部步骤已完成" }
-        return "等待下一步"
-    }
-
     private func stepSymbol(_ status: String) -> String {
         switch status {
         case "succeeded": "checkmark.circle.fill"
@@ -196,45 +190,6 @@ struct TaskInspectorView: View {
         case .running: palette.accentTeal
         case .pending, .cancelled: palette.muted
         }
-    }
-
-    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
-}
-
-private struct StepDotProgress: View {
-    let nodes: [GraphNodeEvidence]
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(Array(nodes.enumerated()), id: \.element.id) { index, node in
-                Circle()
-                    .fill(dotFill(node.status))
-                    .overlay { Circle().stroke(dotStroke(node.status), lineWidth: 1.5) }
-                    .frame(width: 9, height: 9)
-                    .help(TaskPresentation.actionTitle(node.stepID))
-                if index < nodes.count - 1 {
-                    Rectangle()
-                        .fill(node.status == "succeeded" ? palette.success.opacity(0.55) : palette.hairline)
-                        .frame(height: 1.5)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func dotFill(_ status: String) -> Color {
-        switch status {
-        case "succeeded": palette.success
-        case "running": palette.accentTeal
-        case "failed", "result_unknown": palette.error
-        case "blocked": palette.warning
-        default: palette.surfaceSoft
-        }
-    }
-
-    private func dotStroke(_ status: String) -> Color {
-        status == "pending" ? palette.mutedSoft : dotFill(status)
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }

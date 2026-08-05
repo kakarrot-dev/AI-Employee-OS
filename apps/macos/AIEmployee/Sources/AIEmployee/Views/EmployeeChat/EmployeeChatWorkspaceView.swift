@@ -1,8 +1,11 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct EmployeeChatWorkspaceView: View {
     @ObservedObject var store: TaskStore
     @ObservedObject var conversationStore: ConversationStore
+    @ObservedObject var employeeStore: EmployeeStore
     let employee: Employee?
     @Binding var isCreatingWork: Bool
 
@@ -27,7 +30,11 @@ struct EmployeeChatWorkspaceView: View {
     }
 
     private var showsInspector: Bool {
-        supportsTasks && inspectorVisible && workspaceWidth >= 820
+        supportsTasks && selectedRun != nil && inspectorVisible && workspaceWidth >= 1020
+    }
+
+    private var showsConversationList: Bool {
+        workspaceWidth >= 700
     }
 
     private var supportsTasks: Bool {
@@ -36,6 +43,11 @@ struct EmployeeChatWorkspaceView: View {
 
     var body: some View {
         HSplitView {
+            if showsConversationList {
+                WorkConversationList(store: store, conversationStore: conversationStore, employeeStore: employeeStore)
+                    .frame(minWidth: 230, idealWidth: 250, maxWidth: 280)
+            }
+
             VStack(spacing: 0) {
                 EmployeeMessageStream(store: store, conversationStore: conversationStore, employee: employee, showsTasks: supportsTasks)
                 EmployeeComposerContainer(
@@ -64,15 +76,15 @@ struct EmployeeChatWorkspaceView: View {
             ToolbarItem(placement: .navigation) {
                 EmployeeToolbarTitle(employee: employee, run: activeRun, reduceMotion: reduceMotion)
             }
-            if supportsTasks {
+            if supportsTasks, selectedRun != nil {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         inspectorVisible.toggle()
                     } label: {
                         Label(showsInspector ? "隐藏任务面板" : "显示任务面板", systemImage: "sidebar.right")
                     }
-                    .help(workspaceWidth < 820 ? "扩大窗口后可显示任务面板" : (showsInspector ? "隐藏任务面板" : "显示任务面板"))
-                    .disabled(workspaceWidth < 820)
+                    .help(workspaceWidth < 1020 ? "扩大窗口后可显示工作检查器" : (showsInspector ? "隐藏工作检查器" : "显示工作检查器"))
+                    .disabled(workspaceWidth < 1020)
                 }
             }
         }
@@ -105,9 +117,6 @@ private struct EmployeeToolbarTitle: View {
                     Text(employee?.name ?? "Alex").fontWeight(.semibold)
                     Text("· \(employee?.role ?? "AI 产品经理")").foregroundStyle(.secondary)
                 }
-                Image(systemName: "chevron.down")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.tertiary)
             }
         }
         .buttonStyle(.plain)
@@ -117,9 +126,8 @@ private struct EmployeeToolbarTitle: View {
                 Text(employee?.name ?? "Alex").font(.headline)
                 Text("\(employee?.role ?? "AI 产品经理") · \(employee?.department ?? "产品部")").font(.callout).foregroundStyle(.secondary)
                 Divider()
-                Label("需求分析", systemImage: "text.magnifyingglass")
-                Label("PRD 生成", systemImage: "doc.text")
-                Text("所有写入均经过 Rust Runtime、一次性审批和审计。")
+                Label(employee?.status == "active" ? "可用" : "已停用", systemImage: employee?.status == "active" ? "checkmark.circle" : "pause.circle")
+                Text("消息和正式工作会保留在这名员工的持续会话中。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -159,36 +167,58 @@ private struct EmployeeMessageStream: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
-                if conversationStore.messages.isEmpty && (!showsTasks || store.runs.isEmpty) {
-                    EmptyConversationView(employeeName: employee?.name ?? conversationStore.employeeName)
+                if timeline.isEmpty {
+                    EmptyConversationView(employeeName: employee?.name ?? conversationStore.employeeName, supportsTasks: showsTasks)
                 }
 
-                ForEach(conversationStore.messages) { message in
-                    ConversationMessageBlock(message: message, employeeName: employee?.name ?? conversationStore.employeeName)
-                }
-
-                if showsTasks && !store.runs.isEmpty {
-                    ForEach(Array(store.runs.reversed())) { run in
+                ForEach(timeline) { entry in
+                    switch entry {
+                    case .message(let message):
+                        ConversationMessageBlock(
+                            message: message,
+                            employeeName: employee?.name ?? conversationStore.employeeName,
+                            edit: { conversationStore.draft = message.content }
+                        )
+                    case .run(let run):
                         TaskConversationBlock(run: run)
                             .id(run.id)
                     }
                 }
             }
-            .padding(.horizontal, AppTheme.Spacing.xl)
             .padding(.top, AppTheme.Spacing.lg)
             .padding(.bottom, 132)
             .frame(maxWidth: 820, alignment: .leading)
+            .padding(.horizontal, AppTheme.Spacing.lg)
             .frame(maxWidth: .infinity, alignment: .center)
         }
         .scrollContentBackground(.hidden)
         .background(palette.canvas)
     }
 
+    private var timeline: [WorkTimelineEntry] {
+        var entries = conversationStore.messages.map(WorkTimelineEntry.message)
+        if showsTasks { entries.append(contentsOf: store.runs.map(WorkTimelineEntry.run)) }
+        return entries.sorted { $0.createdAt < $1.createdAt }
+    }
+
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private enum WorkTimelineEntry: Identifiable {
+    case message(ChatMessage)
+    case run(TaskRun)
+
+    var id: String {
+        switch self { case .message(let message): "message-\(message.id)"; case .run(let run): "run-\(run.id)" }
+    }
+    var createdAt: String {
+        switch self { case .message(let message): message.createdAt; case .run(let run): run.createdAt }
+    }
 }
 
 private struct EmptyConversationView: View {
     let employeeName: String
+    let supportsTasks: Bool
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -196,7 +226,7 @@ private struct EmptyConversationView: View {
             Text("和 \(employeeName) 聊聊")
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(palette.ink)
-            Text("可以先讨论想法、补充背景或澄清问题。需要正式执行时，再明确交给 \(employeeName) 一项工作。")
+            Text(supportsTasks ? "可以先讨论想法、补充背景或澄清问题。需要正式执行时，再明确交给 \(employeeName) 一项工作。" : "可以先讨论想法、补充背景或澄清问题。消息会保留在与 \(employeeName) 的持续会话中。")
                 .font(.body)
                 .foregroundStyle(palette.muted)
                 .frame(maxWidth: 560, alignment: .leading)
@@ -210,27 +240,164 @@ private struct EmptyConversationView: View {
 private struct ConversationMessageBlock: View {
     let message: ChatMessage
     let employeeName: String
+    let edit: () -> Void
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    @ViewBuilder
+    var body: some View {
+        if message.role == "user" {
+            VStack(alignment: .trailing, spacing: 5) {
+                ContentSizedBubble(maxWidth: 680) {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                        if !attachments.isEmpty {
+                            ChatAttachmentStack(attachments: attachments)
+                        }
+                        Text(message.content)
+                            .font(.body)
+                            .foregroundStyle(palette.body)
+                            .textSelection(.enabled)
+                    }
+                    .padding(.horizontal, AppTheme.Spacing.md)
+                    .padding(.vertical, AppTheme.Spacing.sm)
+                    .background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+                }
+
+                MessageHoverActions(createdAt: message.createdAt, text: message.content, edit: edit)
+                    .opacity(hovering ? 1 : 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .contentShape(Rectangle())
+            .onHover { hovering = $0 }
+            .animation(.easeOut(duration: AppTheme.Motion.fast), value: hovering)
+            .accessibilityLabel("你：\(message.content)")
+        } else {
+            ChatMarkdownBody(source: message.content)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel("\(employeeName)：\(message.content)")
+        }
+    }
+
+    private var attachments: [ChatAttachmentPresentation] {
+        WorkLibraryDemoData.current?.messageAttachments[message.id] ?? []
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct ContentSizedBubble<Content: View>: View {
+    let maxWidth: CGFloat
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        ContentSizedLayout(maxWidth: maxWidth) { content() }
+    }
+}
+
+private struct ContentSizedLayout: Layout {
+    let maxWidth: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let subview = subviews.first else { return .zero }
+        let availableWidth = min(proposal.width ?? maxWidth, maxWidth)
+        let ideal = subview.sizeThatFits(.unspecified)
+        let width = min(ideal.width, availableWidth)
+        let fitted = subview.sizeThatFits(.init(width: width, height: nil))
+        return .init(width: width, height: fitted.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: .init(width: bounds.width, height: bounds.height))
+    }
+}
+
+private struct ChatAttachmentStack: View {
+    let attachments: [ChatAttachmentPresentation]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+            ForEach(attachments) { attachment in
+                ChatAttachmentRow(attachment: attachment)
+            }
+        }
+    }
+}
+
+private struct ChatAttachmentRow: View {
+    let attachment: ChatAttachmentPresentation
+    var remove: (() -> Void)? = nil
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if message.role == "user" {
-                Text("你")
-                    .font(.caption.weight(.semibold))
+        HStack(spacing: AppTheme.Spacing.sm) {
+            Image(systemName: icon)
+                .font(.callout.weight(.medium))
+                .foregroundStyle(palette.primaryActive)
+                .frame(width: 30, height: 30)
+                .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous))
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                Text(attachment.name)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(palette.body)
+                    .lineLimit(1)
+                Text("\(attachment.kind) · \(attachment.size)")
+                    .font(.caption2)
                     .foregroundStyle(palette.muted)
             }
-            Text(message.content)
-                .font(.body)
-                .foregroundStyle(palette.body)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: AppTheme.Spacing.sm)
+            if let remove {
+                Button(action: remove) {
+                    Image(systemName: "xmark")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(palette.muted)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .help("移除附件")
+            }
         }
-        .padding(message.role == "user" ? AppTheme.Spacing.md : 0)
-        .frame(maxWidth: message.role == "user" ? 680 : .infinity, alignment: .leading)
-        .background(message.role == "user" ? palette.surfaceSoft : .clear, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
-        .accessibilityLabel(message.role == "user" ? "你：\(message.content)" : "\(employeeName)：\(message.content)")
+        .padding(.horizontal, AppTheme.Spacing.xs)
+        .frame(minWidth: 230, minHeight: 40)
+        .background(palette.surfaceCard.opacity(0.82), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.md).stroke(palette.hairlineSoft, lineWidth: 1) }
     }
 
+    private var icon: String {
+        let ext = URL(filePath: attachment.name).pathExtension.lowercased()
+        if ["png", "jpg", "jpeg", "heic", "webp"].contains(ext) { return "photo" }
+        if ["zip", "tar", "gz"].contains(ext) { return "archivebox" }
+        return "doc.text"
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct ChatMarkdownBody: View {
+    let source: String
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(MarkdownBlock.parse(source).enumerated()), id: \.offset) { _, block in
+                blockView(block)
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+    }
+
+    @ViewBuilder private func blockView(_ block: MarkdownBlock) -> some View {
+        switch block {
+        case .heading(let level, let text): Text(text).font(level == 1 ? .title2.weight(.semibold) : level == 2 ? .title3.weight(.semibold) : .headline).foregroundStyle(palette.ink).padding(.top, level == 1 ? 0 : 8)
+        case .paragraph(let text): Text(inline(text)).font(.body).foregroundStyle(palette.body).lineSpacing(4)
+        case .bullet(let text): HStack(alignment: .firstTextBaseline, spacing: 9) { Circle().fill(palette.primaryActive).frame(width: 5, height: 5); Text(inline(text)).foregroundStyle(palette.body).lineSpacing(3) }
+        case .numbered(let text): Text(inline(text)).foregroundStyle(palette.body).lineSpacing(3)
+        case .quote(let text): Text(inline(text)).foregroundStyle(palette.muted).padding(.leading, 12).overlay(alignment: .leading) { Rectangle().fill(palette.primary.opacity(0.42)).frame(width: 2) }
+        case .code(let text): Text(text).font(.system(.caption, design: .monospaced)).foregroundStyle(palette.body).padding(12).frame(maxWidth: .infinity, alignment: .leading).background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+        case .divider: Divider().overlay(palette.hairlineSoft)
+        case .spacing: Color.clear.frame(height: 3)
+        }
+    }
+
+    private func inline(_ text: String) -> AttributedString { (try? AttributedString(markdown: text)) ?? AttributedString(text) }
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
@@ -245,17 +412,6 @@ private struct TaskConversationBlock: View {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                 AgentStatusLine(run: run)
 
-                if !run.actions.isEmpty || !run.events.isEmpty {
-                    VStack(spacing: 0) {
-                        ForEach(activityItems) { item in
-                            ActivityDisclosureRow(item: item)
-                            if item.id != activityItems.last?.id {
-                                Divider().overlay(palette.hairlineSoft)
-                            }
-                        }
-                    }
-                }
-
                 if let error = run.error {
                     InlineFailureMessage(error: error)
                 }
@@ -269,59 +425,76 @@ private struct TaskConversationBlock: View {
         }
     }
 
-    private var activityItems: [EmployeeActivityItem] {
-        let actionItems = run.actions.map { node in
-            EmployeeActivityItem(
-                id: "action-\(node.actionID)",
-                title: TaskPresentation.actionTitle(node.stepID),
-                status: node.status,
-                detail: node.outputAs.isEmpty ? nil : "阶段输出：\(node.outputAs)",
-                timestamp: nil,
-                isDiagnostic: false
-            )
-        }
-        let actionTypes = Set(run.actions.map(\.stepID))
-        let eventItems = run.events.filter { !actionTypes.contains($0.type) }.map { event in
-            EmployeeActivityItem(
-                id: "event-\(event.eventID)",
-                title: TaskPresentation.eventTitle(event.type),
-                status: eventStatus(event.type),
-                detail: "Runtime Event：\(event.type)",
-                timestamp: TaskPresentation.date(event.occurredAt),
-                isDiagnostic: true
-            )
-        }
-        return actionItems + eventItems
-    }
-
-    private func eventStatus(_ type: String) -> String {
-        if type.contains("failed") { return "failed" }
-        if type.contains("cancelled") { return "cancelled" }
-        if type.contains("started") { return "running" }
-        return "succeeded"
-    }
-
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
 private struct UserMessageBlock: View {
     let text: String
     let createdAt: String
+    @State private var hovering = false
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-            Text(text)
-                .font(.body)
-                .foregroundStyle(palette.body)
-                .textSelection(.enabled)
-            Text(TaskPresentation.date(createdAt))
-                .font(.caption)
-                .foregroundStyle(palette.mutedSoft)
+        VStack(alignment: .trailing, spacing: 5) {
+            ContentSizedBubble(maxWidth: 680) {
+                Text(text)
+                    .font(.body)
+                    .foregroundStyle(palette.body)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, AppTheme.Spacing.md)
+                    .padding(.vertical, AppTheme.Spacing.sm)
+                    .background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+            }
+
+            MessageHoverActions(createdAt: createdAt, text: text, edit: nil)
+                .opacity(hovering ? 1 : 0)
         }
-        .padding(AppTheme.Spacing.md)
-        .frame(maxWidth: 680, alignment: .leading)
-        .background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: AppTheme.Motion.fast), value: hovering)
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct MessageHoverActions: View {
+    let createdAt: String
+    let text: String
+    let edit: (() -> Void)?
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(TaskPresentation.time(createdAt))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(palette.mutedSoft)
+                .padding(.trailing, 4)
+
+            hoverButton("复制消息", systemImage: "doc.on.doc") { copyToPasteboard() }
+            if let edit {
+                hoverButton("编辑消息", systemImage: "pencil", action: edit)
+            }
+        }
+        .frame(height: 24)
+    }
+
+    private func hoverButton(_ label: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(palette.muted)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+
+    private func copyToPasteboard() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
@@ -359,84 +532,6 @@ private struct AgentStatusLine: View {
         case .succeeded: palette.success
         case .failed: palette.error
         case .cancelled: palette.muted
-        }
-    }
-
-    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
-}
-
-private struct EmployeeActivityItem: Identifiable {
-    let id: String
-    let title: String
-    let status: String
-    let detail: String?
-    let timestamp: String?
-    let isDiagnostic: Bool
-}
-
-private struct ActivityDisclosureRow: View {
-    let item: EmployeeActivityItem
-    @State private var expanded = false
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        DisclosureGroup(isExpanded: $expanded) {
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                if let detail = item.detail {
-                    Text(detail)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(palette.muted)
-                        .textSelection(.enabled)
-                }
-                if let timestamp = item.timestamp {
-                    Text(timestamp).font(.caption).foregroundStyle(palette.mutedSoft)
-                }
-            }
-            .padding(.leading, 26)
-            .padding(.bottom, AppTheme.Spacing.sm)
-        } label: {
-            HStack(spacing: AppTheme.Spacing.sm) {
-                Image(systemName: statusSymbol)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(statusColor)
-                    .frame(width: 14)
-                Text(item.title)
-                    .font(.callout)
-                    .foregroundStyle(palette.body)
-                Spacer()
-                Text(TaskPresentation.actionStatus(item.status))
-                    .font(.caption)
-                    .foregroundStyle(statusColor)
-            }
-            .padding(.vertical, AppTheme.Spacing.sm)
-        }
-        .disclosureGroupStyle(.automatic)
-        .onAppear {
-            if item.status == "failed" || item.status == "blocked" || item.status == "result_unknown" {
-                expanded = true
-            }
-        }
-    }
-
-    private var statusSymbol: String {
-        switch item.status {
-        case "running": "circle.dotted"
-        case "succeeded": "checkmark"
-        case "failed": "exclamationmark"
-        case "blocked": "lock.fill"
-        case "result_unknown": "questionmark"
-        case "cancelled": "xmark"
-        default: "circle"
-        }
-    }
-
-    private var statusColor: Color {
-        switch item.status {
-        case "running": palette.accentTeal
-        case "succeeded": palette.success
-        case "failed", "result_unknown": palette.error
-        case "blocked": palette.warning
-        default: palette.muted
         }
     }
 
@@ -488,6 +583,7 @@ private struct ArtifactMessageBlock: View {
                     Label("打开", systemImage: "arrow.up.right")
                 }
                 .buttonStyle(.plain)
+                .help("使用系统默认应用打开")
             }
 
             Divider().overlay(palette.hairlineSoft)
@@ -521,6 +617,15 @@ private struct ArtifactMessageBlock: View {
         .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous).stroke(palette.hairlineSoft, lineWidth: 1) }
         .frame(maxWidth: 680, alignment: .leading)
         .task(id: path) {
+            if let demoPreview {
+                do {
+                    try ArtifactService.materializeDemoArtifact(at: path, content: demoPreview)
+                    preview = demoPreview
+                } catch {
+                    artifactError = error.localizedDescription
+                }
+                return
+            }
             do { preview = try await ArtifactService.loadMarkdown(at: path) }
             catch { artifactError = error.localizedDescription }
         }
@@ -543,6 +648,8 @@ private struct ArtifactMessageBlock: View {
         (try? AttributedString(markdown: source)) ?? AttributedString(source)
     }
 
+    private var demoPreview: String? { WorkLibraryDemoData.current?.artifacts[path] }
+
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
@@ -555,27 +662,22 @@ private struct EmployeeComposerContainer: View {
     @Binding var isCreatingWork: Bool
 
     var body: some View {
-        VStack(spacing: AppTheme.Spacing.sm) {
-            if supportsTasks {
-                if store.awaitingApproval {
-                    ApprovalActionBar(store: store)
-                } else if let activeRun {
-                    WorkingStatusBar(run: activeRun, stop: { store.cancel(activeRun.id) })
-                }
-            }
-
-            if isCreatingWork && supportsTasks {
-                EmployeeWorkComposer(
-                    store: store,
-                    employeeName: employeeName,
-                    cancel: { isCreatingWork = false }
-                )
+        Group {
+            if supportsTasks,
+               let request = WorkLibraryDemoData.current?.approval,
+               activeRun?.id == request.taskID {
+                HumanApprovalBar(request: request, employeeName: employeeName)
+            } else if supportsTasks, store.awaitingApproval {
+                WorkSubmissionConfirmationBar(store: store, employeeName: employeeName)
+            } else if supportsTasks, let activeRun {
+                WorkingStatusBar(run: activeRun, employeeName: employeeName, stop: { store.cancel(activeRun.id) })
             } else {
-                EmployeeChatComposer(
-                    store: conversationStore,
+                EmployeeUnifiedComposer(
+                    taskStore: store,
+                    conversationStore: conversationStore,
                     employeeName: employeeName,
-                    canCreateWork: supportsTasks && activeRun == nil && !store.awaitingApproval,
-                    createWork: { isCreatingWork = true }
+                    supportsTasks: supportsTasks,
+                    isCreatingWork: $isCreatingWork
                 )
             }
         }
@@ -590,24 +692,165 @@ private struct EmployeeComposerContainer: View {
     }
 }
 
-private struct EmployeeChatComposer: View {
-    @ObservedObject var store: ConversationStore
+private struct HumanApprovalBar: View {
+    let request: WorkApprovalRequest
     let employeeName: String
-    let canCreateWork: Bool
-    let createWork: () -> Void
+    @State private var expanded = false
+    @State private var decision: Decision?
+    @Environment(\.colorScheme) private var colorScheme
+
+    private enum Decision { case approved, denied }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            if let decision {
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    Image(systemName: decision == .approved ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .foregroundStyle(decision == .approved ? palette.success : palette.error)
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                        Text(decision == .approved ? "已允许本次操作" : "已拒绝本次操作")
+                            .font(.callout.weight(.semibold))
+                        Text(request.action)
+                            .font(.caption)
+                            .foregroundStyle(palette.muted)
+                    }
+                    Spacer()
+                }
+            } else {
+                approvalContent
+            }
+        }
+        .padding(AppTheme.Spacing.md)
+        .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(palette.warning.opacity(0.34), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.09), radius: 12, y: 4)
+        .frame(maxWidth: 820)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var approvalContent: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+                    approvalSummary
+                    Spacer(minLength: AppTheme.Spacing.md)
+                    approvalActions
+                }
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                    approvalSummary
+                    HStack {
+                        Spacer()
+                        approvalActions
+                    }
+                }
+            }
+
+            Button {
+                expanded.toggle()
+            } label: {
+                Label(expanded ? "收起详情" : "查看影响范围", systemImage: expanded ? "chevron.up" : "chevron.down")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(palette.muted)
+            }
+            .buttonStyle(.plain)
+
+            if expanded {
+                Divider().overlay(palette.hairlineSoft)
+                Grid(alignment: .leading, horizontalSpacing: AppTheme.Spacing.md, verticalSpacing: AppTheme.Spacing.xs) {
+                    approvalDetail("工具", request.tool)
+                    approvalDetail("写入位置", request.scope)
+                    approvalDetail("可能影响", request.impact)
+                    approvalDetail("网络访问", request.networkAccess ? "需要" : "不需要")
+                }
+                .font(.caption)
+                .textSelection(.enabled)
+            }
+        }
+    }
+
+    private var approvalSummary: some View {
+        HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+            Image(systemName: "hand.raised.fill")
+                .foregroundStyle(palette.warning)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                Text("\(employeeName) 需要你确认")
+                    .font(.callout.weight(.semibold))
+                Text(request.action)
+                    .font(.callout)
+                    .foregroundStyle(palette.body)
+                Text("仅本次工作 · \(request.scope)")
+                    .font(.caption)
+                    .foregroundStyle(palette.muted)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private var approvalActions: some View {
+        HStack(spacing: AppTheme.Spacing.xs) {
+            Button("拒绝", role: .destructive) { decision = .denied }
+                .buttonStyle(CreamSecondaryButtonStyle())
+            Button("允许一次") { decision = .approved }
+                .buttonStyle(CreamPrimaryButtonStyle())
+        }
+    }
+
+    private func approvalDetail(_ label: String, _ value: String) -> some View {
+        GridRow {
+            Text(label).foregroundStyle(palette.muted)
+            Text(value).foregroundStyle(palette.body)
+        }
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct EmployeeUnifiedComposer: View {
+    @ObservedObject var taskStore: TaskStore
+    @ObservedObject var conversationStore: ConversationStore
+    let employeeName: String
+    let supportsTasks: Bool
+    @Binding var isCreatingWork: Bool
+    @State private var attachments: [ChatAttachmentPresentation] = []
+    @State private var choosingAttachments = false
     @FocusState private var focused: Bool
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-            if let error = store.error {
+            if isCreatingWork {
+                HStack(spacing: 7) {
+                    Image(systemName: "briefcase.fill").foregroundStyle(palette.primaryActive)
+                    Text("正式工作").font(.caption.weight(.semibold)).foregroundStyle(palette.ink)
+                    Text("将创建可追踪的执行记录").font(.caption).foregroundStyle(palette.muted)
+                }
+            }
+
+            if let error = conversationStore.error, !isCreatingWork {
                 Text(error)
                     .font(.caption)
                     .foregroundStyle(palette.error)
                     .textSelection(.enabled)
             }
 
-            TextField("给 \(employeeName) 发消息…", text: $store.draft, axis: .vertical)
+            if !attachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: AppTheme.Spacing.xs) {
+                        ForEach(attachments) { attachment in
+                            ChatAttachmentRow(attachment: attachment) {
+                                attachments.removeAll { $0.id == attachment.id }
+                            }
+                            .frame(width: 260)
+                        }
+                    }
+                }
+            }
+
+            TextField(isCreatingWork ? "描述要交给 \(employeeName) 的工作…" : "给 \(employeeName) 发消息…", text: draft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.body)
                 .lineLimit(1...8)
@@ -615,19 +858,30 @@ private struct EmployeeChatComposer: View {
                 .onSubmit(submit)
 
             HStack(spacing: AppTheme.Spacing.sm) {
-                if canCreateWork {
-                    Button(action: createWork) {
-                        Label("交给 \(employeeName) 工作", systemImage: "briefcase")
+                Button { choosingAttachments = true } label: {
+                    Image(systemName: "plus")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(palette.muted)
+                        .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("添加附件")
+                .accessibilityLabel("添加附件")
+
+                if supportsTasks {
+                    Button { isCreatingWork.toggle(); focused = true } label: {
+                        Label(isCreatingWork ? "返回普通消息" : "作为正式工作执行", systemImage: isCreatingWork ? "bubble.left" : "briefcase")
                     }
                     .buttonStyle(.plain)
                     .font(.caption)
                     .foregroundStyle(palette.muted)
-                    .disabled(store.isSending)
+                    .disabled(conversationStore.isSending || taskStore.isSubmitting)
                 }
 
                 Spacer()
 
-                if store.isSending {
+                if conversationStore.isSending && !isCreatingWork {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small)
                         Text("\(employeeName) 正在回复…")
@@ -645,7 +899,7 @@ private struct EmployeeChatComposer: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!canSubmit)
-                .help("发送消息")
+                .help(isCreatingWork ? "确认正式工作" : "发送消息")
             }
         }
         .padding(AppTheme.Spacing.sm)
@@ -657,73 +911,36 @@ private struct EmployeeChatComposer: View {
         .shadow(color: .black.opacity(0.09), radius: 12, y: 4)
         .frame(maxWidth: 820)
         .frame(maxWidth: .infinity)
-    }
-
-    private var canSubmit: Bool {
-        !store.isSending && !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private func submit() {
-        guard canSubmit else { return }
-        store.send()
-    }
-
-    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
-}
-
-private struct EmployeeWorkComposer: View {
-    @ObservedObject var store: TaskStore
-    let employeeName: String
-    let cancel: () -> Void
-    @FocusState private var focused: Bool
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        VStack(spacing: AppTheme.Spacing.xs) {
-            TextField("描述要交给 \(employeeName) 的工作…", text: $store.draft, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.body)
-                .lineLimit(1...8)
-                .focused($focused)
-                .onSubmit(submit)
-
-            HStack {
-                Button("返回聊天", action: cancel)
-                    .buttonStyle(.plain)
-                    .font(.caption)
-                    .foregroundStyle(palette.muted)
-                Spacer()
-                Button(action: submit) {
-                    Image(systemName: "arrow.up")
-                        .font(.body.weight(.bold))
-                        .foregroundStyle(canSubmit ? palette.ink : palette.mutedSoft)
-                        .frame(width: 32, height: 32)
-                        .background((canSubmit ? palette.primary : palette.hairlineSoft), in: Circle())
-                }
-                .buttonStyle(.plain)
-                .disabled(!canSubmit)
-                .help("提交工作")
+        .fileImporter(isPresented: $choosingAttachments, allowedContentTypes: [.data], allowsMultipleSelection: true) { result in
+            guard case .success(let urls) = result else { return }
+            for url in urls where !attachments.contains(where: { $0.path == url.path }) {
+                let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentTypeKey])
+                attachments.append(.init(
+                    name: url.lastPathComponent,
+                    kind: values?.contentType?.localizedDescription ?? "文件",
+                    size: formattedSize(values?.fileSize),
+                    path: url.path
+                ))
             }
         }
-        .padding(AppTheme.Spacing.sm)
-        .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(focused ? palette.primary.opacity(0.72) : palette.hairlineSoft, lineWidth: focused ? 1.4 : 1)
-        }
-        .shadow(color: .black.opacity(0.09), radius: 12, y: 4)
-        .frame(maxWidth: 820)
-        .frame(maxWidth: .infinity)
-        .onAppear { focused = true }
     }
 
+    private var draft: Binding<String> { isCreatingWork ? $taskStore.draft : $conversationStore.draft }
+
     private var canSubmit: Bool {
-        !store.isSubmitting && !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let text = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !text.isEmpty && (isCreatingWork ? !taskStore.isSubmitting : !conversationStore.isSending)
     }
 
     private func submit() {
         guard canSubmit else { return }
-        store.requestRun()
+        if isCreatingWork { taskStore.requestRun() } else { conversationStore.send() }
+        attachments = []
+    }
+
+    private func formattedSize(_ bytes: Int?) -> String {
+        guard let bytes else { return "未知大小" }
+        return ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
@@ -731,6 +948,7 @@ private struct EmployeeWorkComposer: View {
 
 private struct WorkingStatusBar: View {
     let run: TaskRun
+    let employeeName: String
     let stop: () -> Void
     @Environment(\.colorScheme) private var colorScheme
 
@@ -738,7 +956,7 @@ private struct WorkingStatusBar: View {
         HStack(spacing: AppTheme.Spacing.sm) {
             ProgressView().controlSize(.small).tint(palette.accentTeal)
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                Text(run.isCancellationRequested ? "Alex 正在停止" : "Alex 正在工作")
+                Text(run.isCancellationRequested ? "\(employeeName) 正在停止" : "\(employeeName) 正在工作")
                     .font(.callout.weight(.semibold))
                 Text(currentActivity)
                     .font(.caption)
@@ -769,8 +987,9 @@ private struct WorkingStatusBar: View {
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
-private struct ApprovalActionBar: View {
+private struct WorkSubmissionConfirmationBar: View {
     @ObservedObject var store: TaskStore
+    let employeeName: String
     @State private var expanded = false
     @Environment(\.colorScheme) private var colorScheme
 
@@ -778,11 +997,9 @@ private struct ApprovalActionBar: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             if expanded {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                    LabeledContent("动作", value: "创建 PRD 文档")
-                    LabeledContent("Tool", value: "document-tool")
-                    LabeledContent("授权范围", value: "仅本次工作")
-                    LabeledContent("预计副作用", value: "在 outputs 目录创建 Markdown 文件")
-                    LabeledContent("网络访问", value: "无")
+                    Text(store.draft).foregroundStyle(palette.body).textSelection(.enabled)
+                    Text("确认后将创建一项可追踪工作。Skill、Tool、权限和副作用仍由 Runtime 按实际执行步骤校验。")
+                        .foregroundStyle(palette.muted)
                 }
                 .font(.caption)
                 Divider().overlay(palette.hairlineSoft)
@@ -794,19 +1011,18 @@ private struct ApprovalActionBar: View {
                         expanded.toggle()
                     } label: {
                         HStack(spacing: 5) {
-                            Text("Alex 请求写入文件").font(.callout.weight(.semibold))
+                            Text("确认交给 \(employeeName) 执行").font(.callout.weight(.semibold))
                             Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.caption2)
                         }
                     }
                     .buttonStyle(.plain)
-                    Text("仅限本次工作 · outputs/PRD.md")
+                    Text("正式工作 · 保留执行记录与交付物")
                         .font(.caption)
                         .foregroundStyle(palette.muted)
                 }
                 Spacer()
-                Button("拒绝", action: store.cancelApproval)
-                Button("允许一次", action: store.approveAndRun)
-                    .buttonStyle(.borderedProminent)
+                Button("返回修改", action: store.cancelApproval).buttonStyle(CreamSecondaryButtonStyle())
+                Button("确认交办", action: store.approveAndRun).buttonStyle(CreamPrimaryButtonStyle())
             }
         }
         .padding(AppTheme.Spacing.md)

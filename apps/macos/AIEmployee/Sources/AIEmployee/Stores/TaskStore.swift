@@ -18,6 +18,11 @@ final class TaskStore: ObservableObject {
 
     init(service: RuntimeService) {
         self.service = service
+        if let demo = WorkLibraryDemoData.current {
+            runs = demo.runs
+            selection = demo.runs.first?.id
+            return
+        }
         Task { await restoreHistory() }
     }
 
@@ -42,8 +47,9 @@ final class TaskStore: ObservableObject {
         isSubmitting = true
         let id = "task_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
         let input = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let createdAt = ISO8601DateFormatter().string(from: .now)
         draft = ""
-        runs.insert(TaskRun(id: id, input: input, createdAt: ISO8601DateFormatter().string(from: .now), status: .running, actions: [], events: [], response: nil, error: nil, artifactPath: nil, evaluation: nil, isCancellationRequested: false), at: 0)
+        runs.insert(TaskRun(id: id, input: input, createdAt: createdAt, status: .running, actions: [], events: [], response: nil, error: nil, artifactPath: nil, evaluation: nil, isCancellationRequested: false), at: 0)
         selection = id
         logger.info("Started approved task \(id, privacy: .public)")
         Task {
@@ -54,7 +60,7 @@ final class TaskStore: ObservableObject {
                 let existingEvents = runs.first(where: { $0.id == id })?.events ?? []
                 let known = Set(existingEvents.map(\.eventID))
                 let finalEvents = existingEvents + response.events.filter { !known.contains($0.eventID) }
-                replace(id, with: TaskRun(id: response.taskID, input: input, createdAt: ISO8601DateFormatter().string(from: .now), status: response.status, actions: response.graph.nodes, events: finalEvents, response: response, error: nil, artifactPath: response.artifactPath, evaluation: response.evaluation, isCancellationRequested: false))
+                replace(id, with: TaskRun(id: response.taskID, input: input, createdAt: createdAt, status: response.status, actions: response.graph.nodes, events: finalEvents, response: response, error: nil, artifactPath: response.artifactPath, evaluation: response.evaluation, isCancellationRequested: false))
                 selection = response.taskID
                 isSubmitting = false
                 logger.info("Task completed \(response.taskID, privacy: .public) status=\(response.status.rawValue, privacy: .public)")

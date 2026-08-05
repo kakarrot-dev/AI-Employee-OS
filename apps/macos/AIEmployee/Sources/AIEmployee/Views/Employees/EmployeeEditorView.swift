@@ -131,12 +131,18 @@ struct EmployeeEditorView: View {
                 formDivider
                 HStack(spacing: 18) {
                     Text("状态").font(.callout).foregroundStyle(palette.muted).frame(width: 86, alignment: .leading)
-                    Menu {
-                        Button { employee.status = "active" } label: { Label("启用", systemImage: employee.status == "active" ? "checkmark" : "circle") }
-                        Button { employee.status = "disabled" } label: { Label("停用", systemImage: employee.status == "disabled" ? "checkmark" : "circle") }
-                    } label: {
-                        CreamMenuLabel(title: employee.status == "active" ? "启用" : "停用")
-                    }.menuStyle(.borderlessButton)
+                    Text(employee.status == "active" ? "已启用" : "已停用")
+                        .font(.callout)
+                        .foregroundStyle(employee.status == "active" ? palette.body : palette.muted)
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { employee.status == "active" },
+                        set: { employee.status = $0 ? "active" : "disabled" }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(palette.primaryActive)
+                    .help(employee.status == "active" ? "停用员工" : "启用员工")
                 }.frame(minHeight: 46)
             }
         }

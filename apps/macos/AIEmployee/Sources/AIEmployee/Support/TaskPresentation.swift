@@ -27,6 +27,12 @@ enum TaskPresentation {
         switch stepID {
         case "analyze": "分析需求与证据"
         case "write": "生成 PRD 文档"
+        case "inspect-context": "检查会话与工作上下文"
+        case "design-structure": "设计工作库信息结构"
+        case "write-document": "生成工作库说明文档"
+        case "implement-ui": "实现进度与交付物展示"
+        case "write-approved-file": "写入工作库设计说明"
+        case "verify-output": "验证界面与输出结果"
         default: stepID.replacingOccurrences(of: "_", with: " ").capitalized
         }
     }
@@ -60,5 +66,10 @@ enum TaskPresentation {
     static func date(_ value: String) -> String {
         guard let date = ISO8601DateFormatter().date(from: value) else { return value }
         return date.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    static func time(_ value: String) -> String {
+        guard let date = ISO8601DateFormatter().date(from: value) else { return value }
+        return date.formatted(date: .omitted, time: .shortened)
     }
 }

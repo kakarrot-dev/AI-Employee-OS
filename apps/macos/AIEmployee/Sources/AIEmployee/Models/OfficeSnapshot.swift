@@ -1,6 +1,25 @@
 import Foundation
 
 struct OfficeSnapshot {
+    struct UsagePoint: Identifiable {
+        let id: String
+        let label: String
+        let inputTokens: Int
+        let outputTokens: Int
+
+        var totalTokens: Int { inputTokens + outputTokens }
+    }
+
+    struct UsageSummary {
+        let inputTokens: Int
+        let outputTokens: Int
+        let estimatedCost: Double
+        let modelCalls: Int
+        let points: [UsagePoint]
+
+        var totalTokens: Int { inputTokens + outputTokens }
+    }
+
     struct EmployeeItem: Identifiable {
         let id: String
         let name: String
@@ -36,6 +55,7 @@ struct OfficeSnapshot {
     let isLoading: Bool
     let runtimeMessage: String?
     let isDemo: Bool
+    let usage: UsageSummary?
 
     static func live(employees: [Employee], runs: [TaskRun], isLoading: Bool, runtimeMessage: String?) -> Self {
         let employeeItems = employees.filter { $0.status == "active" }.map {
@@ -74,7 +94,7 @@ struct OfficeSnapshot {
                 createdAt: run.createdAt
             )
         }
-        return Self(employees: employeeItems, currentWork: active, deliveries: deliveries, isLoading: isLoading, runtimeMessage: runtimeMessage, isDemo: false)
+        return Self(employees: employeeItems, currentWork: active, deliveries: deliveries, isLoading: isLoading, runtimeMessage: runtimeMessage, isDemo: false, usage: nil)
     }
 
     private static func workDetail(for state: WorkItem.State, run: TaskRun) -> String {
@@ -118,6 +138,22 @@ enum OfficeDemoScene: String {
             OfficeSnapshot.DeliveryItem(id: "d2", title: "首轮用户访谈洞察与机会排序", employeeName: "Maya", artifactName: "访谈洞察.md", createdAt: "2026-08-04T17:40:00Z"),
             OfficeSnapshot.DeliveryItem(id: "d3", title: "激活漏斗口径与基线分析", employeeName: "Leo", artifactName: "激活漏斗.csv", createdAt: "2026-08-04T15:08:00Z")
         ]
+        let usagePoints = [
+            OfficeSnapshot.UsagePoint(id: "0730", label: "7/30", inputTokens: 42_800, outputTokens: 12_400),
+            OfficeSnapshot.UsagePoint(id: "0731", label: "7/31", inputTokens: 58_600, outputTokens: 18_900),
+            OfficeSnapshot.UsagePoint(id: "0801", label: "8/1", inputTokens: 37_200, outputTokens: 11_800),
+            OfficeSnapshot.UsagePoint(id: "0802", label: "8/2", inputTokens: 76_400, outputTokens: 24_600),
+            OfficeSnapshot.UsagePoint(id: "0803", label: "8/3", inputTokens: 69_100, outputTokens: 21_300),
+            OfficeSnapshot.UsagePoint(id: "0804", label: "8/4", inputTokens: 108_500, outputTokens: 34_200),
+            OfficeSnapshot.UsagePoint(id: "0805", label: "今天", inputTokens: 86_700, outputTokens: 28_900)
+        ]
+        let usage = OfficeSnapshot.UsageSummary(
+            inputTokens: usagePoints.reduce(0) { $0 + $1.inputTokens },
+            outputTokens: usagePoints.reduce(0) { $0 + $1.outputTokens },
+            estimatedCost: 4.82,
+            modelCalls: 47,
+            points: usagePoints
+        )
         let work: [OfficeSnapshot.WorkItem]
         let demoEmployees: [OfficeSnapshot.EmployeeItem]
         let demoDeliveries: [OfficeSnapshot.DeliveryItem]
@@ -140,6 +176,6 @@ enum OfficeDemoScene: String {
         case .runtimeOffline:
             work = []; demoEmployees = employees; demoDeliveries = deliveries; runtimeMessage = "Runtime 当前不可连接，已保留本地工作记录"
         }
-        return OfficeSnapshot(employees: demoEmployees, currentWork: work, deliveries: demoDeliveries, isLoading: false, runtimeMessage: runtimeMessage, isDemo: true)
+        return OfficeSnapshot(employees: demoEmployees, currentWork: work, deliveries: demoDeliveries, isLoading: false, runtimeMessage: runtimeMessage, isDemo: true, usage: usage)
     }
 }
