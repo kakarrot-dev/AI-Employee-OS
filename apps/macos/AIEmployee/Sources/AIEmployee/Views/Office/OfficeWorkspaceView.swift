@@ -4,7 +4,6 @@ struct OfficeWorkspaceView: View {
     @ObservedObject var store: TaskStore
     let openChat: () -> Void
 
-    @State private var searchText = ""
     @State private var viewMode = OfficeViewMode.office
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
@@ -18,18 +17,30 @@ struct OfficeWorkspaceView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack {
             if viewMode == .office {
                 OfficeSceneView(employee: employee, reduceMotion: reduceMotion, openChat: openChat)
             } else {
                 OfficeEmployeeList(employee: employee, openChat: openChat)
             }
-
-            OfficeControlBar(searchText: $searchText, viewMode: $viewMode)
-                .padding(.top, AppTheme.Spacing.md)
         }
         .background(palette.canvas)
         .navigationTitle("办公室")
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    viewMode = viewMode == .office ? .list : .office
+                } label: {
+                    Label(viewMode == .office ? "切换到列表" : "切换到办公室", systemImage: viewMode == .office ? "list.bullet" : "building.2")
+                }
+                .help(viewMode == .office ? "切换到员工列表" : "切换到办公室")
+
+                Button(action: openChat) {
+                    Label("交给 Alex 新工作", systemImage: "square.and.pencil")
+                }
+                .help("交给 Alex 新工作")
+            }
+        }
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
@@ -63,43 +74,6 @@ private struct OfficeEmployeePresentation {
     }
 }
 
-private struct OfficeControlBar: View {
-    @Binding var searchText: String
-    @Binding var viewMode: OfficeViewMode
-
-    var body: some View {
-        HStack(spacing: AppTheme.Spacing.sm) {
-            HStack(spacing: AppTheme.Spacing.xs) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("搜索员工", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .frame(width: 132)
-            }
-            .padding(.horizontal, AppTheme.Spacing.sm)
-            .frame(height: 30)
-
-            Divider().frame(height: 18)
-
-            Picker("视图", selection: $viewMode) {
-                ForEach(OfficeViewMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 132)
-        }
-        .padding(AppTheme.Spacing.xs)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .stroke(.white.opacity(0.56), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.09), radius: 14, y: 5)
-    }
-}
-
 private struct OfficeSceneView: View {
     let employee: OfficeEmployeePresentation
     let reduceMotion: Bool
@@ -109,31 +83,169 @@ private struct OfficeSceneView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            ZStack {
-                OfficeFloor()
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(employee.department)
+                        .font(.headline)
+                        .foregroundStyle(palette.ink)
+                    Text("1 名员工 · 5 个空工位")
+                        .font(.caption)
+                        .foregroundStyle(palette.muted)
+                    Spacer()
+                }
 
-                SoftRugShape()
-                    .fill(palette.primary.opacity(0.055))
-                    .frame(width: min(proxy.size.width * 0.62, 680), height: min(proxy.size.height * 0.5, 390))
-                    .offset(x: -40, y: 44)
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: AppTheme.Spacing.lg), count: 3),
+                    spacing: AppTheme.Spacing.lg
+                ) {
+                    OfficeDeskPod(employee: employee, reduceMotion: reduceMotion, openChat: openChat)
+                    ForEach(0..<5, id: \.self) { index in
+                        OfficeDeskPod(employee: nil, reduceMotion: true, openChat: {})
+                            .accessibilityLabel("空工位 \(index + 2)")
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .top)
 
-                DepartmentSign(title: employee.department)
-                    .position(x: proxy.size.width * 0.29, y: proxy.size.height * 0.39)
-
-                WorkstationView(employee: employee, reduceMotion: reduceMotion, openChat: openChat)
-                    .position(x: proxy.size.width * 0.5, y: proxy.size.height * 0.55)
-
-                OfficePlant()
-                    .position(x: proxy.size.width * 0.73, y: proxy.size.height * 0.66)
-
-                LowCabinet()
-                    .position(x: proxy.size.width * 0.27, y: proxy.size.height * 0.69)
-
-                SharedTable()
-                    .position(x: proxy.size.width * 0.71, y: proxy.size.height * 0.39)
+                Spacer(minLength: 0)
             }
-            .clipped()
+            .padding(.horizontal, max(AppTheme.Spacing.lg, proxy.size.width * 0.045))
+            .padding(.top, AppTheme.Spacing.lg)
+            .padding(.bottom, AppTheme.Spacing.xl)
         }
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct OfficeDeskPod: View {
+    let employee: OfficeEmployeePresentation?
+    let reduceMotion: Bool
+    let openChat: () -> Void
+
+    @State private var showsPopover = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Group {
+            if let employee {
+                Button { showsPopover = true } label: {
+                    workstation(employee: employee)
+                }
+                .buttonStyle(.plain)
+                .help("\(employee.name) · \(employee.role)\n\(employee.currentWork.map { "正在处理：\($0)" } ?? "空闲，可以接收工作")")
+                .accessibilityLabel("\(employee.name)，\(employee.role)，\(employee.state.title)")
+                .popover(isPresented: $showsPopover, arrowEdge: .trailing) {
+                    EmployeeOfficePopover(employee: employee, openChat: {
+                        showsPopover = false
+                        openChat()
+                    })
+                }
+            } else {
+                workstation(employee: nil)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 210)
+    }
+
+    private func workstation(employee: OfficeEmployeePresentation?) -> some View {
+        VStack(spacing: 0) {
+            ZStack {
+                deskFrame
+
+                if let employee {
+                    EmployeeCharacter(state: employee.state, reduceMotion: reduceMotion)
+                        .scaleEffect(0.82)
+                        .offset(y: 24)
+                } else {
+                    emptyChair
+                }
+            }
+            .frame(width: 208, height: 164)
+
+            if let employee {
+                NamePlate(name: employee.name, state: employee.state)
+                    .offset(y: -3)
+            } else {
+                Color.clear.frame(height: 25)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    private var deskFrame: some View {
+        ZStack {
+            Ellipse()
+                .fill(.black.opacity(0.055))
+                .frame(width: 188, height: 34)
+                .offset(y: 55)
+
+            RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
+                .fill(palette.surfaceCard)
+                .frame(width: 188, height: 18)
+                .overlay {
+                    RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
+                        .stroke(palette.hairlineSoft, lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(0.055), radius: 5, y: 4)
+                .offset(y: 10)
+
+            HStack(spacing: 142) {
+                Capsule().fill(palette.hairline).frame(width: 5, height: 55)
+                Capsule().fill(palette.hairline).frame(width: 5, height: 55)
+            }
+            .offset(y: 43)
+
+            monitor
+                .offset(y: -32)
+
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Color(hex: 0xEAD49C))
+                .frame(width: 27, height: 16)
+                .rotationEffect(.degrees(-5))
+                .offset(x: 57, y: 3)
+        }
+    }
+
+    private var monitor: some View {
+        VStack(spacing: 0) {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
+                .fill(employee == nil ? palette.surfaceSoft : Color(hex: 0xC9D7D2))
+                .frame(width: 104, height: 67)
+                .overlay {
+                    RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
+                        .stroke(palette.hairline, lineWidth: 1)
+                }
+                .overlay {
+                    if employee != nil {
+                        VStack(spacing: 5) {
+                            Capsule().fill(palette.surfaceCard.opacity(0.9)).frame(width: 66, height: 7)
+                            HStack(spacing: 5) {
+                                RoundedRectangle(cornerRadius: 2).fill(palette.surfaceCard.opacity(0.72)).frame(width: 25, height: 28)
+                                VStack(spacing: 4) {
+                                    Capsule().fill(palette.accentTeal.opacity(0.42)).frame(width: 31, height: 5)
+                                    Capsule().fill(palette.surfaceCard.opacity(0.82)).frame(width: 31, height: 5)
+                                    Capsule().fill(palette.primary.opacity(0.35)).frame(width: 31, height: 5)
+                                }
+                            }
+                        }
+                    }
+                }
+            Rectangle().fill(palette.hairline).frame(width: 4, height: 12)
+            Capsule().fill(palette.hairline).frame(width: 34, height: 4)
+        }
+    }
+
+    private var emptyChair: some View {
+        VStack(spacing: 0) {
+            RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
+                .fill(palette.hairlineSoft)
+                .frame(width: 49, height: 52)
+            RoundedRectangle(cornerRadius: 5)
+                .fill(palette.surfaceSoft)
+                .frame(width: 58, height: 17)
+            Capsule().fill(palette.hairline).frame(width: 5, height: 21)
+        }
+        .offset(y: 46)
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
@@ -155,7 +267,7 @@ private struct OfficeFloor: View {
                 grid.move(to: CGPoint(x: x, y: 0))
                 grid.addLine(to: CGPoint(x: x - size.height, y: size.height))
             }
-            context.stroke(grid, with: .color(palette.hairlineSoft.opacity(0.45)), lineWidth: 0.7)
+            context.stroke(grid, with: .color(palette.hairlineSoft.opacity(0.24)), lineWidth: 0.7)
         }
     }
 
@@ -284,41 +396,50 @@ private struct EmployeeCharacter: View {
     var body: some View {
         ZStack {
             Ellipse()
-                .fill(.black.opacity(0.09))
-                .frame(width: 48, height: 16)
-                .offset(y: 57)
+                .fill(.black.opacity(0.075))
+                .frame(width: 66, height: 17)
+                .offset(y: 55)
+
+            chair
+
+            CartoonTorsoShape()
+                .fill(Color(hex: 0x4C5651))
+                .frame(width: 57, height: 61)
+                .offset(y: 17 + (workingMotion ? 1 : 0))
+
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Color(hex: 0xC88F6A))
+                .frame(width: 14, height: 12)
+                .offset(y: -14)
+
+            sleeve(side: -1)
+            sleeve(side: 1)
+            forearm(side: -1)
+            forearm(side: 1)
 
             Capsule()
-                .fill(Color(hex: 0x5B635E))
-                .frame(width: 28, height: 52)
-                .rotationEffect(.degrees(-5))
-                .offset(y: 21)
-
-            Capsule()
-                .fill(Color(hex: 0xC99872))
-                .frame(width: 11, height: 38)
-                .rotationEffect(.degrees(state == .working && workingMotion ? -31 : -20), anchor: .top)
-                .offset(x: -15, y: 17)
-
-            Capsule()
-                .fill(Color(hex: 0xC99872))
-                .frame(width: 11, height: 38)
-                .rotationEffect(.degrees(state == .working && workingMotion ? 31 : 20), anchor: .top)
-                .offset(x: 15, y: 17)
+                .fill(palette.primary)
+                .frame(width: 29, height: 7)
+                .offset(y: -1)
 
             Circle()
-                .fill(Color(hex: 0xD5A47D))
-                .frame(width: 35, height: 35)
-                .offset(y: -20)
+                .fill(Color(hex: 0xD6A17A))
+                .frame(width: 43, height: 45)
+                .overlay {
+                    Circle()
+                        .stroke(Color(hex: 0xBC805B).opacity(0.42), lineWidth: 1)
+                }
+                .offset(y: -34)
 
-            HairShape()
-                .fill(Color(hex: 0x3D352F))
-                .frame(width: 39, height: 23)
-                .offset(y: -29)
+            Circle().fill(Color(hex: 0xD6A17A)).frame(width: 9, height: 12).offset(x: -23, y: -31)
+            Circle().fill(Color(hex: 0xD6A17A)).frame(width: 9, height: 12).offset(x: 23, y: -31)
 
-            statusDot
-                .offset(x: 27, y: -32)
+            CartoonHairShape()
+                .fill(Color(hex: 0x4A3830))
+                .frame(width: 46, height: 34)
+                .offset(y: -42)
         }
+        .frame(width: 92, height: 116)
         .saturation(state == .disabled ? 0.15 : 0.82)
         .opacity(state == .disabled ? 0.58 : 1)
         .onAppear {
@@ -329,45 +450,100 @@ private struct EmployeeCharacter: View {
         }
     }
 
-    private var statusDot: some View {
+    private var chair: some View {
         ZStack {
-            if state == .working && !reduceMotion {
-                Circle()
-                    .stroke(stateColor.opacity(workingMotion ? 0.08 : 0.42), lineWidth: 2)
-                    .frame(width: workingMotion ? 24 : 14, height: workingMotion ? 24 : 14)
-            }
-            Circle().fill(stateColor).frame(width: 9, height: 9)
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(Color(hex: 0xD8D4CA))
+                .frame(width: 62, height: 61)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .stroke(palette.hairline, lineWidth: 1)
+                }
+                .offset(y: 23)
+            Capsule().fill(palette.hairline).frame(width: 6, height: 25).offset(y: 57)
+            Capsule().fill(palette.hairline).frame(width: 38, height: 5).offset(y: 67)
         }
     }
 
-    private var stateColor: Color {
-        switch state {
-        case .available: palette.success
-        case .working: palette.accentTeal
-        case .attention: palette.warning
-        case .failed: palette.error
-        case .disabled: palette.muted
+    private func sleeve(side: CGFloat) -> some View {
+        Capsule()
+            .fill(Color(hex: 0x4C5651))
+            .frame(width: 16, height: 29)
+            .rotationEffect(.degrees(Double(side) * 20), anchor: .top)
+            .offset(x: side * 22, y: 19)
+    }
+
+    private func forearm(side: CGFloat) -> some View {
+        let activity = state == .working && workingMotion ? 3.0 : 0.0
+        return ZStack(alignment: .top) {
+            Capsule()
+                .fill(Color(hex: 0xD6A17A))
+                .frame(width: 10, height: 17)
+            Circle()
+                .fill(Color(hex: 0xD6A17A))
+                .frame(width: 12, height: 12)
+                .offset(y: -3)
         }
+        .rotationEffect(.degrees(Double(side) * (-25 + activity)), anchor: .top)
+        .offset(x: side * 28, y: 10 + (workingMotion ? -1 : 0))
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
-private struct HairShape: Shape {
+private struct CartoonTorsoShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: rect.minX + 2, y: rect.maxY))
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
         path.addCurve(
-            to: CGPoint(x: rect.maxX - 2, y: rect.maxY),
-            control1: CGPoint(x: rect.minX, y: rect.minY),
-            control2: CGPoint(x: rect.maxX, y: rect.minY)
+            to: CGPoint(x: rect.maxX, y: rect.maxY - 8),
+            control1: CGPoint(x: rect.maxX - 8, y: rect.minY),
+            control2: CGPoint(x: rect.maxX, y: rect.midY)
         )
-        path.addLine(to: CGPoint(x: rect.maxX - 6, y: rect.midY))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX - 9, y: rect.maxY), control: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX + 9, y: rect.maxY))
+        path.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - 8), control: CGPoint(x: rect.minX, y: rect.maxY))
         path.addCurve(
-            to: CGPoint(x: rect.minX + 2, y: rect.maxY),
-            control1: CGPoint(x: rect.midX, y: rect.minY - 2),
-            control2: CGPoint(x: rect.minX, y: rect.midY)
+            to: CGPoint(x: rect.midX, y: rect.minY),
+            control1: CGPoint(x: rect.minX, y: rect.midY),
+            control2: CGPoint(x: rect.minX + 8, y: rect.minY)
         )
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct CartoonHairShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + 2, y: rect.maxY - 6))
+        path.addCurve(
+            to: CGPoint(x: rect.midX, y: rect.minY),
+            control1: CGPoint(x: rect.minX + 1, y: rect.minY + 8),
+            control2: CGPoint(x: rect.midX - 10, y: rect.minY)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.maxX - 2, y: rect.maxY - 6),
+            control1: CGPoint(x: rect.midX + 10, y: rect.minY),
+            control2: CGPoint(x: rect.maxX - 1, y: rect.minY + 8)
+        )
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.70, y: rect.maxY - 3),
+            control: CGPoint(x: rect.minX + rect.width * 0.84, y: rect.maxY)
+        )
+        path.addQuadCurve(
+            to: CGPoint(x: rect.midX, y: rect.maxY - 7),
+            control: CGPoint(x: rect.minX + rect.width * 0.61, y: rect.maxY - 1)
+        )
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX + rect.width * 0.30, y: rect.maxY - 3),
+            control: CGPoint(x: rect.minX + rect.width * 0.39, y: rect.maxY - 1)
+        )
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX + 2, y: rect.maxY - 6),
+            control: CGPoint(x: rect.minX + rect.width * 0.16, y: rect.maxY)
+        )
+        path.closeSubpath()
         return path
     }
 }
@@ -539,7 +715,7 @@ private struct OfficeEmployeeList: View {
             Spacer()
         }
         .padding(.horizontal, AppTheme.Spacing.xl)
-        .padding(.top, 88)
+        .padding(.top, AppTheme.Spacing.xl)
         .frame(maxWidth: 820, alignment: .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(palette.canvas)

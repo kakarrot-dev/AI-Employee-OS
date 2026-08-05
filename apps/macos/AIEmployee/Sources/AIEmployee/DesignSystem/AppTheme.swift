@@ -61,8 +61,8 @@ enum AppTheme {
         return Palette(
             primary: Color(hex: 0xB7791F), primaryActive: Color(hex: 0x9F6819), onPrimary: Color(hex: 0xFFF8F3),
             ink: Color(hex: 0x29271D), body: Color(hex: 0x403D36), muted: Color(hex: 0x6D675B), mutedSoft: Color(hex: 0x8D8575),
-            hairline: Color(hex: 0xD8D2C3), hairlineSoft: Color(hex: 0xE5E0D4), canvas: Color(hex: 0xF5F3E9),
-            surfaceSoft: Color(hex: 0xF8F7F2), surfaceCard: Color(hex: 0xFFFFFF), accentTeal: Color(hex: 0x2C6F75),
+            hairline: Color(hex: 0xDCD7CB), hairlineSoft: Color(hex: 0xE9E5DC), canvas: Color(hex: 0xF8F6EE),
+            surfaceSoft: Color(hex: 0xF1EFE7), surfaceCard: Color(hex: 0xFFFEFA), accentTeal: Color(hex: 0x2C6F75),
             success: Color(hex: 0x4B6F3D), warning: Color(hex: 0x8A5E16), error: Color(hex: 0x7C1B13)
         )
     }

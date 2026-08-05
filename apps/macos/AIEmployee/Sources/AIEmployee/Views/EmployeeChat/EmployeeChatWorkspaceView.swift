@@ -39,7 +39,7 @@ struct EmployeeChatWorkspaceView: View {
         }
         .navigationTitle("")
         .toolbar {
-            ToolbarItem(placement: .principal) {
+            ToolbarItem(placement: .navigation) {
                 EmployeeToolbarTitle(run: activeRun, reduceMotion: reduceMotion)
             }
             ToolbarItem(placement: .primaryAction) {

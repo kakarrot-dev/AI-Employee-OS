@@ -27,14 +27,14 @@ AI Employee macOS Client 使用 Claude Cream 作为唯一自定义视觉 Token�
 
 ## 通用页面规则
 
-- 目标 App Shell 为 `办公室 / 通讯录 / 工作 / 能力库`，四项平铺；Settings 使用独立 macOS Scene，不作为普通内容页。
+- 目标 App Shell 以 `办公室 / 通讯录 / 工作 / 能力库` 为四个主入口，同时在 Sidebar 展示当前企业、部门员工和最近工作；Settings 使用独立 macOS Scene，不作为普通内容页。
 - Task Workspace 的扫描顺序固定为：目标、状态、执行进度、交付结果、Artifact、运行诊断。
 - Artifact 是完成页的视觉主锚点；原始 Event 和 Task ID 默认折叠。
 - Sidebar Row 保持一个状态图标、一行任务标题和一行中文状态，不承载完整证据。
 - Primary 只用于主要交互、焦点和关键图标；正文强调不得滥用 Primary。
 - 禁止在 Feature View 中直接使用 `.blue`、`.green`、`.orange`、`.red` 表达业务语义，必须使用 `AppTheme`。
 - Light 与 Dark Token 保持同名语义角色，但当前 Office 与 Employee Chat MVP 只实现并验收 Light Mode，不对未设计的 Dark Mode 自动反色。
-- Sidebar 选中背景遵循用户的 macOS 系统强调色，Claude Cream Primary 用于内容操作、焦点和状态锚点，不自绘 List Selection。
+- Sidebar 使用 Claude Cream Primary 的低对比选中底色，避免系统蓝与暖色工作区冲突；同一时刻只显示一个选中上下文。
 
 ## Release 3 历史基线
 
@@ -93,11 +93,11 @@ UI 不持久化 `Available / Planning / Reviewing / Completed / Error` 等第二
 - 默认窗口 `1280 × 820`，最小窗口 `960 × 640`。
 - 首屏不依赖统计卡片也能回答：Alex 是否在工作、做什么、做到哪里、最近交付了什么。
 - 当前目标页面只验收 Light Mode；未来 Dark Mode 必须保持同一信息层级且相邻表面可分辨，不能直接自动反色。
-- 业务颜色全部来自 `AppTheme`，系统 Sidebar 选中态继续服从 macOS。
+- 业务颜色和 Sidebar 选中态全部来自 `AppTheme`。
 - 审批、取消、失败、`blocked`、`result_unknown` 和 Artifact 操作语义不因视觉改版而丢失。
 
 ## Premium UI v2 采纳裁决
 
 采纳“上下文工作空间、Command Center、Composer 主锚点、轻量表面层级、80% 实色与 20% Material”的方向。Material 仅用于 Command Palette、菜单和临时浮层；主工作区不使用整页玻璃效果。
 
-不采纳 Nova、Projects、实时 Sources、Research Object、Share、Continue Research 和多员工导航。Sidebar 继续使用 macOS 原生选中态，不自绘 Accent 色块或左侧选中线。统一卡片阴影不是默认规则，只有 Task Composer 作为输入主锚点使用轻量 elevation；文档表面主要依靠背景层级而不是装饰性阴影。
+不采纳 Nova、Projects、实时 Sources、Research Object、Share、Continue Research 和虚构多员工导航。Sidebar 使用自有内容结构和 Claude Cream 低对比选中底色，但不使用高饱和 Accent 色块或左侧选中线。统一卡片阴影不是默认规则，只有 Task Composer 作为输入主锚点使用轻量 elevation；文档表面主要依靠背景层级而不是装饰性阴影。

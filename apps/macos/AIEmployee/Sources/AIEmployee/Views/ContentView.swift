@@ -14,8 +14,8 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            AppSidebarView(selection: destination)
-                .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 260)
+            AppSidebarView(selection: destination, store: store)
+                .navigationSplitViewColumnWidth(min: 212, ideal: 228, max: 244)
         } detail: {
             workspace
         }
