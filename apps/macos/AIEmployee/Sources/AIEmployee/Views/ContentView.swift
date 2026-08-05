@@ -4,10 +4,9 @@ struct ContentView: View {
     @ObservedObject var store: TaskStore
     @ObservedObject var conversationStore: ConversationStore
     @ObservedObject var employeeStore: EmployeeStore
-    @SceneStorage("appDestination") private var destinationRaw = AppDestination.office.rawValue
+    @AppStorage("appDestination") private var destinationRaw = AppDestination.office.rawValue
     @SceneStorage("workComposerPresented") private var workComposerPresented = false
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.openSettings) private var openSettings
 
     private var destination: Binding<AppDestination> {
         Binding(
@@ -22,7 +21,6 @@ struct ContentView: View {
             store: store,
             conversationStore: conversationStore,
             employeeStore: employeeStore,
-            openSettings: { openSettings() },
             newWork: { beginWork() }
         ) {
             workspace
@@ -32,7 +30,7 @@ struct ContentView: View {
             CommandPaletteView(
                 navigate: { destination.wrappedValue = $0 },
                 newWork: { beginWork() },
-                openSettings: { openSettings() }
+                openSettings: { destination.wrappedValue = .settings }
             )
         }
         .sheet(isPresented: $employeeStore.isPresentingEditor) {
@@ -47,7 +45,7 @@ struct ContentView: View {
     private var workspace: some View {
         switch destination.wrappedValue {
         case .office:
-            OfficeWorkspaceView(store: store, openChat: { destination.wrappedValue = .work })
+            OfficeWorkspaceView(store: store, employeeStore: employeeStore, openChat: { destination.wrappedValue = .work })
         case .contacts:
             EmployeeDirectoryView(store: employeeStore) { employee in openConversation(employee) }
         case .work:
@@ -57,8 +55,12 @@ struct ContentView: View {
                 employee: employeeStore.selected,
                 isCreatingWork: $workComposerPresented
             )
-        case .capabilities:
-            CapabilityLibraryWorkspaceView()
+        case .skills:
+            CapabilityLibraryWorkspaceView(scope: .skills)
+        case .tools:
+            CapabilityLibraryWorkspaceView(scope: .tools)
+        case .settings:
+            SettingsView()
         }
     }
 

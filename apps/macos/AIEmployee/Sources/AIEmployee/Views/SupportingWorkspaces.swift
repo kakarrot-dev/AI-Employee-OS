@@ -28,8 +28,16 @@ struct ContactsWorkspaceView: View {
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
+enum CapabilityLibraryScope {
+    case skills, tools
+
+    var title: String { self == .skills ? "技能库" : "工具库" }
+    var subtitle: String { self == .skills ? "管理 AI 员工可使用的 Skills" : "管理 Tools、连接状态与权限范围" }
+    var filter: CapabilityFilter { self == .skills ? .skills : .tools }
+}
+
 struct CapabilityLibraryWorkspaceView: View {
-    @State private var filter = CapabilityFilter.all
+    let scope: CapabilityLibraryScope
     @Environment(\.colorScheme) private var colorScheme
 
     private var capabilities: [CapabilityRecord] {
@@ -42,16 +50,10 @@ struct CapabilityLibraryWorkspaceView: View {
         VStack(spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: AppTheme.Spacing.md) {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                    Text("能力库").font(.largeTitle.weight(.semibold)).foregroundStyle(palette.ink)
-                    Text("管理所有 AI 员工可使用的 Skill 与 Tool").foregroundStyle(palette.muted)
+                    Text(scope.title).font(.largeTitle.weight(.semibold)).foregroundStyle(palette.ink)
+                    Text(scope.subtitle).foregroundStyle(palette.muted)
                 }
                 Spacer()
-                Picker("能力类型", selection: $filter) {
-                    ForEach(CapabilityFilter.allCases) { option in Text(option.title).tag(option) }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 240)
             }
             .padding(.horizontal, AppTheme.Spacing.xl)
             .padding(.vertical, AppTheme.Spacing.lg)
@@ -59,10 +61,38 @@ struct CapabilityLibraryWorkspaceView: View {
             Divider().overlay(palette.hairlineSoft)
 
             if capabilities.isEmpty {
-                ContentUnavailableView {
-                    Label(filter.emptyTitle, systemImage: filter.systemImage)
-                } description: {
-                    Text(filter.emptyDetail)
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+                    Image(systemName: scope.filter.systemImage)
+                        .font(.system(size: 26, weight: .light))
+                        .foregroundStyle(palette.primaryActive)
+                        .frame(width: 52, height: 52)
+                        .background(palette.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                        Text(scope.filter.emptyTitle)
+                            .font(.title2.weight(.semibold))
+                            .foregroundStyle(palette.ink)
+                        Text(scope.filter.emptyDetail)
+                            .foregroundStyle(palette.muted)
+                            .frame(maxWidth: 460, alignment: .leading)
+                    }
+
+                    Divider().overlay(palette.hairlineSoft)
+
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                        Label("安装后显示版本与可用状态", systemImage: "checkmark.circle")
+                        Label("权限范围由 Runtime 统一校验", systemImage: "lock.shield")
+                        Label("不会用任务记录冒充能力目录", systemImage: "checkmark.seal")
+                    }
+                    .font(.callout)
+                    .foregroundStyle(palette.body)
+                }
+                .padding(AppTheme.Spacing.xl)
+                .frame(maxWidth: 620, alignment: .leading)
+                .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous)
+                        .stroke(palette.hairlineSoft, lineWidth: 1)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -85,13 +115,13 @@ struct CapabilityLibraryWorkspaceView: View {
             }
         }
         .background(palette.canvas)
-        .navigationTitle("能力库")
+        .navigationTitle(scope.title)
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
-private enum CapabilityFilter: String, CaseIterable, Identifiable {
+enum CapabilityFilter: String, CaseIterable, Identifiable {
     case all, skills, tools
     var id: String { rawValue }
     var title: String { switch self { case .all: "全部"; case .skills: "Skills"; case .tools: "Tools" } }

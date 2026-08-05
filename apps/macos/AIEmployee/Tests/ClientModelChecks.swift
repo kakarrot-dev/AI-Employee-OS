@@ -55,6 +55,11 @@ enum ClientModelChecks {
         expect(employee.schemaVersion == "1.0" && employee.status == "active", "employee draft uses canonical defaults")
         let encoded = try! JSONEncoder().encode(employee)
         expect((try? JSONDecoder().decode(Employee.self, from: encoded))?.basePrompt == employee.basePrompt, "employee contract round trip")
+        expect(
+            AppDestination.allCases == [.office, .contacts, .work, .skills, .tools, .settings],
+            "main shell exposes the approved six destinations"
+        )
+        expect(!AppDestination.primary.contains(.settings), "settings stays at the bottom of the global sidebar")
         print("client model checks passed")
     }
 

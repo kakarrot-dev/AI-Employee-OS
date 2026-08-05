@@ -18,6 +18,7 @@ enum AppTheme {
         let success: Color
         let warning: Color
         let error: Color
+        let shadow: Color
     }
 
     enum Spacing {
@@ -34,6 +35,7 @@ enum AppTheme {
         static let sm: CGFloat = 6
         static let md: CGFloat = 8
         static let lg: CGFloat = 12
+        static let xl: CGFloat = 16
     }
 
     enum Motion {
@@ -55,15 +57,17 @@ enum AppTheme {
                 ink: Color(hex: 0xE9E6DC), body: Color(hex: 0xDDD9CD), muted: Color(hex: 0xBBB6A8), mutedSoft: Color(hex: 0x8C887E),
                 hairline: Color(hex: 0x3D3D3A), hairlineSoft: Color(hex: 0x343533), canvas: Color(hex: 0x2D2E2D),
                 surfaceSoft: Color(hex: 0x2A2B2A), surfaceCard: Color(hex: 0x303030), accentTeal: Color(hex: 0x75B5BC),
-                success: Color(hex: 0x9AB889), warning: Color(hex: 0xE6BF7A), error: Color(hex: 0xEA928A)
+                success: Color(hex: 0x9AB889), warning: Color(hex: 0xE6BF7A), error: Color(hex: 0xEA928A),
+                shadow: Color.black.opacity(0.24)
             )
         }
         return Palette(
             primary: Color(hex: 0xB7791F), primaryActive: Color(hex: 0x9F6819), onPrimary: Color(hex: 0xFFF8F3),
             ink: Color(hex: 0x29271D), body: Color(hex: 0x403D36), muted: Color(hex: 0x6D675B), mutedSoft: Color(hex: 0x8D8575),
-            hairline: Color(hex: 0xDCD7CB), hairlineSoft: Color(hex: 0xE9E5DC), canvas: Color(hex: 0xF8F6EE),
-            surfaceSoft: Color(hex: 0xF1EFE7), surfaceCard: Color(hex: 0xFFFEFA), accentTeal: Color(hex: 0x2C6F75),
-            success: Color(hex: 0x4B6F3D), warning: Color(hex: 0x8A5E16), error: Color(hex: 0x7C1B13)
+            hairline: Color(hex: 0xD8D8D3), hairlineSoft: Color(hex: 0xE7E7E2), canvas: Color(hex: 0xF5F5F2),
+            surfaceSoft: Color(hex: 0xEFEFEB), surfaceCard: Color(hex: 0xFCFCF9), accentTeal: Color(hex: 0x2C6F75),
+            success: Color(hex: 0x4B6F3D), warning: Color(hex: 0x8A5E16), error: Color(hex: 0x7C1B13),
+            shadow: Color(hex: 0x39372F).opacity(0.09)
         )
     }
 }

@@ -12,12 +12,16 @@ struct AIEmployeeApp: App {
     var body: some Scene {
         Window("AI Employee OS", id: "main") {
             ContentView(store: store, conversationStore: conversationStore, employeeStore: employeeStore)
-                .frame(minWidth: 960, minHeight: 640)
+                .frame(minWidth: 720, minHeight: 520)
                 .fontDesign(.default)
                 .preferredColorScheme(appearance.colorScheme)
         }
         .defaultSize(width: 1280, height: 820)
         .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("设置…") { destinationRaw = AppDestination.settings.rawValue }
+                    .keyboardShortcut(",")
+            }
             CommandGroup(after: .newItem) {
                 Button("打开工作") { destinationRaw = AppDestination.work.rawValue }
                     .keyboardShortcut("n")
@@ -36,12 +40,6 @@ struct AIEmployeeApp: App {
             MenuBarStatusView(store: store)
         }
 
-        Settings {
-            SettingsView()
-                .frame(minWidth: 720, minHeight: 520)
-                .preferredColorScheme(appearance.colorScheme)
-        }
-        .defaultSize(width: 820, height: 620)
     }
 
     private var menuBarSystemImage: String {

@@ -10,24 +10,25 @@ AI Employee macOS Client 使用 Claude Cream 作为唯一自定义视觉 Token�
 
 | 语义 | Light | Dark |
 | --- | --- | --- |
-| Canvas | `#f5f3e9` | `#2d2e2d` |
+| Canvas | `#f5f5f2` | `#2d2e2d` |
 | Primary | `#b7791f` | `#e6bf7a` |
 | Ink | `#29271d` | `#e9e6dc` |
 | Body | `#403d36` | `#ddd9cd` |
 | Muted | `#6d675b` | `#bbb6a8` |
-| Hairline | `#d8d2c3` | `#3d3d3a` |
-| Surface Soft | `#f8f7f2` | `#2a2b2a` |
-| Surface Card | `#ffffff` | `#303030` |
+| Hairline | `#d8d8d3` | `#3d3d3a` |
+| Surface Soft | `#efefeb` | `#2a2b2a` |
+| Surface Card | `#fcfcf9` | `#303030` |
 | Accent Teal | `#2c6f75` | `#75b5bc` |
 | Success | `#4b6f3d` | `#9ab889` |
 | Warning | `#8a5e16` | `#e6bf7a` |
 | Error | `#7c1b13` | `#ea928a` |
 
-间距只使用 `4 / 8 / 12 / 16 / 24 / 32 / 48`。内容表面圆角使用 `12`，普通按钮、输入和窗口控件服从 macOS 系统样式。中文使用系统 PingFang SC，正文基准为 16pt。
+间距只使用 `4 / 8 / 12 / 16 / 24 / 32 / 48`。连续内容表面使用 `12`，唯一主锚点允许使用 `16`；普通按钮、输入和窗口控件服从 macOS 系统样式。中文使用系统字体，正文基准为 16pt。Claude Cream 的暖色只用于品牌、焦点和关键状态，Canvas 使用低彩度中性底，避免整窗泛黄。
 
 ## 通用页面规则
 
-- 目标 App Shell 以 `办公室 / 通讯录 / 工作 / 能力库` 为四个主入口，同时在 Sidebar 展示当前企业、部门员工和最近工作；Settings 使用独立 macOS Scene，不作为普通内容页。
+- 目标 App Shell 使用原生两栏结构，以 `办公室 / 通讯录 / 工作库 / 技能库 / 工具库` 为主入口，设置固定在 Sidebar 底部并在主 Workspace 内打开。
+- 默认窗口为 `1280 × 820pt`，最小窗口为 `720 × 520pt`；紧凑宽度折叠全局 Sidebar，页面级 Inspector 默认收起。
 - Task Workspace 的扫描顺序固定为：目标、状态、执行进度、交付结果、Artifact、运行诊断。
 - Artifact 是完成页的视觉主锚点；原始 Event 和 Task ID 默认折叠。
 - Sidebar Row 保持一个状态图标、一行任务标题和一行中文状态，不承载完整证据。
@@ -90,7 +91,7 @@ UI 不持久化 `Available / Planning / Reviewing / Completed / Error` 等第二
 
 ## 验收
 
-- 默认窗口 `1280 × 820`，最小窗口 `960 × 640`。
+- 默认窗口 `1280 × 820`，最小窗口 `720 × 520`。
 - 首屏不依赖统计卡片也能回答：Alex 是否在工作、做什么、做到哪里、最近交付了什么。
 - Release 3 历史页面只验收 Light Mode。当前主界面按 v2 规格同时验收 Light/Dark Mode，Dark Mode 必须保持同一信息层级且相邻表面可分辨，不能直接自动反色。
 - 业务颜色和 Sidebar 选中态全部来自 `AppTheme`。

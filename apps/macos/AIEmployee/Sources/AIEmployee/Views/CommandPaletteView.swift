@@ -14,8 +14,9 @@ struct CommandPaletteView: View {
             PaletteCommand(title: "交给 Alex 新工作", subtitle: "进入员工聊天并开始工作", image: "plus", action: newTask),
             destination("打开办公室", "查看 Alex 的当前状态", "building.2", .office),
             destination("打开通讯录", "按部门查找员工", "person.2", .contacts),
-            destination("打开工作", "查看与 Alex 的工作记录", "bubble.left.and.bubble.right", .work),
-            destination("打开能力库", "查看可用 Skills 与 Tools", "square.grid.2x2", .capabilities),
+            destination("打开工作库", "查看所有员工的工作历史", "clock.arrow.circlepath", .work),
+            destination("打开技能库", "查看已安装的 Skills", "sparkles", .skills),
+            destination("打开工具库", "查看 Tools、权限与连接状态", "wrench.and.screwdriver", .tools),
             PaletteCommand(title: "打开设置", subtitle: "配置模型、隐私与应用选项", image: "gearshape", action: settings)
         ]
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -4,7 +4,9 @@ enum AppDestination: String, CaseIterable, Identifiable {
     case office
     case contacts
     case work
-    case capabilities
+    case skills
+    case tools
+    case settings
 
     var id: String { rawValue }
 
@@ -12,8 +14,10 @@ enum AppDestination: String, CaseIterable, Identifiable {
         switch self {
         case .office: "办公室"
         case .contacts: "通讯录"
-        case .work: "工作"
-        case .capabilities: "能力库"
+        case .work: "工作库"
+        case .skills: "技能库"
+        case .tools: "工具库"
+        case .settings: "设置"
         }
     }
 
@@ -21,8 +25,12 @@ enum AppDestination: String, CaseIterable, Identifiable {
         switch self {
         case .office: "building.2"
         case .contacts: "person.2"
-        case .work: "bubble.left.and.bubble.right"
-        case .capabilities: "square.grid.2x2"
+        case .work: "clock.arrow.circlepath"
+        case .skills: "sparkles"
+        case .tools: "wrench.and.screwdriver"
+        case .settings: "gearshape"
         }
     }
+
+    static let primary: [AppDestination] = [.office, .contacts, .work, .skills, .tools]
 }

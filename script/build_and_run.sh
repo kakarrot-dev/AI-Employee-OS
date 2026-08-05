@@ -2,6 +2,11 @@
 set -euo pipefail
 
 MODE="${1:-run}"
+APP_ARGS=()
+if [[ "$MODE" == "--ui-demo" ]]; then
+  MODE="run"
+  APP_ARGS=("--ui-demo" "${2:-office}")
+fi
 APP_NAME="AIEmployee"
 BUNDLE_ID="com.kakarrot.ai-employee-os"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -46,7 +51,13 @@ sed -e "s/__APP_NAME__/$APP_NAME/g" -e "s/__BUNDLE_ID__/$BUNDLE_ID/g" \
 /usr/bin/codesign --force --sign "$SIGNING_IDENTITY" --options runtime --entitlements \
   "$ROOT_DIR/apps/macos/AIEmployee/Resources/AIEmployee.entitlements" "$APP_BUNDLE"
 
-open_app() { /usr/bin/open -n "$APP_BUNDLE"; }
+open_app() {
+  if [[ ${#APP_ARGS[@]} -gt 0 ]]; then
+    /usr/bin/open -n "$APP_BUNDLE" --args "${APP_ARGS[@]}"
+  else
+    /usr/bin/open -n "$APP_BUNDLE"
+  fi
+}
 
 case "$MODE" in
   run) open_app ;;
@@ -54,5 +65,5 @@ case "$MODE" in
   --logs|logs) open_app; /usr/bin/log stream --info --style compact --predicate "process == \"$APP_NAME\"" ;;
   --telemetry|telemetry) open_app; /usr/bin/log stream --info --style compact --predicate "subsystem == \"$BUNDLE_ID\"" ;;
   --verify|verify) open_app; sleep 1; pgrep -x "$APP_NAME" >/dev/null; codesign --verify --deep --strict "$APP_BUNDLE" ;;
-  *) echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2; exit 2 ;;
+  *) echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--ui-demo office[:scene]]" >&2; exit 2 ;;
 esac
