@@ -62,6 +62,9 @@ struct TaskHistoryResponse: Codable, Sendable {
         let deliverableTitle: String?
         let deliverableStatus: String?
         let verifiedArtifactPath: String?
+        let conversationID: String?
+        let skillID: String?
+        let skillVersion: String?
 
         enum CodingKeys: String, CodingKey {
             case taskID = "task_id"
@@ -78,6 +81,9 @@ struct TaskHistoryResponse: Codable, Sendable {
             case deliverableTitle = "deliverable_title"
             case deliverableStatus = "deliverable_status"
             case verifiedArtifactPath = "verified_artifact_path"
+            case conversationID = "conversation_id"
+            case skillID = "skill_id"
+            case skillVersion = "skill_version"
         }
     }
 
@@ -138,6 +144,7 @@ struct TaskRun: Identifiable {
     let agentID: String
     let input: String
     let createdAt: String
+    var updatedAt: String? = nil
     var status: TaskRunStatus
     var actions: [GraphNodeEvidence]
     var events: [RuntimeEvent]
@@ -153,4 +160,7 @@ struct TaskRun: Identifiable {
     var deliverableTitle: String? = nil
     var deliverableStatus: String? = nil
     var verifiedArtifactPath: String? = nil
+    var conversationID: String? = nil
+    var skillID: String? = nil
+    var skillVersion: String? = nil
 }

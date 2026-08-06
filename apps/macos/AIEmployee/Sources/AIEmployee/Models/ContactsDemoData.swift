@@ -46,29 +46,26 @@ struct ContactsDemoData {
     }
 
     private static var sample: Self {
-        let productSkill = EmployeeCapabilityItem(id: "prd-generation", kind: .skill, name: "产品需求分析", version: "1.2.0", detail: "把业务目标转化为结构化、可评审的产品需求文档。", metadata: "依赖：本地文件、文档写入", isAvailable: true)
-        let researchSkill = EmployeeCapabilityItem(id: "user-research", kind: .skill, name: "用户研究", version: "1.0.0", detail: "整理访谈材料并提取有证据支持的用户洞察。", metadata: "依赖：本地文件", isAvailable: true)
-        let analysisSkill = EmployeeCapabilityItem(id: "data-analysis", kind: .skill, name: "数据分析", version: "1.1.0", detail: "清洗业务数据并输出指标口径、结论与限制。", metadata: "依赖：本地文件、表格处理", isAvailable: true)
-        let apiSkill = EmployeeCapabilityItem(id: "api-review", kind: .skill, name: "接口评审", version: "0.9.0", detail: "检查接口状态、错误语义与幂等边界。", metadata: "尚未安装依赖工具", isAvailable: false)
+        let fileOperationsSkill = EmployeeCapabilityItem(id: "local-file-operations", kind: .skill, name: "本地文件操作", version: "1.0.0", detail: "读取、创建和精确编辑授权目录内的 UTF-8 文件。", metadata: "依赖：本地文件", isAvailable: true)
+        let webSearchSkill = EmployeeCapabilityItem(id: "web-search", kind: .skill, name: "网络搜索", version: "1.0.0", detail: "通过 Agent Reach 搜索公开网页并保留来源。", metadata: "依赖：Agent Reach 网络搜索", isAvailable: true)
 
         let fileTool = EmployeeCapabilityItem(id: "file-tool", kind: .tool, name: "本地文件", version: "1.0.0", detail: "读取经过授权的本地目录与文件。", metadata: "原生 · 已就绪 · 风险 0", isAvailable: true)
-        let documentTool = EmployeeCapabilityItem(id: "document-tool", kind: .tool, name: "文档写入", version: "1.0.0", detail: "创建或更新 Markdown 文档并验证写入结果。", metadata: "原生 · 已就绪 · 存在副作用", isAvailable: true)
-        let sheetTool = EmployeeCapabilityItem(id: "spreadsheet-tool", kind: .tool, name: "表格处理", version: "1.0.0", detail: "读取和生成结构化表格文件。", metadata: "插件 · 已就绪 · 风险 1", isAvailable: true)
-        let browserTool = EmployeeCapabilityItem(id: "browser-tool", kind: .tool, name: "浏览器", version: "1.0.0", detail: "访问网页并提取公开信息。", metadata: "MCP · 未连接", isAvailable: false)
+        let agentReachTool = EmployeeCapabilityItem(id: "agent-reach-tool", kind: .tool, name: "Agent Reach 网络搜索", version: "1.0.0", detail: "通过受控 Exa 后端搜索公开网页。", metadata: "原生适配 · 已就绪 · 风险 1", isAvailable: true)
 
-        let skillCatalog = [productSkill, researchSkill, analysisSkill, apiSkill]
-        let toolCatalog = [fileTool, documentTool, sheetTool, browserTool]
+        let skillCatalog = [fileOperationsSkill, webSearchSkill]
+        let toolCatalog = [fileTool, agentReachTool]
         let alexPermissions = [
             EmployeePermissionItem(id: "alex-read", name: "读取文件", resource: "filesystem.read", source: "本地文件", effect: "允许", confirmation: nil),
-            EmployeePermissionItem(id: "alex-write", name: "写入文档", resource: "filesystem.write", source: "文档写入", effect: "允许", confirmation: "存在风险时确认")
+            EmployeePermissionItem(id: "alex-write", name: "写入文件", resource: "filesystem.write", source: "本地文件", effect: "允许", confirmation: "每次确认"),
+            EmployeePermissionItem(id: "alex-network", name: "网络搜索", resource: "network.search", source: "Agent Reach 网络搜索", effect: "允许", confirmation: nil)
         ]
         let mayaPermissions = [
             EmployeePermissionItem(id: "maya-read", name: "读取文件", resource: "filesystem.read", source: "本地文件", effect: "允许", confirmation: nil),
-            EmployeePermissionItem(id: "maya-network", name: "访问网络", resource: "network.public", source: "浏览器", effect: "拒绝", confirmation: nil)
+            EmployeePermissionItem(id: "maya-network", name: "网络搜索", resource: "network.search", source: "Agent Reach 网络搜索", effect: "允许", confirmation: nil)
         ]
         let leoPermissions = [
             EmployeePermissionItem(id: "leo-read", name: "读取文件", resource: "filesystem.read", source: "本地文件", effect: "允许", confirmation: nil),
-            EmployeePermissionItem(id: "leo-sheet", name: "生成表格", resource: "spreadsheet.write", source: "表格处理", effect: "允许", confirmation: "每次执行均确认")
+            EmployeePermissionItem(id: "leo-write", name: "写入文件", resource: "filesystem.write", source: "本地文件", effect: "允许", confirmation: "每次执行均确认")
         ]
 
         let employees = [
@@ -77,9 +74,9 @@ struct ContactsDemoData {
             employee(id: "leo", name: "Leo", role: "AI 数据分析师", department: "数据部", identity: "# Leo\n\n你是一名 AI 数据分析师，负责把业务问题转化为可复现的数据分析。\n\n## 工作范围\n\n- 定义指标口径\n- 检查数据质量\n- 输出结论、限制与复现步骤", soul: "# 工作原则\n\n- 先检查数据，再计算指标\n- 区分相关性与因果关系\n- 不隐藏缺失值和口径变化")
         ]
         return Self(employees: employees, capabilities: [
-            "ai-product-manager": .init(selectedSkills: [productSkill], selectedTools: [fileTool, documentTool], permissions: alexPermissions, skillCatalog: skillCatalog, toolCatalog: toolCatalog),
-            "maya": .init(selectedSkills: [researchSkill], selectedTools: [fileTool], permissions: mayaPermissions, skillCatalog: skillCatalog, toolCatalog: toolCatalog),
-            "leo": .init(selectedSkills: [analysisSkill], selectedTools: [fileTool, sheetTool], permissions: leoPermissions, skillCatalog: skillCatalog, toolCatalog: toolCatalog)
+            "ai-product-manager": .init(selectedSkills: [fileOperationsSkill, webSearchSkill], selectedTools: [fileTool, agentReachTool], permissions: alexPermissions, skillCatalog: skillCatalog, toolCatalog: toolCatalog),
+            "maya": .init(selectedSkills: [webSearchSkill], selectedTools: [agentReachTool], permissions: mayaPermissions, skillCatalog: skillCatalog, toolCatalog: toolCatalog),
+            "leo": .init(selectedSkills: [fileOperationsSkill], selectedTools: [fileTool], permissions: leoPermissions, skillCatalog: skillCatalog, toolCatalog: toolCatalog)
         ])
     }
 

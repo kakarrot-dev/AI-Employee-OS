@@ -283,7 +283,18 @@ private struct CapabilityDetailView: View {
                         switch tab {
                         case .document: CapabilityMarkdownPreview(source: item.markdown)
                         case .dependencies: CapabilityMetadataView(sections: item.dependencySections)
-                        case .capabilities: CapabilityMetadataView(sections: item.capabilitySections)
+                        case .capabilities:
+                            VStack(alignment: .leading, spacing: 28) {
+                                if !item.capabilitySections.isEmpty {
+                                    CapabilityMetadataView(sections: item.capabilitySections)
+                                }
+                                if !item.dataSources.isEmpty {
+                                    AgentReachDataSourcesView(sources: item.dataSources)
+                                }
+                                if item.capabilitySections.isEmpty && item.dataSources.isEmpty {
+                                    Text("暂无能力信息").font(.callout).foregroundStyle(palette.muted)
+                                }
+                            }
                         case .security: CapabilitySecurityView(actions: item.actions)
                         case .structure: EmptyView()
                         }
@@ -465,22 +476,97 @@ private struct CapabilityMetadataView: View {
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
+private struct AgentReachDataSourcesView: View {
+    let sources: [RuntimeDataSource]
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Agent Reach 数据源").font(.headline).foregroundStyle(palette.ink)
+                    Text("只显示脱敏状态，不读取或展示 Cookie、Token、API Key 原文。")
+                        .font(.caption).foregroundStyle(palette.muted)
+                }
+                Spacer()
+                Text("\(sources.count) 个").font(.caption.monospacedDigit()).foregroundStyle(palette.mutedSoft)
+            }.padding(.bottom, 12)
+
+            ForEach(sources.sorted { $0.name.localizedCompare($1.name) == .orderedAscending }) { source in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(source.name).font(.callout.weight(.semibold)).foregroundStyle(palette.ink)
+                        if source.exposedToEmployee {
+                            Text("员工可调用").font(.caption2.weight(.semibold)).foregroundStyle(palette.primaryActive)
+                        }
+                        Spacer()
+                        Label(statusTitle(source.status), systemImage: statusIcon(source.status))
+                            .font(.caption.weight(.semibold)).foregroundStyle(statusColor(source.status))
+                    }
+                    metadata("后端", source.activeBackend ?? source.backends.joined(separator: "、"))
+                    metadata("凭据", credentialTitle(source.credentialState, type: source.credentialType))
+                    if source.status != "ready" {
+                        Text(source.loginHint).font(.caption).foregroundStyle(palette.muted)
+                    }
+                    Text("检查时间（Unix）：\(source.lastCheckedAt)").font(.caption2).foregroundStyle(palette.mutedSoft)
+                }.padding(.vertical, 13)
+                Divider().overlay(palette.hairlineSoft)
+            }
+        }
+    }
+
+    private func metadata(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(label).foregroundStyle(palette.muted).frame(width: 48, alignment: .leading)
+            Text(value.isEmpty ? "—" : value).foregroundStyle(palette.body).frame(maxWidth: .infinity, alignment: .leading)
+        }.font(.caption)
+    }
+
+    private func statusTitle(_ status: String) -> String {
+        switch status { case "ready": "可用"; case "configured_unverified": "已配置待验证"; default: "需要处理" }
+    }
+    private func statusIcon(_ status: String) -> String {
+        status == "ready" ? "checkmark.circle.fill" : status == "configured_unverified" ? "questionmark.circle.fill" : "exclamationmark.circle.fill"
+    }
+    private func statusColor(_ status: String) -> Color {
+        status == "ready" ? palette.success : status == "configured_unverified" ? palette.warning : palette.error
+    }
+    private func credentialTitle(_ state: String, type: String) -> String {
+        switch state {
+        case "not_required": "无需凭据"
+        case "present_unverified": "检测到 \(type)，尚未实时验证"
+        case "session_unverified": "浏览器会话未连接或未验证"
+        case "missing": "缺少 \(type)"
+        default: "未知"
+        }
+    }
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
 private struct CapabilitySecurityView: View {
     let actions: [CapabilityAction]
     @Environment(\.colorScheme) private var colorScheme
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            ForEach(actions) { action in
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack { Text(action.name).font(.headline).foregroundStyle(palette.ink); Spacer(); Text("风险 \(action.risk)").font(.caption.weight(.semibold)).foregroundStyle(action.risk >= 2 ? palette.error : palette.warning) }
-                    Text(action.summary).font(.callout).foregroundStyle(palette.muted)
-                    ForEach(action.rows) { row in
-                        HStack(alignment: .top, spacing: 18) {
-                            Text(row.label).foregroundStyle(palette.muted).frame(width: 116, alignment: .leading)
-                            Text(row.value).foregroundStyle(palette.body).frame(maxWidth: .infinity, alignment: .leading)
-                        }.font(.callout)
-                    }
-                }.padding(.bottom, 20).overlay(alignment: .bottom) { Divider().overlay(palette.hairlineSoft) }
+        if actions.isEmpty {
+            Text("暂无权限与风险信息").font(.callout).foregroundStyle(palette.muted)
+        } else {
+            VStack(alignment: .leading, spacing: 24) {
+                ForEach(actions) { action in
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text(action.name).font(.headline).foregroundStyle(palette.ink)
+                            Spacer()
+                            Text("风险 \(action.risk)").font(.caption.weight(.semibold)).foregroundStyle(action.risk >= 2 ? palette.error : palette.warning)
+                        }
+                        Text(action.summary).font(.callout).foregroundStyle(palette.muted)
+                        ForEach(action.rows) { row in
+                            HStack(alignment: .top, spacing: 18) {
+                                Text(row.label).foregroundStyle(palette.muted).frame(width: 116, alignment: .leading)
+                                Text(row.value).foregroundStyle(palette.body).frame(maxWidth: .infinity, alignment: .leading)
+                            }.font(.callout)
+                        }
+                    }.padding(.bottom, 20).overlay(alignment: .bottom) { Divider().overlay(palette.hairlineSoft) }
+                }
             }
         }
     }

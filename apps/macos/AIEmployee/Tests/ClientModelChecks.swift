@@ -19,7 +19,7 @@ enum ClientModelChecks {
                 .heading(level: 1, text: "标题"),
                 .heading(level: 2, text: "范围"),
                 .bullet("条目"),
-                .numbered("第一步"),
+                .numbered("1. 第一步"),
                 .quote("引用"),
                 .divider,
                 .code("let value = 1")
@@ -35,6 +35,15 @@ enum ClientModelChecks {
         expect(
             MarkdownBlock.parse("```\nline one\nline two") == [.code("line one\nline two")],
             "unclosed code block preservation"
+        )
+        let standaloneLink = MarkdownBlock.standaloneLink(in: "[OpenAI 发布说明](https://openai.com/news/)")
+        expect(
+            standaloneLink?.title == "OpenAI 发布说明" && standaloneLink?.url.host == "openai.com",
+            "standalone Markdown links become semantic link presentations"
+        )
+        expect(
+            MarkdownBlock.standaloneLink(in: "[本地文件](file:///tmp/private)") == nil,
+            "link cards only accept public HTTP URLs"
         )
         expect(
             EmployeePresence.resolve(activeRun: nil, latestRun: nil) == .available,
@@ -82,9 +91,21 @@ enum ClientModelChecks {
             "conversation time accepts fractional ISO 8601 timestamps"
         )
         expect(
+            TaskPresentation.isChronologicallyBefore("1785982643", "2026-08-06T02:54:20.944Z"),
+            "mixed Runtime and ISO timestamps sort chronologically"
+        )
+        expect(
             AppDestination.allCases == [.office, .contacts, .work, .skills, .tools, .settings],
             "main shell exposes the approved six destinations"
         )
+        let toolsPayload = """
+        {"schema_version":"1.0","tools":[{"id":"file-tool","name":"File Tool","type":"native","version":"1.0.0","status":"active","summary":"Read files","category":"rust-native-v1","available":true,"documentation":"# 本地文件","actions":[{"name":"read_file","description":"Read","required_permissions":["filesystem.read"],"risk_level":0,"side_effect":"none","confirmation":"never","timeout_ms":10000,"idempotency":"safe","concurrency_safe":true,"sensitive_fields":["arguments.path"]}],"data_sources":null}]}
+        """.data(using: .utf8)!
+        let tools = try! JSONDecoder().decode(ToolsListResponse.self, from: toolsPayload)
+        expect(tools.tools.first?.documentation?.contains("本地文件") == true, "tools-list documentation decodes")
+        expect(tools.tools.first?.actions?.first?.riskLevel == 0, "tools-list actions decode risk")
+        expect(ToolPresentation.actionTitle("create_file") == "创建文件", "tool action titles stay localized")
+        expect(ToolPresentation.riskLabel(2) == "每次确认", "tool risk labels stay localized")
         expect(!AppDestination.primary.contains(.settings), "settings stays at the bottom of the global sidebar")
         print("client model checks passed")
     }

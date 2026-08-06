@@ -108,7 +108,20 @@ final class CapabilityStore: ObservableObject {
         switch scope {
         case .skills:
             return skills.map { item in
-                CapabilityLibraryItem(
+                let rootID = "\(item.id)/"
+                let directory = [CapabilityDirectoryRow(id: rootID, name: item.id, depth: 0, isFolder: true, parentID: nil, detail: nil)] + item.packageFiles.map { file in
+                    CapabilityDirectoryRow(
+                        id: "\(item.id)/\(file.path)",
+                        name: file.name,
+                        depth: file.depth,
+                        isFolder: file.isDirectory,
+                        parentID: file.parentPath.map { "\(item.id)/\($0)" } ?? rootID,
+                        detail: nil
+                    )
+                }
+                let documents = Dictionary(uniqueKeysWithValues: item.documents.map { ("\(item.id)/\($0.key)", $0.value) })
+                let skillDocumentID = "\(item.id)/SKILL.md"
+                return CapabilityLibraryItem(
                     id: item.id,
                     name: item.name,
                     version: item.version,
@@ -116,9 +129,9 @@ final class CapabilityStore: ObservableObject {
                     category: "\(item.category) · 已安装",
                     status: item.available ? "可用" : "不可用",
                     icon: "sparkles",
-                    markdown: "# \(item.name)\n\n\(item.summary)\n\n版本：\(item.version)\n路径：\(item.path ?? "—")\n\n此页面只读。Skill 需在仓库 `packages/skills` 中创建并安装，客户端不提供创建入口。",
-                    directory: [],
-                    documents: [:],
+                    markdown: documents[skillDocumentID] ?? "# \(item.name)\n\n\(item.summary)",
+                    directory: directory,
+                    documents: documents,
                     dependencySections: [
                         .init(title: "安装信息", rows: [
                             .init(label: "状态", value: item.status),
@@ -126,20 +139,28 @@ final class CapabilityStore: ObservableObject {
                         ])
                     ],
                     capabilitySections: [],
-                    actions: []
+                    actions: [],
+                    dataSources: []
                 )
             }
         case .tools:
             return tools.map { item in
-                CapabilityLibraryItem(
+                let actions = item.actions ?? []
+                let documentation = item.documentation?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let displayName = ToolPresentation.displayName(id: item.id, fallback: item.name)
+                let displaySummary = ToolPresentation.displaySummary(id: item.id, fallback: item.summary)
+                let markdown = documentation.isEmpty
+                    ? "# \(displayName)\n\n\(displaySummary)\n\n类型：\(item.type)\n版本：\(item.version)\n\n此页面只读。Tool 需在仓库 `packages/tools` 中创建并安装，客户端不提供创建入口。"
+                    : documentation
+                return CapabilityLibraryItem(
                     id: item.id,
-                    name: item.name,
+                    name: displayName,
                     version: item.version,
-                    summary: item.summary.isEmpty ? "已安装 Tool Package" : item.summary,
+                    summary: displaySummary,
                     category: "\(item.category) · 已安装",
                     status: item.available ? "可用" : "不可用",
                     icon: "wrench.and.screwdriver",
-                    markdown: "# \(item.name)\n\n\(item.summary)\n\n类型：\(item.type)\n版本：\(item.version)\n\n此页面只读。Tool 需在仓库 `packages/tools` 中创建并安装，客户端不提供创建入口。",
+                    markdown: markdown,
                     directory: [],
                     documents: [:],
                     dependencySections: [
@@ -149,11 +170,39 @@ final class CapabilityStore: ObservableObject {
                             .init(label: "版本", value: item.version)
                         ])
                     ],
-                    capabilitySections: [],
-                    actions: []
+                    capabilitySections: actions.map(Self.capabilitySection(for:)),
+                    actions: actions.map(Self.securityAction(for:)),
+                    dataSources: item.dataSources ?? []
                 )
             }
         }
+    }
+
+    private static func capabilitySection(for action: RuntimeToolAction) -> CapabilityMetadataSection {
+        .init(title: "\(ToolPresentation.actionTitle(action.name))（\(action.name)）", rows: [
+            .init(label: "摘要", value: ToolPresentation.actionSummary(action.name, fallback: action.description)),
+            .init(label: "超时", value: "\(action.timeoutMs) ms"),
+            .init(label: "副作用", value: ToolPresentation.sideEffectLabel(action.sideEffect)),
+            .init(label: "幂等", value: ToolPresentation.idempotencyLabel(action.idempotency)),
+            .init(label: "并发", value: action.concurrencySafe ? "可并发" : "不可并发")
+        ])
+    }
+
+    private static func securityAction(for action: RuntimeToolAction) -> CapabilityAction {
+        let permissions = action.requiredPermissions.isEmpty ? "—" : action.requiredPermissions.joined(separator: "、")
+        let sensitive = action.sensitiveFields.isEmpty ? "—" : action.sensitiveFields.joined(separator: "、")
+        return .init(
+            name: "\(ToolPresentation.actionTitle(action.name))（\(action.name)）",
+            summary: ToolPresentation.actionSummary(action.name, fallback: action.description),
+            risk: action.riskLevel,
+            rows: [
+                .init(label: "风险含义", value: ToolPresentation.riskLabel(action.riskLevel)),
+                .init(label: "权限", value: permissions),
+                .init(label: "审批", value: ToolPresentation.confirmationLabel(action.confirmation)),
+                .init(label: "副作用", value: ToolPresentation.sideEffectLabel(action.sideEffect)),
+                .init(label: "敏感参数", value: sensitive)
+            ]
+        )
     }
 
     private static func skillItem(_ item: RuntimeSkillItem) -> EmployeeCapabilityItem {
@@ -166,9 +215,13 @@ final class CapabilityStore: ObservableObject {
 
     private static func toolItem(_ item: RuntimeToolItem) -> EmployeeCapabilityItem {
         EmployeeCapabilityItem(
-            id: item.id, kind: .tool, name: item.name, version: item.version,
-            detail: item.summary.isEmpty ? "已安装 Tool" : item.summary,
-            metadata: item.type, isAvailable: item.available
+            id: item.id,
+            kind: .tool,
+            name: ToolPresentation.displayName(id: item.id, fallback: item.name),
+            version: item.version,
+            detail: ToolPresentation.displaySummary(id: item.id, fallback: item.summary),
+            metadata: item.type,
+            isAvailable: item.available
         )
     }
 }

@@ -184,7 +184,7 @@ struct WorkConversationList: View {
     private func preview(for employee: Employee) -> String {
         if let preview = WorkLibraryDemoData.current?.previews[employee.id] { return preview }
         if employee.id == "ai-product-manager",
-           let active = store.runs.first(where: { $0.status == .running || $0.status == .pending }) {
+           let active = runs(for: employee).first(where: { $0.status == .running || $0.status == .pending }) {
             return active.input
         }
         if let preview = conversationStore.latestPreviewByEmployee[employee.id] { return preview }
@@ -196,15 +196,26 @@ struct WorkConversationList: View {
 
     private func state(for employee: Employee) -> WorkConversationRow.State {
         if employee.status != "active" { return .disabled }
-        guard employee.id == "ai-product-manager" else { return .idle }
-        if store.runs.contains(where: { $0.actions.contains(where: { $0.status == "blocked" }) }) {
+        let employeeRuns = runs(for: employee)
+        if employeeRuns.contains(where: {
+            ($0.status == .running || $0.status == .pending)
+                && ($0.runPhase == "waiting_approval" || $0.runPhase == "waiting_user"
+                    || $0.actions.contains(where: { ["blocked", "result_unknown"].contains($0.status) }))
+        }) {
             return .waiting
         }
-        if store.runs.contains(where: { $0.status == .running || $0.status == .pending }) {
+        if employeeRuns.contains(where: { $0.status == .running || $0.status == .pending }) {
             return .working
         }
-        if store.runs.first?.status == .failed { return .failed }
+        if employeeRuns.first?.status == .failed { return .failed }
         return .idle
+    }
+
+    private func runs(for employee: Employee) -> [TaskRun] {
+        let conversationID = "conversation_\(employee.id)_primary"
+        return store.runs.filter {
+            $0.agentID == employee.id && $0.conversationID == conversationID
+        }
     }
 
     private func relativeTime(for employee: Employee) -> String? {

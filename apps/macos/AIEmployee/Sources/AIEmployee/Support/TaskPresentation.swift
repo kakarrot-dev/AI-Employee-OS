@@ -49,6 +49,7 @@ enum TaskPresentation {
         case "implement-ui": "实现进度与交付物展示"
         case "write-approved-file": "写入工作库设计说明"
         case "verify-output": "验证界面与输出结果"
+        case "search_web": "搜索公开网页"
         default: stepID.replacingOccurrences(of: "_", with: " ").capitalized
         }
     }
@@ -87,6 +88,13 @@ enum TaskPresentation {
     static func time(_ value: String) -> String {
         guard let date = parsedDate(value) else { return value }
         return date.formatted(date: .omitted, time: .shortened)
+    }
+
+    static func isChronologicallyBefore(_ lhs: String, _ rhs: String) -> Bool {
+        guard let lhsDate = parsedDate(lhs), let rhsDate = parsedDate(rhs) else {
+            return lhs < rhs
+        }
+        return lhsDate < rhsDate
     }
 
     private static func parsedDate(_ value: String) -> Date? {

@@ -2,6 +2,10 @@ import Foundation
 import Combine
 import OSLog
 
+extension Notification.Name {
+    static let taskRunDidComplete = Notification.Name("AIEmployee.taskRunDidComplete")
+}
+
 @MainActor
 final class ConversationStore: ObservableObject {
     private let service: RuntimeService
@@ -18,9 +22,17 @@ final class ConversationStore: ObservableObject {
     @Published private(set) var latestPreviewByEmployee: [String: String] = [:]
     @Published private(set) var pendingTaskRefresh = false
     private var selectionGeneration = 0
+    private var cancellables: Set<AnyCancellable> = []
 
     init(service: RuntimeService) {
         self.service = service
+        NotificationCenter.default.publisher(for: .taskRunDidComplete)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                Task { await self.reload() }
+            }
+            .store(in: &cancellables)
         if let demo = WorkLibraryDemoData.current {
             messages = demo.messages[employeeID] ?? []
             lastActivityByEmployee = demo.lastActivity

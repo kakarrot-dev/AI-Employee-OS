@@ -33,6 +33,78 @@ struct RuntimeSkillItem: Codable, Identifiable, Sendable {
     let summary: String
     let category: String
     let available: Bool
+    let packageFiles: [RuntimePackageFile]
+    let documents: [String: String]
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, version, status, path, summary, category, available, documents
+        case packageFiles = "package_files"
+    }
+}
+
+struct RuntimePackageFile: Codable, Sendable {
+    let path: String
+    let name: String
+    let depth: Int
+    let isDirectory: Bool
+    let parentPath: String?
+
+    enum CodingKeys: String, CodingKey {
+        case path, name, depth
+        case isDirectory = "is_directory"
+        case parentPath = "parent_path"
+    }
+}
+
+struct RuntimeDataSource: Codable, Identifiable, Sendable {
+    let id: String
+    let name: String
+    let status: String
+    let doctorStatus: String
+    let activeBackend: String?
+    let backends: [String]
+    let credentialType: String
+    let credentialState: String
+    let lastCheckedAt: String
+    let message: String
+    let loginHint: String
+    let exposedToEmployee: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, status, backends, message
+        case doctorStatus = "doctor_status"
+        case activeBackend = "active_backend"
+        case credentialType = "credential_type"
+        case credentialState = "credential_state"
+        case lastCheckedAt = "last_checked_at"
+        case loginHint = "login_hint"
+        case exposedToEmployee = "exposed_to_employee"
+    }
+}
+
+struct RuntimeToolAction: Codable, Identifiable, Sendable {
+    let name: String
+    let description: String
+    let requiredPermissions: [String]
+    let riskLevel: Int
+    let sideEffect: String
+    let confirmation: String
+    let timeoutMs: Int
+    let idempotency: String
+    let concurrencySafe: Bool
+    let sensitiveFields: [String]
+
+    var id: String { name }
+
+    enum CodingKeys: String, CodingKey {
+        case name, description, confirmation, idempotency
+        case requiredPermissions = "required_permissions"
+        case riskLevel = "risk_level"
+        case sideEffect = "side_effect"
+        case timeoutMs = "timeout_ms"
+        case concurrencySafe = "concurrency_safe"
+        case sensitiveFields = "sensitive_fields"
+    }
 }
 
 struct RuntimeToolItem: Codable, Identifiable, Sendable {
@@ -44,6 +116,14 @@ struct RuntimeToolItem: Codable, Identifiable, Sendable {
     let summary: String
     let category: String
     let available: Bool
+    let documentation: String?
+    let actions: [RuntimeToolAction]?
+    let dataSources: [RuntimeDataSource]?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, type, version, status, summary, category, available, documentation, actions
+        case dataSources = "data_sources"
+    }
 }
 
 struct SkillsListResponse: Codable, Sendable {

@@ -22,6 +22,7 @@ struct RuntimeService: Sendable {
         }
     }
 
+    let recover: @Sendable () async throws -> Void
     let loadHistory: @Sendable () async throws -> TaskHistoryResponse
     let events: @Sendable (String, Int) async throws -> RuntimeEventsResponse
     let cancel: @Sendable (String) async throws -> Void
@@ -41,7 +42,12 @@ struct RuntimeService: Sendable {
     let unbindSkill: @Sendable (String, String) async throws -> UnbindSkillResponse
 
     static func live() -> Self {
-        Self(loadHistory: {
+        Self(recover: {
+            let _: RecoveryResponse = try await decodeCommand(
+                ["recover-runtime", "--database", try databaseURL().path],
+                as: RecoveryResponse.self
+            )
+        }, loadHistory: {
             try await Task.detached(priority: .utility) {
                 let layout = try runtimeLayout()
                 let binary = layout.binary
@@ -137,6 +143,16 @@ struct RuntimeService: Sendable {
     }
 
     private struct CancelResponse: Codable, Sendable { let status: String }
+    private struct RecoveryResponse: Codable, Sendable {
+        let schemaVersion: String
+        let safeFailures: Int
+        let resultUnknown: Int
+        enum CodingKeys: String, CodingKey {
+            case schemaVersion = "schema_version"
+            case safeFailures = "safe_failures"
+            case resultUnknown = "result_unknown"
+        }
+    }
 
     private static func databaseURL() throws -> URL {
         let database = try runtimeLayout().database

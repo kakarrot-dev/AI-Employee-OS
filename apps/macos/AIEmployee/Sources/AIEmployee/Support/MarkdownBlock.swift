@@ -54,8 +54,7 @@ enum MarkdownBlock: Equatable {
             else if line.hasPrefix("- ") || line.hasPrefix("* ") { blocks.append(.bullet(String(line.dropFirst(2)))) }
             else if line.hasPrefix("> ") { blocks.append(.quote(String(line.dropFirst(2)))) }
             else if line.range(of: #"^\d+\.\s"#, options: .regularExpression) != nil {
-                let text = line.replacingOccurrences(of: #"^\d+\.\s"#, with: "", options: .regularExpression)
-                blocks.append(.numbered(text))
+                blocks.append(.numbered(line))
             }
             else if ["---", "***", "___"].contains(line) { blocks.append(.divider) }
             else if line.trimmingCharacters(in: .whitespaces).isEmpty { blocks.append(.spacing) }
@@ -67,6 +66,18 @@ enum MarkdownBlock: Equatable {
             blocks.append(.code(codeLines.joined(separator: "\n")))
         }
         return blocks
+    }
+
+    static func standaloneLink(in source: String) -> (title: String, url: URL)? {
+        let text = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.hasPrefix("["), text.hasSuffix(")"),
+              let separator = text.range(of: "]("), separator.lowerBound > text.startIndex else { return nil }
+        let title = String(text[text.index(after: text.startIndex)..<separator.lowerBound])
+        let urlStart = separator.upperBound
+        let rawURL = String(text[urlStart..<text.index(before: text.endIndex)])
+        guard !title.isEmpty, let url = URL(string: rawURL),
+              url.scheme == "https" || url.scheme == "http" else { return nil }
+        return (title, url)
     }
 
     private static func tableCells(in line: String) -> [String]? {

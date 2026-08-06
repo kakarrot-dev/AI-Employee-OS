@@ -23,7 +23,14 @@ final class TaskStore: ObservableObject {
             selection = demo.runs.first?.id
             return
         }
-        Task { await restoreHistory() }
+        Task {
+            do { try await service.recover() }
+            catch {
+                historyError = error.localizedDescription
+                logger.error("Could not reconcile interrupted Runtime actions")
+            }
+            await restoreHistory()
+        }
     }
 
     func presentCommandPalette() {
@@ -72,8 +79,11 @@ final class TaskStore: ObservableObject {
         }
         Task {
             do {
-                _ = try await service.continueRun(runID, approve, approve ? KeychainService.load() : nil)
+                let result = try await service.continueRun(runID, approve, approve ? KeychainService.load() : nil)
                 await restoreHistory()
+                if result.status == "succeeded", result.phase == "terminal" {
+                    NotificationCenter.default.post(name: .taskRunDidComplete, object: nil)
+                }
             } catch { update(run.id) { $0.error = error.localizedDescription } }
         }
     }
@@ -100,14 +110,19 @@ final class TaskStore: ObservableObject {
     private func restoreHistory() async {
         historyError = nil
         do {
+            let previousPersistedIDs = Set(runs.filter { $0.status != .running }.map(\.id))
             let history = try await service.loadHistory()
             let persistedRuns = history.tasks.map { item in
-                TaskRun(id: item.taskID, agentID: item.agentID, input: item.input, createdAt: item.createdAt, status: item.status, actions: item.actions, events: item.events, response: nil, error: nil, artifactPath: item.verifiedArtifactPath ?? item.artifactPath, evaluation: item.evaluation, isCancellationRequested: item.cancellationRequested, runID: item.runID, runPhase: item.runPhase, waitingReason: item.waitingReason, stopReason: item.stopReason, deliverableTitle: item.deliverableTitle, deliverableStatus: item.deliverableStatus, verifiedArtifactPath: item.verifiedArtifactPath)
+                TaskRun(id: item.taskID, agentID: item.agentID, input: item.input, createdAt: item.createdAt, updatedAt: item.updatedAt, status: item.status, actions: item.actions, events: item.events, response: nil, error: nil, artifactPath: item.verifiedArtifactPath ?? item.artifactPath, evaluation: item.evaluation, isCancellationRequested: item.cancellationRequested, runID: item.runID, runPhase: item.runPhase, waitingReason: item.waitingReason, stopReason: item.stopReason, deliverableTitle: item.deliverableTitle, deliverableStatus: item.deliverableStatus, verifiedArtifactPath: item.verifiedArtifactPath, conversationID: item.conversationID, skillID: item.skillID, skillVersion: item.skillVersion)
             }
             let persistedIDs = Set(persistedRuns.map(\.id))
             let optimisticRuns = runs.filter { !persistedIDs.contains($0.id) && $0.status == .running }
             runs = optimisticRuns + persistedRuns
-            if selection == nil { selection = runs.first?.id }
+            if let newestNewRun = persistedRuns.first(where: { !previousPersistedIDs.contains($0.id) }) {
+                selection = newestNewRun.id
+            } else if selection == nil || !runs.contains(where: { $0.id == selection }) {
+                selection = runs.first?.id
+            }
             for run in runs where run.status == .running { monitorRestoredTask(run.id) }
         } catch {
             historyError = error.localizedDescription
@@ -143,6 +158,7 @@ final class TaskStore: ObservableObject {
     private func apply(_ item: TaskHistoryResponse.Item) {
         update(item.taskID) { run in
             run.status = item.status
+            run.updatedAt = item.updatedAt
             run.actions = item.actions
             run.events = item.events
             run.artifactPath = item.artifactPath
@@ -155,6 +171,8 @@ final class TaskStore: ObservableObject {
             run.deliverableTitle = item.deliverableTitle
             run.deliverableStatus = item.deliverableStatus
             run.verifiedArtifactPath = item.verifiedArtifactPath
+            run.skillID = item.skillID
+            run.skillVersion = item.skillVersion
             if item.status != .running { run.error = nil }
         }
     }

@@ -18,16 +18,20 @@ struct EmployeeChatWorkspaceView: View {
 
     private var activeRun: TaskRun? {
         guard supportsTasks else { return nil }
-        return store.runs.first { $0.status == .running || $0.status == .pending }
+        return conversationRuns.first { $0.status == .running || $0.status == .pending }
     }
 
     private var selectedRun: TaskRun? {
         guard supportsTasks else { return nil }
-        if let selection = store.selection,
-           let selected = store.runs.first(where: { $0.id == selection }) {
-            return selected
+        if let activeRun { return activeRun }
+        return conversationRuns.first
+    }
+
+    private var conversationRuns: [TaskRun] {
+        let conversationID = "conversation_\(conversationStore.employeeID)_primary"
+        return store.runs.filter {
+            $0.agentID == conversationStore.employeeID && $0.conversationID == conversationID
         }
-        return activeRun ?? store.runs.first
     }
 
     private var showsInspector: Bool {
@@ -64,7 +68,7 @@ struct EmployeeChatWorkspaceView: View {
             .background(palette.canvas)
 
             if showsInspector {
-                TaskInspectorView(run: selectedRun, employee: employee, store: store)
+                TaskInspectorView(run: selectedRun, store: store)
                     .frame(minWidth: 280, idealWidth: inspectorWidth, maxWidth: 420)
                     .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { newWidth in
                         inspectorWidth = min(max(newWidth, 280), 420)
@@ -204,7 +208,10 @@ private struct EmployeeMessageStream: View {
                                 revise: { conversationStore.reviseLatestUserMessage(id: message.id, content: $0) }
                             )
                         case .run(let run):
-                            TaskConversationBlock(run: run)
+                            TaskConversationBlock(
+                                run: run,
+                                showsInput: run.conversationID != "conversation_\(conversationStore.employeeID)_primary"
+                            )
                                 .id(run.id)
                         }
                     }
@@ -251,9 +258,29 @@ private struct EmployeeMessageStream: View {
     }
 
     private var timeline: [WorkTimelineEntry] {
-        var entries = conversationStore.messages.map(WorkTimelineEntry.message)
-        if showsTasks { entries.append(contentsOf: store.runs.map(WorkTimelineEntry.run)) }
-        return entries.sorted { $0.createdAt < $1.createdAt }
+        let visibleMessages = conversationStore.messages.filter { message in
+            guard message.role == "assistant",
+                  message.content == "执行已暂停，等待你批准所需权限。" else { return true }
+            return !showsTasks
+        }
+        var entries = visibleMessages.map(WorkTimelineEntry.message)
+        if showsTasks {
+            entries.append(contentsOf: store.runs.filter { !hasFinalReply(for: $0) }.map(WorkTimelineEntry.run))
+        }
+        return entries.sorted {
+            if $0.createdAt == $1.createdAt { return $0.id < $1.id }
+            return TaskPresentation.isChronologicallyBefore($0.createdAt, $1.createdAt)
+        }
+    }
+
+    private func hasFinalReply(for run: TaskRun) -> Bool {
+        guard run.status == .succeeded,
+              run.conversationID == "conversation_\(conversationStore.employeeID)_primary" else { return false }
+        return conversationStore.messages.contains { message in
+            message.role == "assistant"
+                && message.content != "执行已暂停，等待你批准所需权限。"
+                && !TaskPresentation.isChronologicallyBefore(message.createdAt, run.createdAt)
+        }
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
@@ -610,8 +637,18 @@ private struct ChatMarkdownBody: View {
     @ViewBuilder private func blockView(_ block: MarkdownBlock) -> some View {
         switch block {
         case .heading(let level, let text): Text(text).font(level == 1 ? .title2.weight(.semibold) : level == 2 ? .title3.weight(.semibold) : .headline).foregroundStyle(palette.ink).padding(.top, level == 1 ? 0 : 8)
-        case .paragraph(let text): Text(inline(text)).font(.body).foregroundStyle(palette.body).lineSpacing(4)
-        case .bullet(let text): HStack(alignment: .firstTextBaseline, spacing: 9) { Circle().fill(palette.primaryActive).frame(width: 5, height: 5); Text(inline(text)).foregroundStyle(palette.body).lineSpacing(3) }
+        case .paragraph(let text):
+            if let link = MarkdownBlock.standaloneLink(in: text) {
+                ChatLinkCard(title: link.title, url: link.url)
+            } else {
+                Text(inline(text)).font(.body).foregroundStyle(palette.body).lineSpacing(4)
+            }
+        case .bullet(let text):
+            if let link = MarkdownBlock.standaloneLink(in: text) {
+                ChatLinkCard(title: link.title, url: link.url)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 9) { Circle().fill(palette.primaryActive).frame(width: 5, height: 5); Text(inline(text)).foregroundStyle(palette.body).lineSpacing(3) }
+            }
         case .numbered(let text): Text(inline(text)).foregroundStyle(palette.body).lineSpacing(3)
         case .quote(let text): Text(inline(text)).foregroundStyle(palette.muted).padding(.leading, 12).overlay(alignment: .leading) { Rectangle().fill(palette.primary.opacity(0.42)).frame(width: 2) }
         case .code(let text): Text(text).font(.system(.caption, design: .monospaced)).foregroundStyle(palette.body).padding(12).frame(maxWidth: .infinity, alignment: .leading).background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
@@ -627,6 +664,50 @@ private struct ChatMarkdownBody: View {
     }
 
     private func inline(_ text: String) -> AttributedString { (try? AttributedString(markdown: text)) ?? AttributedString(text) }
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct ChatLinkCard: View {
+    let title: String
+    let url: URL
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Link(destination: url) {
+            HStack(spacing: AppTheme.Spacing.sm) {
+                Image(systemName: "link")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(palette.primaryActive)
+                    .frame(width: 28, height: 28)
+                    .background(palette.primaryActive.opacity(0.09), in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                    Text(title)
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(palette.ink)
+                        .lineLimit(2)
+                    Text(displayHost)
+                        .font(.caption)
+                        .foregroundStyle(palette.muted)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: AppTheme.Spacing.sm)
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(palette.muted)
+            }
+            .padding(AppTheme.Spacing.sm)
+            .background(palette.surfaceSoft.opacity(0.72), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous).stroke(palette.hairlineSoft, lineWidth: 1) }
+        }
+        .buttonStyle(.plain)
+        .help(url.absoluteString)
+        .accessibilityLabel("打开链接：\(title)，\(displayHost)")
+    }
+
+    private var displayHost: String {
+        (url.host ?? url.absoluteString).replacingOccurrences(of: "www.", with: "")
+    }
+
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
@@ -676,11 +757,14 @@ private struct MarkdownTableView: View {
 
 private struct TaskConversationBlock: View {
     let run: TaskRun
+    let showsInput: Bool
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
-            UserMessageBlock(text: run.input, createdAt: run.createdAt)
+            if showsInput {
+                UserMessageBlock(text: run.input, createdAt: run.createdAt)
+            }
 
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                 AgentStatusLine(run: run)
@@ -940,6 +1024,11 @@ private struct EmployeeComposerContainer: View {
     var body: some View {
         Group {
             if supportsTasks,
+               let activeRun,
+               activeRun.runPhase == "waiting_approval",
+               WorkLibraryDemoData.current == nil {
+                LiveActionApprovalBar(run: activeRun, store: store, employeeName: employeeName)
+            } else if supportsTasks,
                let request = WorkLibraryDemoData.current?.demoActionApproval,
                activeRun?.id == request.taskID {
                 DemoActionApprovalBar(request: request, employeeName: employeeName)
@@ -966,6 +1055,92 @@ private struct EmployeeComposerContainer: View {
             if !canCreateTasks { isCreatingWork = false }
         }
     }
+}
+
+private struct LiveActionApprovalBar: View {
+    let run: TaskRun
+    @ObservedObject var store: TaskStore
+    let employeeName: String
+    @State private var expanded = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var pendingAction: GraphNodeEvidence? {
+        run.actions.first(where: { $0.status == "blocked" || $0.status == "pending" })
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+                    summary
+                    Spacer(minLength: AppTheme.Spacing.md)
+                    actions
+                }
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                    summary
+                    actions.frame(maxWidth: .infinity, alignment: .trailing)
+                }
+            }
+
+            Button {
+                expanded.toggle()
+            } label: {
+                Label(expanded ? "收起说明" : "为什么需要确认", systemImage: expanded ? "chevron.up" : "chevron.down")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(palette.muted)
+            }
+            .buttonStyle(.plain)
+
+            if expanded {
+                Divider().overlay(palette.hairlineSoft)
+                Text("允许一次只对当前工作生效；拒绝会结束本次工作。所有 Tool 调用仍由 Runtime 经过权限与审计检查后执行。")
+                    .font(.caption)
+                    .foregroundStyle(palette.muted)
+            }
+
+            if let error = run.error {
+                Text(error).font(.caption).foregroundStyle(palette.error)
+            }
+        }
+        .padding(AppTheme.Spacing.md)
+        .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(palette.warning.opacity(0.34), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.09), radius: 12, y: 4)
+        .frame(maxWidth: 820)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var summary: some View {
+        HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+            Image(systemName: "hand.raised.fill")
+                .foregroundStyle(palette.warning)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
+                Text("\(employeeName) 需要你确认")
+                    .font(.callout.weight(.semibold))
+                Text(pendingAction.map { TaskPresentation.actionTitle($0.stepID) } ?? "执行待处理的工具操作")
+                    .font(.callout)
+                    .foregroundStyle(palette.body)
+                Text("仅本次工作 · 不会自动重复授权")
+                    .font(.caption)
+                    .foregroundStyle(palette.muted)
+            }
+        }
+    }
+
+    private var actions: some View {
+        HStack(spacing: AppTheme.Spacing.xs) {
+            Button("拒绝", role: .destructive) { store.resolveApproval(for: run, approve: false) }
+                .buttonStyle(CreamSecondaryButtonStyle())
+            Button("允许一次") { store.resolveApproval(for: run, approve: true) }
+                .buttonStyle(CreamPrimaryButtonStyle())
+        }
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
 private struct DemoActionApprovalBar: View {
