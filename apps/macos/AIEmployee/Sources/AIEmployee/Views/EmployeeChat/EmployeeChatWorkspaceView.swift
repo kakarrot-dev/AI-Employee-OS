@@ -204,12 +204,14 @@ private struct EmployeeMessageStream: View {
                             ConversationMessageBlock(
                                 message: message,
                                 employeeName: employee?.name ?? conversationStore.employeeName,
+                                employeeAvatarPath: employee?.avatarPath,
                                 isEditable: message.role == "user" && message.id == conversationStore.latestUserMessageID && !conversationStore.isSending,
                                 revise: { conversationStore.reviseLatestUserMessage(id: message.id, content: $0) }
                             )
                         case .run(let run):
                             TaskConversationBlock(
                                 run: run,
+                                employee: employee,
                                 showsInput: run.conversationID != "conversation_\(conversationStore.employeeID)_primary"
                             )
                                 .id(run.id)
@@ -219,6 +221,7 @@ private struct EmployeeMessageStream: View {
                     if conversationStore.isSending {
                         PendingAssistantResponseView(
                             employeeName: employee?.name ?? conversationStore.employeeName,
+                            employeeAvatarPath: employee?.avatarPath,
                             content: conversationStore.streamingContent,
                             startedAt: conversationStore.streamingStartedAt
                         )
@@ -265,7 +268,9 @@ private struct EmployeeMessageStream: View {
         }
         var entries = visibleMessages.map(WorkTimelineEntry.message)
         if showsTasks {
-            entries.append(contentsOf: store.runs.filter { !hasFinalReply(for: $0) }.map(WorkTimelineEntry.run))
+            entries.append(contentsOf: store.runs.filter {
+                $0.hasPersistentDeliverable || !hasFinalReply(for: $0)
+            }.map(WorkTimelineEntry.run))
         }
         return entries.sorted {
             if $0.createdAt == $1.createdAt { return $0.id < $1.id }
@@ -288,23 +293,31 @@ private struct EmployeeMessageStream: View {
 
 private struct PendingAssistantResponseView: View {
     let employeeName: String
+    let employeeAvatarPath: String?
     let content: String
     let startedAt: Date?
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
-            StreamingStatusLine(employeeName: employeeName, startedAt: startedAt)
-            if content.isEmpty {
-                HStack(spacing: AppTheme.Spacing.sm) {
-                    ProgressView().controlSize(.small).tint(palette.accentTeal)
-                    Text("消息已收到，正在组织回答")
-                        .font(.callout)
-                        .foregroundStyle(palette.muted)
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            AgentTimelineBlock(
+                employeeName: employeeName,
+                employeeAvatarPath: employeeAvatarPath,
+                metadata: status(at: context.date),
+                statusSystemImage: "sparkle",
+                statusColor: palette.accentTeal
+            ) {
+                if content.isEmpty {
+                    HStack(spacing: AppTheme.Spacing.sm) {
+                        ProgressView().controlSize(.small).tint(palette.accentTeal)
+                        Text("消息已收到，正在组织回答")
+                            .font(.callout)
+                            .foregroundStyle(palette.muted)
+                    }
+                } else {
+                    ChatMarkdownBody(source: content)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-            } else {
-                ChatMarkdownBody(source: content)
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .accessibilityElement(children: .ignore)
@@ -312,27 +325,45 @@ private struct PendingAssistantResponseView: View {
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+
+    private func status(at date: Date) -> String {
+        guard let startedAt else { return "正在回复" }
+        return "正在回复 · 已处理 \(max(0, Int(date.timeIntervalSince(startedAt)))) 秒"
+    }
 }
 
-private struct StreamingStatusLine: View {
+private struct AgentTimelineBlock<Content: View>: View {
     let employeeName: String
-    let startedAt: Date?
+    let employeeAvatarPath: String?
+    let metadata: String
+    var statusSystemImage: String? = nil
+    var statusColor: Color = .secondary
+    @ViewBuilder let content: () -> Content
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            HStack(spacing: AppTheme.Spacing.sm) {
-                Text(status(at: context.date))
-                    .font(.caption.monospacedDigit().weight(.medium))
-                    .foregroundStyle(palette.muted)
-                Rectangle().fill(palette.hairlineSoft).frame(height: 1)
+        HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+            EmployeeAvatar(name: employeeName, avatarPath: employeeAvatarPath, size: 28)
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                HStack(spacing: AppTheme.Spacing.xs) {
+                    Text(employeeName)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(palette.ink)
+                    if let statusSystemImage {
+                        Image(systemName: statusSystemImage)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(statusColor)
+                    }
+                    Text("· \(metadata)")
+                        .font(.caption.monospacedDigit().weight(.medium))
+                        .foregroundStyle(palette.muted)
+                    Rectangle().fill(palette.hairlineSoft).frame(height: 1)
+                }
+                content()
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-    }
-
-    private func status(at date: Date) -> String {
-        guard let startedAt else { return "\(employeeName) 正在回复" }
-        return "\(employeeName) 正在回复 · 已处理 \(max(0, Int(date.timeIntervalSince(startedAt)))) 秒"
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
@@ -374,6 +405,7 @@ private struct EmptyConversationView: View {
 private struct ConversationMessageBlock: View {
     let message: ChatMessage
     let employeeName: String
+    let employeeAvatarPath: String?
     let isEditable: Bool
     let revise: (String) -> Bool
     @State private var hovering = false
@@ -461,30 +493,30 @@ private struct ConversationMessageBlock: View {
             .animation(.easeOut(duration: AppTheme.Motion.fast), value: hovering)
             .accessibilityLabel("你：\(message.content)")
         } else {
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                HStack(spacing: AppTheme.Spacing.sm) {
-                    Text("\(employeeName) · \(TaskPresentation.time(message.createdAt))")
-                        .font(.caption.monospacedDigit().weight(.medium))
+            AgentTimelineBlock(
+                employeeName: employeeName,
+                employeeAvatarPath: employeeAvatarPath,
+                metadata: TaskPresentation.time(message.createdAt)
+            ) {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                        ChatMarkdownBody(source: displayedContent)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel("\(employeeName)：\(message.content)")
+                        if isLong { foldButton }
+                        Button {
+                            copy(message.content)
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.caption.weight(.medium))
+                                .frame(width: 24, height: 24)
+                        }
+                        .buttonStyle(.plain)
                         .foregroundStyle(palette.muted)
-                    Rectangle().fill(palette.hairlineSoft).frame(height: 1)
+                        .opacity(hovering ? 1 : 0)
+                        .help("复制完整回复")
+                        .accessibilityLabel("复制 \(employeeName) 的回复")
                 }
-                ChatMarkdownBody(source: displayedContent)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(employeeName)：\(message.content)")
-                if isLong { foldButton }
-                Button {
-                    copy(message.content)
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                        .font(.caption.weight(.medium))
-                        .frame(width: 24, height: 24)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(palette.muted)
-                .opacity(hovering ? 1 : 0)
-                .help("复制完整回复")
-                .accessibilityLabel("复制 \(employeeName) 的回复")
             }
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
@@ -757,6 +789,7 @@ private struct MarkdownTableView: View {
 
 private struct TaskConversationBlock: View {
     let run: TaskRun
+    let employee: Employee?
     let showsInput: Bool
     @Environment(\.colorScheme) private var colorScheme
 
@@ -766,19 +799,42 @@ private struct TaskConversationBlock: View {
                 UserMessageBlock(text: run.input, createdAt: run.createdAt)
             }
 
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                AgentStatusLine(run: run)
-
+            AgentTimelineBlock(
+                employeeName: employee?.name ?? "AI 员工",
+                employeeAvatarPath: employee?.avatarPath,
+                metadata: statusText,
+                statusSystemImage: run.status.systemImage,
+                statusColor: statusColor
+            ) {
+                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                 if let error = run.error {
                     InlineFailureMessage(error: error)
                 }
 
-                if let path = run.response?.artifactPath ?? run.artifactPath {
+                if let path = run.verifiedArtifactPath ?? run.response?.artifactPath ?? run.artifactPath {
                     ArtifactMessageBlock(run: run, path: path)
                 }
+                }
             }
+        }
+    }
 
-            Divider().overlay(palette.hairlineSoft)
+    private var statusText: String {
+        switch run.status {
+        case .pending: "工作已保存，等待 Runtime 开始"
+        case .running: run.isCancellationRequested ? "正在停止这项工作" : "正在处理这项工作"
+        case .succeeded: "已完成这项工作"
+        case .failed: "未能完成这项工作"
+        case .cancelled: "这项工作已停止"
+        }
+    }
+
+    private var statusColor: Color {
+        switch run.status {
+        case .pending, .running: palette.accentTeal
+        case .succeeded: palette.success
+        case .failed: palette.error
+        case .cancelled: palette.muted
         }
     }
 
@@ -860,44 +916,6 @@ private struct MessageHoverActions: View {
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
-private struct AgentStatusLine: View {
-    let run: TaskRun
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: AppTheme.Spacing.xs) {
-            Image(systemName: run.status.systemImage)
-                .foregroundStyle(statusColor)
-                .frame(width: 16)
-            Text(statusText)
-                .font(.body.weight(.medium))
-                .foregroundStyle(palette.ink)
-            Spacer()
-        }
-    }
-
-    private var statusText: String {
-        switch run.status {
-        case .pending: "工作已保存，等待 Runtime 开始"
-        case .running: run.isCancellationRequested ? "Alex 正在停止这项工作" : "Alex 正在处理这项工作"
-        case .succeeded: "Alex 已完成这项工作"
-        case .failed: "Alex 未能完成这项工作"
-        case .cancelled: "这项工作已停止"
-        }
-    }
-
-    private var statusColor: Color {
-        switch run.status {
-        case .pending, .running: palette.accentTeal
-        case .succeeded: palette.success
-        case .failed: palette.error
-        case .cancelled: palette.muted
-        }
-    }
-
-    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
-}
-
 private struct InlineFailureMessage: View {
     let error: String
     @Environment(\.colorScheme) private var colorScheme
@@ -919,76 +937,79 @@ private struct ArtifactMessageBlock: View {
     let run: TaskRun
     let path: String
     @State private var artifactError: String?
-    @State private var preview: String?
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-            HStack(spacing: AppTheme.Spacing.sm) {
-                Image(systemName: "doc.text.fill")
-                    .font(.title3)
-                    .foregroundStyle(palette.primary)
+            HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+                Image(systemName: fileIcon)
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(palette.primaryActive)
+                    .frame(width: 40, height: 40)
+                    .background(palette.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                    Text("PRD 已交付").font(.body.weight(.semibold))
-                    if let evaluation = run.response?.evaluation ?? run.evaluation {
-                        Text(evaluation.deliveryAllowed ? "质量检查通过 · \(evaluation.score.formatted(.number.precision(.fractionLength(2))))" : "未达到交付门槛")
-                            .font(.caption)
-                            .foregroundStyle(evaluation.deliveryAllowed ? palette.success : palette.warning)
+                    Text(displayTitle)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(palette.ink)
+                        .lineLimit(2)
+                    HStack(spacing: AppTheme.Spacing.xs) {
+                        Text(formatLabel)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(palette.primaryActive)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(palette.primary.opacity(0.10), in: Capsule())
+                        Text(fileName)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(palette.muted)
+                            .lineLimit(1)
                     }
                 }
                 Spacer()
-                Button {
-                    perform { try ArtifactService.open(path) }
-                } label: {
-                    Label("打开", systemImage: "arrow.up.right")
-                }
-                .buttonStyle(.plain)
-                .help("使用系统默认应用打开")
-            }
-
-            Divider().overlay(palette.hairlineSoft)
-
-            if let preview {
-                Text(tryAttributedMarkdown(preview))
-                    .font(.callout)
-                    .foregroundStyle(palette.body)
-                    .lineLimit(12)
-                    .textSelection(.enabled)
-            } else {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("正在读取交付物…").font(.caption).foregroundStyle(palette.muted)
-                }
-            }
-
-            HStack {
-                Text(URL(fileURLWithPath: path).lastPathComponent)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(palette.muted)
-                    .lineLimit(1)
-                Spacer()
-                Button("在 Finder 中显示") { perform { try ArtifactService.reveal(path) } }
+                HStack(spacing: 0) {
+                    Button {
+                        perform { try ArtifactService.open(path) }
+                    } label: {
+                        Label("打开文件", systemImage: "arrow.up.right")
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(palette.onPrimary)
+                            .padding(.leading, 12)
+                            .padding(.trailing, 10)
+                            .frame(height: 32)
+                            .contentShape(Rectangle())
+                    }
                     .buttonStyle(.plain)
-                    .font(.caption)
+                    .help("使用系统默认 App 打开文件")
+
+                    Rectangle()
+                        .fill(palette.onPrimary.opacity(0.24))
+                        .frame(width: 1, height: 18)
+
+                    Menu {
+                        Button("打开文件夹", systemImage: "folder") {
+                            perform { try ArtifactService.openContainingFolder(path) }
+                        }
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(palette.onPrimary)
+                            .frame(width: 28, height: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("更多打开方式")
+                    .accessibilityLabel("更多打开方式")
+                }
+                .background(palette.primaryActive, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
         }
         .padding(AppTheme.Spacing.md)
         .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
         .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous).stroke(palette.hairlineSoft, lineWidth: 1) }
         .frame(maxWidth: 680, alignment: .leading)
-        .task(id: path) {
-            if let demoPreview {
-                do {
-                    try ArtifactService.materializeDemoArtifact(at: path, content: demoPreview)
-                    preview = demoPreview
-                } catch {
-                    artifactError = error.localizedDescription
-                }
-                return
-            }
-            do { preview = try await ArtifactService.loadMarkdown(at: path) }
-            catch { artifactError = error.localizedDescription }
-        }
         .alert("无法访问交付物", isPresented: Binding(
             get: { artifactError != nil },
             set: { if !$0 { artifactError = nil } }
@@ -1004,13 +1025,31 @@ private struct ArtifactMessageBlock: View {
         catch { artifactError = error.localizedDescription }
     }
 
-    private func tryAttributedMarkdown(_ source: String) -> AttributedString {
-        (try? AttributedString(markdown: source)) ?? AttributedString(source)
+    private var fileURL: URL { URL(fileURLWithPath: path) }
+    private var fileName: String { fileURL.lastPathComponent }
+    private var displayTitle: String {
+        run.deliverableTitle?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
+            ?? fileURL.deletingPathExtension().lastPathComponent
+    }
+    private var formatLabel: String {
+        let pathExtension = fileURL.pathExtension
+        return pathExtension.isEmpty ? "文件" : pathExtension.uppercased()
+    }
+    private var fileIcon: String {
+        switch fileURL.pathExtension.lowercased() {
+        case "md", "txt", "rtf": "doc.text.fill"
+        case "pdf": "doc.richtext.fill"
+        case "csv", "xls", "xlsx": "tablecells.fill"
+        case "png", "jpg", "jpeg", "heic", "webp": "photo.fill"
+        default: "doc.fill"
+        }
     }
 
-    private var demoPreview: String? { WorkLibraryDemoData.current?.artifacts[path] }
-
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private extension String {
+    var nonEmpty: String? { isEmpty ? nil : self }
 }
 
 private struct EmployeeComposerContainer: View {

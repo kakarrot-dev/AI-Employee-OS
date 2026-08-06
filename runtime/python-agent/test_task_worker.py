@@ -11,7 +11,7 @@ class TaskWorkerTests(unittest.TestCase):
 
         request = {
             "agent": {"effective_prompt": "help"},
-            "skill": {"instructions": "search", "output_schema": {"type": "object"}},
+            "capability_set": [{"id": "search", "instructions": "search", "output_schema": {"type": "object"}}],
             "tool_surface": [{"id": "agent-reach-tool", "actions": [{"name": "search_web", "input_schema": {"type": "object", "properties": {"num_results": {"type": "integer"}}}}]}],
             "task": {"input": {"text": "查询最新版本"}},
             "observations": [],
@@ -35,7 +35,7 @@ class TaskWorkerTests(unittest.TestCase):
 
         request = {
             "agent": {"effective_prompt": "help"},
-            "skill": {"instructions": "search", "output_schema": {"type": "object"}},
+            "capability_set": [{"id": "search", "instructions": "search", "output_schema": {"type": "object"}}],
             "tool_surface": [{"id": "agent-reach-tool", "actions": []}],
             "task": {"input": {"text": "查询郑州新闻"}},
             "observations": [{"status": "succeeded", "output": {"content": "news evidence"}}],
@@ -52,7 +52,7 @@ class TaskWorkerTests(unittest.TestCase):
             "task": {"id": "task", "input": {"text": "hello"}},
             "run": {"id": "run", "max_model_turns": 1, "max_tool_calls": 0},
             "agent": {"id": "agent", "effective_prompt": "help"},
-            "skill": {"id": "summary", "instructions": "summarize", "output_schema": {"type": "object"}},
+            "capability_set": [{"id": "summary", "instructions": "summarize", "output_schema": {"type": "object"}}],
             "tool_surface": [],
             "context": {"sections": [], "sha256": "x", "size_bytes": 0},
             "observations": [],
@@ -76,14 +76,14 @@ class TaskWorkerTests(unittest.TestCase):
             "task": {"id": "task", "input": {"text": "search"}},
             "run": {"id": "run", "max_model_turns": 1, "max_tool_calls": 1},
             "agent": {"id": "agent", "effective_prompt": "help"},
-            "skill": {"id": "search", "instructions": "search", "output_schema": {"type": "object"}},
+            "capability_set": [{"id": "search", "instructions": "search", "output_schema": {"type": "object"}}],
             "tool_surface": [{"id": "agent-reach-tool", "actions": ["search_web"]}],
             "context": {"sections": [], "sha256": "x", "size_bytes": 0},
             "observations": [],
         }
         env = dict(os.environ)
         env["AI_EMPLOYEE_FAKE_DECISION"] = json.dumps({
-            "schema_version": "2.0.0", "type": "tool_call", "tool_id": "agent-reach-tool",
+            "schema_version": "2.0.0", "type": "tool_call", "skill_id": "search", "tool_id": "agent-reach-tool",
             "action": "search_web", "arguments": {"query": "news"}, "rationale_summary": "search",
         })
         result = subprocess.run(
@@ -99,7 +99,7 @@ class TaskWorkerTests(unittest.TestCase):
             "task": {"id": "task", "input": {"text": "查询新闻"}},
             "run": {"id": "run", "max_model_turns": 2, "max_tool_calls": 1},
             "agent": {"id": "agent", "effective_prompt": "help"},
-            "skill": {"id": "search", "instructions": "search", "output_schema": {"type": "object"}},
+            "capability_set": [{"id": "search", "instructions": "search", "output_schema": {"type": "object"}}],
             "tool_surface": [{"id": "agent-reach-tool", "actions": ["search_web"]}],
             "context": {"sections": [], "sha256": "x", "size_bytes": 0},
             "observations": [{"status": "succeeded", "output": {"content": "evidence"}}],

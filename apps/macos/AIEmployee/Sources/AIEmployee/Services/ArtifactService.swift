@@ -37,6 +37,12 @@ enum ArtifactService {
         NSWorkspace.shared.activateFileViewerSelecting([try validatedOutputURL(path)])
     }
 
+    @MainActor
+    static func openContainingFolder(_ path: String) throws {
+        let fileURL = try validatedOutputURL(path)
+        NSWorkspace.shared.open(fileURL.deletingLastPathComponent())
+    }
+
     static func materializeDemoArtifact(at path: String, content: String) throws {
         let url = URL(filePath: path).standardizedFileURL
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)

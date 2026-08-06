@@ -2,6 +2,27 @@
 
 > 阅读顺序：先读文首 ADR-032（现行 Runtime 决策）及 ADR-027～031，再读 ADR-001 起的历史记录。ADR-031 已被 ADR-032 取代；迁移完成前只保留兼容意义。
 
+## ADR-033：聊天工作采用 Capability Set Run
+
+### 状态
+
+Accepted（2026-08-06）
+
+### 决策
+
+1. 聊天只识别 `chat | task`，不得在 Task 启动前把整个 Run 锁死到单一 Skill。
+2. Rust 从当前员工绑定且 readiness=`ready` 的 Skill 构建不可变 Capability Set；显式 `run-skill` 仍使用只含一个 Skill 的集合。
+3. Python 每个 `tool_call` 必须声明 `skill_id`。Rust 校验 `skill_id -> declared tool/action -> permission/policy` 完整授权链，再生成安全字段并执行 Tool。
+4. 一个 Run 可以依次使用多个 Skill，但仍只有一个 Task、Run、Checkpoint、Observation、Deliverable 与 Audit 事实源；不得为跨 Skill 执行建立第二套状态机。
+5. 聊天 Task 使用通用结果信封并以 Artifact、ToolResult 和 Evaluation 验证目标完成；显式单 Skill Run 继续校验该 Skill `output_schema`。
+6. ToolResult 超过 Context 预算时必须外置并保留 ResultRef；Worker 协议错误允许在同一 Run 内无副作用重试一次，第二次失败才终止。
+
+### 禁止方案
+
+- 不为“搜索后写文件”等组合目标创建场景专用 Skill。
+- 不把全部已安装 Tool 绕过 Skill 声明直接暴露给模型。
+- 不以宽松截取 JSON、恢复 Golden Path 或客户端编排掩盖 Runtime 契约缺失。
+
 ## ADR-032：通用 Bounded Agent Loop 取代 Golden Path
 
 ### 状态

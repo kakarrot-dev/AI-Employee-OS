@@ -26,6 +26,7 @@ pub struct RunSkillConfig<'a> {
     pub skill_id: &'a str,
     pub input: Value,
     pub conversation_id: Option<&'a str>,
+    pub capability_mode: bool,
 }
 
 pub struct ContinueRunConfig<'a> {
@@ -44,9 +45,32 @@ struct LockedRun {
     prompt: String,
     skill: Value,
     instructions: String,
+    capability_set: Value,
     tool_surface: Value,
     max_model_turns: i64,
     max_tool_calls: i64,
+}
+
+pub fn run_agent(
+    connection: &mut Connection,
+    repository_root: &Path,
+    python: &Path,
+    agent_id: &str,
+    input: Value,
+    conversation_id: Option<&str>,
+) -> Result<Value, String> {
+    let skill_ids = crate::skill_resolver::ready_skill_ids(connection, agent_id)?;
+    let first = skill_ids.first().ok_or("capability_not_found")?.clone();
+    run_skill(RunSkillConfig {
+        connection,
+        repository_root,
+        python,
+        agent_id,
+        skill_id: &first,
+        input,
+        conversation_id,
+        capability_mode: true,
+    })
 }
 
 pub fn run_skill(mut config: RunSkillConfig<'_>) -> Result<Value, String> {
@@ -78,8 +102,21 @@ pub fn run_skill(mut config: RunSkillConfig<'_>) -> Result<Value, String> {
         &now,
     )?;
     consume_model_turn(config.connection, &locked.run_id, &now)?;
-    let raw = invoke_worker(config.repository_root, config.python, &request)?;
-    let decision = AgentDecision::parse(raw.clone())?;
+    let raw = match invoke_worker_bounded(
+        config.connection,
+        config.repository_root,
+        config.python,
+        &locked.run_id,
+        &request,
+        &now,
+    ) {
+        Ok(raw) => raw,
+        Err(error) => return fail_run(config.connection, &locked, &error, &now),
+    };
+    let decision = match AgentDecision::parse(raw.clone()) {
+        Ok(decision) => decision,
+        Err(error) => return fail_run(config.connection, &locked, &error, &now),
+    };
     observe(
         config.connection,
         &locked.run_id,
@@ -107,6 +144,7 @@ pub fn run_skill(mut config: RunSkillConfig<'_>) -> Result<Value, String> {
             }))
         }
         AgentDecision::ToolCall {
+            skill_id,
             tool_id,
             action,
             arguments,
@@ -116,6 +154,7 @@ pub fn run_skill(mut config: RunSkillConfig<'_>) -> Result<Value, String> {
             config.connection,
             &locked,
             config.agent_id,
+            &skill_id,
             &tool_id,
             &action,
             &arguments,
@@ -210,6 +249,7 @@ fn run_workflow(config: RunSkillConfig<'_>, locked: LockedRun, now: &str) -> Res
                 config.connection,
                 &locked,
                 config.agent_id,
+                config.skill_id,
                 tool_id,
                 action,
                 &arguments,
@@ -233,7 +273,7 @@ fn run_workflow(config: RunSkillConfig<'_>, locked: LockedRun, now: &str) -> Res
             "task":{"id":locked.task_id,"input":config.input},
             "run":{"id":locked.run_id,"max_model_turns":locked.max_model_turns,"max_tool_calls":locked.max_tool_calls},
             "agent":{"id":config.agent_id,"effective_prompt":locked.prompt},
-            "skill":{"id":config.skill_id,"instructions":format!("{}\n\nWorkflow step: {}\nOutput as: {}", locked.instructions, node.id, node.output_as),"output_schema":locked.skill["output_schema"]},
+            "capability_set":[{"id":config.skill_id,"instructions":format!("{}\n\nWorkflow step: {}\nOutput as: {}", locked.instructions, node.id, node.output_as),"output_schema":locked.skill["output_schema"]}],
             "tool_surface":[], "context":context, "observations":observations
         });
         checkpoint(
@@ -599,10 +639,10 @@ fn resume_after_observation(
             |row| row.get(0),
         )
         .map_err(|_| "checkpoint_conflict".to_owned())?;
-    let skill_raw: String = config
+    let capability_raw: String = config
         .connection
         .query_row(
-            "SELECT snapshot_json FROM run_snapshots WHERE run_id=?1 AND snapshot_type='skill'",
+            "SELECT snapshot_json FROM run_snapshots WHERE run_id=?1 AND snapshot_type IN ('capability_set','skill') ORDER BY CASE snapshot_type WHEN 'capability_set' THEN 0 ELSE 1 END LIMIT 1",
             [config.run_id],
             |row| row.get(0),
         )
@@ -617,17 +657,41 @@ fn resume_after_observation(
         .map_err(|_| "checkpoint_conflict".to_owned())?;
     let agent: Value =
         serde_json::from_str(&agent_raw).map_err(|_| "checkpoint_conflict".to_owned())?;
-    let skill_lock: Value =
-        serde_json::from_str(&skill_raw).map_err(|_| "checkpoint_conflict".to_owned())?;
+    let capability_lock: Value =
+        serde_json::from_str(&capability_raw).map_err(|_| "checkpoint_conflict".to_owned())?;
     let toolset_lock: Value =
         serde_json::from_str(&toolset_raw).map_err(|_| "checkpoint_conflict".to_owned())?;
-    let skill = &skill_lock["manifest"]["skill"];
+    let capability_set = if let Some(skills) = capability_lock["skills"].as_array() {
+        Value::Array(skills.clone())
+    } else {
+        Value::Array(vec![capability_lock.clone()])
+    };
+    let is_capability_run = capability_lock.get("skills").is_some();
+    let first_capability = &capability_set.as_array().ok_or("checkpoint_conflict")?[0];
+    let skill = if is_capability_run {
+        json!({
+            "id":"agent-capability-set","name":"工作结果","output_schema":{"type":"object"},
+            "execution":{"max_model_turns":8,"max_tool_calls":8},
+            "deliverables":{"required":false,"evidence":"output_schema"}
+        })
+    } else {
+        first_capability["manifest"]["skill"].clone()
+    };
+    let (max_model_turns, max_tool_calls): (i64, i64) = config
+        .connection
+        .query_row(
+            "SELECT max_model_turns,max_tool_calls FROM agent_runs WHERE id=?1",
+            [config.run_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|_| "checkpoint_conflict".to_owned())?;
+    let compact_observation = compact_observation(tool_result);
     let request = json!({
         "schema_version":"1.0.0","task":{"id":task_id,"input":task_input},
-        "run":{"id":config.run_id,"max_model_turns":skill["execution"]["max_model_turns"],"max_tool_calls":skill["execution"]["max_tool_calls"]},
+        "run":{"id":config.run_id,"max_model_turns":max_model_turns,"max_tool_calls":max_tool_calls},
         "agent":{"id":agent_id,"effective_prompt":agent["effective_prompt"]},
-        "skill":{"id":skill["id"],"instructions":skill_lock["instructions"],"output_schema":skill["output_schema"]},
-        "tool_surface":toolset_lock["tools"],"context":{"sections":[],"source":"locked_snapshot"},"observations":[tool_result]
+        "capability_set":capability_set,
+        "tool_surface":toolset_lock["tools"],"context":{"sections":[],"source":"locked_snapshot"},"observations":[compact_observation]
     });
     checkpoint(
         config.connection,
@@ -644,7 +708,14 @@ fn resume_after_observation(
         now,
     )?;
     consume_model_turn(config.connection, config.run_id, now)?;
-    let raw = match invoke_worker(config.repository_root, config.python, &request) {
+    let raw = match invoke_worker_bounded(
+        config.connection,
+        config.repository_root,
+        config.python,
+        config.run_id,
+        &request,
+        now,
+    ) {
         Ok(raw) => raw,
         Err(error) => {
             return fail_existing_run(config.connection, task_id, config.run_id, &error, now);
@@ -673,7 +744,7 @@ fn resume_after_observation(
             task_id,
             config.run_id,
             agent_id,
-            skill,
+            &skill,
             output,
             evidence_refs,
             now,
@@ -695,6 +766,7 @@ fn resume_after_observation(
             )
         }
         AgentDecision::ToolCall {
+            skill_id,
             tool_id,
             action,
             arguments,
@@ -709,18 +781,24 @@ fn resume_after_observation(
                     .unwrap_or_default()
                     .to_owned(),
                 skill: skill.clone(),
-                instructions: skill_lock["instructions"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .to_owned(),
+                instructions: if is_capability_run {
+                    String::new()
+                } else {
+                    first_capability["instructions"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_owned()
+                },
+                capability_set: capability_set.clone(),
                 tool_surface: toolset_lock["tools"].clone(),
-                max_model_turns: skill["execution"]["max_model_turns"].as_i64().unwrap_or(1),
-                max_tool_calls: skill["execution"]["max_tool_calls"].as_i64().unwrap_or(0),
+                max_model_turns,
+                max_tool_calls,
             };
             request_tool(
                 config.connection,
                 &locked,
                 agent_id,
+                &skill_id,
                 &tool_id,
                 &action,
                 &arguments,
@@ -753,11 +831,11 @@ fn finalize_existing_run(
         params![deliverable_id, sha256(&output.to_string()), now],
     )
     .map_err(|error| error.to_string())?;
-    if skill["deliverables"]["evidence"] == "combined" {
-        let (call_id, result_json): (String, String) = tx.query_row(
-            "SELECT te.call_id,te.result_json FROM tool_executions te JOIN actions a ON a.id=te.action_id WHERE a.task_id=?1 AND te.status='succeeded' ORDER BY te.started_at DESC LIMIT 1",
-            [task_id], |row| Ok((row.get(0)?,row.get(1)?)),
-        ).map_err(|_| "evidence_missing".to_owned())?;
+    let artifact_result: Option<(String, String)> = tx.query_row(
+        "SELECT te.call_id,te.result_json FROM tool_executions te JOIN actions a ON a.id=te.action_id WHERE a.task_id=?1 AND te.status='succeeded' AND json_type(te.result_json,'$.output.path')='text' ORDER BY te.started_at DESC LIMIT 1",
+        [task_id], |row| Ok((row.get(0)?,row.get(1)?)),
+    ).optional().map_err(|error| error.to_string())?;
+    if let Some((call_id, result_json)) = artifact_result {
         let tool_result: Value =
             serde_json::from_str(&result_json).map_err(|_| "evidence_missing".to_owned())?;
         let path = tool_result["output"]["path"]
@@ -838,41 +916,88 @@ fn consume_model_turn(connection: &Connection, run_id: &str, now: &str) -> Resul
 
 fn lock_run(config: &mut RunSkillConfig<'_>, now: &str) -> Result<LockedRun, String> {
     let (prompt, config_version) = compile_effective_prompt(config.connection, config.agent_id)?;
-    let row: Option<(String, String, String)> = config
-        .connection
-        .query_row(
-            "SELECT s.manifest_json,s.path,s.version FROM skills s
-         JOIN agent_skills a ON a.skill_id=s.id
-         WHERE a.agent_id=?1 AND a.enabled=1 AND s.id=?2 AND s.status='active'",
-            params![config.agent_id, config.skill_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .optional()
-        .map_err(|error| error.to_string())?;
-    let (manifest_raw, skill_path, skill_version) =
-        row.ok_or_else(|| "skill_unbound".to_owned())?;
-    let manifest: Value =
-        serde_json::from_str(&manifest_raw).map_err(|_| "package_invalid".to_owned())?;
-    if manifest["schema_version"] != "2.0.0" {
-        return Err("runtime_incompatible: run-skill requires Skill Manifest 2.0.0".to_owned());
+    let skill_ids = if config.capability_mode {
+        crate::skill_resolver::ready_skill_ids(config.connection, config.agent_id)?
+    } else {
+        vec![config.skill_id.to_owned()]
+    };
+    if skill_ids.is_empty() {
+        return Err("capability_not_found".to_owned());
     }
-    let skill = manifest["skill"].clone();
-    let tool_surface = resolve_tool_surface(config.connection, &skill["tools"])?;
-    validate_input(&skill["input_schema"], &config.input)?;
-    let instructions_path =
-        PathBuf::from(skill_path).join(skill["instructions"].as_str().ok_or("package_invalid")?);
-    let instructions = std::fs::read_to_string(instructions_path)
-        .map_err(|_| "package_invalid: instructions unavailable".to_owned())?;
+    let mut capabilities = Vec::new();
+    let mut surfaces = Vec::new();
+    let mut total_model_turns = 0_i64;
+    let mut total_tool_calls = 0_i64;
+    for skill_id in &skill_ids {
+        let (manifest_raw, skill_path, skill_version): (String, String, String) = config.connection.query_row(
+            "SELECT s.manifest_json,s.path,s.version FROM skills s JOIN agent_skills a ON a.skill_id=s.id WHERE a.agent_id=?1 AND a.enabled=1 AND s.id=?2 AND s.status='active'",
+            params![config.agent_id, skill_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).map_err(|_| "skill_unbound".to_owned())?;
+        let manifest: Value =
+            serde_json::from_str(&manifest_raw).map_err(|_| "package_invalid".to_owned())?;
+        if manifest["schema_version"] != "2.0.0" {
+            return Err("runtime_incompatible: run requires Skill Manifest 2.0.0".to_owned());
+        }
+        let skill = &manifest["skill"];
+        if !config.capability_mode {
+            validate_input(&skill["input_schema"], &config.input)?;
+        }
+        let instructions_path = PathBuf::from(skill_path)
+            .join(skill["instructions"].as_str().ok_or("package_invalid")?);
+        let instructions = std::fs::read_to_string(instructions_path)
+            .map_err(|_| "package_invalid: instructions unavailable".to_owned())?;
+        total_model_turns += skill["execution"]["max_model_turns"].as_i64().unwrap_or(1);
+        total_tool_calls += skill["execution"]["max_tool_calls"].as_i64().unwrap_or(0);
+        for mut surface in resolve_tool_surface(config.connection, &skill["tools"])?
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+        {
+            surface["skill_id"] = json!(skill_id);
+            surfaces.push(surface);
+        }
+        capabilities.push(json!({
+            "id":skill_id,"version":skill_version,"manifest":manifest,"instructions":instructions,
+            "instructions_sha256":sha256(&instructions),"output_schema":skill["output_schema"]
+        }));
+    }
+    let capability_set = Value::Array(capabilities.clone());
+    let (skill, instructions, max_model_turns, max_tool_calls) = if config.capability_mode {
+        (
+            json!({
+                "id":"agent-capability-set","name":"工作结果","output_schema":{"type":"object"},
+                "context":{"max_bytes":65536},"execution":{"mode":"agent_loop","max_model_turns":total_model_turns.clamp(2,8),"max_tool_calls":total_tool_calls.clamp(1,8)},
+                "deliverables":{"required":false,"evidence":"output_schema"}
+            }),
+            String::new(),
+            total_model_turns.clamp(2, 8),
+            total_tool_calls.clamp(1, 8),
+        )
+    } else {
+        let first = &capabilities[0];
+        let locked_skill = first["manifest"]["skill"].clone();
+        let explicit_model_turns = locked_skill["execution"]["max_model_turns"]
+            .as_i64()
+            .ok_or("package_invalid")?;
+        let explicit_tool_calls = locked_skill["execution"]["max_tool_calls"]
+            .as_i64()
+            .ok_or("package_invalid")?;
+        (
+            locked_skill,
+            first["instructions"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned(),
+            explicit_model_turns,
+            explicit_tool_calls,
+        )
+    };
+    let tool_surface = Value::Array(surfaces);
     let execution = &skill["execution"];
     if !matches!(execution["mode"].as_str(), Some("agent_loop" | "workflow")) {
         return Err("runtime_incompatible: unsupported execution mode".to_owned());
     }
-    let max_model_turns = execution["max_model_turns"]
-        .as_i64()
-        .ok_or("package_invalid")?;
-    let max_tool_calls = execution["max_tool_calls"]
-        .as_i64()
-        .ok_or("package_invalid")?;
     let task_id = format!("task_{}", nonce());
     let run_id = format!("run_{}", nonce());
     let max_duration_ms = execution["max_duration_ms"].as_i64().unwrap_or(120_000);
@@ -897,8 +1022,16 @@ fn lock_run(config: &mut RunSkillConfig<'_>, now: &str) -> Result<LockedRun, Str
             json!({"agent_id":config.agent_id,"config_version":config_version,"effective_prompt":prompt,"effective_prompt_sha256":sha256(&prompt)}),
         ),
         (
-            "skill",
-            json!({"id":config.skill_id,"version":skill_version,"manifest":manifest,"instructions":instructions,"instructions_sha256":sha256(&instructions)}),
+            if config.capability_mode {
+                "capability_set"
+            } else {
+                "skill"
+            },
+            if config.capability_mode {
+                json!({"skills":capability_set})
+            } else {
+                capabilities[0].clone()
+            },
         ),
         ("toolset", json!({"tools": tool_surface.clone()})),
         (
@@ -932,6 +1065,7 @@ fn lock_run(config: &mut RunSkillConfig<'_>, now: &str) -> Result<LockedRun, Str
         prompt,
         skill,
         instructions,
+        capability_set,
         tool_surface,
         max_model_turns,
         max_tool_calls,
@@ -951,7 +1085,7 @@ fn request_payload(config: &RunSkillConfig<'_>, run: &LockedRun) -> Result<Value
         "schema_version":"1.0.0", "task":{"id":run.task_id,"input":config.input},
         "run":{"id":run.run_id,"max_model_turns":run.max_model_turns,"max_tool_calls":run.max_tool_calls},
         "agent":{"id":config.agent_id,"effective_prompt":run.prompt},
-        "skill":{"id":config.skill_id,"instructions":run.instructions,"output_schema":run.skill["output_schema"]},
+        "capability_set":run.capability_set,
         "tool_surface":run.tool_surface, "context":context, "observations":[]
     }))
 }
@@ -1018,6 +1152,56 @@ fn invoke_worker(root: &Path, python: &Path, request: &Value) -> Result<Value, S
     }
     serde_json::from_slice(&output.stdout)
         .map_err(|error| format!("decision_schema_invalid: {error}"))
+}
+
+fn invoke_worker_bounded(
+    connection: &Connection,
+    root: &Path,
+    python: &Path,
+    run_id: &str,
+    request: &Value,
+    now: &str,
+) -> Result<Value, String> {
+    match invoke_worker(root, python, request) {
+        Ok(value) => Ok(value),
+        Err(first)
+            if first.contains("decision_schema_invalid")
+                || first.contains("provider_output_truncated") =>
+        {
+            observe(
+                connection,
+                run_id,
+                "system",
+                &json!({"protocol_error":first,"retry":1}),
+                now,
+            )?;
+            consume_model_turn(connection, run_id, now).map_err(|_| first.clone())?;
+            let mut retry = request.clone();
+            retry["observations"] = json!([{
+                "kind":"protocol_error","error":first,
+                "instruction":"Return exactly one valid decision object matching the contract. Do not repeat a completed Tool call."
+            }]);
+            checkpoint(connection, run_id, "before_model", &retry, now)?;
+            invoke_worker(root, python, &retry)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn compact_observation(value: &Value) -> Value {
+    let serialized = value.to_string();
+    const MAX_VISIBLE_BYTES: usize = 12_000;
+    if serialized.len() <= MAX_VISIBLE_BYTES {
+        return value.clone();
+    }
+    let preview: String = serialized.chars().take(MAX_VISIBLE_BYTES).collect();
+    json!({
+        "status": value.get("status").cloned().unwrap_or(Value::Null),
+        "result_ref": format!("sha256:{}", sha256(&serialized)),
+        "original_bytes": serialized.len(),
+        "content_preview": preview,
+        "truncated_for_context": true
+    })
 }
 
 fn set_phase(
@@ -1119,6 +1303,7 @@ fn request_tool(
     connection: &Connection,
     run: &LockedRun,
     agent_id: &str,
+    skill_id: &str,
     tool_id: &str,
     action: &str,
     arguments: &Value,
@@ -1136,17 +1321,19 @@ fn request_tool(
     if !budget_available {
         return fail_run(connection, run, "tool_budget_exceeded", now);
     }
-    let declared = run.skill["tools"]
+    let declared = run
+        .tool_surface
         .as_array()
         .into_iter()
         .flatten()
         .any(|tool| {
             tool["id"] == tool_id
+                && tool["skill_id"] == skill_id
                 && tool["actions"]
                     .as_array()
                     .into_iter()
                     .flatten()
-                    .any(|allowed| allowed == action)
+                    .any(|allowed| allowed["name"] == action)
         });
     if !declared {
         return fail_run(connection, run, "tool_action_not_allowed", now);
@@ -1180,13 +1367,13 @@ fn request_tool(
         tx.execute(
             "INSERT INTO actions(id,task_id,tool_id,input_json,output_json,status,created_at,updated_at)
              VALUES (?1,?2,?3,?4,NULL,'blocked',?5,?5)",
-            params![action_id,run.task_id,tool_id,json!({"action":action,"arguments":arguments,"rationale_summary":rationale_summary}).to_string(),now],
+            params![action_id,run.task_id,tool_id,json!({"skill_id":skill_id,"action":action,"arguments":arguments,"rationale_summary":rationale_summary}).to_string(),now],
         ).map_err(|error| error.to_string())?;
     } else {
         let changed = tx.execute(
             "UPDATE actions SET tool_id=?1,input_json=?2,status='blocked',updated_at=?3
              WHERE id=?4 AND task_id=?5 AND status='pending'",
-            params![tool_id,json!({"action":action,"arguments":arguments,"rationale_summary":rationale_summary,"workflow":true}).to_string(),now,action_id,run.task_id],
+            params![tool_id,json!({"skill_id":skill_id,"action":action,"arguments":arguments,"rationale_summary":rationale_summary,"workflow":true}).to_string(),now,action_id,run.task_id],
         ).map_err(|error| error.to_string())?;
         if changed != 1 {
             return Err("workflow_action_not_pending".to_owned());

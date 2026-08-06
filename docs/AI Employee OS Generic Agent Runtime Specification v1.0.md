@@ -34,7 +34,7 @@ Rust ToolExecutor -> ToolResult / Artifact -> Deliverable
 - 任意已安装、已绑定、依赖满足且契约兼容的 Skill 可走同一条 Runtime 主链。
 - 新增 Skill 不修改 Rust/Python Runtime；新增 Rust 已支持的 Native Tool 不修改 Python Worker。
 - Runtime 不识别 PRD、研究、写作等业务语义，不硬编码员工 ID、Skill ID、固定资料或输出模板。
-- 模型自主性被限制在锁定的 Agent、Skill、Context、Toolset、预算和停止规则内。
+- 模型自主性被限制在锁定的 Agent、Capability Set、Context、Toolset、预算和停止规则内。
 - 所有系统副作用都经过 Rust ToolExecutor，并可审计、恢复和验证。
 - Deliverable 只能由真实 Artifact、ResultRef、ToolResult 或确定性验证证据支持。
 
@@ -229,12 +229,14 @@ ready | disabled | missing_dependency | incompatible | invalid_package
 
 模型不得选择候选集以外的 Skill。Resolver 失败不得创建 Tool Action，不得产生副作用。
 
+聊天工作使用 Capability Set Resolver：Intent 只判断 `chat | task`；Rust 将员工全部 readiness=`ready` 的绑定 Skill 锁定为本 Run 候选集合。模型不在 Run 启动前唯一选择 Skill，而是在每个 `tool_call` 中声明候选集合内的 `skill_id`。显式 `run-skill` 仍构建只含目标 Skill 的 Capability Set。
+
 ## 9. Agent 与运行快照
 
 Run 创建时必须原子锁定：
 
 - `agent_id`、`agent_config_version`、`effective_prompt_sha256`、编译后 Prompt 引用；
-- `skill_id`、`skill_version`、Manifest/Instructions/package hash；
+- Capability Set 中每个 `skill_id`、`skill_version`、Manifest/Instructions/package hash；
 - Tool ID、版本、Action、Manifest hash；
 - Context selector 结果及 provenance/hash；
 - 模型 provider/model 和非 Secret 配置；
@@ -327,6 +329,7 @@ Python 每次只返回一个 JSON 对象：
 {
   "schema_version": "1.0.0",
   "type": "tool_call",
+  "skill_id": "local-file-operations",
   "tool_id": "document-tool",
   "action": "create_markdown",
   "arguments": {"path": "deliverables/summary.md", "content": "..."},
@@ -339,7 +342,7 @@ Python 每次只返回一个 JSON 对象：
 | 类型 | 必需业务字段 | 语义 |
 |---|---|---|
 | `ask_user` | `question`, `required_input_schema` | 缺少必须由用户提供的信息 |
-| `tool_call` | `tool_id`, `action`, `arguments`, `rationale_summary` | 请求一个当前允许 Action |
+| `tool_call` | `skill_id`, `tool_id`, `action`, `arguments`, `rationale_summary` | 通过锁定 Skill 请求一个当前允许 Action |
 | `complete` | `output`, `deliverable_candidates`, `evidence_refs` | 声明候选结果，等待 Rust 验证 |
 
 Python 禁止返回 `call_id`、`action_id`、`idempotency_key`、`permission_context`、`approval_id`、`deadline`、`trace_id`、`attempt`。出现任一禁止字段即 `decision_forbidden_field`，不执行 Tool。

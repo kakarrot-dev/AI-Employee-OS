@@ -48,8 +48,14 @@ assert 'Label("复制", systemImage: "doc.on.doc")' not in workspace, (
 assert '.help("复制完整回复")' in workspace and '.accessibilityLabel("复制 \\(employeeName) 的回复")' in workspace, (
     "the icon-only assistant copy action must remain discoverable and accessible"
 )
-assert 'Text("\\(employeeName) · \\(TaskPresentation.time(message.createdAt))")' in workspace, (
-    "assistant identity and time must remain visible above every reply"
+assert "private struct AgentTimelineBlock<Content: View>" in workspace, (
+    "all agent-authored timeline entries must use one fixed composition component"
+)
+assert "metadata: TaskPresentation.time(message.createdAt)" in workspace, (
+    "assistant identity and time must remain visible in the shared timeline block"
+)
+assert workspace.count("AgentTimelineBlock(") >= 3, (
+    "assistant replies, streaming replies, and work events must share the same timeline block"
 )
 assert '.frame(width: 40, height: 2)' in workspace, (
     "Markdown dividers must remain visually distinct from full-width turn separators"
@@ -83,8 +89,26 @@ assert 'DisclosureGroup("技术详情"' in inspector, (
 assert "message.content == \"执行已暂停，等待你批准所需权限。\"" in workspace, (
     "the task timeline must suppress the redundant persisted approval reply"
 )
-assert "store.runs.filter { !hasFinalReply(for: $0) }" in workspace, (
-    "a successful conversational run must yield to its final assistant reply"
+assert "$0.hasPersistentDeliverable || !hasFinalReply(for: $0)" in workspace, (
+    "verified deliveries must remain in the timeline after later assistant replies"
+)
+assert 'Label("打开文件", systemImage: "arrow.up.right")' in workspace and "primaryAction:" not in workspace, (
+    "delivery cards must expose file opening as an immediately clickable split-button action"
+)
+assert 'Button("打开文件夹", systemImage: "folder")' in workspace and "openContainingFolder" in workspace, (
+    "the delivery dropdown must expose its containing folder"
+)
+assert 'Image(systemName: "chevron.down")' in workspace and '.menuIndicator(.hidden)' in workspace, (
+    "the split button must show a dedicated dropdown trigger without requiring a long press"
+)
+assert "Text(displayTitle)" in workspace and "Text(formatLabel)" in workspace, (
+    "delivery cards must present a document title and file format"
+)
+assert "正在读取交付物" not in workspace and "tryAttributedMarkdown" not in workspace, (
+    "delivery cards must not embed document previews or indefinite loading state"
+)
+assert 'Button("在 Finder 中显示")' not in workspace and "质量检查通过" not in workspace, (
+    "delivery cards must stay focused on file identity and the primary open action"
 )
 assert 'Text("整理结果并回复")' in inspector and "planStepCount(run)" in inspector, (
     "the visible plan must include final response synthesis after Tool actions"

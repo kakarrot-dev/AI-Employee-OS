@@ -101,6 +101,14 @@ pub fn resolve(connection: &Connection, agent_id: &str, input: &str) -> Result<S
     }
 }
 
+pub fn ready_skill_ids(connection: &Connection, agent_id: &str) -> Result<Vec<String>, String> {
+    Ok(readiness(connection, agent_id)?
+        .into_iter()
+        .filter(|item| item.readiness == "ready")
+        .map(|item| item.skill_id)
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

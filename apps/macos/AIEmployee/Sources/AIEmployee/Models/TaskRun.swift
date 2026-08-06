@@ -65,6 +65,7 @@ struct TaskHistoryResponse: Codable, Sendable {
         let conversationID: String?
         let skillID: String?
         let skillVersion: String?
+        let skillIDs: [String]
 
         enum CodingKeys: String, CodingKey {
             case taskID = "task_id"
@@ -84,6 +85,7 @@ struct TaskHistoryResponse: Codable, Sendable {
             case conversationID = "conversation_id"
             case skillID = "skill_id"
             case skillVersion = "skill_version"
+            case skillIDs = "skill_ids"
         }
     }
 
@@ -163,4 +165,12 @@ struct TaskRun: Identifiable {
     var conversationID: String? = nil
     var skillID: String? = nil
     var skillVersion: String? = nil
+    var skillIDs: [String] = []
+
+    var hasPersistentDeliverable: Bool {
+        deliverableStatus == "verified"
+            || verifiedArtifactPath != nil
+            || artifactPath != nil
+            || response?.artifactPath.isEmpty == false
+    }
 }

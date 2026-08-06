@@ -1,1 +1,1 @@
-{"schema_version":"1.0.0","type":"complete","output":{"summary":"ok"},"deliverable_candidates":[],"evidence_refs":[]}
+{"schema_version":"1.0.0","type":"tool_call","skill_id":"local-file-operations","tool_id":"file-tool","action":"read_file","arguments":{"path":"note.md"},"rationale_summary":"read source"}

@@ -11,6 +11,7 @@ pub enum AgentDecision {
     },
     ToolCall {
         schema_version: String,
+        skill_id: String,
         tool_id: String,
         action: String,
         arguments: Value,
@@ -61,7 +62,7 @@ mod tests {
     #[test]
     fn rejects_model_owned_security_fields() {
         let value = serde_json::json!({
-            "schema_version":"1.0.0", "type":"tool_call", "tool_id":"file-tool",
+            "schema_version":"1.0.0", "type":"tool_call", "skill_id":"local-file-operations", "tool_id":"file-tool",
             "action":"read_file", "arguments":{}, "rationale_summary":"read",
             "call_id":"model-owned"
         });

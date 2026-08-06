@@ -10,7 +10,7 @@
 2. 在客户端编辑员工 Identity / Soul / Persona；Effective Prompt 由 Rust Runtime 单向编译。
 3. 与员工完成可跨重启恢复的多轮对话（新装默认种子为 Alex / `ai-product-manager`，用户可彻底删除且不会被自动恢复）。
 4. Skill / Tool 由仓库 Package 安装（客户端不创建）；Runtime bootstrap 安装内置 Package 后，技能库与工具库可浏览。
-5. 对话经意图识别区分闲聊与工作：闲聊走 Python chat worker；工作意图仅在存在 readiness=`ready` 的 Skill 时，经 Resolver → Generic Run Kernel → ToolExecutor 执行。Golden Path 已移除。
+5. 对话经意图识别区分闲聊与工作：闲聊走 Python chat worker；工作意图仅在存在 readiness=`ready` 的 Skill 时，由 Rust 锁定员工 Capability Set，Agent 在同一 Generic Run 中逐轮选择 Skill 与其声明的 Tool/Action。Golden Path 已移除。
 
 可执行 Skill 必须是 Manifest `schema_version: 2.0.0`。默认员工 bootstrap 绑定 `local-file-operations` 与 `web-search`。当前主验证可执行路径为 `local-file-operations`（授权目录内读 / 创建 / 精确编辑 UTF-8 文件，经审批后由 `file-tool` 执行）。`web-search` 已合入并绑定；真实搜索依赖本机 `mcporter` + Exa，尚未作为无外部依赖的默认门禁。仓库中 `prd-generation` / `requirement-analysis` 等 Manifest 1.0 Skill 若仍存在，readiness 为 `incompatible`，不作为工作执行主路径。
 
@@ -74,6 +74,7 @@ Python Agent Worker         意图分类、闲聊、Context/规划推理；不�
 - Skill 通过 `agent_skills` 绑定到员工；Tool 为全局安装（无 per-agent Tool 绑定表），客户端不可创建 Package。
 - `tasks_enabled` 仅为兼容派生字段；授权与路由使用当前员工每个 Skill 的 `ready | disabled | missing_dependency | incompatible | invalid_package`。
 - Python Task Worker 只返回 `ask_user | tool_call | complete`；安全字段和所有 Tool 调用由 Rust 生成与执行。
+- 聊天 Task 不在启动前锁死单一 Skill；每个 `tool_call` 必须声明锁定 Capability Set 内的 `skill_id`，Rust 校验 Skill → Tool → Action 授权链。显式 `run-skill` 仍为单 Skill 集合。
 - 工作执行只走 Generic Run Kernel；禁止恢复 Golden Path。
 
 ## 状态与安全不变量

@@ -205,6 +205,8 @@ struct TaskInspectorView: View {
                     diagnosticRow("最近更新", value: TaskPresentation.time(latestUpdate(run)))
                     if let skillID = run.skillID {
                         diagnosticRow("使用能力", value: skillName(skillID, version: run.skillVersion))
+                    } else if !run.skillIDs.isEmpty {
+                        diagnosticRow("使用能力", value: run.skillIDs.map { skillName($0, version: nil) }.joined(separator: "、"))
                     }
                     if let action = activeAction(run) {
                         diagnosticRow("当前工具", value: TaskPresentation.actionTitle(action.stepID))

@@ -13,12 +13,12 @@ class DecisionTests(unittest.TestCase):
             self.assertEqual(parse_model_decision(__import__("json").dumps(value))["type"], decision_type)
 
     def test_worker_owns_schema_version_even_if_model_returns_wrong_version(self):
-        value = parse_model_decision('{"schema_version":"2.0.0","type":"tool_call","tool_id":"agent-reach-tool","action":"search_web","arguments":{"query":"news"},"rationale_summary":"search"}')
+        value = parse_model_decision('{"schema_version":"2.0.0","type":"tool_call","skill_id":"web-search","tool_id":"agent-reach-tool","action":"search_web","arguments":{"query":"news"},"rationale_summary":"search"}')
         self.assertEqual(value["schema_version"], SCHEMA_VERSION)
 
     def test_worker_unwraps_known_tool_call_envelope(self):
         value = parse_model_decision(
-            '{"tool_call":{"tool_id":"agent-reach-tool","action":"search_web",'
+            '{"tool_call":{"skill_id":"web-search","tool_id":"agent-reach-tool","action":"search_web",'
             '"arguments":{"query":"news"},"rationale_summary":"search"}}'
         )
         self.assertEqual(value["type"], "tool_call")
@@ -53,7 +53,7 @@ class DecisionTests(unittest.TestCase):
 
     def test_rejects_security_field(self):
         with self.assertRaisesRegex(ValueError, "decision_forbidden_field"):
-            parse_decision('{"schema_version":"1.0.0","type":"tool_call","tool_id":"x","action":"y","arguments":{},"rationale_summary":"z","call_id":"owned-by-model"}')
+            parse_decision('{"schema_version":"1.0.0","type":"tool_call","skill_id":"s","tool_id":"x","action":"y","arguments":{},"rationale_summary":"z","call_id":"owned-by-model"}')
 
     def test_rust_boundary_shape_still_rejects_unsupported_version(self):
         with self.assertRaisesRegex(ValueError, "unsupported schema_version"):

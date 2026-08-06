@@ -20,7 +20,9 @@ pub const MIGRATION_010: &str = include_str!("../../../storage/migrations/010_em
 pub const MIGRATION_011: &str =
     include_str!("../../../storage/migrations/011_generic_agent_runs.sql");
 pub const MIGRATION_012: &str = include_str!("../../../storage/migrations/012_runtime_flags.sql");
-const LATEST_SCHEMA_VERSION: i64 = 12;
+pub const MIGRATION_013: &str =
+    include_str!("../../../storage/migrations/013_capability_set_runs.sql");
+const LATEST_SCHEMA_VERSION: i64 = 13;
 
 pub fn migrate(connection: &mut Connection) -> Result<()> {
     connection.busy_timeout(Duration::from_secs(5))?;
@@ -65,6 +67,9 @@ pub fn migrate(connection: &mut Connection) -> Result<()> {
     }
     if current < 12 {
         transaction.execute_batch(MIGRATION_012)?;
+    }
+    if current < 13 {
+        transaction.execute_batch(MIGRATION_013)?;
     }
     transaction.commit()
 }
@@ -118,7 +123,7 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(migration_count, 12);
+        assert_eq!(migration_count, 13);
     }
 
     #[test]
@@ -192,7 +197,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(index_count, 23);
+        assert_eq!(index_count, 24);
     }
 
     #[test]

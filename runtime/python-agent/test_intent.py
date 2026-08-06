@@ -32,23 +32,23 @@ class IntentClassificationTests(unittest.TestCase):
 
     @patch("app.intent.DeepSeekProvider.complete")
     @patch("app.intent.ProviderConfig.validate")
-    def test_model_selects_ready_skill(self, validate, complete):
+    def test_model_classifies_task_without_preselecting_one_skill(self, validate, complete):
         complete.return_value = ProviderResponse(
             '{"intent":"task","confidence":0.96,"skill_id":"web-search"}', "fake", 1, 1
         )
         decision = classify_intent("查一下 Rust", available_skills=SKILLS)
         self.assertEqual(decision.intent, "task")
-        self.assertEqual(decision.skill_id, "web-search")
+        self.assertIsNone(decision.skill_id)
 
     @patch("app.intent.DeepSeekProvider.complete")
     @patch("app.intent.ProviderConfig.validate")
-    def test_model_cannot_select_unavailable_skill(self, validate, complete):
+    def test_model_skill_claim_does_not_expand_runtime_capabilities(self, validate, complete):
         complete.return_value = ProviderResponse(
             '{"intent":"task","confidence":0.99,"skill_id":"shell"}', "fake", 1, 1
         )
         decision = classify_intent("执行命令", available_skills=SKILLS)
-        self.assertEqual(decision.intent, "chat")
-        self.assertEqual(decision.source, "fallback_chat")
+        self.assertEqual(decision.intent, "task")
+        self.assertIsNone(decision.skill_id)
 
 
 if __name__ == "__main__":

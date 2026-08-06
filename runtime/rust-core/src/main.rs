@@ -17,7 +17,8 @@ use ai_employee_runtime::memory::retrieve as retrieve_memory;
 use ai_employee_runtime::recovery::reconcile_interrupted;
 use ai_employee_runtime::run::{
     ContinueRunConfig, RunSkillConfig, continue_after_verified_action, continue_run as resume_run,
-    continue_with_user_input, resolve_unknown_action, run_skill as execute_skill,
+    continue_with_user_input, resolve_unknown_action, run_agent as execute_agent,
+    run_skill as execute_skill,
 };
 use ai_employee_runtime::skill_package::install_skill_package;
 use ai_employee_runtime::skill_resolver::readiness as skill_readiness;
@@ -1264,7 +1265,6 @@ struct IntentResult {
     confidence: f64,
     source: String,
     is_task: bool,
-    skill_id: Option<String>,
 }
 
 fn classify_user_intent(
@@ -1366,17 +1366,12 @@ fn classify_user_intent(
         .and_then(|v| v.as_str())
         .unwrap_or("fallback")
         .to_owned();
-    let skill_id = payload
-        .get("skill_id")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    let is_task = intent == "task" && confidence >= 0.55 && skill_id.is_some();
+    let is_task = intent == "task" && confidence >= 0.55 && !available_skills.is_empty();
     Ok(IntentResult {
         intent,
         confidence,
         source,
         is_task,
-        skill_id,
     })
 }
 
@@ -1392,21 +1387,14 @@ fn route_chat_to_run(
     nonce: u128,
     intent: &IntentResult,
 ) -> Result<serde_json::Value, String> {
-    let task_result = intent
-        .skill_id
-        .as_deref()
-        .ok_or_else(|| "capability_not_found".to_owned())
-        .and_then(|skill_id| {
-            execute_skill(RunSkillConfig {
-                connection,
-                repository_root: root,
-                python: Path::new("python3"),
-                agent_id,
-                skill_id,
-                input: json!({"text":input}),
-                conversation_id: Some(conversation_id),
-            })
-        });
+    let task_result = execute_agent(
+        connection,
+        root,
+        Path::new("python3"),
+        agent_id,
+        json!({"text":input}),
+        Some(conversation_id),
+    );
     let completed = now();
     let (content, status, artifact, task_id_out, run_id, run_phase) = match task_result {
         Ok(value) => {
@@ -1601,6 +1589,8 @@ fn list_tasks(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
                     ,(SELECT json_extract(snapshot_json,'$.version') FROM run_snapshots
                       WHERE run_id=(SELECT id FROM agent_runs WHERE task_id=t.id ORDER BY created_at DESC LIMIT 1)
                         AND snapshot_type='skill' LIMIT 1)
+                    ,COALESCE((SELECT json_group_array(DISTINCT json_extract(input_json,'$.skill_id'))
+                      FROM actions WHERE task_id=t.id AND json_type(input_json,'$.skill_id')='text'),'[]')
              FROM tasks t LEFT JOIN actions a ON a.task_id=t.id
              GROUP BY t.id ORDER BY t.created_at DESC, t.id DESC",
         )
@@ -1640,6 +1630,8 @@ fn list_tasks(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
                 "conversation_id": row.get::<_, Option<String>>(19)?,
                 "skill_id": row.get::<_, Option<String>>(20)?,
                 "skill_version": row.get::<_, Option<String>>(21)?
+                ,"skill_ids": serde_json::from_str::<Value>(&row.get::<_, String>(22)?)
+                    .unwrap_or_else(|_| json!([]))
             }))
         })
         .map_err(|error| error.to_string())?;
@@ -1943,6 +1935,7 @@ fn run_skill(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
         skill_id: &skill_id.ok_or_else(usage)?,
         input,
         conversation_id: conversation_id.as_deref(),
+        capability_mode: false,
     })
 }
 
@@ -2271,6 +2264,7 @@ fn run_task(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::V
         input: serde_json::from_str(&input_json.ok_or_else(usage)?)
             .map_err(|_| "input_schema_invalid".to_owned())?,
         conversation_id: None,
+        capability_mode: false,
     })
 }
 

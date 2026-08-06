@@ -1220,7 +1220,7 @@ Swift UI
 
 第 8 节的简化 Skill Object 只作领域说明。机器可读 manifest、触发、Context、Tool 依赖、Workflow 和 Evaluation 契约以 [[AI Employee OS Skill Engineering Guide v1.0#22. Skill 机器可读契约（Canonical）]] 为准。
 
-SkillExecutor 的输入必须包含锁定的 `skill_id`、`skill_version`、`task_id`、符合 Skill `input_schema` 的 `input`、`context_snapshot_id`、`toolset_snapshot_id`、`trace_id`。输出必须符合 Skill `output_schema`，并显式表达 `succeeded`、`failed`、`blocked` 或 `cancelled`。
+显式 SkillExecutor 的输入必须包含锁定的 `skill_id`、`skill_version`、`task_id`、符合 Skill `input_schema` 的 `input`、`context_snapshot_id`、`toolset_snapshot_id`、`trace_id`。聊天通用 Agent Run 改为包含非空 `capability_set`；每次 `tool_call` 必须携带集合内的 `skill_id`，Rust 校验该 Skill 声明的 Tool/Action。显式单 Skill 输出继续符合 Skill `output_schema`；通用 Agent Run 输出使用 Task 级结果对象，并以 Artifact、ToolResult 与 Evaluation 验证交付。
 
 # 16.3 契约文件与校验门禁
 

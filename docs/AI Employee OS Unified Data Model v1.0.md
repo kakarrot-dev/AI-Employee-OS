@@ -429,7 +429,7 @@ CREATE INDEX idx_metrics_name_recorded ON metrics(name, recorded_at);
 | `metrics` | 可按 Task 或 Agent 聚合的数值指标 | 可选关联 Task、Agent | 父记录删除时置空 |
 | `runtime_flags` | Runtime 持久化开关与用户选择 | 无外键；如 `default_agent_dismissed` | 可更新；删除默认员工时写入 |
 | `agent_runs` | Task 的一次通用 Runtime 执行实例 | 属于 Task，保存 phase、revision 与预算 | Task 删除时级联 |
-| `run_snapshots` | 锁定 Agent、Skill、Toolset、Context、Model 配置 | 属于 Run，每种类型唯一 | Run 删除时级联 |
+| `run_snapshots` | 锁定 Agent、单 Skill 或 Capability Set、Toolset、Context、Model 配置 | 属于 Run，每种类型唯一 | Run 删除时级联 |
 | `run_observations` | 已确认的模型决策、ToolResult 和继续输入 | Run 内 sequence 单调递增 | Run 删除时级联 |
 | `run_checkpoints` | 副作用边界上的可恢复状态 Hash | 属于 Run revision | Run 删除时级联 |
 | `artifacts` | 外置结果的 URI、Hash 与验证状态 | 属于 Task/Run，可引用 Action | 数据库删除不自动删除文件 |
@@ -456,6 +456,8 @@ CREATE INDEX idx_metrics_name_recorded ON metrics(name, recorded_at);
 | `agent_runs.phase` | `created`、`preflight`、`context_build`、`model_decision`、`waiting_user`、`authorize`、`waiting_approval`、`tool_execution`、`observe`、`validate_output`、`build_deliverable`、`evaluate`、`terminal` |
 | `deliverables.status` | `candidate`、`verified`、`rejected` |
 | `artifacts.verification_status` | `pending`、`verified`、`failed` |
+
+`run_snapshots.snapshot_type` 允许 `agent | skill | capability_set | toolset | context | model`。历史显式单 Skill Run 保留 `skill`；聊天通用 Run 使用 `capability_set`，其 JSON 必须包含非空 `skills[]` 及每个 Skill 的版本、Manifest、Instructions 和 Hash。
 
 Run phase 不增加或替代 Task/Action 状态。`waiting_user` 与 `waiting_approval` 时 Task 仍为 `running`；审批等待由 Action `blocked` 表达。表的完整 DDL 由追加 Migration `011_generic_agent_runs.sql` 实现。
 

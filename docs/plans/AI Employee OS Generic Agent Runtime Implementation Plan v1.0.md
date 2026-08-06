@@ -1,5 +1,17 @@
 # AI Employee OS Generic Agent Runtime Implementation Plan v1.0
 
+## 2026-08-06 Capability Set Run 扩展
+
+聊天工作不再在 Run 启动前唯一选择 Skill。Rust 从员工已绑定且 readiness=`ready` 的 Skill 构建不可变 Capability Set；Python 在每次 `tool_call` 中选择 `skill_id`，Rust 校验 `skill_id -> tool_id -> action` 授权链。显式 `run-skill` 保持单 Skill 兼容。
+
+实施门禁：
+
+1. 追加 Migration 扩展 `run_snapshots.snapshot_type=capability_set`，历史 `skill` Snapshot 保持可读。
+2. AgentRunRequest 使用 `capability_set[]`；Tool Decision 强制 `skill_id`。
+3. ToolResult 超预算时只向模型提供有 Hash/ResultRef 的压缩 Observation，数据库保留完整结果。
+4. Worker 协议错误同 Run 无副作用重试一次，第二次失败。
+5. Eval 必须覆盖 `web-search -> local-file-operations -> verified Artifact/Deliverable`、伪造 Skill/Tool 组合默认拒绝、恢复不重复副作用。
+
 > 文档类型：可执行实施计划
 > 状态：Draft for approval
 > 日期：2026-08-06

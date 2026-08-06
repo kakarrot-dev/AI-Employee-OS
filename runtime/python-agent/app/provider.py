@@ -110,11 +110,23 @@ class DeepSeekProvider:
         _raise_http_error(response)
         try:
             payload = json.loads(response.body)
-            content = payload["choices"][0]["message"]["content"]
+            choice = payload["choices"][0]
+            finish_reason = choice.get("finish_reason")
+            content = choice["message"]["content"]
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
             raise ProviderFailure(ProviderErrorKind.INVALID_RESPONSE, "invalid DeepSeek response") from exc
         if not isinstance(content, str):
             raise ProviderFailure(ProviderErrorKind.INVALID_RESPONSE, "missing DeepSeek content")
+        if finish_reason == "length":
+            raise ProviderFailure(
+                ProviderErrorKind.INVALID_RESPONSE,
+                f"provider_output_truncated: bytes={len(content.encode('utf-8'))}",
+            )
+        if finish_reason not in {None, "stop", "tool_calls"}:
+            raise ProviderFailure(
+                ProviderErrorKind.INVALID_RESPONSE,
+                f"provider_finish_reason_invalid: {finish_reason}",
+            )
         usage = payload.get("usage", {})
         return ProviderResponse(
             content,

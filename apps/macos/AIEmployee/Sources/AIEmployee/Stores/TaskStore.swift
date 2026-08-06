@@ -114,7 +114,7 @@ final class TaskStore: ObservableObject {
             let previousPersistedIDs = Set(runs.filter { $0.status != .running }.map(\.id))
             let history = try await service.loadHistory()
             let persistedRuns = history.tasks.map { item in
-                TaskRun(id: item.taskID, agentID: item.agentID, input: item.input, createdAt: item.createdAt, updatedAt: item.updatedAt, status: item.status, actions: item.actions, events: item.events, response: nil, error: nil, artifactPath: item.verifiedArtifactPath ?? item.artifactPath, evaluation: item.evaluation, isCancellationRequested: item.cancellationRequested, runID: item.runID, runPhase: item.runPhase, waitingReason: item.waitingReason, stopReason: item.stopReason, deliverableTitle: item.deliverableTitle, deliverableStatus: item.deliverableStatus, verifiedArtifactPath: item.verifiedArtifactPath, conversationID: item.conversationID, skillID: item.skillID, skillVersion: item.skillVersion)
+                TaskRun(id: item.taskID, agentID: item.agentID, input: item.input, createdAt: item.createdAt, updatedAt: item.updatedAt, status: item.status, actions: item.actions, events: item.events, response: nil, error: nil, artifactPath: item.verifiedArtifactPath ?? item.artifactPath, evaluation: item.evaluation, isCancellationRequested: item.cancellationRequested, runID: item.runID, runPhase: item.runPhase, waitingReason: item.waitingReason, stopReason: item.stopReason, deliverableTitle: item.deliverableTitle, deliverableStatus: item.deliverableStatus, verifiedArtifactPath: item.verifiedArtifactPath, conversationID: item.conversationID, skillID: item.skillID, skillVersion: item.skillVersion, skillIDs: item.skillIDs)
             }
             let persistedIDs = Set(persistedRuns.map(\.id))
             let optimisticRuns = runs.filter { !persistedIDs.contains($0.id) && $0.status == .running }
@@ -180,6 +180,7 @@ final class TaskStore: ObservableObject {
             run.verifiedArtifactPath = item.verifiedArtifactPath
             run.skillID = item.skillID
             run.skillVersion = item.skillVersion
+            run.skillIDs = item.skillIDs
             if item.status != .running { run.error = nil }
         }
     }

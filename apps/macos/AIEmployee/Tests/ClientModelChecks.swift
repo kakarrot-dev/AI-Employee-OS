@@ -188,6 +188,8 @@ enum ClientModelChecks {
             office.deliveries.contains { $0.title == "产品需求文档" && $0.employeeName == "Alex" && $0.artifactName == "prd.md" },
             "verified artifact path wins for delivery filename"
         )
+        expect(verifiedDelivery.hasPersistentDeliverable, "verified delivery remains in the conversation timeline")
+        expect(!ignored.hasPersistentDeliverable, "plain completed work may yield to its final assistant reply")
         expect(office.usage?.modelCalls == 2 && office.usage?.totalTokens == 140, "live office keeps usage summary")
         let runningWork = TaskRun(
             id: "task-running",

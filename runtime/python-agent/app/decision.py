@@ -3,7 +3,7 @@ import json
 SCHEMA_VERSION = "1.0.0"
 REQUIRED_FIELDS = {
     "ask_user": {"schema_version", "type", "question", "required_input_schema"},
-    "tool_call": {"schema_version", "type", "tool_id", "action", "arguments", "rationale_summary"},
+    "tool_call": {"schema_version", "type", "skill_id", "tool_id", "action", "arguments", "rationale_summary"},
     "complete": {"schema_version", "type", "output", "deliverable_candidates", "evidence_refs"},
 }
 MODEL_FIELDS = {
@@ -81,7 +81,7 @@ def parse_model_decision(content: str, *, allow_observation_completion: bool = F
 def decision_contract_examples() -> dict:
     placeholders = {
         "question": "string", "required_input_schema": {}, "tool_id": "allowed tool id",
-        "action": "allowed action", "arguments": {}, "rationale_summary": "string",
+        "skill_id": "allowed skill id", "action": "allowed action", "arguments": {}, "rationale_summary": "string",
         "output": {}, "deliverable_candidates": [], "evidence_refs": [],
     }
     return {

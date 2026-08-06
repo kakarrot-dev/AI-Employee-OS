@@ -69,6 +69,17 @@ class ProviderRouterTests(unittest.TestCase):
         self.assertEqual(transport.calls[0][2]["response_format"], {"type": "json_object"})
 
     @patch.dict("os.environ", {"DEEPSEEK_API_KEY": "secret"})
+    def test_deepseek_rejects_truncated_json_completion(self):
+        transport = FakeTransport(HttpResponse(
+            200,
+            b'{"choices":[{"finish_reason":"length","message":{"content":"{\\"type\\":\\"complete\\""}}]}'
+        ))
+        with self.assertRaisesRegex(ProviderFailure, "provider_output_truncated"):
+            DeepSeekProvider("deepseek-v4-flash", 30, transport).complete_json(
+                [{"role": "system", "content": "Return JSON"}]
+            )
+
+    @patch.dict("os.environ", {"DEEPSEEK_API_KEY": "secret"})
     def test_deepseek_stream_publishes_ordered_deltas_and_usage(self):
         transport = FakeTransport(HttpResponse(200, b""), [
             'data: {"choices":[{"delta":{"content":"你"}}]}\n'.encode(),

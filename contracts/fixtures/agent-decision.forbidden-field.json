@@ -1,1 +1,1 @@
-{"schema_version":"1.0.0","type":"tool_call","tool_id":"file-tool","action":"read_file","arguments":{},"rationale_summary":"read","call_id":"model-owned"}
+{"schema_version":"1.0.0","type":"tool_call","skill_id":"local-file-operations","tool_id":"file-tool","action":"read_file","arguments":{},"rationale_summary":"read","call_id":"model-owned"}

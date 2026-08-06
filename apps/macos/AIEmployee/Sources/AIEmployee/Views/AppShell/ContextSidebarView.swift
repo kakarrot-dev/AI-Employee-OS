@@ -236,8 +236,7 @@ private struct WorkConversationRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Circle().fill(palette.primary.opacity(0.15)).frame(width: 34, height: 34)
-                .overlay { Text(employee.name.prefix(1)).font(.caption.weight(.semibold)).foregroundStyle(palette.primaryActive) }
+            EmployeeAvatar(name: employee.name, avatarPath: employee.avatarPath, size: 34)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(employee.name).font(.callout.weight(.semibold)).foregroundStyle(palette.ink).lineLimit(1)

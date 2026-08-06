@@ -38,7 +38,7 @@ struct MainSidebarView: View {
 
     private var brandHeader: some View {
         HStack(spacing: AppTheme.Spacing.sm) {
-            AlexMark(size: 34)
+            ApplicationLogo(size: 34)
             VStack(alignment: .leading, spacing: 1) {
                 Text("AI Employee OS")
                     .font(.callout.weight(.semibold))
@@ -84,4 +84,17 @@ struct MainSidebarView: View {
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct ApplicationLogo: View {
+    let size: CGFloat
+
+    var body: some View {
+        Image(nsImage: NSApplication.shared.applicationIconImage)
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
+    }
 }
