@@ -26,17 +26,18 @@
 
 AI Employee OS turns an AI assistant into a governed local worker. The macOS client handles interaction and Keychain access, the Rust runtime owns state and permissions, and the Python worker handles intent, context, planning, and model calls.
 
-The default employee is Alex, an AI product manager. Multiple employee profiles can be created and edited, while the validated work-execution path currently remains Alex with the built-in `prd-generation` skill.
+The default employee is Alex, an AI product manager. Multiple employee profiles can be created and edited. Work execution requires a bound Skill with Manifest `schema_version: 2.0.0` and readiness `ready`. The validated example on the current mainline is `structured-summary`. Legacy Manifest 1.0 skills such as `prd-generation` remain installed for browsing but are `incompatible` with the Generic Run Kernel.
 
 ## Current capabilities
 
 - Native SwiftUI workspace with Office, Contacts, Work, Skills, Tools, and Settings.
 - Persistent multi-turn conversations backed by SQLite.
 - Employee Identity, Soul, and Persona editing, with the effective prompt compiled by the Rust runtime.
-- Intent routing between conversation and governed task execution.
-- Repository-installed Agent, Skill, and Tool packages.
+- Intent routing between conversation and governed task execution via Resolver and the Generic Run Kernel (Golden Path removed).
+- Repository-installed Agent, Skill, and Tool packages. Built-in tools on mainline: `file-tool` (read) and `document-tool`.
 - Task and Action state machines with approval, cancellation, audit, events, and recovery.
 - Tool execution through the Rust `ToolExecutor`, including idempotency and result verification.
+- In progress: local file create/edit (`local-file-operations`) and governed web search (`agent-reach-tool` / `web-search`).
 - Local packaging of the Swift client, Rust runtime, Python worker, and built-in packages into a macOS app bundle.
 - Claude Cream design tokens with light and dark appearances.
 
@@ -152,13 +153,14 @@ The current MVP includes real conversations, employee profile editing, repositor
 
 The following capabilities are intentionally out of scope for the current MVP:
 
-- Computer Use
+- Computer Use and arbitrary website scraping
 - Multi-Agent collaboration
 - Cloud Sync
 - Marketplace distribution
 - Enterprise RBAC
-- Real-time web retrieval
 - Notarized distribution, automatic updates, and DMG packaging
+
+Governed web search through `agent-reach-tool` / `web-search` is in progress and is not yet part of the main validation path.
 
 Runtime infrastructure for Memory, Knowledge, Evaluation, permissions, approval, and tracing exists, but not every capability is fully exposed in the product interface.
 

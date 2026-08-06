@@ -10,7 +10,9 @@
 2. 在客户端编辑员工 Identity / Soul / Persona；Effective Prompt 由 Rust Runtime 单向编译。
 3. 与员工完成可跨重启恢复的多轮对话（默认员工为 Alex / `ai-product-manager`）。
 4. Skill / Tool 由仓库 Package 安装（客户端不创建）；Runtime bootstrap 安装内置 Package 后，技能库与工具库可浏览。
-5. 对话经意图识别区分闲聊与工作：闲聊走 Python chat worker；工作意图通过 per-Skill readiness、Resolver、Generic Run Kernel 和 ToolExecutor 执行，不再进入 Golden Path。
+5. 对话经意图识别区分闲聊与工作：闲聊走 Python chat worker；工作意图仅在存在 readiness=`ready` 的 Skill 时，经 Resolver → Generic Run Kernel → ToolExecutor 执行。Golden Path 已移除。
+
+可执行 Skill 必须是 Manifest `schema_version: 2.0.0`。仓库中 `prd-generation` / `requirement-analysis` 仍为 Manifest 1.0，readiness 为 `incompatible`，不再作为工作执行主验证路径。当前已合入的可执行示例为 `structured-summary`。
 
 客户端已支持多员工 Profile 的创建、编辑与停用；多员工工作执行与 per-employee `tasks_enabled` 尚未成为主验证路径。
 
@@ -34,7 +36,15 @@
 - DeepSeek 驱动的多轮对话与意图路由
 - 员工 Profile：Identity / Soul / Persona
 - 仓库内置 Agent / Skill / Tool Package 的安装、列表与 Skill 绑定
+- 已合入内置 Tool：`file-tool`（读授权本地文件）、`document-tool`
+- 已合入可执行 Skill 示例：`structured-summary`（Manifest 2.0）
 - Task Inspector（在 `tasks_enabled` 时展示执行步骤与交付）
+
+### 进行中（未完成合入 / 未成主验证路径）
+
+- `file-tool` 写能力（`create_file` / `edit_file`）与 Skill `local-file-operations`
+- 受控网络搜索：`agent-reach-tool`（`search_web`）与 Skill `web-search`（依赖本机 `mcporter` + Exa）
+- 将上述能力纳入 bootstrap 绑定、分发校验与端到端主验证
 
 ### Runtime 已具备、产品面尚未完整暴露
 
@@ -44,7 +54,7 @@
 
 ### 暂不包含
 
-Computer Use、Multi-Agent 协作、Cloud Sync、Marketplace、企业 RBAC、实时网页抓取。
+Computer Use、任意站点网页抓取、Multi-Agent 协作、Cloud Sync、Marketplace、企业 RBAC、公证发行与自动更新。
 
 ## 架构边界
 
@@ -65,6 +75,7 @@ Python Agent Worker         意图分类、闲聊、Context/规划推理；不�
 - Skill 通过 `agent_skills` 绑定到员工；Tool 为全局安装（无 per-agent Tool 绑定表），客户端不可创建 Package。
 - `tasks_enabled` 仅为兼容派生字段；授权与路由使用当前员工每个 Skill 的 `ready | disabled | missing_dependency | incompatible | invalid_package`。
 - Python Task Worker 只返回 `ask_user | tool_call | complete`；安全字段和所有 Tool 调用由 Rust 生成与执行。
+- 工作执行只走 Generic Run Kernel；禁止恢复 Golden Path。
 
 ## 状态与安全不变量
 
