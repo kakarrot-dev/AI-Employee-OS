@@ -38,16 +38,25 @@ with tempfile.TemporaryDirectory() as directory:
     assert "<instructions>" not in alex_prompt["prompt"]
 
     caps = run(database, "capabilities", "--repository-root", str(ROOT))
-    assert caps["skills_installed"] >= 2
-    assert caps["tools_installed"] >= 2
+    assert caps["skills_installed"] == 2
+    assert caps["tools_installed"] == 2
     assert caps["tasks_enabled"] is True
     assert caps["can_create_packages"] is False
     skill_ids = {item["id"] for item in run(database, "skills-list", "--repository-root", str(ROOT))["skills"]}
-    tool_ids = {item["id"] for item in run(database, "tools-list", "--repository-root", str(ROOT))["tools"]}
-    assert "prd-generation" in skill_ids
-    assert "requirement-analysis" in skill_ids
-    assert "file-tool" in tool_ids
-    assert "document-tool" in tool_ids
+    tools = run(database, "tools-list", "--repository-root", str(ROOT))["tools"]
+    by_id = {item["id"]: item for item in tools}
+    tool_ids = set(by_id)
+    assert skill_ids == {"local-file-operations", "web-search"}
+    assert tool_ids == {"file-tool", "agent-reach-tool"}
+    file_tool = by_id["file-tool"]
+    assert "本地文件" in file_tool.get("documentation", "")
+    assert {action["name"] for action in file_tool["actions"]} == {"read_file", "create_file", "edit_file"}
+    assert next(action for action in file_tool["actions"] if action["name"] == "create_file")["risk_level"] == 2
+    reach = by_id["agent-reach-tool"]
+    assert "Agent Reach" in reach.get("documentation", "")
+    assert reach["actions"][0]["name"] == "search_web"
+    assert reach["actions"][0]["required_permissions"] == ["network.search"]
+    assert "data_sources" in reach
 
     alex_skills = {
         item["id"]
@@ -60,15 +69,14 @@ with tempfile.TemporaryDirectory() as directory:
             "ai-product-manager",
         )["skills"]
     }
-    assert "prd-generation" in alex_skills
-    assert "requirement-analysis" in alex_skills
+    assert alex_skills == {"local-file-operations", "web-search"}
     unbound = run(
         database,
         "unbind-skill",
         "--agent-id",
         "ai-product-manager",
         "--skill-id",
-        "requirement-analysis",
+        "web-search",
     )
     assert unbound["unbound"] is True
     alex_skills_after = {
@@ -80,14 +88,14 @@ with tempfile.TemporaryDirectory() as directory:
             "ai-product-manager",
         )["skills"]
     }
-    assert "requirement-analysis" not in alex_skills_after
+    assert "web-search" not in alex_skills_after
     rebound = run(
         database,
         "bind-skill",
         "--agent-id",
         "ai-product-manager",
         "--skill-id",
-        "requirement-analysis",
+        "web-search",
         "--skill-version",
         "1.0.0",
     )

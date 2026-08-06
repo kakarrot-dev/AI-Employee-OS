@@ -18,9 +18,11 @@ swiftc \
   apps/macos/AIEmployee/Sources/AIEmployee/Models/Employee.swift \
   apps/macos/AIEmployee/Sources/AIEmployee/Models/Conversation.swift \
   apps/macos/AIEmployee/Sources/AIEmployee/Models/AppDestination.swift \
+  apps/macos/AIEmployee/Sources/AIEmployee/Models/RuntimeCapabilities.swift \
   apps/macos/AIEmployee/Sources/AIEmployee/Support/EmployeePresentation.swift \
   apps/macos/AIEmployee/Sources/AIEmployee/Support/MarkdownBlock.swift \
   apps/macos/AIEmployee/Sources/AIEmployee/Support/TaskPresentation.swift \
+  apps/macos/AIEmployee/Sources/AIEmployee/Support/ToolPresentation.swift \
   apps/macos/AIEmployee/Tests/ClientModelChecks.swift \
   -o "$CLIENT_CHECK_BINARY"
 "$CLIENT_CHECK_BINARY"

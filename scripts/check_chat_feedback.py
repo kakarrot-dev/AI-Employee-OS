@@ -6,6 +6,9 @@ store = Path(
 workspace = Path(
     "apps/macos/AIEmployee/Sources/AIEmployee/Views/EmployeeChat/EmployeeChatWorkspaceView.swift"
 ).read_text()
+inspector = Path(
+    "apps/macos/AIEmployee/Sources/AIEmployee/Views/EmployeeChat/TaskInspectorView.swift"
+).read_text()
 
 sending_index = store.index("isSending = true; error = nil")
 optimistic_index = store.index("let optimistic = ChatMessage")
@@ -56,6 +59,41 @@ assert "message.id == conversationStore.latestUserMessageID" in workspace, (
 )
 assert "TextEditor(text: $editingText)" in workspace and 'Label("重新发送", systemImage: "arrow.up")' in workspace, (
     "user edits must happen inside the original message bubble"
+)
+assert 'activeRun.runPhase == "waiting_approval"' in workspace and "LiveActionApprovalBar" in workspace, (
+    "a live approval request must replace the generic working status bar"
+)
+assert 'Button("拒绝", role: .destructive) { store.resolveApproval(for: run, approve: false) }' in workspace, (
+    "live approval must expose a real reject action"
+)
+assert 'Button("允许一次") { store.resolveApproval(for: run, approve: true) }' in workspace, (
+    "live approval must expose a real one-time approval action"
+)
+assert "employeeName" not in inspector and "employeeDepartment" not in inspector, (
+    "the work inspector must not repeat static employee profile fields"
+)
+for section in ["当前工作", "工作计划", "运行诊断"]:
+    assert section in inspector, f"the dynamic work inspector must render {section}"
+assert "run.updatedAt" in inspector and "run.skillID" in inspector and "activeAction(run)" in inspector, (
+    "the inspector must derive status from persisted Runtime facts"
+)
+assert 'DisclosureGroup("技术详情"' in inspector, (
+    "raw Runtime identifiers and errors must stay behind technical disclosure"
+)
+assert "message.content == \"执行已暂停，等待你批准所需权限。\"" in workspace, (
+    "the task timeline must suppress the redundant persisted approval reply"
+)
+assert "store.runs.filter { !hasFinalReply(for: $0) }" in workspace, (
+    "a successful conversational run must yield to its final assistant reply"
+)
+assert 'Text("整理结果并回复")' in inspector and "planStepCount(run)" in inspector, (
+    "the visible plan must include final response synthesis after Tool actions"
+)
+assert "private var conversationRuns" in workspace and "return conversationRuns.first" in workspace, (
+    "the inspector must follow the current employee conversation instead of stale global task selection"
+)
+assert "let selected = store.runs.first(where:" not in workspace, (
+    "the chat inspector must not reuse an unrelated historical task selection"
 )
 
 print("chat feedback checks: ok")
