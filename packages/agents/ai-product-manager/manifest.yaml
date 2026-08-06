@@ -8,14 +8,14 @@ agent:
   status: active
   persona: persona/persona.yaml
   skills:
-    - id: requirement-analysis
+    - id: local-file-operations
       version: 1.0.0
-    - id: prd-generation
+    - id: web-search
       version: 1.0.0
   tools:
     - id: file-tool
       version: 1.0.0
-    - id: document-tool
+    - id: agent-reach-tool
       version: 1.0.0
   memory_enabled: true
   evaluation_enabled: true

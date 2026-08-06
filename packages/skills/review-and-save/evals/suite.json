@@ -1,1 +1,0 @@
-{"schema_version":"1.0.0","cases":[{"id":"review-save","input":{"path":"review.md","content":"明确内容"},"required_output_fields":["path"]}]}

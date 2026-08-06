@@ -1,0 +1,1 @@
+[{"id":"search-with-sources","input":{"text":"搜索 Rust 官方文档"},"expected_tool":"agent-reach-tool.search_web"},{"id":"empty-query","input":{"text":"网络搜索"},"expected_error":"tool_execution_failed"}]

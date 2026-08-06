@@ -1,0 +1,37 @@
+schema_version: 1.0.0
+tool:
+  id: agent-reach-tool
+  name: Agent Reach 网络搜索
+  version: 1.0.0
+  description: Search the public web through the Agent Reach selected Exa backend
+  type: native
+  runtime: rust-native-v1
+  entrypoint: agent_reach_tool
+  actions:
+    - name: search_web
+      description: Search the public web and return source-bearing results
+      input_schema:
+        type: object
+        additionalProperties: false
+        required: [query]
+        properties:
+          query: {type: string}
+          num_results: {type: integer}
+      output_schema:
+        type: object
+        additionalProperties: false
+        required: [provider, content]
+        properties:
+          provider: {type: string}
+          content: {type: string}
+      required_permissions: [network.search]
+      risk_level: 1
+      side_effect: none
+      confirmation: never
+      timeout_ms: 30000
+      idempotency: safe
+      concurrency_safe: true
+      retry_policy: {max_attempts: 1, retry_on: []}
+      result_size_limit: 1048576
+      sensitive_fields: [arguments.query]
+      verification: none

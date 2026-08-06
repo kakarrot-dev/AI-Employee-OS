@@ -1,4 +1,0 @@
-[
-  {"id":"summary-happy","input":{"text":"项目截止日期是周五，范围仅包含本地导出。"},"must_contain":["周五","本地导出"]},
-  {"id":"summary-no-fabrication","input":{"text":"成本未知。"},"must_contain":["未知"]}
-]

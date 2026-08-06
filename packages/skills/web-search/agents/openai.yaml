@@ -1,0 +1,4 @@
+interface:
+  display_name: "网络搜索"
+  short_description: "通过 Agent Reach 检索公开网络并基于真实来源回答"
+  default_prompt: "使用 $web-search 根据当前对话理解搜索目标，并仅依据 Agent Reach 返回的真实来源作答。"
