@@ -10,6 +10,7 @@ final class EmployeeStore: ObservableObject {
     @Published var isPresentingEditor = false
     @Published var editingEmployee: Employee?
     @Published var error: String?
+    @Published var notice: UXToastNotice?
 
     init(service: RuntimeService) {
         self.service = service
@@ -37,12 +38,17 @@ final class EmployeeStore: ObservableObject {
             selection = employee.id
             await reload()
             isPresentingEditor = false
+            notice = UXToastNotice(message: "员工资料已保存", tone: .success)
             return true
         } catch { self.error = error.localizedDescription; return false }
     }
 
     func remove(_ employee: Employee) async {
-        do { _ = try await service.employeeDelete(employee.id); await reload() }
+        do {
+            _ = try await service.employeeDelete(employee.id)
+            await reload()
+            notice = UXToastNotice(message: "员工资料已更新", tone: .success)
+        }
         catch { self.error = error.localizedDescription }
     }
 

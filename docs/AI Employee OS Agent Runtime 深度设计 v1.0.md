@@ -1,6 +1,6 @@
 # AI Employee OS Agent Runtime 深度设计 v1.0
 
-> 实现状态（对齐 `AGENTS.md` / ADR-031）：MVP 工作执行使用自研 Graph + Golden Path，经 `run-task` 与 Rust `ToolExecutor`。Deep Agents / LangGraph 仅为长期可选规划器方向，**不得**成为 Task/Action 状态源。下文若出现 Deep Agents / LangGraph 设计段落，按「后置选项」阅读，不以之覆盖现行编排。
+> 实现状态（对齐 ADR-032）：新主链为 Rust Generic Run Kernel + Python bounded decision worker，经 `run-skill` 与 Rust `ToolExecutor`；Golden Path 仅作迁移期兼容。Deep Agents / LangGraph 不得成为 Task/Action/Run 状态源。
 
 目标：
 

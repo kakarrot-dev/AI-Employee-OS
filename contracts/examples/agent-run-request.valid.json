@@ -1,0 +1,1 @@
+{"schema_version":"1.0.0","task":{"id":"task_1","input":{"text":"hello"}},"run":{"id":"run_1"},"agent":{"id":"agent_1"},"skill":{"id":"summary"},"tool_surface":[],"context":{"sections":[]},"observations":[]}

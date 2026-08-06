@@ -44,33 +44,7 @@ final class TaskStore: ObservableObject {
     func confirmAndRun() {
         guard !isSubmitting else { return }
         awaitingWorkConfirmation = false
-        isSubmitting = true
-        let id = "task_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
-        let input = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let createdAt = ISO8601DateFormatter().string(from: .now)
-        draft = ""
-        runs.insert(TaskRun(id: id, agentID: "ai-product-manager", input: input, createdAt: createdAt, status: .running, actions: [], events: [], response: nil, error: nil, artifactPath: nil, evaluation: nil, isCancellationRequested: false), at: 0)
-        selection = id
-        logger.info("Started confirmed task \(id, privacy: .public)")
-        Task {
-            let eventTask = Task { await pollEvents(for: id) }
-            do {
-                let response = try await service.run(id, input)
-                eventTask.cancel()
-                let existingEvents = runs.first(where: { $0.id == id })?.events ?? []
-                let known = Set(existingEvents.map(\.eventID))
-                let finalEvents = existingEvents + response.events.filter { !known.contains($0.eventID) }
-                replace(id, with: TaskRun(id: response.taskID, agentID: "ai-product-manager", input: input, createdAt: createdAt, status: response.status, actions: response.graph.nodes, events: finalEvents, response: response, error: nil, artifactPath: response.artifactPath, evaluation: response.evaluation, isCancellationRequested: false))
-                selection = response.taskID
-                isSubmitting = false
-                logger.info("Task completed \(response.taskID, privacy: .public) status=\(response.status.rawValue, privacy: .public)")
-            } catch {
-                eventTask.cancel()
-                update(id) { $0.status = .failed; $0.error = error.localizedDescription }
-                isSubmitting = false
-                logger.error("Task failed \(id, privacy: .public)")
-            }
-        }
+        historyError = "通用 Runtime 需要从员工对话中选择员工与 Skill。请在通讯录打开员工后发起工作。"
     }
 
     func cancelWorkConfirmation() { awaitingWorkConfirmation = false }
@@ -90,6 +64,29 @@ final class TaskStore: ObservableObject {
         }
     }
 
+    func resolveApproval(for run: TaskRun, approve: Bool) {
+        guard let runID = run.runID else { return }
+        if approve && KeychainService.load() == nil {
+            update(run.id) { $0.error = "请先在设置中配置 DeepSeek API Key。" }
+            return
+        }
+        Task {
+            do {
+                _ = try await service.continueRun(runID, approve, approve ? KeychainService.load() : nil)
+                await restoreHistory()
+            } catch { update(run.id) { $0.error = error.localizedDescription } }
+        }
+    }
+
+    func resolveUnknown(_ actionID: String, for run: TaskRun, succeeded: Bool) {
+        Task {
+            do {
+                _ = try await service.resolveUnknown(actionID, succeeded ? "succeeded" : "failed")
+                await restoreHistory()
+            } catch { update(run.id) { $0.error = error.localizedDescription } }
+        }
+    }
+
     private func update(_ id: String, mutation: (inout TaskRun) -> Void) {
         guard let index = runs.firstIndex(where: { $0.id == id }) else { return }
         mutation(&runs[index])
@@ -105,7 +102,7 @@ final class TaskStore: ObservableObject {
         do {
             let history = try await service.loadHistory()
             let persistedRuns = history.tasks.map { item in
-                TaskRun(id: item.taskID, agentID: item.agentID, input: item.input, createdAt: item.createdAt, status: item.status, actions: item.actions, events: item.events, response: nil, error: nil, artifactPath: item.artifactPath, evaluation: item.evaluation, isCancellationRequested: item.cancellationRequested)
+                TaskRun(id: item.taskID, agentID: item.agentID, input: item.input, createdAt: item.createdAt, status: item.status, actions: item.actions, events: item.events, response: nil, error: nil, artifactPath: item.verifiedArtifactPath ?? item.artifactPath, evaluation: item.evaluation, isCancellationRequested: item.cancellationRequested, runID: item.runID, runPhase: item.runPhase, waitingReason: item.waitingReason, stopReason: item.stopReason, deliverableTitle: item.deliverableTitle, deliverableStatus: item.deliverableStatus, verifiedArtifactPath: item.verifiedArtifactPath)
             }
             let persistedIDs = Set(persistedRuns.map(\.id))
             let optimisticRuns = runs.filter { !persistedIDs.contains($0.id) && $0.status == .running }
@@ -151,6 +148,13 @@ final class TaskStore: ObservableObject {
             run.artifactPath = item.artifactPath
             run.evaluation = item.evaluation
             run.isCancellationRequested = item.cancellationRequested
+            run.runID = item.runID
+            run.runPhase = item.runPhase
+            run.waitingReason = item.waitingReason
+            run.stopReason = item.stopReason
+            run.deliverableTitle = item.deliverableTitle
+            run.deliverableStatus = item.deliverableStatus
+            run.verifiedArtifactPath = item.verifiedArtifactPath
             if item.status != .running { run.error = nil }
         }
     }

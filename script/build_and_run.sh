@@ -15,6 +15,7 @@ APP_BUNDLE="$ROOT_DIR/dist/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_BINARY="$APP_CONTENTS/MacOS/$APP_NAME"
 RUNTIME_BINARY="$APP_CONTENTS/MacOS/ai-employee-runtime"
+HELPER_BINARY="$APP_CONTENTS/Helpers/AIEmployeeCredentialBroker"
 RUNTIME_RESOURCES="$APP_CONTENTS/Resources/AIEmployeeRuntime"
 SIGNING_IDENTITY_NAME="${AI_EMPLOYEE_SIGNING_IDENTITY:-AI Employee OS Local Development}"
 
@@ -35,11 +36,14 @@ mkdir -p "$ROOT_DIR/storage/database" "$ROOT_DIR/outputs"
 cargo build --manifest-path "$ROOT_DIR/Cargo.toml" -p ai-employee-runtime
 swift build --package-path "$PACKAGE_DIR"
 BUILD_BINARY="$(swift build --package-path "$PACKAGE_DIR" --show-bin-path)/$APP_NAME"
+CREDENTIAL_BROKER_BINARY="$(swift build --package-path "$PACKAGE_DIR" --show-bin-path)/AIEmployeeCredentialBroker"
 
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_CONTENTS/MacOS"
+mkdir -p "$APP_CONTENTS/Helpers"
 cp "$BUILD_BINARY" "$APP_BINARY"
 cp "$ROOT_DIR/target/debug/ai-employee-runtime" "$RUNTIME_BINARY"
+cp "$CREDENTIAL_BROKER_BINARY" "$HELPER_BINARY"
 mkdir -p "$APP_CONTENTS/Resources"
 cp "$ROOT_DIR/apps/macos/AIEmployee/Resources/AIEmployee.icns" "$APP_CONTENTS/Resources/AIEmployee.icns"
 mkdir -p "$RUNTIME_RESOURCES/runtime" \
@@ -52,9 +56,12 @@ rsync -a --exclude '.DS_Store' "$ROOT_DIR/packages/skills/" "$RUNTIME_RESOURCES/
 rsync -a --exclude '.DS_Store' "$ROOT_DIR/packages/tools/" "$RUNTIME_RESOURCES/packages/tools/"
 chmod +x "$APP_BINARY"
 chmod +x "$RUNTIME_BINARY"
+chmod +x "$HELPER_BINARY"
 sed -e "s/__APP_NAME__/$APP_NAME/g" -e "s/__BUNDLE_ID__/$BUNDLE_ID/g" \
   "$ROOT_DIR/apps/macos/AIEmployee/Resources/Info.plist.template" > "$APP_CONTENTS/Info.plist"
 /usr/bin/codesign --force --sign "$SIGNING_IDENTITY" --options runtime "$RUNTIME_BINARY"
+/usr/bin/codesign --force --sign "$SIGNING_IDENTITY" --options runtime \
+  -i "$BUNDLE_ID.credential-broker" "$HELPER_BINARY"
 /usr/bin/codesign --force --sign "$SIGNING_IDENTITY" --options runtime --entitlements \
   "$ROOT_DIR/apps/macos/AIEmployee/Resources/AIEmployee.entitlements" "$APP_BUNDLE"
 

@@ -3,6 +3,7 @@ import SwiftUI
 struct TaskInspectorView: View {
     let run: TaskRun?
     let employee: Employee?
+    @ObservedObject var store: TaskStore
 
     @State private var diagnosticsExpanded = false
     @Environment(\.colorScheme) private var colorScheme
@@ -22,7 +23,7 @@ struct TaskInspectorView: View {
                     inspectorDivider
                     plan(run)
 
-                    if let path = run.response?.artifactPath ?? run.artifactPath {
+                    if run.deliverableStatus == "verified", let path = run.verifiedArtifactPath ?? run.response?.artifactPath ?? run.artifactPath {
                         inspectorDivider
                         deliverable(run, path: path)
                     }
@@ -70,6 +71,26 @@ struct TaskInspectorView: View {
             Label(run.status.title, systemImage: run.status.systemImage)
                 .font(.caption)
                 .foregroundStyle(statusColor(run.status))
+            if let phase = run.runPhase {
+                Text(TaskPresentation.runPhase(phase, waitingReason: run.waitingReason))
+                    .font(.caption)
+                    .foregroundStyle(phase == "waiting_approval" || phase == "waiting_user" ? palette.warning : palette.muted)
+            }
+            if run.runPhase == "waiting_approval" {
+                HStack {
+                    Button("拒绝") { store.resolveApproval(for: run, approve: false) }
+                    Button("批准并继续") { store.resolveApproval(for: run, approve: true) }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
+            if let unknown = run.actions.first(where: { $0.status == "result_unknown" }) {
+                Text("工具结果无法自动确认，请人工核验后收敛；不会自动重试。")
+                    .font(.caption).foregroundStyle(palette.warning)
+                HStack {
+                    Button("核验为失败") { store.resolveUnknown(unknown.actionID, for: run, succeeded: false) }
+                    Button("核验为成功") { store.resolveUnknown(unknown.actionID, for: run, succeeded: true) }
+                }
+            }
         }
         .padding(AppTheme.Spacing.md)
     }
@@ -130,7 +151,7 @@ struct TaskInspectorView: View {
     private func deliverable(_ run: TaskRun, path: String) -> some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             inspectorTitle("交付物")
-            Label("PRD", systemImage: "doc.text.fill")
+            Label(run.deliverableTitle ?? "已验证交付物", systemImage: "doc.text.fill")
                 .font(.callout.weight(.medium))
                 .foregroundStyle(palette.ink)
             if let evaluation = run.response?.evaluation ?? run.evaluation {
@@ -150,6 +171,9 @@ struct TaskInspectorView: View {
         DisclosureGroup("运行诊断", isExpanded: $diagnosticsExpanded) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                 LabeledContent("Task ID", value: run.id)
+                if let runID = run.runID { LabeledContent("Run ID", value: runID) }
+                if let phase = run.runPhase { LabeledContent("Run Phase", value: phase) }
+                if let reason = run.stopReason { LabeledContent("Stop Reason", value: reason) }
                 LabeledContent("Events", value: "\(run.events.count)")
                 if let response = run.response {
                     LabeledContent("Skill", value: "\(response.graph.skillID)@\(response.graph.skillVersion)")

@@ -27,6 +27,12 @@ enum ClientModelChecks {
             "Markdown document structure"
         )
         expect(
+            MarkdownBlock.parse("| 名称 | 状态 |\n| --- | :---: |\n| Alex | 工作中 |") == [
+                .table(headers: ["名称", "状态"], rows: [["Alex", "工作中"]])
+            ],
+            "Markdown table structure"
+        )
+        expect(
             MarkdownBlock.parse("```\nline one\nline two") == [.code("line one\nline two")],
             "unclosed code block preservation"
         )
@@ -57,11 +63,24 @@ enum ClientModelChecks {
         expect(employee.persona.thinking.approach == "user_value_first", "persona defaults match Alex package")
         let encoded = try! JSONEncoder().encode(employee)
         expect((try? JSONDecoder().decode(Employee.self, from: encoded))?.basePrompt == employee.basePrompt, "employee contract round trip")
+        let draftErrors = EmployeeDraftValidation.errors(employee: employee, soulPrompt: "")
+        expect(draftErrors[.id] != nil && draftErrors[.soul] != nil, "employee draft validation reports blocking fields")
+        var validEmployee = employee
+        validEmployee.id = "research-assistant"
+        validEmployee.name = "研究助理"
+        validEmployee.role = "AI 研究员"
+        validEmployee.department = "研究部"
+        expect(EmployeeDraftValidation.errors(employee: validEmployee, soulPrompt: "以证据为先").isEmpty, "employee draft validation accepts a complete profile")
         let chatSend = """
         {"schema_version":"1.0","conversation_id":"c1","employee_id":"ai-product-manager","config_version":2,"message":{"id":"m1","role":"assistant","content":"你好","created_at":"2026-08-05T00:00:00Z"}}
         """.data(using: .utf8)!
         let decodedSend = try! JSONDecoder().decode(ChatSendResponse.self, from: chatSend)
         expect(decodedSend.employeeID == "ai-product-manager" && decodedSend.configVersion == 2, "chat-send response includes employee and config version")
+        expect(TaskPresentation.time("1785982643508") != "1785982643508", "conversation time accepts Runtime millisecond timestamps")
+        expect(
+            TaskPresentation.time("2026-08-06T02:54:20.944Z") != "2026-08-06T02:54:20.944Z",
+            "conversation time accepts fractional ISO 8601 timestamps"
+        )
         expect(
             AppDestination.allCases == [.office, .contacts, .work, .skills, .tools, .settings],
             "main shell exposes the approved six destinations"

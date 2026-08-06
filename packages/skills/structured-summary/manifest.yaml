@@ -1,0 +1,46 @@
+schema_version: 2.0.0
+skill:
+  id: structured-summary
+  name: 结构化摘要
+  version: 1.0.0
+  description: 将输入材料整理为结构化摘要。
+  category: general
+  runtime_compatibility: ">=2.0.0 <3.0.0"
+  status: active
+  instructions: SKILL.md
+  routing:
+    explicit: true
+    triggers: [summarize, summary, 总结, 摘要]
+    positive_examples: ["总结这段材料"]
+    negative_examples: ["创建一个本地文件"]
+  context:
+    required: []
+    optional: []
+    max_bytes: 65536
+  tools: []
+  input_schema:
+    type: object
+    additionalProperties: false
+    required: [text]
+    properties:
+      text: {type: string}
+  output_schema:
+    type: object
+    additionalProperties: false
+    required: [summary]
+    properties:
+      summary: {type: string}
+  execution:
+    mode: agent_loop
+    max_model_turns: 4
+    max_tool_calls: 0
+    max_duration_ms: 60000
+    on_result_unknown: stop
+  deliverables:
+    required: false
+    allowed_types: [structured_result]
+    evidence: output_schema
+  evaluation:
+    timing: before_delivery
+    block_on_failure: true
+    suite: evals/suite.json

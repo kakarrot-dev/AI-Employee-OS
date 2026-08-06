@@ -62,6 +62,23 @@ pub fn reconcile_interrupted(
                 params![execution_status, now, call_id],
             )
             .map_err(|error| error.to_string())?;
+        if execution_status == "result_unknown" {
+            transaction.execute(
+                "UPDATE agent_runs SET phase='terminal',stop_reason='result_unknown',waiting_reason=NULL,revision=revision+1,updated_at=?1
+                 WHERE task_id=?2 AND phase!='terminal'",
+                params![now, task_id],
+            ).map_err(|error| error.to_string())?;
+        } else {
+            transaction.execute(
+                "UPDATE tasks SET status='failed',updated_at=?1 WHERE id=?2 AND status='running'",
+                params![now, task_id],
+            ).map_err(|error| error.to_string())?;
+            transaction.execute(
+                "UPDATE agent_runs SET phase='terminal',stop_reason='worker_interrupted',waiting_reason=NULL,revision=revision+1,updated_at=?1
+                 WHERE task_id=?2 AND phase!='terminal'",
+                params![now, task_id],
+            ).map_err(|error| error.to_string())?;
+        }
         transaction
             .execute(
                 "UPDATE actions SET status=?1, updated_at=?2
@@ -136,6 +153,12 @@ mod tests {
             .unwrap();
         assert_eq!(pure, "failed");
         assert_eq!(write, "result_unknown");
+        let task_status: String = connection
+            .query_row("SELECT status FROM tasks WHERE id='task'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(task_status, "failed");
         assert_eq!(
             reconcile_interrupted(&mut connection, "again").unwrap(),
             RecoverySummary {

@@ -14,16 +14,25 @@ pub fn install_skill_package(
     let raw = fs::read_to_string(path.join("manifest.yaml")).map_err(|e| e.to_string())?;
     let yaml: serde_yaml::Value = serde_yaml::from_str(&raw).map_err(|e| e.to_string())?;
     let manifest = serde_json::to_value(yaml).map_err(|e| e.to_string())?;
-    if manifest["schema_version"] != "1.0.0" {
+    if !matches!(manifest["schema_version"].as_str(), Some("1.0.0" | "2.0.0")) {
         return Err("unsupported schema_version".into());
     }
     let skill = &manifest["skill"];
     let id = text(skill, "id")?;
     let name = text(skill, "name")?;
     let version = text(skill, "version")?;
-    validate_dag(&skill["workflow"]["steps"])?;
-    validate_workflow_routes(skill)?;
-    for dependency in skill["required_tools"]
+    if manifest["schema_version"] == "1.0.0" {
+        validate_dag(&skill["workflow"]["steps"])?;
+        validate_workflow_routes(skill)?;
+    } else {
+        validate_v2_package(path, skill)?;
+    }
+    let dependencies = if manifest["schema_version"] == "1.0.0" {
+        &skill["required_tools"]
+    } else {
+        &skill["tools"]
+    };
+    for dependency in dependencies
         .as_array()
         .ok_or("required_tools must be array")?
     {
@@ -48,8 +57,8 @@ pub fn install_skill_package(
         }
         let declared_permissions: HashSet<&str> = dependency["permissions"]
             .as_array()
-            .ok_or("permissions must be array")?
-            .iter()
+            .into_iter()
+            .flatten()
             .filter_map(Value::as_str)
             .collect();
         let actions: HashSet<&str> = tool["tool"]["actions"]
@@ -79,7 +88,9 @@ pub fn install_skill_package(
                 .iter()
                 .filter_map(Value::as_str)
                 .collect();
-            if !required_permissions.is_subset(&declared_permissions) {
+            if manifest["schema_version"] == "1.0.0"
+                && !required_permissions.is_subset(&declared_permissions)
+            {
                 return Err(format!("permissions do not cover {tool_id}.{action}"));
             }
         }
@@ -90,6 +101,75 @@ pub fn install_skill_package(
          manifest_json=excluded.manifest_json,path=excluded.path,status='active',updated_at=excluded.updated_at",
         params![id,name,version,manifest.to_string(),path.to_string_lossy(),now]
     ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn validate_v2_package(path: &Path, skill: &Value) -> Result<(), String> {
+    if skill["execution"]["mode"] != "agent_loop" && skill["execution"]["mode"] != "workflow" {
+        return Err("unsupported execution mode".to_owned());
+    }
+    let instructions = text(skill, "instructions")?;
+    let instructions_path = path.join(instructions);
+    if !instructions_path.is_file() || !instructions_path.starts_with(path) {
+        return Err("instructions file is missing".to_owned());
+    }
+    if skill["execution"]["mode"] == "workflow" {
+        let workflow = skill["execution"]["workflow"]
+            .as_str()
+            .ok_or("workflow path missing")?;
+        if !path.join(workflow).is_file() {
+            return Err("workflow file is missing".to_owned());
+        }
+        let raw = fs::read_to_string(path.join(workflow)).map_err(|e| e.to_string())?;
+        let workflow_yaml: serde_yaml::Value =
+            serde_yaml::from_str(&raw).map_err(|e| e.to_string())?;
+        let workflow: Value = serde_json::to_value(workflow_yaml).map_err(|e| e.to_string())?;
+        if workflow["schema_version"] != "1.0.0" || workflow["engine"] != "runtime-dag-v2" {
+            return Err("unsupported workflow schema or engine".to_owned());
+        }
+        validate_dag(&workflow["steps"])?;
+        validate_v2_workflow_routes(skill, &workflow)?;
+    }
+    for key in [
+        "routing",
+        "context",
+        "input_schema",
+        "output_schema",
+        "deliverables",
+        "evaluation",
+    ] {
+        if !skill[key].is_object() {
+            return Err(format!("missing {key}"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_v2_workflow_routes(skill: &Value, workflow: &Value) -> Result<(), String> {
+    let allowed: HashSet<(&str, &str)> = skill["tools"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|tool| {
+            let tool_id = tool["id"].as_str().unwrap_or_default();
+            tool["actions"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(move |action| action.as_str().map(|action| (tool_id, action)))
+        })
+        .collect();
+    for step in workflow["steps"].as_array().ok_or("steps must be array")? {
+        if let Some(tool) = step.get("tool") {
+            let route = (text(tool, "id")?, text(tool, "action")?);
+            if !allowed.contains(&route) {
+                return Err(format!(
+                    "workflow route is not declared: {}.{}",
+                    route.0, route.1
+                ));
+            }
+        }
+    }
     Ok(())
 }
 

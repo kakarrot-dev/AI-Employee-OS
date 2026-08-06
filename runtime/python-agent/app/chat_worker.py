@@ -8,7 +8,7 @@ from .provider_config import ProviderConfig
 def main() -> int:
     try:
         request = json.loads(sys.stdin.read())
-        if set(request) != {"schema_version", "system_prompt", "messages"} or request["schema_version"] != "1.0":
+        if set(request) not in ({"schema_version", "system_prompt", "messages"}, {"schema_version", "system_prompt", "messages", "stream"}) or request["schema_version"] != "1.0":
             raise ValueError("unsupported chat request")
         system_prompt = request["system_prompt"]
         if not isinstance(system_prompt, str) or not system_prompt.strip():
@@ -27,7 +27,13 @@ def main() -> int:
             normalized.append(message)
         config = ProviderConfig()
         config.validate()
-        response = DeepSeekProvider(config.deepseek_model, config.request_timeout_seconds).complete(normalized)
+        provider = DeepSeekProvider(config.deepseek_model, config.request_timeout_seconds)
+        if request.get("stream") is True:
+            def publish(delta: str) -> None:
+                print(json.dumps({"type": "delta", "delta": delta}, ensure_ascii=False), flush=True)
+            response = provider.stream_complete(normalized, publish)
+        else:
+            response = provider.complete(normalized)
         print(json.dumps({
             "schema_version": "1.0",
             "content": response.content,

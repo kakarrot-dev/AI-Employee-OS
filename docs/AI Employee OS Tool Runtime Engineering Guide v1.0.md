@@ -1,6 +1,6 @@
 # 《AI Employee OS Tool Runtime Engineering Guide v1.0》
 
-> 实现状态：MVP 内置 File / Document / Knowledge Tool，一律经 Rust `ToolExecutor`。Browser、MCP、Computer Use、Marketplace 不在当前 MVP。Tool 全局安装，无 per-agent 绑定表。
+> 实现状态：Generic Run Kernel 只启用已注册的 `rust-native-v1` Adapter，一律经 Rust `ToolExecutor`。模型只提出 Tool ID、Action 与业务参数；安全字段全部由 Rust 生成。Browser、MCP、HTTP、Computer Use、Marketplace 不在当前 MVP。Tool 全局安装，无 per-agent 绑定表。
 
 目标：
 

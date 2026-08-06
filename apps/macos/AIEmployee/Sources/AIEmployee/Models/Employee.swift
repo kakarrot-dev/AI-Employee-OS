@@ -49,6 +49,28 @@ struct Employee: Codable, Identifiable, Sendable {
     }
 }
 
+enum EmployeeDraftField: Hashable {
+    case id, name, role, department, identity, soul
+}
+
+enum EmployeeDraftValidation {
+    static func errors(employee: Employee, soulPrompt: String) -> [EmployeeDraftField: String] {
+        var result: [EmployeeDraftField: String] = [:]
+        let normalizedID = employee.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !(3...64).contains(normalizedID.count) { result[.id] = "员工 ID 需为 3–64 个字符" }
+        if employee.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { result[.name] = "请填写员工姓名" }
+        if employee.role.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { result[.role] = "请填写员工岗位" }
+        if employee.department.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { result[.department] = "请填写所属部门" }
+        let identity = employee.basePrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if identity.isEmpty { result[.identity] = "请填写身份提示词" }
+        else if identity.count > 8000 { result[.identity] = "身份提示词不能超过 8000 个字符" }
+        let soul = soulPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        if soul.isEmpty { result[.soul] = "请填写灵魂提示词" }
+        else if soul.count > 8000 { result[.soul] = "灵魂提示词不能超过 8000 个字符" }
+        return result
+    }
+}
+
 struct EmployeeListResponse: Codable, Sendable { let schemaVersion: String; let employees: [Employee]; enum CodingKeys: String, CodingKey { case schemaVersion = "schema_version", employees } }
 struct EmployeeSaveResponse: Codable, Sendable { let schemaVersion: String; let id: String; let saved: Bool; enum CodingKeys: String, CodingKey { case schemaVersion = "schema_version", id, saved } }
 struct EmployeeDeleteResponse: Codable, Sendable { let schemaVersion: String; let id: String; let disposition: String; enum CodingKeys: String, CodingKey { case schemaVersion = "schema_version", id, disposition } }

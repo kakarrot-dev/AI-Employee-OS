@@ -27,6 +27,8 @@ struct ChatSendResponse: Codable, Sendable {
     let routedTo: String?
     let taskID: String?
     let artifactPath: String?
+    let runID: String?
+    let runPhase: String?
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
@@ -40,7 +42,14 @@ struct ChatSendResponse: Codable, Sendable {
         case routedTo = "routed_to"
         case taskID = "task_id"
         case artifactPath = "artifact_path"
+        case runID = "run_id"
+        case runPhase = "run_phase"
     }
+}
+
+struct ChatStreamDelta: Codable, Sendable {
+    let type: String
+    let delta: String
 }
 
 struct ChatDeleteResponse: Codable, Sendable {

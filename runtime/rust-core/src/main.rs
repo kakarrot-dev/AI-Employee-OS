@@ -1,6 +1,6 @@
 use std::{
-    env, fs,
-    io::Write,
+    env,
+    io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Command, ExitCode, Stdio},
     time::{SystemTime, UNIX_EPOCH},
@@ -10,13 +10,18 @@ use ai_employee_runtime::agent::install_agent_package;
 use ai_employee_runtime::employee_prompt::{
     compile_effective_prompt, legacy_mission_from_base_prompt,
 };
-use ai_employee_runtime::golden_path::{GoldenPathConfig, run as run_golden_path};
 use ai_employee_runtime::knowledge::{import_source, search as knowledge_search};
+use ai_employee_runtime::recovery::reconcile_interrupted;
+use ai_employee_runtime::run::{
+    ContinueRunConfig, RunSkillConfig, continue_after_verified_action, continue_run as resume_run,
+    continue_with_user_input, resolve_unknown_action, run_skill as execute_skill,
+};
 use ai_employee_runtime::skill_package::install_skill_package;
+use ai_employee_runtime::skill_resolver::{readiness as skill_readiness, resolve as resolve_skill};
 use ai_employee_runtime::storage::migrate;
 use ai_employee_runtime::tool_package::install_tool_package;
-use rusqlite::{Connection, TransactionBehavior, types::Type};
-use serde_json::json;
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, types::Type};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 fn main() -> ExitCode {
@@ -52,6 +57,11 @@ fn command() -> Result<serde_json::Value, String> {
         Some("knowledge-import") => knowledge_import_command(arguments),
         Some("knowledge-search") => knowledge_search_command(arguments),
         Some("run-task") => run_task(arguments),
+        Some("run-skill") => run_skill(arguments),
+        Some("run-status") => run_status(arguments),
+        Some("continue-run") => continue_run(arguments),
+        Some("resolve-action-result") => resolve_action_result(arguments),
+        Some("capability-readiness") => capability_readiness(arguments),
         Some("list-tasks") => list_tasks(arguments),
         Some("cancel-task") => cancel_task(arguments),
         Some("events") => list_events(arguments),
@@ -81,29 +91,20 @@ fn employee_arguments(
     ))
 }
 
-fn ensure_alex(connection: &mut Connection, root: &std::path::Path) -> Result<(), String> {
+fn ensure_default_agent(connection: &mut Connection, root: &std::path::Path) -> Result<(), String> {
     let stamp = now();
     bootstrap_packages(connection, root, &stamp)?;
-    let installed: bool = connection
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM agents WHERE id='ai-product-manager')",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|error| error.to_string())?;
-    if !installed {
-        install_agent_package(
-            connection,
-            &root.join("packages/agents/ai-product-manager"),
-            &stamp,
-        )
-        .map_err(|error| format!("could not install Alex: {error:?}"))?;
-    }
+    let default_agent = install_agent_package(
+        connection,
+        &root.join("packages/agents/ai-product-manager"),
+        &stamp,
+    )
+    .map_err(|error| format!("could not install default agent: {error:?}"))?;
     let alex_identity = "把模糊需求转化为可执行的产品方案。\n\n职责：需求分析、产品方案、可评审文档。\n\n边界：不虚构缺失事实；没有授权时不执行外部操作。\n\n可靠、直接地协助用户完成产品工作。闲聊不会执行 Skill 或 Tool；工作能力在绑定仓库 Package 后接通。";
     connection.execute(
         "INSERT OR IGNORE INTO employee_profiles (agent_id,department,mission,responsibilities_json,boundaries_json,soul_json,base_prompt,config_version,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,1,?8,?8)",
         rusqlite::params![
-            "ai-product-manager",
+            default_agent.id,
             "产品部",
             legacy_mission_from_base_prompt(alex_identity),
             json!([]).to_string(),
@@ -116,15 +117,22 @@ fn ensure_alex(connection: &mut Connection, root: &std::path::Path) -> Result<()
     // Skill 未随仓库/Bundle 提供时不阻断员工列表与对话；有包再绑定。
     let _ = bind_skill(
         connection,
-        "ai-product-manager",
+        &default_agent.id,
         "prd-generation",
         "1.0.0",
         &stamp,
     );
     let _ = bind_skill(
         connection,
-        "ai-product-manager",
+        &default_agent.id,
         "requirement-analysis",
+        "1.0.0",
+        &stamp,
+    );
+    let _ = bind_skill(
+        connection,
+        &default_agent.id,
+        "structured-summary",
         "1.0.0",
         &stamp,
     );
@@ -149,6 +157,11 @@ fn bootstrap_packages(
     let skills = [
         root.join("packages/skills/requirement-analysis"),
         root.join("packages/skills/prd-generation"),
+        root.join("packages/skills/structured-summary"),
+        root.join("packages/skills/write-note"),
+        root.join("packages/skills/inspect-and-summarize"),
+        root.join("packages/skills/review-pipeline"),
+        root.join("packages/skills/review-and-save"),
     ];
     for path in skills {
         if path.join("manifest.yaml").is_file() {
@@ -216,7 +229,7 @@ fn capabilities(mut arguments: impl Iterator<Item = String>) -> Result<serde_jso
         Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
     migrate(&mut connection).map_err(|e| e.to_string())?;
     if let Some(root) = repository_root {
-        ensure_alex(&mut connection, &root)?;
+        ensure_default_agent(&mut connection, &root)?;
     }
     let skills_installed: i64 = connection
         .query_row(
@@ -236,9 +249,10 @@ fn capabilities(mut arguments: impl Iterator<Item = String>) -> Result<serde_jso
         .query_row(
             "SELECT EXISTS(
                 SELECT 1 FROM agent_skills ash
-                JOIN skills s ON s.id = ash.skill_id AND s.status='active'
-                WHERE ash.agent_id='ai-product-manager' AND ash.enabled=1
-            ) AND EXISTS(SELECT 1 FROM tools WHERE status='active')",
+                JOIN agents a ON a.id=ash.agent_id AND a.status='active'
+                JOIN skills s ON s.id=ash.skill_id AND s.status='active'
+                WHERE ash.enabled=1 AND json_extract(s.manifest_json,'$.schema_version')='2.0.0'
+            )",
             [],
             |row| row.get(0),
         )
@@ -268,7 +282,7 @@ fn skills_list(mut arguments: impl Iterator<Item = String>) -> Result<serde_json
         Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
     migrate(&mut connection).map_err(|e| e.to_string())?;
     if let Some(root) = repository_root {
-        ensure_alex(&mut connection, &root)?;
+        ensure_default_agent(&mut connection, &root)?;
     }
     let skills = match agent_id {
         Some(agent_id) => {
@@ -342,7 +356,7 @@ fn tools_list(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
         Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
     migrate(&mut connection).map_err(|e| e.to_string())?;
     if let Some(root) = repository_root {
-        ensure_alex(&mut connection, &root)?;
+        ensure_default_agent(&mut connection, &root)?;
     }
     let mut statement = connection
         .prepare(
@@ -396,7 +410,7 @@ fn employees_list(
         Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
     migrate(&mut connection).map_err(|e| e.to_string())?;
     if let Some(root) = repository_root {
-        ensure_alex(&mut connection, &root)?;
+        ensure_default_agent(&mut connection, &root)?;
     }
     let mut statement = connection.prepare(
         "SELECT a.id,a.name,a.role,p.department,p.mission,p.responsibilities_json,p.boundaries_json,p.soul_json,
@@ -507,8 +521,11 @@ fn employee_delete(arguments: impl Iterator<Item = String>) -> Result<serde_json
     let (database, _, id) = employee_arguments(arguments, "--employee-id")?;
     let mut connection = Connection::open(database).map_err(|e| e.to_string())?;
     migrate(&mut connection).map_err(|e| e.to_string())?;
-    let referenced: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM conversations WHERE agent_id=?1 UNION SELECT 1 FROM tasks WHERE agent_id=?1)", [&id], |r| r.get(0)).map_err(|e| e.to_string())?;
-    if referenced || id == "ai-product-manager" {
+    let (referenced, package_managed): (bool, bool) = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM conversations WHERE agent_id=?1 UNION SELECT 1 FROM tasks WHERE agent_id=?1), package_path!='user-managed' FROM agents WHERE id=?1",
+        [&id], |r| Ok((r.get(0)?, r.get(1)?)),
+    ).map_err(|_| "employee not found".to_owned())?;
+    if referenced || package_managed {
         connection
             .execute(
                 "UPDATE agents SET status='disabled',updated_at=?2 WHERE id=?1",
@@ -590,6 +607,8 @@ fn chat_send(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
     let mut conversation_id = None;
     let mut agent_id = None;
     let mut input = None;
+    let mut stream_events = false;
+    let mut replace_message_id = None;
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
             "--repository-root" => repository_root = arguments.next().map(PathBuf::from),
@@ -597,6 +616,8 @@ fn chat_send(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
             "--conversation-id" => conversation_id = arguments.next(),
             "--employee-id" => agent_id = arguments.next(),
             "--input" => input = arguments.next(),
+            "--stream-events" => stream_events = true,
+            "--replace-message-id" => replace_message_id = arguments.next(),
             _ => return Err(usage()),
         }
     }
@@ -604,7 +625,7 @@ fn chat_send(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
     let database_path = database.ok_or_else(usage)?;
     let mut connection = Connection::open(&database_path).map_err(|error| error.to_string())?;
     migrate(&mut connection).map_err(|error| error.to_string())?;
-    ensure_alex(&mut connection, &root)?;
+    ensure_default_agent(&mut connection, &root)?;
     let conversation_id = conversation_id.ok_or_else(usage)?;
     let agent_id = agent_id.ok_or_else(usage)?;
     let input = input.ok_or_else(usage)?.trim().to_owned();
@@ -618,7 +639,7 @@ fn chat_send(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
             |row| row.get(0),
         )
         .map_err(|error| error.to_string())?;
-    if message_count >= 80 {
+    if message_count >= 80 && replace_message_id.is_none() {
         return Err(
             "conversation context limit reached; delete this history or start a new conversation"
                 .to_owned(),
@@ -633,16 +654,19 @@ fn chat_send(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
         .as_nanos();
     let user_id = format!("msg_user_{nonce}");
     let call_id = format!("model_call_{nonce}");
-    let user_sequence: i64 = connection
-        .query_row(
+    let tx = connection
+        .transaction()
+        .map_err(|error| error.to_string())?;
+    let user_sequence: i64 = if let Some(message_id) = &replace_message_id {
+        prepare_latest_user_revision(&tx, &conversation_id, message_id)?
+    } else {
+        tx.query_row(
             "SELECT COALESCE(MAX(sequence),0)+1 FROM messages WHERE conversation_id=?1",
             [&conversation_id],
             |row| row.get(0),
         )
-        .map_err(|e| e.to_string())?;
-    let tx = connection
-        .transaction()
-        .map_err(|error| error.to_string())?;
+        .map_err(|e| e.to_string())?
+    };
     tx.execute(
         "INSERT OR IGNORE INTO conversations VALUES (?1,?2,'员工对话','active',?3,?3)",
         rusqlite::params![conversation_id, agent_id, stamp],
@@ -666,13 +690,42 @@ fn chat_send(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
     .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
 
-    let tasks_enabled = tasks_enabled(&connection)?;
-    let intent = classify_user_intent(&root, &input)?;
-    if intent.is_task && tasks_enabled {
-        return complete_chat_as_task(
+    let waiting_run: Option<String> = connection
+        .query_row(
+            "SELECT r.id FROM agent_runs r
+             JOIN run_snapshots s ON s.run_id=r.id AND s.snapshot_type='context'
+             JOIN tasks t ON t.id=r.task_id
+             WHERE r.phase='waiting_user' AND t.agent_id=?1
+               AND json_extract(s.snapshot_json,'$.conversation_id')=?2
+             ORDER BY r.created_at DESC LIMIT 1",
+            rusqlite::params![agent_id, conversation_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    if let Some(run_id) = waiting_run {
+        return continue_chat_run(
             &mut connection,
             &root,
-            &database_path,
+            &conversation_id,
+            &agent_id,
+            config_version,
+            &call_id,
+            &run_id,
+            &input,
+            user_sequence,
+            nonce,
+        );
+    }
+
+    let tasks_enabled = skill_readiness(&connection, &agent_id)?
+        .iter()
+        .any(|item| item.readiness == "ready");
+    let intent = classify_user_intent(&root, &input)?;
+    if intent.is_task && tasks_enabled {
+        return route_chat_to_run(
+            &mut connection,
+            &root,
             &conversation_id,
             &agent_id,
             config_version,
@@ -685,7 +738,7 @@ fn chat_send(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
     }
 
     let history = chat_messages(&connection, &conversation_id)?;
-    let request = json!({"schema_version":"1.0","system_prompt":system_prompt,"messages":history});
+    let request = json!({"schema_version":"1.0","system_prompt":system_prompt,"messages":history,"stream":stream_events});
     let worker_root = root.join("runtime/python-agent");
     let mut child = Command::new("python3")
         .args(["-m", "app.chat_worker"])
@@ -702,10 +755,28 @@ fn chat_send(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
         .ok_or("chat worker stdin unavailable")?
         .write_all(request.to_string().as_bytes())
         .map_err(|e| e.to_string())?;
-    let output = child.wait_with_output().map_err(|e| e.to_string())?;
-    let payload: serde_json::Value = serde_json::from_slice(&output.stdout)
-        .map_err(|_| "DeepSeek returned an invalid response".to_owned())?;
-    if !output.status.success() {
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("chat worker stdout unavailable")?;
+    let mut payload = serde_json::Value::Null;
+    for line in BufReader::new(stdout).lines() {
+        let line = line.map_err(|error| error.to_string())?;
+        let event: serde_json::Value = serde_json::from_str(&line)
+            .map_err(|_| "DeepSeek returned an invalid response".to_owned())?;
+        if event.get("type").and_then(|value| value.as_str()) == Some("delta") {
+            if stream_events {
+                println!("{event}");
+                std::io::stdout()
+                    .flush()
+                    .map_err(|error| error.to_string())?;
+            }
+        } else {
+            payload = event;
+        }
+    }
+    let status = child.wait().map_err(|e| e.to_string())?;
+    if !status.success() {
         let code = payload
             .get("error_code")
             .and_then(|v| v.as_str())
@@ -759,26 +830,119 @@ fn chat_send(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
     }))
 }
 
+#[allow(clippy::too_many_arguments)]
+fn continue_chat_run(
+    connection: &mut Connection,
+    root: &Path,
+    conversation_id: &str,
+    agent_id: &str,
+    config_version: i64,
+    call_id: &str,
+    run_id: &str,
+    input: &str,
+    user_sequence: i64,
+    nonce: u128,
+) -> Result<serde_json::Value, String> {
+    let result = continue_with_user_input(
+        connection,
+        root,
+        Path::new("python3"),
+        run_id,
+        json!({"text": input}),
+    )?;
+    let phase = result
+        .get("phase")
+        .and_then(Value::as_str)
+        .unwrap_or("terminal");
+    let status = result
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("running");
+    let content = if phase == "waiting_user" {
+        result
+            .get("question")
+            .and_then(Value::as_str)
+            .unwrap_or("还需要补充信息。")
+            .to_owned()
+    } else if phase == "waiting_approval" {
+        "执行已暂停，等待你批准所需权限。".to_owned()
+    } else if let Some(summary) = result.pointer("/output/summary").and_then(Value::as_str) {
+        summary.to_owned()
+    } else {
+        format!("工作执行已收敛（状态：{status}）。")
+    };
+    let assistant_id = format!("msg_assistant_{nonce}");
+    let completed = now();
+    let tx = connection
+        .transaction()
+        .map_err(|error| error.to_string())?;
+    tx.execute(
+        "INSERT INTO messages VALUES (?1,?2,?3,'assistant',?4,?5)",
+        rusqlite::params![
+            assistant_id,
+            conversation_id,
+            user_sequence + 1,
+            content,
+            completed
+        ],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.execute(
+        "UPDATE model_calls SET status='succeeded',assistant_message_id=?2,completed_at=?3 WHERE id=?1",
+        rusqlite::params![call_id, assistant_id, completed],
+    ).map_err(|error| error.to_string())?;
+    tx.commit().map_err(|error| error.to_string())?;
+    Ok(json!({
+        "schema_version":"1.0", "conversation_id":conversation_id,
+        "employee_id":agent_id, "config_version":config_version,
+        "intent":"task", "intent_confidence":1.0, "intent_source":"pending_run",
+        "routed_to":"task", "task_id":result.get("task_id"),
+        "run_id":run_id, "run_phase":phase,
+        "message":{"id":assistant_id,"role":"assistant","content":content,"created_at":completed}
+    }))
+}
+
+fn prepare_latest_user_revision(
+    tx: &Transaction<'_>,
+    conversation_id: &str,
+    message_id: &str,
+) -> Result<i64, String> {
+    let latest_user_id: String = tx
+        .query_row(
+            "SELECT id FROM messages WHERE conversation_id=?1 AND role='user' ORDER BY sequence DESC LIMIT 1",
+            [conversation_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| "only the latest user message can be edited".to_owned())?;
+    if latest_user_id != message_id {
+        return Err("only the latest user message can be edited".to_owned());
+    }
+    let sequence = tx
+        .query_row(
+            "SELECT sequence FROM messages WHERE id=?1 AND conversation_id=?2 AND role='user'",
+            rusqlite::params![message_id, conversation_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|_| "editable user message was not found".to_owned())?;
+    tx.execute(
+        "DELETE FROM model_calls WHERE conversation_id=?1 AND user_message_id=?2",
+        rusqlite::params![conversation_id, message_id],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "DELETE FROM messages WHERE conversation_id=?1 AND sequence>=?2",
+        rusqlite::params![conversation_id, sequence],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(sequence)
+}
+
 #[derive(Clone)]
 struct IntentResult {
     intent: String,
     confidence: f64,
     source: String,
     is_task: bool,
-}
-
-fn tasks_enabled(connection: &Connection) -> Result<bool, String> {
-    connection
-        .query_row(
-            "SELECT EXISTS(
-                SELECT 1 FROM agent_skills ash
-                JOIN skills s ON s.id = ash.skill_id AND s.status='active'
-                WHERE ash.agent_id='ai-product-manager' AND ash.enabled=1
-            ) AND EXISTS(SELECT 1 FROM tools WHERE status='active')",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|e| e.to_string())
 }
 
 fn classify_user_intent(root: &Path, text: &str) -> Result<IntentResult, String> {
@@ -825,10 +989,9 @@ fn classify_user_intent(root: &Path, text: &str) -> Result<IntentResult, String>
     })
 }
 
-fn complete_chat_as_task(
+fn route_chat_to_run(
     connection: &mut Connection,
     root: &Path,
-    database: &Path,
     conversation_id: &str,
     agent_id: &str,
     config_version: i64,
@@ -838,20 +1001,19 @@ fn complete_chat_as_task(
     nonce: u128,
     intent: &IntentResult,
 ) -> Result<serde_json::Value, String> {
-    let output_dir = root.join("outputs");
-    fs::create_dir_all(&output_dir).map_err(|e| e.to_string())?;
-    let task_id = format!("task_chat_{nonce}");
-    let task_result = run_golden_path(&GoldenPathConfig {
-        repository_root: root.to_path_buf(),
-        database: database.to_path_buf(),
-        output_dir,
-        python: PathBuf::from("python3"),
-        task_input: input.to_owned(),
-        task_id: Some(task_id.clone()),
-        approve_write: true,
+    let task_result = resolve_skill(connection, agent_id, input).and_then(|skill_id| {
+        execute_skill(RunSkillConfig {
+            connection,
+            repository_root: root,
+            python: Path::new("python3"),
+            agent_id,
+            skill_id: &skill_id,
+            input: json!({"text":input}),
+            conversation_id: Some(conversation_id),
+        })
     });
     let completed = now();
-    let (content, status, artifact, task_id_out) = match task_result {
+    let (content, status, artifact, task_id_out, run_id, run_phase) = match task_result {
         Ok(value) => {
             let status = value
                 .get("status")
@@ -864,27 +1026,58 @@ fn complete_chat_as_task(
             let tid = value
                 .get("task_id")
                 .and_then(|v| v.as_str())
-                .unwrap_or(&task_id)
+                .unwrap_or("")
                 .to_owned();
-            let body = if artifact.is_empty() {
-                format!("已按工作执行（状态：{status}）。可在右侧工作检查器查看进度。")
+            let run_id = value
+                .get("run_id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_owned();
+            let phase = value
+                .get("phase")
+                .and_then(Value::as_str)
+                .unwrap_or("terminal")
+                .to_owned();
+            let body = if phase == "waiting_user" {
+                value
+                    .get("question")
+                    .and_then(Value::as_str)
+                    .unwrap_or("需要补充信息。")
+                    .to_owned()
+            } else if phase == "waiting_approval" {
+                "执行已暂停，等待你批准所需权限。".to_owned()
+            } else if let Some(summary) = value
+                .get("output")
+                .and_then(|item| item.get("summary"))
+                .and_then(Value::as_str)
+            {
+                summary.to_owned()
+            } else if artifact.is_empty() {
+                format!("工作执行已收敛（状态：{status}）。")
             } else {
                 format!(
                     "已按工作执行（状态：{status}）。\n交付物：`{artifact}`\n可在工作检查器查看步骤与评估。"
                 )
             };
-            (body, status.to_owned(), artifact.to_owned(), tid)
+            (
+                body,
+                status.to_owned(),
+                artifact.to_owned(),
+                tid,
+                run_id,
+                phase,
+            )
         }
         Err(error) => (
-            format!("识别到工作意图并尝试执行，但失败：{error}"),
+            format!("识别到工作意图，但无法启动匹配能力：{error}"),
             "failed".to_owned(),
             String::new(),
-            task_id,
+            String::new(),
+            String::new(),
+            "terminal".to_owned(),
         ),
     };
     let assistant_id = format!("msg_assistant_{nonce}");
-    // Re-open connection may be needed if golden_path held the db; we still have &mut connection
-    // but golden_path opened its own connection on the same file — OK for SQLite.
     let tx = connection.transaction().map_err(|e| e.to_string())?;
     tx.execute(
         "INSERT INTO messages VALUES (?1,?2,?3,'assistant',?4,?5)",
@@ -897,7 +1090,7 @@ fn complete_chat_as_task(
         ],
     )
     .map_err(|e| e.to_string())?;
-    let model_status = if status == "succeeded" {
+    let model_status = if status == "succeeded" || status == "running" {
         "succeeded"
     } else {
         "failed"
@@ -908,7 +1101,7 @@ fn complete_chat_as_task(
             call_id,
             model_status,
             assistant_id,
-            if status == "succeeded" {
+            if status == "succeeded" || status == "running" {
                 None::<String>
             } else {
                 Some("task_route_failed".to_owned())
@@ -928,6 +1121,8 @@ fn complete_chat_as_task(
         "intent_source": intent.source,
         "routed_to": "task",
         "task_id": task_id_out,
+        "run_id": if run_id.is_empty() { Value::Null } else { json!(run_id) },
+        "run_phase": run_phase,
         "artifact_path": if artifact.is_empty() { serde_json::Value::Null } else { json!(artifact) },
         "message":{"id":assistant_id,"role":"assistant","content":content,"created_at":completed}
     }))
@@ -970,6 +1165,7 @@ fn list_tasks(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
     let database = database.ok_or_else(usage)?;
     let mut connection = Connection::open(database).map_err(|error| error.to_string())?;
     migrate(&mut connection).map_err(|error| error.to_string())?;
+    reconcile_interrupted(&mut connection, &now()).map_err(|error| error.to_string())?;
     let mut statement = connection
         .prepare(
             "SELECT t.id,t.agent_id,t.input,t.status,t.created_at,t.updated_at,
@@ -991,6 +1187,13 @@ fn list_tasks(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
                     )) FROM runtime_events WHERE task_id=t.id ORDER BY sequence), '[]'),
                     EXISTS(SELECT 1 FROM task_cancellation_requests c
                            WHERE c.task_id=t.id AND c.acknowledged_at IS NULL)
+                    ,(SELECT id FROM agent_runs WHERE task_id=t.id ORDER BY created_at DESC LIMIT 1)
+                    ,(SELECT phase FROM agent_runs WHERE task_id=t.id ORDER BY created_at DESC LIMIT 1)
+                    ,(SELECT waiting_reason FROM agent_runs WHERE task_id=t.id ORDER BY created_at DESC LIMIT 1)
+                    ,(SELECT stop_reason FROM agent_runs WHERE task_id=t.id ORDER BY created_at DESC LIMIT 1)
+                    ,(SELECT title FROM deliverables WHERE task_id=t.id AND status='verified' ORDER BY created_at DESC LIMIT 1)
+                    ,(SELECT status FROM deliverables WHERE task_id=t.id ORDER BY created_at DESC LIMIT 1)
+                    ,(SELECT uri FROM artifacts WHERE task_id=t.id AND verification_status='verified' ORDER BY created_at DESC LIMIT 1)
              FROM tasks t LEFT JOIN actions a ON a.task_id=t.id
              GROUP BY t.id ORDER BY t.created_at DESC, t.id DESC",
         )
@@ -1019,7 +1222,14 @@ fn list_tasks(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
                 "events": serde_json::from_str::<serde_json::Value>(&events).map_err(|error| {
                     rusqlite::Error::FromSqlConversionFailure(10, Type::Text, Box::new(error))
                 })?,
-                "cancellation_requested": row.get::<_, bool>(11)?
+                "cancellation_requested": row.get::<_, bool>(11)?,
+                "run_id": row.get::<_, Option<String>>(12)?,
+                "run_phase": row.get::<_, Option<String>>(13)?,
+                "waiting_reason": row.get::<_, Option<String>>(14)?,
+                "stop_reason": row.get::<_, Option<String>>(15)?,
+                "deliverable_title": row.get::<_, Option<String>>(16)?,
+                "deliverable_status": row.get::<_, Option<String>>(17)?,
+                "verified_artifact_path": row.get::<_, Option<String>>(18)?
             }))
         })
         .map_err(|error| error.to_string())?;
@@ -1060,8 +1270,46 @@ fn cancel_task(mut arguments: impl Iterator<Item = String>) -> Result<serde_json
     if !matches!(state.0.as_str(), "pending" | "running") || !state.1 {
         return Err(format!("task is already terminal: {}", state.0));
     }
+    let active_actions: i64 = transaction
+        .query_row(
+            "SELECT count(*) FROM actions WHERE task_id=?1 AND status IN ('running','result_unknown')",
+            [&task_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if active_actions == 0 {
+        transaction
+            .execute(
+                "UPDATE actions SET status='cancelled',updated_at=?2
+             WHERE task_id=?1 AND status IN ('pending','blocked')",
+                rusqlite::params![task_id, now],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "UPDATE approvals SET status='rejected',resolved_at=?2
+             WHERE task_id=?1 AND status='pending'",
+                rusqlite::params![task_id, now],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction.execute(
+            "UPDATE tasks SET status='cancelled',updated_at=?2 WHERE id=?1 AND status IN ('pending','running')",
+            rusqlite::params![task_id, now],
+        ).map_err(|error| error.to_string())?;
+        transaction.execute(
+            "UPDATE agent_runs SET phase='terminal',stop_reason='cancelled',waiting_reason=NULL,revision=revision+1,updated_at=?2
+             WHERE task_id=?1 AND phase!='terminal'",
+            rusqlite::params![task_id, now],
+        ).map_err(|error| error.to_string())?;
+        transaction.execute(
+            "UPDATE task_cancellation_requests SET acknowledged_at=?2 WHERE task_id=?1 AND acknowledged_at IS NULL",
+            rusqlite::params![task_id, now],
+        ).map_err(|error| error.to_string())?;
+    }
     transaction.commit().map_err(|error| error.to_string())?;
-    Ok(json!({"schema_version":"1.0","task_id":task_id,"status":"cancellation_requested"}))
+    Ok(
+        json!({"schema_version":"1.0","task_id":task_id,"status":if active_actions == 0 {"cancelled"} else {"cancellation_requested"}}),
+    )
 }
 
 fn list_events(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {
@@ -1116,37 +1364,250 @@ fn task_command_arguments(
 }
 
 fn usage() -> String {
-    "usage: ai-employee-runtime employees-list|employee-save|employee-delete|effective-prompt|capabilities|skills-list|tools-list|install-tool|install-skill|bind-skill|unbind-skill|knowledge-import|knowledge-search|chat-history|chat-send|chat-delete|run-task|list-tasks|cancel-task|events".to_owned()
+    "usage: ai-employee-runtime employees-list|employee-save|employee-delete|effective-prompt|capabilities|capability-readiness|skills-list|tools-list|install-tool|install-skill|bind-skill|unbind-skill|knowledge-import|knowledge-search|chat-history|chat-send|chat-delete|run-task|run-skill|run-status|continue-run|resolve-action-result|list-tasks|cancel-task|events".to_owned()
+}
+
+fn run_skill(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {
+    let mut repository_root = None;
+    let mut database = None;
+    let mut python = PathBuf::from("python3");
+    let mut agent_id = None;
+    let mut skill_id = None;
+    let mut input_json = None;
+    let mut conversation_id = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--repository-root" => repository_root = arguments.next().map(PathBuf::from),
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--python" => python = arguments.next().map(PathBuf::from).ok_or_else(usage)?,
+            "--agent-id" => agent_id = arguments.next(),
+            "--skill-id" => skill_id = arguments.next(),
+            "--input-json" => input_json = arguments.next(),
+            "--conversation-id" => conversation_id = arguments.next(),
+            _ => return Err(usage()),
+        }
+    }
+    let repository_root = repository_root.ok_or_else(usage)?;
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|error| error.to_string())?;
+    migrate(&mut connection).map_err(|error| error.to_string())?;
+    bootstrap_packages(&mut connection, &repository_root, &now())?;
+    let input: serde_json::Value = serde_json::from_str(&input_json.ok_or_else(usage)?)
+        .map_err(|error| format!("input_schema_invalid: {error}"))?;
+    execute_skill(RunSkillConfig {
+        connection: &mut connection,
+        repository_root: &repository_root,
+        python: &python,
+        agent_id: &agent_id.ok_or_else(usage)?,
+        skill_id: &skill_id.ok_or_else(usage)?,
+        input,
+        conversation_id: conversation_id.as_deref(),
+    })
+}
+
+fn run_status(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {
+    let mut database = None;
+    let mut run_id = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--run-id" => run_id = arguments.next(),
+            _ => return Err(usage()),
+        }
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|error| error.to_string())?;
+    migrate(&mut connection).map_err(|error| error.to_string())?;
+    let run_id = run_id.ok_or_else(usage)?;
+    connection.query_row(
+        "SELECT r.task_id,t.status,r.phase,r.revision,r.waiting_reason,r.stop_reason,r.model_turns_used,r.tool_calls_used
+         FROM agent_runs r JOIN tasks t ON t.id=r.task_id WHERE r.id=?1",
+        [&run_id],
+        |row| Ok(json!({
+            "schema_version":"1.0.0","run_id":run_id,"task_id":row.get::<_,String>(0)?,
+            "status":row.get::<_,String>(1)?,"phase":row.get::<_,String>(2)?,
+            "revision":row.get::<_,i64>(3)?,"waiting_reason":row.get::<_,Option<String>>(4)?,
+            "stop_reason":row.get::<_,Option<String>>(5)?,"model_turns_used":row.get::<_,i64>(6)?,
+            "tool_calls_used":row.get::<_,i64>(7)?
+        })),
+    ).map_err(|_| "run_not_found".to_owned())
+}
+
+fn continue_run(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {
+    let mut repository_root = None;
+    let mut database = None;
+    let mut python = PathBuf::from("python3");
+    let mut run_id = None;
+    let mut authorized_root = None;
+    let mut approve = None;
+    let mut input_json = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--repository-root" => repository_root = arguments.next().map(PathBuf::from),
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--python" => python = arguments.next().map(PathBuf::from).ok_or_else(usage)?,
+            "--run-id" => run_id = arguments.next(),
+            "--authorized-root" => authorized_root = arguments.next().map(PathBuf::from),
+            "--approve" => approve = Some(true),
+            "--reject" => approve = Some(false),
+            "--input-json" => input_json = arguments.next(),
+            _ => return Err(usage()),
+        }
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|error| error.to_string())?;
+    migrate(&mut connection).map_err(|error| error.to_string())?;
+    let repository_root = repository_root.ok_or_else(usage)?;
+    let run_id = run_id.ok_or_else(usage)?;
+    if let Some(input) = input_json {
+        return continue_with_user_input(
+            &mut connection,
+            &repository_root,
+            &python,
+            &run_id,
+            serde_json::from_str(&input).map_err(|_| "input_schema_invalid".to_owned())?,
+        );
+    }
+    resume_run(ContinueRunConfig {
+        connection: &mut connection,
+        repository_root: &repository_root,
+        python: &python,
+        run_id: &run_id,
+        authorized_root: &authorized_root.ok_or_else(usage)?,
+        approve: approve.ok_or_else(usage)?,
+    })
+}
+
+fn resolve_action_result(
+    mut arguments: impl Iterator<Item = String>,
+) -> Result<serde_json::Value, String> {
+    let mut database = None;
+    let mut action_id = None;
+    let mut status = None;
+    let mut evidence = None;
+    let mut repository_root = None;
+    let mut python = PathBuf::from("python3");
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--action-id" => action_id = arguments.next(),
+            "--status" => status = arguments.next(),
+            "--evidence-json" => evidence = arguments.next(),
+            "--repository-root" => repository_root = arguments.next().map(PathBuf::from),
+            "--python" => python = arguments.next().map(PathBuf::from).ok_or_else(usage)?,
+            _ => return Err(usage()),
+        }
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    let evidence: Value = serde_json::from_str(&evidence.ok_or_else(usage)?)
+        .map_err(|_| "invalid_evidence".to_owned())?;
+    let resolved = resolve_unknown_action(
+        &mut connection,
+        &action_id.ok_or_else(usage)?,
+        &status.ok_or_else(usage)?,
+        evidence.clone(),
+    )?;
+    if resolved["status"] == "succeeded" {
+        if let Some(root) = repository_root {
+            let run_id = resolved["run_id"].as_str().ok_or("run_not_found")?;
+            return continue_after_verified_action(
+                &mut connection,
+                &root,
+                &python,
+                run_id,
+                evidence,
+            );
+        }
+    }
+    Ok(resolved)
+}
+
+fn capability_readiness(
+    mut arguments: impl Iterator<Item = String>,
+) -> Result<serde_json::Value, String> {
+    let mut repository_root = None;
+    let mut database = None;
+    let mut agent_id = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--repository-root" => repository_root = arguments.next().map(PathBuf::from),
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--agent-id" => agent_id = arguments.next(),
+            _ => return Err(usage()),
+        }
+    }
+    let root = repository_root.ok_or_else(usage)?;
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|error| error.to_string())?;
+    migrate(&mut connection).map_err(|error| error.to_string())?;
+    bootstrap_packages(&mut connection, &root, &now())?;
+    let agent_id = agent_id.ok_or_else(usage)?;
+    let status: String = connection
+        .query_row(
+            "SELECT status FROM agents WHERE id=?1",
+            [&agent_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| "agent_unavailable".to_owned())?;
+    let mut statement = connection
+        .prepare(
+            "SELECT s.id,s.version,s.status,a.enabled,s.manifest_json FROM skills s
+         LEFT JOIN agent_skills a ON a.skill_id=s.id AND a.agent_id=?1 ORDER BY s.id",
+        )
+        .map_err(|error| error.to_string())?;
+    let skills = statement.query_map([&agent_id], |row| {
+        let id: String = row.get(0)?;
+        let skill_status: String = row.get(2)?;
+        let enabled: Option<i64> = row.get(3)?;
+        let manifest_raw: String = row.get(4)?;
+        let manifest: serde_json::Value = serde_json::from_str(&manifest_raw).unwrap_or(json!({}));
+        let mut reasons = Vec::new();
+        if status != "active" { reasons.push("agent_inactive"); }
+        if enabled != Some(1) { reasons.push("skill_unbound"); }
+        if skill_status != "active" { reasons.push("skill_disabled"); }
+        if manifest["schema_version"] != "2.0.0" { reasons.push("runtime_incompatible"); }
+        let readiness = if reasons.is_empty() { "ready" } else if reasons.contains(&"skill_unbound") { "disabled" } else if reasons.contains(&"runtime_incompatible") { "incompatible" } else { "missing_dependency" };
+        Ok(json!({"skill_id":id,"version":row.get::<_,String>(1)?,"readiness":readiness,"reason_codes":reasons}))
+    }).map_err(|error| error.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|error| error.to_string())?;
+    Ok(
+        json!({"schema_version":"1.0.0","agent_id":agent_id,"tasks_enabled":skills.iter().any(|skill| skill["readiness"]=="ready"),"skills":skills}),
+    )
 }
 
 fn run_task(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {
     let mut repository_root = None;
     let mut database = None;
-    let mut output_dir = None;
     let mut python = PathBuf::from("python3");
-    let mut task_input = None;
-    let mut task_id = None;
-    let mut approve_write = false;
+    let mut input_json = None;
+    let mut agent_id = None;
+    let mut skill_id = None;
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
             "--repository-root" => repository_root = arguments.next().map(PathBuf::from),
             "--database" => database = arguments.next().map(PathBuf::from),
-            "--output-dir" => output_dir = arguments.next().map(PathBuf::from),
             "--python" => python = arguments.next().map(PathBuf::from).ok_or_else(usage)?,
-            "--input" => task_input = arguments.next(),
-            "--task-id" => task_id = arguments.next(),
-            "--approve-write" => approve_write = true,
+            "--input-json" => input_json = arguments.next(),
+            "--agent-id" => agent_id = arguments.next(),
+            "--skill-id" => skill_id = arguments.next(),
             _ => return Err(usage()),
         }
     }
-    run_golden_path(&GoldenPathConfig {
-        repository_root: repository_root.ok_or_else(usage)?,
-        database: database.ok_or_else(usage)?,
-        output_dir: output_dir.ok_or_else(usage)?,
-        python,
-        task_input: task_input.ok_or_else(usage)?,
-        task_id,
-        approve_write,
+    let root = repository_root.ok_or_else(usage)?;
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    bootstrap_packages(&mut connection, &root, &now())?;
+    execute_skill(RunSkillConfig {
+        connection: &mut connection,
+        repository_root: &root,
+        python: &python,
+        agent_id: &agent_id.ok_or_else(usage)?,
+        skill_id: &skill_id.ok_or_else(usage)?,
+        input: serde_json::from_str(&input_json.ok_or_else(usage)?)
+            .map_err(|_| "input_schema_invalid".to_owned())?,
+        conversation_id: None,
     })
 }
 
@@ -1342,4 +1803,65 @@ fn knowledge_search_command(
             "score": hit.score
         })).collect::<Vec<_>>()
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn revision_rejects_older_user_message_and_removes_only_latest_turn() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE messages(id TEXT PRIMARY KEY, conversation_id TEXT, sequence INTEGER, role TEXT, content TEXT, created_at TEXT);
+                 CREATE TABLE model_calls(id TEXT PRIMARY KEY, conversation_id TEXT, user_message_id TEXT);",
+            )
+            .unwrap();
+        for (id, sequence, role) in [
+            ("u1", 1, "user"),
+            ("a1", 2, "assistant"),
+            ("u2", 3, "user"),
+            ("a2", 4, "assistant"),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO messages VALUES (?1,'c1',?2,?3,'content','time')",
+                    rusqlite::params![id, sequence, role],
+                )
+                .unwrap();
+        }
+        connection
+            .execute("INSERT INTO model_calls VALUES ('call1','c1','u1')", [])
+            .unwrap();
+        connection
+            .execute("INSERT INTO model_calls VALUES ('call2','c1','u2')", [])
+            .unwrap();
+
+        let rejected = connection.transaction().unwrap();
+        assert_eq!(
+            prepare_latest_user_revision(&rejected, "c1", "u1").unwrap_err(),
+            "only the latest user message can be edited"
+        );
+        rejected.rollback().unwrap();
+
+        let revision = connection.transaction().unwrap();
+        assert_eq!(
+            prepare_latest_user_revision(&revision, "c1", "u2").unwrap(),
+            3
+        );
+        revision.commit().unwrap();
+        let remaining: Vec<String> = connection
+            .prepare("SELECT id FROM messages ORDER BY sequence")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(remaining, ["u1", "a1"]);
+        let calls: i64 = connection
+            .query_row("SELECT count(*) FROM model_calls", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(calls, 1);
+    }
 }

@@ -233,13 +233,26 @@ struct EmployeeDirectorySidebar: View {
             if store.isLoading && employees.isEmpty {
                 ProgressView("正在读取员工…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = store.error, employees.isEmpty {
-                ContentUnavailableView("无法读取员工", systemImage: "exclamationmark.triangle", description: Text(error))
-            } else if employees.isEmpty {
-                ContentUnavailableView(
-                    query.isEmpty ? "还没有 AI 员工" : "没有匹配的员工",
-                    systemImage: "person.2",
-                    description: Text(query.isEmpty ? "创建员工后，会在这里管理他的 Profile。" : "尝试其他姓名、岗位或部门。")
+                UXFeedbackStateView(
+                    title: "无法读取员工",
+                    message: "已有员工资料没有被修改。\(error)",
+                    systemImage: "exclamationmark.triangle.fill",
+                    tone: .error,
+                    actionTitle: "重试",
+                    action: { Task { await store.reload() } }
                 )
+                .padding(AppTheme.Spacing.lg)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if employees.isEmpty {
+                UXFeedbackStateView(
+                    title: query.isEmpty ? "还没有 AI 员工" : "没有匹配的员工",
+                    message: query.isEmpty ? "创建员工后，会在这里管理他的 Profile。" : "尝试其他姓名、岗位或部门。",
+                    systemImage: query.isEmpty ? "person.2" : "magnifyingglass",
+                    actionTitle: query.isEmpty ? "新建 AI 员工" : "清除搜索",
+                    action: query.isEmpty ? store.create : { query = "" }
+                )
+                .padding(AppTheme.Spacing.lg)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 18) {
@@ -587,6 +600,7 @@ struct MarkdownDocumentView: View {
         case .numbered(let text): Text(inline(text)).foregroundStyle(palette.body)
         case .quote(let text): Text(inline(text)).foregroundStyle(palette.muted).padding(.leading, 12).overlay(alignment: .leading) { Rectangle().fill(palette.primary.opacity(0.4)).frame(width: 2) }
         case .code(let text): Text(text).font(.system(.caption, design: .monospaced)).foregroundStyle(palette.body).padding(12).frame(maxWidth: .infinity, alignment: .leading).background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: 8))
+        case .table(let headers, let rows): Text(([headers] + rows).map { $0.joined(separator: "  ·  ") }.joined(separator: "\n")).font(.callout.monospaced()).foregroundStyle(palette.body)
         case .divider: Divider().overlay(palette.hairline)
         case .spacing: Color.clear.frame(height: 4)
         }

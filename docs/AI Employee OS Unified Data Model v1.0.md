@@ -419,6 +419,13 @@ CREATE INDEX idx_metrics_name_recorded ON metrics(name, recorded_at);
 | `evaluations` | Task 与 Agent 的质量评分 | 关联 Task 与 Agent | Task 删除时级联，Agent 删除时限制 |
 | `feedbacks` | 用户对 Task 的评分和反馈 | 关联 Task | Task 删除时级联 |
 | `metrics` | 可按 Task 或 Agent 聚合的数值指标 | 可选关联 Task、Agent | 父记录删除时置空 |
+| `agent_runs` | Task 的一次通用 Runtime 执行实例 | 属于 Task，保存 phase、revision 与预算 | Task 删除时级联 |
+| `run_snapshots` | 锁定 Agent、Skill、Toolset、Context、Model 配置 | 属于 Run，每种类型唯一 | Run 删除时级联 |
+| `run_observations` | 已确认的模型决策、ToolResult 和继续输入 | Run 内 sequence 单调递增 | Run 删除时级联 |
+| `run_checkpoints` | 副作用边界上的可恢复状态 Hash | 属于 Run revision | Run 删除时级联 |
+| `artifacts` | 外置结果的 URI、Hash 与验证状态 | 属于 Task/Run，可引用 Action | 数据库删除不自动删除文件 |
+| `deliverables` | 候选、验证或拒绝的用户交付记录 | 属于 Task/Run | Task 删除时级联 |
+| `deliverable_evidence` | Deliverable 到结构化输出、Artifact、ToolResult、Verification、Evaluation 的引用 | 属于 Deliverable | Deliverable 删除时级联 |
 
 ## 6. 状态与枚举字典
 
@@ -437,6 +444,11 @@ CREATE INDEX idx_metrics_name_recorded ON metrics(name, recorded_at);
 | `memories.memory_type` | `preference`、`experience`、`fact`、`decision`、`pattern` |
 | `knowledge_sources.source_type` | `local_file`、`seed_document` |
 | `knowledge_sources.index_status` | `pending`、`indexed`、`failed`、`stale` |
+| `agent_runs.phase` | `created`、`preflight`、`context_build`、`model_decision`、`waiting_user`、`authorize`、`waiting_approval`、`tool_execution`、`observe`、`validate_output`、`build_deliverable`、`evaluate`、`terminal` |
+| `deliverables.status` | `candidate`、`verified`、`rejected` |
+| `artifacts.verification_status` | `pending`、`verified`、`failed` |
+
+Run phase 不增加或替代 Task/Action 状态。`waiting_user` 与 `waiting_approval` 时 Task 仍为 `running`；审批等待由 Action `blocked` 表达。表的完整 DDL 由追加 Migration `011_generic_agent_runs.sql` 实现。
 
 状态转换由 Runtime 与 Security 领域定义；本模型只限制可持久化值，不允许任意字符串进入数据库。
 

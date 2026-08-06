@@ -1,0 +1,36 @@
+schema_version: 2.0.0
+skill:
+  id: review-and-save
+  name: 审阅并保存
+  version: 1.0.0
+  description: 先审阅输入，再经审批写入受控目录。
+  category: general
+  runtime_compatibility: ">=2.0.0 <3.0.0"
+  status: active
+  instructions: SKILL.md
+  routing: {explicit: true, triggers: [审阅并保存], positive_examples: ["审阅并保存这段内容"], negative_examples: ["只总结内容"]}
+  context: {required: [], optional: [], max_bytes: 65536}
+  tools:
+    - id: document-tool
+      version: ">=1.0.0 <2.0.0"
+      actions: [create_markdown]
+      permissions: [filesystem.write]
+  input_schema:
+    type: object
+    additionalProperties: false
+    required: [path, content]
+    properties: {path: {type: string}, content: {type: string}}
+  output_schema:
+    type: object
+    additionalProperties: false
+    required: [path]
+    properties: {path: {type: string}}
+  execution:
+    mode: workflow
+    workflow: workflow.yaml
+    max_model_turns: 4
+    max_tool_calls: 1
+    max_duration_ms: 60000
+    on_result_unknown: stop
+  deliverables: {required: true, allowed_types: [markdown_document], evidence: combined}
+  evaluation: {timing: before_delivery, block_on_failure: true, suite: evals/suite.json}

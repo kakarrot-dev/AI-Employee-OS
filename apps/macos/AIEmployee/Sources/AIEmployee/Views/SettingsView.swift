@@ -4,6 +4,9 @@ struct SettingsView: View {
     @State private var selection: SettingsSection = .general
     @State private var deepSeekKey = ""
     @State private var error: String?
+    @State private var keyTouched = false
+    @State private var isSavingKey = false
+    @State private var notice: UXToastNotice?
     @State private var hasLegacyKey = false
     @AppStorage("deepseekKeyConfigured") private var saved = false
     @AppStorage("appAppearance") private var appearanceRaw = AppAppearance.system.rawValue
@@ -27,6 +30,11 @@ struct SettingsView: View {
         .onAppear {
             saved = KeychainService.exists()
             hasLegacyKey = KeychainService.legacyItemExists()
+        }
+        .overlay(alignment: .topTrailing) {
+            UXToastOverlay(notice: $notice)
+                .padding(.top, AppTheme.Spacing.md)
+                .padding(.trailing, AppTheme.Spacing.md)
         }
     }
 
@@ -71,8 +79,17 @@ struct SettingsView: View {
                     SecureField("输入 DeepSeek API Key", text: $deepSeekKey)
                         .textFieldStyle(.plain)
                         .foregroundStyle(palette.body)
+                        .onSubmit { saveAPIKey() }
+                        .onChange(of: deepSeekKey) { _, _ in
+                            if keyTouched { error = validationMessage }
+                        }
                 }
                 .frame(minHeight: 46)
+
+                if let validationMessage, keyTouched {
+                    UXInlineFeedback(message: validationMessage)
+                        .padding(.bottom, AppTheme.Spacing.sm)
+                }
 
                 SettingsRowDivider()
 
@@ -82,21 +99,20 @@ struct SettingsView: View {
                         Button("删除", role: .destructive) {
                             KeychainService.delete()
                             saved = false
+                            notice = UXToastNotice(message: "API Key 已从 macOS Keychain 删除", tone: .neutral)
                         }
                         .buttonStyle(CreamSecondaryButtonStyle())
+                        .disabled(isSavingKey)
                     }
-                    Button(saved ? "替换 API Key" : "保存 API Key") {
-                        do {
-                            try KeychainService.save(deepSeekKey)
-                            deepSeekKey = ""
-                            saved = true
-                            error = nil
-                        } catch {
-                            self.error = error.localizedDescription
-                        }
+                    Button(action: saveAPIKey) {
+                        UXAsyncActionLabel(
+                            idleTitle: saved ? "替换 API Key" : "保存 API Key",
+                            pendingTitle: "正在保存",
+                            isPending: isSavingKey
+                        )
                     }
                     .buttonStyle(CreamPrimaryButtonStyle())
-                    .disabled(deepSeekKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(validationMessage != nil || isSavingKey)
                 }
                 .frame(minHeight: 52)
             }
@@ -110,7 +126,7 @@ struct SettingsView: View {
 
             if !saved, hasLegacyKey {
                 SettingsFootnote(
-                    text: "检测到旧开发签名保存的 Key。macOS 不允许新签名静默读取，请重新保存一次；旧项不会被自动读取或删除。",
+                    text: "检测到旧凭据。为彻底停止重复授权弹窗，请重新保存一次；新 Key 将由稳定凭据代理持有，旧项不会被读取或删除。",
                     tone: .warning
                 )
             }
@@ -181,6 +197,30 @@ struct SettingsView: View {
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+
+    private var validationMessage: String? {
+        deepSeekKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "请输入 DeepSeek API Key" : nil
+    }
+
+    private func saveAPIKey() {
+        keyTouched = true
+        guard validationMessage == nil, !isSavingKey else {
+            error = validationMessage
+            return
+        }
+        isSavingKey = true
+        defer { isSavingKey = false }
+        do {
+            try KeychainService.save(deepSeekKey)
+            deepSeekKey = ""
+            saved = true
+            error = nil
+            keyTouched = false
+            notice = UXToastNotice(message: "API Key 已安全保存", tone: .success)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {

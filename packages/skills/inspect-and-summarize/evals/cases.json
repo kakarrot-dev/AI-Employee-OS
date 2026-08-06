@@ -1,0 +1,1 @@
+[{"id":"read-then-summary","input":{"path":"source.txt"},"expected_tool":"file-tool.read_file"},{"id":"missing-file","input":{"path":"missing.txt"},"expected_error":"tool_execution_failed"}]

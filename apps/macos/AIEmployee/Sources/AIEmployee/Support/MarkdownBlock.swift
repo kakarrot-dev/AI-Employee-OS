@@ -7,6 +7,7 @@ enum MarkdownBlock: Equatable {
     case numbered(String)
     case quote(String)
     case code(String)
+    case table(headers: [String], rows: [[String]])
     case divider
     case spacing
 
@@ -15,17 +16,35 @@ enum MarkdownBlock: Equatable {
         var codeLines: [String] = []
         var isInCodeBlock = false
 
-        for line in source.components(separatedBy: .newlines) {
+        let lines = source.components(separatedBy: .newlines)
+        var index = 0
+        while index < lines.count {
+            let line = lines[index]
             if line.hasPrefix("```") {
                 if isInCodeBlock {
                     blocks.append(.code(codeLines.joined(separator: "\n")))
                     codeLines.removeAll(keepingCapacity: true)
                 }
                 isInCodeBlock.toggle()
+                index += 1
                 continue
             }
             if isInCodeBlock {
                 codeLines.append(line)
+                index += 1
+                continue
+            }
+
+            if index + 1 < lines.count,
+               let headers = tableCells(in: line),
+               isTableSeparator(lines[index + 1], columnCount: headers.count) {
+                var rows: [[String]] = []
+                index += 2
+                while index < lines.count, let cells = tableCells(in: lines[index]), cells.count == headers.count {
+                    rows.append(cells)
+                    index += 1
+                }
+                blocks.append(.table(headers: headers, rows: rows))
                 continue
             }
 
@@ -41,11 +60,29 @@ enum MarkdownBlock: Equatable {
             else if ["---", "***", "___"].contains(line) { blocks.append(.divider) }
             else if line.trimmingCharacters(in: .whitespaces).isEmpty { blocks.append(.spacing) }
             else { blocks.append(.paragraph(line)) }
+            index += 1
         }
 
         if isInCodeBlock || !codeLines.isEmpty {
             blocks.append(.code(codeLines.joined(separator: "\n")))
         }
         return blocks
+    }
+
+    private static func tableCells(in line: String) -> [String]? {
+        guard line.contains("|") else { return nil }
+        var content = line.trimmingCharacters(in: .whitespaces)
+        if content.hasPrefix("|") { content.removeFirst() }
+        if content.hasSuffix("|") { content.removeLast() }
+        let cells = content.split(separator: "|", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        return cells.count >= 2 ? cells : nil
+    }
+
+    private static func isTableSeparator(_ line: String, columnCount: Int) -> Bool {
+        guard let cells = tableCells(in: line), cells.count == columnCount else { return false }
+        return cells.allSatisfy { cell in
+            cell.range(of: #"^:?-{3,}:?$"#, options: .regularExpression) != nil
+        }
     }
 }

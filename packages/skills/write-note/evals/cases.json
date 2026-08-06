@@ -1,0 +1,4 @@
+[
+  {"id":"write-happy","input":{"path":"note.md","content":"hello"},"expected_tool":"document-tool.create_markdown"},
+  {"id":"write-no-tool","input":{"path":"../escape.md","content":"hello"},"expected_error":"permission_denied"}
+]

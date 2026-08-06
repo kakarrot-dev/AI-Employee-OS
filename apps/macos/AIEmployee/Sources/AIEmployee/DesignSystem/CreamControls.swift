@@ -3,6 +3,7 @@ import SwiftUI
 
 struct CreamPrimaryButtonStyle: ButtonStyle {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.callout.weight(.semibold))
@@ -10,14 +11,15 @@ struct CreamPrimaryButtonStyle: ButtonStyle {
             .padding(.horizontal, 13)
             .frame(height: 32)
             .background(palette.primaryActive.opacity(configuration.isPressed ? 0.82 : 1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.easeOut(duration: AppTheme.Motion.fast), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: AppTheme.Motion.fast), value: configuration.isPressed)
     }
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
 struct CreamSecondaryButtonStyle: ButtonStyle {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.callout.weight(.medium))
@@ -25,6 +27,8 @@ struct CreamSecondaryButtonStyle: ButtonStyle {
             .padding(.horizontal, 11)
             .frame(height: 32)
             .background(configuration.isPressed ? palette.surfaceSoft : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: AppTheme.Motion.fast), value: configuration.isPressed)
     }
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
@@ -90,12 +94,13 @@ struct CreamTabBar<Item: Identifiable & Equatable>: View {
     let title: (Item) -> String
     @Namespace private var tabIndicator
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 24) {
             ForEach(items) { item in
                 Button {
-                    withAnimation(.easeInOut(duration: AppTheme.Motion.standard)) { selection = item }
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: AppTheme.Motion.standard)) { selection = item }
                 } label: {
                     VStack(spacing: 8) {
                         Text(title(item))
@@ -156,6 +161,7 @@ struct CreamModalOverlay<Content: View>: View {
     var preferredHeight: CGFloat = 480
     @ViewBuilder let content: () -> Content
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { proxy in
@@ -171,7 +177,7 @@ struct CreamModalOverlay<Content: View>: View {
                     .frame(width: width, height: height)
                     .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous))
                     .shadow(color: .black.opacity(colorScheme == .dark ? 0.34 : 0.16), radius: 24, y: 10)
-                    .transition(.scale(scale: 0.98).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.98).combined(with: .opacity))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }

@@ -67,7 +67,21 @@ struct CapabilityLibraryWorkspaceView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            if isDisconnected {
+            if capabilityStore.isLoading && capabilities.isEmpty {
+                ProgressView(scope == .skills ? "正在读取技能…" : "正在读取工具…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = capabilityStore.loadError, capabilities.isEmpty {
+                UXFeedbackStateView(
+                    title: scope == .skills ? "无法读取技能" : "无法读取工具",
+                    message: "已安装 Package 没有被修改。\(error)",
+                    systemImage: "exclamationmark.triangle.fill",
+                    tone: .error,
+                    actionTitle: "重试",
+                    action: { Task { await capabilityStore.reload() } }
+                )
+                .padding(AppTheme.Spacing.xl)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if isDisconnected {
                 emptyState
             } else if proxy.size.width >= 700 {
                 HStack(spacing: 0) {
@@ -116,7 +130,15 @@ struct CapabilityLibraryWorkspaceView: View {
             Divider().overlay(palette.hairlineSoft)
 
             if filteredCapabilities.isEmpty {
-                ContentUnavailableView("没有匹配结果", systemImage: "magnifyingglass", description: Text("换一个名称或分类试试。"))
+                UXFeedbackStateView(
+                    title: "没有匹配结果",
+                    message: "换一个名称或分类试试。",
+                    systemImage: "magnifyingglass",
+                    actionTitle: "清除搜索",
+                    action: { query = "" }
+                )
+                .padding(AppTheme.Spacing.lg)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -293,6 +315,7 @@ private struct CapabilityMarkdownPreview: View {
         case .numbered(let text): Text(inline(text)).foregroundStyle(palette.body).lineSpacing(4)
         case .quote(let text): Text(inline(text)).foregroundStyle(palette.muted).padding(.leading, 12).overlay(alignment: .leading) { Rectangle().fill(palette.primary.opacity(0.45)).frame(width: 2) }
         case .code(let text): Text(text).font(.system(.caption, design: .monospaced)).foregroundStyle(palette.body).padding(14).frame(maxWidth: .infinity, alignment: .leading).background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+        case .table(let headers, let rows): Text(([headers] + rows).map { $0.joined(separator: "  ·  ") }.joined(separator: "\n")).font(.callout.monospaced()).foregroundStyle(palette.body)
         case .divider: Divider().overlay(palette.hairline)
         case .spacing: Color.clear.frame(height: 3)
         }

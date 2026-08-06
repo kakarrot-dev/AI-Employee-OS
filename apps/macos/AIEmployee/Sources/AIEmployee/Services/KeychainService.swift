@@ -1,64 +1,75 @@
 import Foundation
-import Security
 
 enum KeychainService {
-    // v1 items were created by ad-hoc signed builds whose identity changed on
-    // every rebuild. They cannot be read silently by a newly stable identity.
-    private static let service = "com.kakarrot.ai-employee-os.credentials.v2"
-    private static let legacyService = "com.kakarrot.ai-employee-os"
-    private static let account = "deepseek-api-key"
+    private struct BrokerResponse: Decodable {
+        let ok: Bool
+        let exists: Bool?
+        let value: String?
+        let errorCode: Int?
+    }
 
     static func load() -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        try? invoke("load").value
     }
 
     static func exists() -> Bool {
-        itemExists(service: service)
+        (try? invoke("status").exists) ?? false
     }
 
     static func legacyItemExists() -> Bool {
-        itemExists(service: legacyService)
-    }
-
-    private static func itemExists(service: String) -> Bool {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: false,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        return SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess
+        (try? invoke("legacy-status").exists) ?? false
     }
 
     static func save(_ value: String) throws {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw NSError(domain: "Keychain", code: 1, userInfo: [NSLocalizedDescriptionKey: "API Key 不能为空"]) }
-        let base: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        let attributes: [String: Any] = [kSecValueData as String: Data(trimmed.utf8)]
-        var status = SecItemUpdate(base as CFDictionary, attributes as CFDictionary)
-        if status == errSecItemNotFound {
-            var add = base
-            add.merge(attributes) { _, new in new }
-            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            status = SecItemAdd(add as CFDictionary, nil)
+        guard !trimmed.isEmpty else {
+            throw NSError(domain: "Keychain", code: 1, userInfo: [NSLocalizedDescriptionKey: "API Key 不能为空"])
         }
-        guard status == errSecSuccess else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
+        _ = try invoke("save", input: Data(trimmed.utf8))
     }
 
-    static func delete() { SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account] as CFDictionary) }
+    static func delete() {
+        _ = try? invoke("delete")
+    }
+
+    private static func invoke(_ command: String, input: Data? = nil) throws -> BrokerResponse {
+        let broker = try brokerURL()
+        let process = Process()
+        process.executableURL = broker
+        process.arguments = [command]
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+        if let input {
+            let stdin = Pipe()
+            process.standardInput = stdin
+            try process.run()
+            stdin.fileHandleForWriting.write(input)
+            try stdin.fileHandleForWriting.close()
+        } else {
+            try process.run()
+        }
+        process.waitUntilExit()
+        let output = stdout.fileHandleForReading.readDataToEndOfFile()
+        guard let response = try? JSONDecoder().decode(BrokerResponse.self, from: output) else {
+            throw NSError(domain: "CredentialBroker", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: "凭据代理返回无效结果"])
+        }
+        guard process.terminationStatus == 0, response.ok else {
+            throw NSError(domain: NSOSStatusErrorDomain, code: response.errorCode ?? Int(process.terminationStatus))
+        }
+        return response
+    }
+
+    private static func brokerURL() throws -> URL {
+        let bundled = Bundle.main.bundleURL
+            .appending(path: "Contents/Helpers/AIEmployeeCredentialBroker")
+        if FileManager.default.isExecutableFile(atPath: bundled.path) { return bundled }
+
+        let development = Bundle.main.bundleURL
+            .deletingLastPathComponent()
+            .appending(path: "AIEmployeeCredentialBroker")
+        if FileManager.default.isExecutableFile(atPath: development.path) { return development }
+        throw NSError(domain: "CredentialBroker", code: 2, userInfo: [NSLocalizedDescriptionKey: "凭据代理不存在，请重新构建 App"])
+    }
 }

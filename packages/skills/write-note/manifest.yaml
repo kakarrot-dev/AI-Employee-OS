@@ -1,0 +1,36 @@
+schema_version: 2.0.0
+skill:
+  id: write-note
+  name: 写入笔记
+  version: 1.0.0
+  description: 将用户提供的内容写入授权的 Markdown 文件。
+  category: general
+  runtime_compatibility: ">=2.0.0 <3.0.0"
+  status: active
+  instructions: SKILL.md
+  routing:
+    explicit: true
+    triggers: [write_note, 写入笔记]
+    positive_examples: ["把这段内容保存成笔记"]
+    negative_examples: ["只总结，不写文件"]
+  context: {required: [], optional: [], max_bytes: 65536}
+  tools:
+    - id: document-tool
+      version: ">=1.0.0 <2.0.0"
+      actions: [create_markdown]
+      max_calls: 1
+      allow_side_effects: true
+      on_missing: fail
+  input_schema:
+    type: object
+    additionalProperties: false
+    required: [path, content]
+    properties: {path: {type: string}, content: {type: string}}
+  output_schema:
+    type: object
+    additionalProperties: false
+    required: [path]
+    properties: {path: {type: string}}
+  execution: {mode: agent_loop, max_model_turns: 3, max_tool_calls: 1, max_duration_ms: 60000, on_result_unknown: stop}
+  deliverables: {required: true, allowed_types: [markdown_document], evidence: combined}
+  evaluation: {timing: before_delivery, block_on_failure: true, suite: evals/suite.json}

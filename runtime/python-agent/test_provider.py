@@ -21,13 +21,18 @@ from app.provider import (
 
 
 class FakeTransport:
-    def __init__(self, response):
+    def __init__(self, response, stream_lines=None):
         self.response = response
+        self.stream_lines = stream_lines or []
         self.calls = []
 
     def post(self, url, headers, payload, timeout):
         self.calls.append((url, headers, payload, timeout))
         return self.response
+
+    def stream(self, url, headers, payload, timeout):
+        self.calls.append((url, headers, payload, timeout))
+        yield from self.stream_lines
 
 
 class FakeGateway:
@@ -53,6 +58,22 @@ class ProviderRouterTests(unittest.TestCase):
         self.assertEqual(result.content, "ok")
         self.assertEqual(transport.calls[0][0], "https://api.deepseek.com/chat/completions")
         self.assertNotIn("secret", str(transport.calls[0][2]))
+
+    @patch.dict("os.environ", {"DEEPSEEK_API_KEY": "secret"})
+    def test_deepseek_stream_publishes_ordered_deltas_and_usage(self):
+        transport = FakeTransport(HttpResponse(200, b""), [
+            'data: {"choices":[{"delta":{"content":"你"}}]}\n'.encode(),
+            'data: {"choices":[{"delta":{"content":"好"}}]}\n'.encode(),
+            b'data: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":2}}\n',
+            b'data: [DONE]\n',
+        ])
+        deltas = []
+        result = DeepSeekProvider("deepseek-v4-flash", 30, transport).stream_complete(
+            [{"role": "user", "content": "hi"}], deltas.append
+        )
+        self.assertEqual(deltas, ["你", "好"])
+        self.assertEqual((result.content, result.input_tokens, result.output_tokens), ("你好", 3, 2))
+        self.assertTrue(transport.calls[0][2]["stream"])
 
     @patch.dict("os.environ", {"POE_API_KEY": "secret"})
     def test_poe_client_uses_openai_compatible_responses_api(self):

@@ -10,7 +10,7 @@
 2. 在客户端编辑员工 Identity / Soul / Persona；Effective Prompt 由 Rust Runtime 单向编译。
 3. 与员工完成可跨重启恢复的多轮对话（默认员工为 Alex / `ai-product-manager`）。
 4. Skill / Tool 由仓库 Package 安装（客户端不创建）；Runtime bootstrap 安装内置 Package 后，技能库与工具库可浏览。
-5. 对话经意图识别区分闲聊与工作：闲聊走 Python chat worker；工作意图在 `tasks_enabled` 时走 `run-task` / Graph / ToolExecutor。工作执行主路径仍以 Alex + `prd-generation` 为准。
+5. 对话经意图识别区分闲聊与工作：闲聊走 Python chat worker；工作意图通过 per-Skill readiness、Resolver、Generic Run Kernel 和 ToolExecutor 执行，不再进入 Golden Path。
 
 客户端已支持多员工 Profile 的创建、编辑与停用；多员工工作执行与 per-employee `tasks_enabled` 尚未成为主验证路径。
 
@@ -40,7 +40,7 @@
 
 - Task / Action 状态机、Permission、Approval、Audit、基础 Trace
 - Memory、Knowledge、Evaluation 基础设施
-- Graph Runtime 与 Golden Path 编排
+- Generic Run Snapshot、Checkpoint、Deliverable、基础恢复与 Evaluation
 
 ### 暂不包含
 
@@ -63,7 +63,8 @@ Python Agent Worker         意图分类、闲聊、Context/规划推理；不�
 - 所有 Tool 调用必须经过 Rust ToolExecutor。
 - Secret 不进入仓库、SQLite、日志、Trace、Memory 或 Agent Context；API Key 只经 Keychain 注入受控进程环境。
 - Skill 通过 `agent_skills` 绑定到员工；Tool 为全局安装（无 per-agent Tool 绑定表），客户端不可创建 Package。
-- `tasks_enabled` 表示工作执行能力已接通（当前实现以 Alex 已启用 Skill + 存在 active Tool 为条件）。
+- `tasks_enabled` 仅为兼容派生字段；授权与路由使用当前员工每个 Skill 的 `ready | disabled | missing_dependency | incompatible | invalid_package`。
+- Python Task Worker 只返回 `ask_user | tool_call | complete`；安全字段和所有 Tool 调用由 Rust 生成与执行。
 
 ## 状态与安全不变量
 

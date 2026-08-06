@@ -1,8 +1,8 @@
 # AI Employee OS MVP API & Interface Specification v1.0
 
-> 实现状态（对齐 `AGENTS.md`）：进程间传输为 **CLI / 子进程 JSON**，不是 gRPC。MVP 工作编排为自研 Graph + Golden Path（ADR-031）；Deep Agents / LangGraph 不是状态源。下文部分 Proto 块仅作语义 IDL 历史草稿，不得据此实现第二套协议；以 Runtime CLI 与 `contracts/` 为准。
+> 实现状态（对齐 ADR-032）：进程间传输为 **CLI / 子进程 JSON**，不是 gRPC。新工作执行使用 Rust Generic Run Kernel + Python `task_worker`；Golden Path 仅为迁移期兼容入口。Deep Agents / LangGraph 不是状态源；以 Runtime CLI 与 `contracts/` 为准。
 >
-> 2026-08-05 扩展：Runtime 新增 `employees-list`、`employee-save`、`employee-delete`、`effective-prompt`、`chat-history` 与 `chat-send` 命令。员工保存输入遵循 `contracts/employee-profile.schema.json`；有历史的员工删除请求收敛为 disabled。`chat-send` 先持久化 User Message 和 ModelCall，再通过 Python Provider 调用 DeepSeek；只有非空成功响应才能追加 Assistant Message。Effective Prompt 只由 Rust 根据 Identity、Soul、Persona、基础 Prompt 与安全边界编译。DeepSeek API Key 仅由受控进程环境提供，不进入参数、数据库或日志。普通对话不创建 Task；工作意图在 `tasks_enabled` 时走 `run-task`。
+> 2026-08-06 扩展：新增 `run-skill`、`run-status`、`continue-run` 与 `capability-readiness`。Python 只返回 `ask_user | tool_call | complete`，安全字段由 Rust 生成；授权后仍只经 Rust ToolExecutor 执行。普通对话仍不创建 Task；工作聊天将在迁移阶段切换到 Generic Run Kernel。
 
 目标：
 

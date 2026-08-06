@@ -1,6 +1,27 @@
 # AI Employee OS 技术决策记录 ADR（Architecture Decision Records）v1.0
 
-> 阅读顺序：先读文首 ADR-027～031（现行 MVP 决策），再读 ADR-001 起的历史记录。ADR-003（Deep Agents + LangGraph）描述长期目标引擎；**MVP 工作执行以 ADR-031 为准**。
+> 阅读顺序：先读文首 ADR-032（现行 Runtime 决策）及 ADR-027～031，再读 ADR-001 起的历史记录。ADR-031 已被 ADR-032 取代；迁移完成前只保留兼容意义。
+
+## ADR-032：通用 Bounded Agent Loop 取代 Golden Path
+
+### 状态
+
+Accepted（分阶段迁移中）
+
+### 决策
+
+1. 工作执行主路径采用通用 `Agent → Skill → Tool → Deliverable` 契约；默认模式为 `agent_loop`，确定顺序任务可选 `workflow`。
+2. Rust Run Kernel 是 Task、Run、Action、权限、审批、副作用、Checkpoint、Deliverable 和 Audit 的唯一事实源。Python Worker 只返回 `ask_user | tool_call | complete`，不得生成安全字段或直接执行 Tool。
+3. Skill 是声明式方法和约束，不是任意代码执行入口；全部副作用经过 Rust ToolExecutor。v1 首先启用 Rust Native Tool Adapter，MCP/HTTP 另行设计。
+4. `waiting_user`、`waiting_approval` 是 Run phase，Task 保持 `running`；审批继续由 Action `blocked` 表达，`result_unknown` 禁止自动重放。
+5. Deliverable 必须通过 output schema 和 Evidence 验证。模型 `complete` 只是候选完成，不直接令 Task succeeded。
+6. `tasks_enabled` 降为 per-Skill readiness 的兼容派生字段；新路径先提供显式 `run-skill`，聊天切换验收后才删除 Golden Path。
+
+### 取代关系与迁移约束
+
+本 ADR supersede ADR-031。`run-task`、`golden_path.rs` 和旧 Graph 在迁移期不得扩展业务特判；历史 Task/Action/Audit 只读保留。Deep Agents/LangGraph 仅可作为机制参考或无状态规划器，不得成为第二套持久化状态源。
+
+完整字段、生命周期和验收见 `docs/AI Employee OS Generic Agent Runtime Specification v1.0.md`。
 
 ## ADR-027：普通对话与任务执行分离
 
@@ -1146,11 +1167,11 @@ Task 生命周期事件追加写入 `runtime_events`，`sequence` 在单个 Task
 
 数据库通过追加 Migration `007_runtime_events_and_cancellation.sql` 演进；旧 Migration 不修改。
 
-# ADR-031：MVP 工作执行复用自研 Graph + Golden Path 编排
+# ADR-031：MVP 工作执行复用自研 Graph + Golden Path 编排（已被 ADR-032 取代）
 
 ## 状态
 
-Accepted
+Superseded by ADR-032
 
 ## 背景
 
@@ -1220,7 +1241,7 @@ AI Employee OS v1.0 Architecture Freeze
 |---|---|
 |客户端|SwiftUI + AppKit|
 |Runtime|Rust|
-|Agent Engine|MVP：自研 Graph + Golden Path（ADR-031）；目标可选：Deep Agents + LangGraph（非状态源）|
+|Agent Engine|通用 Bounded Agent Loop（ADR-032）；可选 Workflow；Deep Agents/LangGraph 非状态源|
 |模型|DeepSeek 官方 API 主源 + Poe API 受控兜底|
 |Skill|仓库 Package 安装 + `agent_skills` 绑定|
 |Tool|MVP：Native Tool（File/Document/Knowledge）；MCP / Plugin 非 MVP|
@@ -1230,4 +1251,3 @@ AI Employee OS v1.0 Architecture Freeze
 |State|Task / Action 双状态机（见 Unified Data Model）|
 |安全|Permission + Approval + Audit；App Sandbox 未作为 MVP 硬启用|
 |工程|Monorepo|
-

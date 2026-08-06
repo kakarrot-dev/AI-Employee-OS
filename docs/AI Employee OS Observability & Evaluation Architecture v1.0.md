@@ -1,6 +1,6 @@
 # AI Employee OS Observability & Evaluation Architecture v1.0
 
-> 实现状态：基础 Trace / Evaluation 属 Runtime 基础设施；产品界面尚未完整暴露为「员工绩效仪表盘」。Schema 以 Unified Data Model 为准。
+> 实现状态：Generic Run 新增 Run phase、Snapshot、Observation、Checkpoint、Artifact 与 Deliverable 证据。模型 `complete` 只产生候选结果；通过 Schema、Artifact Hash、ToolResult 和 Evaluation gate 后才能 verified。产品界面尚未完整暴露；Schema 以 Unified Data Model 为准。
 
 目标：
 

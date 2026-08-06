@@ -17,11 +17,14 @@ struct EmployeeEditorView: View {
     @State private var selectedToolIDs: Set<String> = []
     @State private var capabilityPicker: CapabilityPickerKind?
     @State private var saveError: String?
+    @State private var attemptedSave = false
+    @State private var touchedFields: Set<EmployeeDraftField> = []
+    @FocusState private var focusedField: EmployeeDraftField?
     @Environment(\.colorScheme) private var colorScheme
 
     private var isNew: Bool { store.employees.allSatisfy { $0.id != employee.id } }
-    private var canSave: Bool {
-        (3...64).contains(employee.id.count) && !employee.name.isEmpty && !employee.role.isEmpty && !employee.department.isEmpty && !employee.basePrompt.isEmpty && !soulPrompt.isEmpty && !isSaving
+    private var validationErrors: [EmployeeDraftField: String] {
+        EmployeeDraftValidation.errors(employee: employee, soulPrompt: soulPrompt)
     }
 
     private var skillCatalog: [EmployeeCapabilityItem] {
@@ -84,6 +87,9 @@ struct EmployeeEditorView: View {
         .onAppear {
             soulPrompt = employee.soul.joined(separator: "\n\n")
             seedCapabilitySelection()
+        }
+        .onChange(of: focusedField) { oldValue, _ in
+            if let oldValue { touchedFields.insert(oldValue) }
         }
         .task(id: employee.id) {
             guard !isDemo else { return }
@@ -156,8 +162,8 @@ struct EmployeeEditorView: View {
             Group {
                 switch section {
                 case .profile: profileForm
-                case .identity: promptEditor(title: "身份提示词", detail: "定义员工是谁、负责什么，以及必须遵守的工作边界。", text: $employee.basePrompt)
-                case .soul: promptEditor(title: "灵魂提示词", detail: "定义员工如何思考、判断、沟通和行动。", text: $soulPrompt)
+                case .identity: promptEditor(title: "身份提示词", detail: "定义员工是谁、负责什么，以及必须遵守的工作边界。", field: .identity, text: $employee.basePrompt)
+                case .soul: promptEditor(title: "灵魂提示词", detail: "定义员工如何思考、判断、沟通和行动。", field: .soul, text: $soulPrompt)
                 case .capabilities: capabilitiesForm
                 }
             }
@@ -180,13 +186,13 @@ struct EmployeeEditorView: View {
                 }
             }
             formGroup {
-                profileField("员工 ID", text: $employee.id, prompt: "ai-product-manager").disabled(!isNew)
+                profileField("员工 ID", field: .id, text: $employee.id, prompt: "ai-product-manager").disabled(!isNew)
                 formDivider
-                profileField("姓名", text: $employee.name, prompt: "Alex")
+                profileField("姓名", field: .name, text: $employee.name, prompt: "Alex")
                 formDivider
-                profileField("岗位", text: $employee.role, prompt: "AI 产品经理")
+                profileField("岗位", field: .role, text: $employee.role, prompt: "AI 产品经理")
                 formDivider
-                profileField("部门", text: $employee.department, prompt: "产品部")
+                profileField("部门", field: .department, text: $employee.department, prompt: "产品部")
                 formDivider
                 HStack(spacing: 18) {
                     Text("状态").font(.callout).foregroundStyle(palette.muted).frame(width: 86, alignment: .leading)
@@ -291,7 +297,7 @@ struct EmployeeEditorView: View {
         }
     }
 
-    private func promptEditor(title: String, detail: String, text: Binding<String>) -> some View {
+    private func promptEditor(title: String, detail: String, field: EmployeeDraftField, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top) {
                 formHeading(title, detail)
@@ -308,6 +314,10 @@ struct EmployeeEditorView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 markdownSource(text: text)
+                    .focused($focusedField, equals: field)
+            }
+            if shouldShowError(for: field), let error = validationErrors[field] {
+                UXInlineFeedback(message: error)
             }
             HStack {
                 Text("支持标题、列表、引用、强调与代码块").font(.caption).foregroundStyle(palette.muted)
@@ -327,16 +337,41 @@ struct EmployeeEditorView: View {
 
     private var footer: some View {
         HStack {
-            if !canSave { Text("请完整填写基础信息、身份提示词和灵魂提示词").font(.caption).foregroundStyle(palette.muted) }
+            if attemptedSave, !validationErrors.isEmpty {
+                UXInlineFeedback(message: "请修正标记的字段后再保存")
+            } else {
+                Text("保存前会检查基础信息、身份提示词和灵魂提示词")
+                    .font(.caption)
+                    .foregroundStyle(palette.muted)
+            }
             Spacer()
             Button("取消", action: close).buttonStyle(CreamSecondaryButtonStyle())
-            Button(isSaving ? "正在保存…" : "保存资料") { save() }.buttonStyle(CreamPrimaryButtonStyle()).disabled(!canSave)
+            Button(action: save) {
+                UXAsyncActionLabel(idleTitle: "保存资料", pendingTitle: "正在保存", isPending: isSaving)
+            }
+            .buttonStyle(CreamPrimaryButtonStyle())
+            .disabled(isSaving)
         }.padding(.horizontal, 20).frame(height: 60).background(palette.surfaceCard)
     }
 
     private func formHeading(_ title: String, _ detail: String) -> some View { VStack(alignment: .leading, spacing: 4) { Text(title).font(.title2.weight(.semibold)).foregroundStyle(palette.ink); Text(detail).font(.callout).foregroundStyle(palette.muted) } }
     private func formGroup<Content: View>(@ViewBuilder content: () -> Content) -> some View { VStack(spacing: 0) { content() }.padding(.horizontal, 14).background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl)).overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.xl).stroke(palette.hairlineSoft) } }
-    private func profileField(_ label: String, text: Binding<String>, prompt: String) -> some View { HStack(spacing: 18) { Text(label).font(.callout).foregroundStyle(palette.muted).frame(width: 86, alignment: .leading); TextField(prompt, text: text).textFieldStyle(.plain).foregroundStyle(palette.body) }.frame(minHeight: 46) }
+    private func profileField(_ label: String, field: EmployeeDraftField, text: Binding<String>, prompt: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 18) {
+                Text(label).font(.callout).foregroundStyle(palette.muted).frame(width: 86, alignment: .leading)
+                TextField(prompt, text: text)
+                    .textFieldStyle(.plain)
+                    .foregroundStyle(palette.body)
+                    .focused($focusedField, equals: field)
+            }
+            if shouldShowError(for: field), let error = validationErrors[field] {
+                UXInlineFeedback(message: error).padding(.leading, 104)
+            }
+        }
+        .padding(.vertical, 5)
+        .frame(minHeight: 46)
+    }
     private var formDivider: some View { Divider().overlay(palette.hairlineSoft).padding(.leading, 104) }
 
     private func seedCapabilitySelection() {
@@ -353,6 +388,19 @@ struct EmployeeEditorView: View {
     }
 
     private func save() {
+        attemptedSave = true
+        guard validationErrors.isEmpty else {
+            let order: [EmployeeDraftField] = [.id, .name, .role, .department, .identity, .soul]
+            if let first = order.first(where: { validationErrors[$0] != nil }) {
+                section = switch first {
+                case .id, .name, .role, .department: .profile
+                case .identity: .identity
+                case .soul: .soul
+                }
+                focusedField = first
+            }
+            return
+        }
         employee.id = employee.id.lowercased().replacingOccurrences(of: " ", with: "-")
         employee.soul = markdownSections(soulPrompt)
         // Legacy columns are derived by Runtime from Identity/Soul; keep local mirrors empty.
@@ -378,6 +426,7 @@ struct EmployeeEditorView: View {
             isSaving = false
         }
     }
+    private func shouldShowError(for field: EmployeeDraftField) -> Bool { attemptedSave || touchedFields.contains(field) }
     private func markdownSections(_ value: String) -> [String] { value.components(separatedBy: "\n\n").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty } }
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }

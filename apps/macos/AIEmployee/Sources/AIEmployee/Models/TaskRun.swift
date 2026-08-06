@@ -55,6 +55,13 @@ struct TaskHistoryResponse: Codable, Sendable {
         let evaluation: RuntimeResponse.Evaluation?
         let events: [RuntimeEvent]
         let cancellationRequested: Bool
+        let runID: String?
+        let runPhase: String?
+        let waitingReason: String?
+        let stopReason: String?
+        let deliverableTitle: String?
+        let deliverableStatus: String?
+        let verifiedArtifactPath: String?
 
         enum CodingKeys: String, CodingKey {
             case taskID = "task_id"
@@ -64,6 +71,13 @@ struct TaskHistoryResponse: Codable, Sendable {
             case updatedAt = "updated_at"
             case artifactPath = "artifact_path"
             case cancellationRequested = "cancellation_requested"
+            case runID = "run_id"
+            case runPhase = "run_phase"
+            case waitingReason = "waiting_reason"
+            case stopReason = "stop_reason"
+            case deliverableTitle = "deliverable_title"
+            case deliverableStatus = "deliverable_status"
+            case verifiedArtifactPath = "verified_artifact_path"
         }
     }
 
@@ -109,6 +123,16 @@ struct RuntimeEventsResponse: Codable, Sendable {
     }
 }
 
+struct RunContinuationResponse: Codable, Sendable {
+    let taskID: String
+    let runID: String
+    let status: String
+    let phase: String
+    enum CodingKeys: String, CodingKey {
+        case taskID = "task_id"; case runID = "run_id"; case status; case phase
+    }
+}
+
 struct TaskRun: Identifiable {
     let id: String
     let agentID: String
@@ -122,4 +146,11 @@ struct TaskRun: Identifiable {
     var artifactPath: String?
     var evaluation: RuntimeResponse.Evaluation?
     var isCancellationRequested: Bool
+    var runID: String? = nil
+    var runPhase: String? = nil
+    var waitingReason: String? = nil
+    var stopReason: String? = nil
+    var deliverableTitle: String? = nil
+    var deliverableStatus: String? = nil
+    var verifiedArtifactPath: String? = nil
 }

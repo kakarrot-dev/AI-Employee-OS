@@ -27,7 +27,9 @@ struct ContextSidebarView: View {
             if selection == .contacts {
                 Button(action: employeeStore.create) { Image(systemName: "person.badge.plus") }
                     .buttonStyle(.plain)
+                    .frame(width: 40, height: 40)
                     .help("新建员工")
+                    .accessibilityLabel("新建员工")
             }
         }
         .foregroundStyle(palette.body)
@@ -85,8 +87,10 @@ struct WorkConversationList: View {
                     if !query.isEmpty {
                         Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
                             .buttonStyle(.plain)
+                            .frame(width: 40, height: 40)
                             .foregroundStyle(palette.mutedSoft)
                             .help("清除搜索")
+                            .accessibilityLabel("清除搜索")
                     }
                 }
                 .padding(.horizontal, 11)
@@ -103,17 +107,26 @@ struct WorkConversationList: View {
                     .controlSize(.small)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = employeeStore.error, employees.isEmpty {
-                ContentUnavailableView(
-                    "无法读取员工",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text(error)
+                UXFeedbackStateView(
+                    title: "无法读取员工",
+                    message: "会话没有被删除。\(error)",
+                    systemImage: "exclamationmark.triangle.fill",
+                    tone: .error,
+                    actionTitle: "重试",
+                    action: { Task { await employeeStore.reload() } }
                 )
+                .padding(AppTheme.Spacing.lg)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if employees.isEmpty {
-                ContentUnavailableView(
-                    query.isEmpty ? "还没有 AI 员工" : "没有匹配结果",
+                UXFeedbackStateView(
+                    title: query.isEmpty ? "还没有 AI 员工" : "没有匹配结果",
+                    message: query.isEmpty ? "先在通讯录创建员工，再回到这里继续对话。" : "尝试其他姓名、岗位或部门。",
                     systemImage: query.isEmpty ? "person.2" : "magnifyingglass",
-                    description: Text(query.isEmpty ? "先在通讯录创建员工，再回到这里继续对话。" : "尝试其他姓名、岗位或部门。")
+                    actionTitle: query.isEmpty ? nil : "清除搜索",
+                    action: query.isEmpty ? nil : { query = "" }
                 )
+                .padding(AppTheme.Spacing.lg)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {

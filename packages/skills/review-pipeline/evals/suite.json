@@ -1,0 +1,1 @@
+{"schema_version":"1.0.0","cases":[{"id":"basic-review","input":{"text":"发布窗口为周五。"},"required_output_fields":["summary"]}]}

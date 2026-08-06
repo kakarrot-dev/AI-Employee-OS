@@ -2,6 +2,8 @@
 
 > 页面级事实源：主界面结构、通讯录、连续工作区、Settings、Light/Dark Mode 和视觉验收以 [AI Employee macOS Main Interface Spec v2.0](./AI%20Employee%20macOS%20Main%20Interface%20Spec%20v2.0.md) 为准。本文件只维护 Claude Cream Token、业务状态颜色和通用 macOS 组件原则。
 
+> 交互状态事实源：加载、空白、错误、恢复、表单验证、Command Palette、动效和可访问性以 [AI Employee macOS UX State & Interaction Standard v1.0](./AI%20Employee%20macOS%20UX%20State%20%26%20Interaction%20Standard%20v1.0.md) 为准。
+
 ## 定位
 
 AI Employee macOS Client 使用 Claude Cream 作为唯一自定义视觉 Token。SwiftUI 继续保留原生 Sidebar、Toolbar、Sheet、Alert、菜单和辅助功能行为，不以自绘控件替代系统交互。

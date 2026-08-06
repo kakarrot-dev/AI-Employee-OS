@@ -33,7 +33,11 @@ struct ContentView: View {
             if store.isCommandPalettePresented {
                 CreamModalOverlay(close: { store.isCommandPalettePresented = false }, preferredWidth: 640, preferredHeight: 420) {
                     CommandPaletteView(
+                        employees: ContactsDemoData.current?.employees ?? employeeStore.employees,
+                        recentRuns: store.runs,
                         navigate: { destination.wrappedValue = $0 },
+                        openEmployee: { openConversation($0) },
+                        openRun: { openRun($0) },
                         newWork: { beginWork() },
                         openSettings: { destination.wrappedValue = .settings },
                         close: { store.isCommandPalettePresented = false }
@@ -71,6 +75,13 @@ struct ContentView: View {
                 close: closeActiveModal
             )
             .frame(width: 0, height: 0)
+
+            UXToastOverlay(notice: $employeeStore.notice)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(.top, AppTheme.Spacing.md)
+                .padding(.trailing, AppTheme.Spacing.md)
+                .allowsHitTesting(employeeStore.notice != nil)
+                .zIndex(120)
         }
         .onChange(of: employeeStore.selection) { _, _ in
             if let employee = employeeStore.selected { conversationStore.select(employee: employee) }
@@ -125,6 +136,15 @@ struct ContentView: View {
     private func openConversation(_ employee: Employee) {
         employeeStore.selection = employee.id
         conversationStore.select(employee: employee)
+        destination.wrappedValue = .work
+    }
+
+    private func openRun(_ run: TaskRun) {
+        store.selection = run.id
+        if let employee = (ContactsDemoData.current?.employees ?? employeeStore.employees).first(where: { $0.id == run.agentID }) {
+            employeeStore.selection = employee.id
+            conversationStore.select(employee: employee)
+        }
         destination.wrappedValue = .work
     }
 

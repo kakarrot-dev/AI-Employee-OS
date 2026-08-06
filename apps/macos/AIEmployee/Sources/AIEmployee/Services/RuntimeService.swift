@@ -22,12 +22,13 @@ struct RuntimeService: Sendable {
         }
     }
 
-    let run: @Sendable (String, String) async throws -> RuntimeResponse
     let loadHistory: @Sendable () async throws -> TaskHistoryResponse
     let events: @Sendable (String, Int) async throws -> RuntimeEventsResponse
     let cancel: @Sendable (String) async throws -> Void
+    let continueRun: @Sendable (String, Bool, String?) async throws -> RunContinuationResponse
+    let resolveUnknown: @Sendable (String, String) async throws -> RunContinuationResponse
     let chatHistory: @Sendable (String) async throws -> ChatHistoryResponse
-    let chatSend: @Sendable (String, String, String, String) async throws -> ChatSendResponse
+    let chatSend: @Sendable (String, String, String, String, String?, @escaping @MainActor @Sendable (String) -> Void) async throws -> ChatSendResponse
     let chatDelete: @Sendable (String) async throws -> ChatDeleteResponse
     let employeeList: @Sendable () async throws -> EmployeeListResponse
     let employeeSave: @Sendable (Employee) async throws -> EmployeeSaveResponse
@@ -40,39 +41,7 @@ struct RuntimeService: Sendable {
     let unbindSkill: @Sendable (String, String) async throws -> UnbindSkillResponse
 
     static func live() -> Self {
-        Self(run: { taskID, input in
-            try await Task.detached(priority: .userInitiated) {
-                let layout = try runtimeLayout()
-                do {
-                    try FileManager.default.createDirectory(at: layout.database.deletingLastPathComponent(), withIntermediateDirectories: true)
-                    try FileManager.default.createDirectory(at: layout.outputDirectory, withIntermediateDirectories: true)
-                } catch {
-                    throw RuntimeError.storageUnavailable(error.localizedDescription)
-                }
-                let process = Process()
-                process.executableURL = layout.binary
-                process.arguments = [
-                    "run-task", "--repository-root", layout.resourceRoot.path,
-                    "--database", layout.database.path,
-                    "--output-dir", layout.outputDirectory.path,
-                    "--input", input, "--task-id", taskID, "--approve-write"
-                ]
-                let stdout = Pipe()
-                let stderr = Pipe()
-                process.standardOutput = stdout
-                process.standardError = stderr
-                do { try process.run() }
-                catch { throw RuntimeError.processUnavailable(error.localizedDescription) }
-                process.waitUntilExit()
-                let output = stdout.fileHandleForReading.readDataToEndOfFile()
-                let error = stderr.fileHandleForReading.readDataToEndOfFile()
-                guard process.terminationStatus == 0 else {
-                    throw RuntimeError.processFailed(String(decoding: error, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
-                }
-                do { return try JSONDecoder().decode(RuntimeResponse.self, from: output) }
-                catch { throw RuntimeError.invalidResponse(error.localizedDescription) }
-            }.value
-        }, loadHistory: {
+        Self(loadHistory: {
             try await Task.detached(priority: .utility) {
                 let layout = try runtimeLayout()
                 let binary = layout.binary
@@ -102,10 +71,31 @@ struct RuntimeService: Sendable {
             try await decodeCommand(["events", "--database", try databaseURL().path, "--task-id", taskID, "--after", String(after)], as: RuntimeEventsResponse.self)
         }, cancel: { taskID in
             let _: CancelResponse = try await decodeCommand(["cancel-task", "--database", try databaseURL().path, "--task-id", taskID], as: CancelResponse.self)
+        }, continueRun: { runID, approve, key in
+            let layout = try runtimeLayout()
+            return try await decodeCommand([
+                "continue-run", "--repository-root", layout.resourceRoot.path,
+                "--database", try databaseURL().path, "--run-id", runID,
+                "--authorized-root", layout.outputDirectory.path, approve ? "--approve" : "--reject"
+            ], environment: key.map { ["DEEPSEEK_API_KEY": $0] } ?? [:], as: RunContinuationResponse.self)
+        }, resolveUnknown: { actionID, status in
+            let layout = try runtimeLayout()
+            return try await decodeCommand([
+                "resolve-action-result", "--repository-root", layout.resourceRoot.path,
+                "--database", try databaseURL().path,
+                "--action-id", actionID, "--status", status,
+                "--evidence-json", "{\"verified_by\":\"user\"}"
+            ], environment: KeychainService.load().map { ["DEEPSEEK_API_KEY": $0] } ?? [:], as: RunContinuationResponse.self)
         }, chatHistory: { conversationID in
             try await decodeCommand(["chat-history", "--database", try databaseURL().path, "--conversation-id", conversationID], as: ChatHistoryResponse.self)
-        }, chatSend: { conversationID, employeeID, input, key in
-            try await decodeCommand(["chat-send", "--repository-root", try runtimeLayout().resourceRoot.path, "--database", try databaseURL().path, "--conversation-id", conversationID, "--employee-id", employeeID, "--input", input], environment: ["DEEPSEEK_API_KEY": key], as: ChatSendResponse.self)
+        }, chatSend: { conversationID, employeeID, input, key, replaceMessageID, onDelta in
+            var arguments = ["chat-send", "--stream-events", "--repository-root", try runtimeLayout().resourceRoot.path, "--database", try databaseURL().path, "--conversation-id", conversationID, "--employee-id", employeeID, "--input", input]
+            if let replaceMessageID { arguments.append(contentsOf: ["--replace-message-id", replaceMessageID]) }
+            return try await streamChatCommand(
+                arguments,
+                environment: ["DEEPSEEK_API_KEY": key],
+                onDelta: onDelta
+            )
         }, chatDelete: { conversationID in
             try await decodeCommand(["chat-delete", "--database", try databaseURL().path, "--conversation-id", conversationID], as: ChatDeleteResponse.self)
         }, employeeList: {
@@ -179,6 +169,49 @@ struct RuntimeService: Sendable {
             guard process.terminationStatus == 0 else { throw RuntimeError.processFailed(String(decoding: error, as: UTF8.self)) }
             do { return try JSONDecoder().decode(T.self, from: output) }
             catch { throw RuntimeError.invalidResponse(error.localizedDescription) }
+        }.value
+    }
+
+    private static func streamChatCommand(
+        _ arguments: [String],
+        environment: [String: String],
+        onDelta: @escaping @MainActor @Sendable (String) -> Void
+    ) async throws -> ChatSendResponse {
+        try await Task.detached(priority: .userInitiated) {
+            let process = Process()
+            process.executableURL = try runtimeLayout().binary
+            process.arguments = arguments
+            process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
+            let stdout = Pipe()
+            let stderr = Pipe()
+            process.standardOutput = stdout
+            process.standardError = stderr
+            do { try process.run() }
+            catch { throw RuntimeError.processUnavailable(error.localizedDescription) }
+
+            var buffer = Data()
+            var response: ChatSendResponse?
+            let decoder = JSONDecoder()
+            while let data = try stdout.fileHandleForReading.read(upToCount: 4096), !data.isEmpty {
+                buffer.append(data)
+                while let newline = buffer.firstIndex(of: 0x0A) {
+                    let line = buffer.prefix(upTo: newline)
+                    buffer.removeSubrange(...newline)
+                    guard !line.isEmpty else { continue }
+                    if let event = try? decoder.decode(ChatStreamDelta.self, from: line), event.type == "delta" {
+                        await onDelta(event.delta)
+                    } else if let completed = try? decoder.decode(ChatSendResponse.self, from: line) {
+                        response = completed
+                    }
+                }
+            }
+            process.waitUntilExit()
+            let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
+            guard process.terminationStatus == 0 else {
+                throw RuntimeError.processFailed(String(decoding: errorData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+            guard let response else { throw RuntimeError.invalidResponse("流式响应缺少完成事件") }
+            return response
         }.value
     }
 

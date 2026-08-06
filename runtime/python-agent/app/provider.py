@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from enum import Enum
 import json
 import os
-from typing import Protocol
+from typing import Callable, Iterator, Protocol
 from urllib import error, request
 
 
@@ -55,6 +55,8 @@ class HttpResponse:
 class Transport(Protocol):
     def post(self, url: str, headers: dict[str, str], payload: dict, timeout: float) -> HttpResponse: ...
 
+    def stream(self, url: str, headers: dict[str, str], payload: dict, timeout: float) -> Iterator[bytes]: ...
+
 
 class UrllibTransport:
     def post(self, url: str, headers: dict[str, str], payload: dict, timeout: float) -> HttpResponse:
@@ -64,6 +66,17 @@ class UrllibTransport:
                 return HttpResponse(response.status, response.read())
         except error.HTTPError as exc:
             return HttpResponse(exc.code, exc.read())
+        except (error.URLError, TimeoutError) as exc:
+            raise ProviderFailure(ProviderErrorKind.NETWORK, str(exc)) from exc
+
+    def stream(self, url: str, headers: dict[str, str], payload: dict, timeout: float) -> Iterator[bytes]:
+        req = request.Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")
+        try:
+            with request.urlopen(req, timeout=timeout) as response:
+                for line in response:
+                    yield line
+        except error.HTTPError as exc:
+            _raise_http_error(HttpResponse(exc.code, exc.read()))
         except (error.URLError, TimeoutError) as exc:
             raise ProviderFailure(ProviderErrorKind.NETWORK, str(exc)) from exc
 
@@ -100,6 +113,46 @@ class DeepSeekProvider:
             _token_count(usage, "prompt_tokens", "input_tokens"),
             _token_count(usage, "completion_tokens", "output_tokens"),
         )
+
+    def stream_complete(
+        self,
+        messages: list[dict[str, str]],
+        on_delta: Callable[[str], None],
+    ) -> ProviderResponse:
+        key = os.getenv("DEEPSEEK_API_KEY")
+        if not key:
+            raise ProviderFailure(ProviderErrorKind.AUTHENTICATION, "DEEPSEEK_API_KEY is not configured")
+        chunks: list[str] = []
+        input_tokens = 0
+        output_tokens = 0
+        for raw_line in self.transport.stream(
+            "https://api.deepseek.com/chat/completions",
+            _headers(key),
+            {"model": self.model, "messages": messages, "stream": True, "stream_options": {"include_usage": True}},
+            self.timeout,
+        ):
+            line = raw_line.decode("utf-8").strip()
+            if not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if not data or data == "[DONE]":
+                continue
+            try:
+                payload = json.loads(data)
+                choices = payload.get("choices") or []
+                delta = choices[0].get("delta", {}).get("content") if choices else None
+                if isinstance(delta, str) and delta:
+                    chunks.append(delta)
+                    on_delta(delta)
+                usage = payload.get("usage") or {}
+                input_tokens = _token_count(usage, "prompt_tokens", "input_tokens") or input_tokens
+                output_tokens = _token_count(usage, "completion_tokens", "output_tokens") or output_tokens
+            except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+                raise ProviderFailure(ProviderErrorKind.INVALID_RESPONSE, "invalid DeepSeek stream event") from exc
+        content = "".join(chunks)
+        if not content:
+            raise ProviderFailure(ProviderErrorKind.INVALID_RESPONSE, "missing DeepSeek stream content")
+        return ProviderResponse(content, self.name, input_tokens, output_tokens)
 
 
 class PoeProvider:

@@ -23,6 +23,22 @@ extension TaskRunStatus {
 }
 
 enum TaskPresentation {
+    static func runPhase(_ phase: String, waitingReason: String?) -> String {
+        switch phase {
+        case "preflight": "正在检查运行条件"
+        case "context_build": "正在准备上下文"
+        case "model_decision": "正在决定下一步"
+        case "waiting_user": waitingReason == nil ? "等待补充信息" : "等待补充信息 · \(waitingReason!)"
+        case "waiting_approval": "等待授权"
+        case "tool_execution": "正在调用工具"
+        case "observe": "正在核对工具结果"
+        case "validate_output": "正在验证输出"
+        case "evaluate": "正在评估交付质量"
+        case "terminal": "运行已收敛"
+        default: phase
+        }
+    }
+
     static func actionTitle(_ stepID: String) -> String {
         switch stepID {
         case "analyze": "分析需求与证据"
@@ -64,12 +80,26 @@ enum TaskPresentation {
     }
 
     static func date(_ value: String) -> String {
-        guard let date = ISO8601DateFormatter().date(from: value) else { return value }
+        guard let date = parsedDate(value) else { return value }
         return date.formatted(date: .abbreviated, time: .shortened)
     }
 
     static func time(_ value: String) -> String {
-        guard let date = ISO8601DateFormatter().date(from: value) else { return value }
+        guard let date = parsedDate(value) else { return value }
         return date.formatted(date: .omitted, time: .shortened)
+    }
+
+    private static func parsedDate(_ value: String) -> Date? {
+        let fractionalISO8601 = ISO8601DateFormatter()
+        fractionalISO8601.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractionalISO8601.date(from: value) { return date }
+
+        let standardISO8601 = ISO8601DateFormatter()
+        standardISO8601.formatOptions = [.withInternetDateTime]
+        if let date = standardISO8601.date(from: value) { return date }
+
+        guard let timestamp = Double(value) else { return nil }
+        let seconds = timestamp > 10_000_000_000 ? timestamp / 1_000 : timestamp
+        return Date(timeIntervalSince1970: seconds)
     }
 }

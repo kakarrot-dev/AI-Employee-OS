@@ -10,6 +10,7 @@ final class CapabilityStore: ObservableObject {
     @Published private(set) var boundSkillsByEmployee: [String: [RuntimeSkillItem]] = [:]
     @Published private(set) var selectedToolIDsByEmployee: [String: Set<String>] = [:]
     @Published private(set) var loadError: String?
+    @Published private(set) var isLoading = false
     @Published var actionError: String?
 
     init(service: RuntimeService) {
@@ -30,6 +31,8 @@ final class CapabilityStore: ObservableObject {
 
     func reload() async {
         guard WorkLibraryDemoData.current == nil, ContactsDemoData.current == nil else { return }
+        isLoading = true
+        defer { isLoading = false }
         do {
             async let caps = service.capabilities()
             async let skillList = service.skillsList(nil)

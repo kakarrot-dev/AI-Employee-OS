@@ -14,6 +14,7 @@ pub struct GraphNode {
     pub tool_version: Option<String>,
     pub timeout_ms: u64,
     pub max_attempts: u64,
+    pub arguments: Value,
 }
 
 #[derive(Clone, Debug)]
@@ -85,6 +86,7 @@ impl GraphPlan {
                 max_attempts: graph["max_attempts"]
                     .as_u64()
                     .ok_or("invalid locked retry policy")?,
+                arguments: graph.get("arguments").cloned().unwrap_or_else(|| json!({})),
             });
         }
         if nodes.is_empty() || nodes.len() > 64 {
@@ -143,21 +145,34 @@ impl GraphPlan {
     }
 
     pub fn load(connection: &Connection, skill_id: &str, version: &str) -> Result<Self, String> {
-        let manifest: Option<String> = connection
+        let installed: Option<(String, String)> = connection
             .query_row(
-                "SELECT manifest_json FROM skills WHERE id=?1 AND version=?2 AND status='active'",
+                "SELECT manifest_json,path FROM skills WHERE id=?1 AND version=?2 AND status='active'",
                 params![skill_id, version],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()
             .map_err(|error| error.to_string())?;
-        let manifest: Value = serde_json::from_str(
-            &manifest
-                .ok_or_else(|| format!("locked skill is unavailable: {skill_id}@{version}"))?,
-        )
-        .map_err(|error| error.to_string())?;
-        let workflow = &manifest["skill"]["workflow"];
-        if workflow["engine"] != "runtime-dag-v1" {
+        let (manifest_raw, package_path) = installed
+            .ok_or_else(|| format!("locked skill is unavailable: {skill_id}@{version}"))?;
+        let manifest: Value =
+            serde_json::from_str(&manifest_raw).map_err(|error| error.to_string())?;
+        let skill = &manifest["skill"];
+        let workflow_owned = if manifest["schema_version"] == "2.0.0" {
+            let relative = required_text(&skill["execution"], "workflow")?;
+            let raw = std::fs::read_to_string(std::path::Path::new(&package_path).join(relative))
+                .map_err(|error| format!("workflow file is unavailable: {error}"))?;
+            let yaml: serde_yaml::Value =
+                serde_yaml::from_str(&raw).map_err(|error| error.to_string())?;
+            serde_json::to_value(yaml).map_err(|error| error.to_string())?
+        } else {
+            skill["workflow"].clone()
+        };
+        let workflow = &workflow_owned;
+        if !matches!(
+            workflow["engine"].as_str(),
+            Some("runtime-dag-v1" | "runtime-dag-v2")
+        ) {
             return Err("unsupported graph engine".into());
         }
         let max_steps = workflow["max_steps"]
@@ -171,7 +186,12 @@ impl GraphPlan {
         }
         let mut nodes = Vec::with_capacity(raw_nodes.len());
         let mut ids = HashSet::new();
-        let allowed_routes: HashSet<(String, String)> = manifest["skill"]["required_tools"]
+        let tool_key = if manifest["schema_version"] == "2.0.0" {
+            "tools"
+        } else {
+            "required_tools"
+        };
+        let allowed_routes: HashSet<(String, String)> = skill[tool_key]
             .as_array()
             .ok_or("required_tools are invalid")?
             .iter()
@@ -263,6 +283,7 @@ impl GraphPlan {
                 tool_version,
                 timeout_ms,
                 max_attempts,
+                arguments: raw.get("arguments").cloned().unwrap_or_else(|| json!({})),
             });
         }
         validate_dependencies(&nodes)?;
@@ -304,6 +325,7 @@ impl GraphPlan {
                                 "max_attempts": node.max_attempts,
                                 "tool_action": node.tool_action,
                                 "tool_version": node.tool_version,
+                                "arguments": node.arguments,
                             }
                         })
                         .to_string(),

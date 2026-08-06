@@ -1,6 +1,6 @@
 # 《AI Employee OS Security & Permission Architecture v1.0》
 
-> 实现状态：Permission / Approval / Audit 属 Runtime 已具备能力；产品面按任务路径暴露，不以「企业 RBAC 已交付」解读。Secret 边界见 `AGENTS.md`。
+> 实现状态：Permission / Approval / Audit 属 Rust Runtime。Generic Run 在 Tool 前先持久化 Action；未授权时 Action=`blocked`、Run=`waiting_approval`、Task 保持 `running`。批准后仍经 ToolExecutor；`result_unknown` 禁止自动重放。Secret 边界见 `AGENTS.md`。
 
 目标：
 

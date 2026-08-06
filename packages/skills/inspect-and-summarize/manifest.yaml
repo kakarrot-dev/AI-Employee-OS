@@ -1,0 +1,19 @@
+schema_version: 2.0.0
+skill:
+  id: inspect-and-summarize
+  name: 检查并总结文件
+  version: 1.0.0
+  description: 读取授权的 UTF-8 文件，并根据真实内容生成摘要。
+  category: general
+  runtime_compatibility: ">=2.0.0 <3.0.0"
+  status: active
+  instructions: SKILL.md
+  routing: {explicit: true, triggers: [inspect_file, 检查文件, 总结文件], positive_examples: ["总结这个文件"], negative_examples: ["总结这段粘贴文本"]}
+  context: {required: [], optional: [], max_bytes: 65536}
+  tools:
+    - {id: file-tool, version: ">=1.0.0 <2.0.0", actions: [read_file], max_calls: 2, allow_side_effects: false, on_missing: fail}
+  input_schema: {type: object, additionalProperties: false, required: [path], properties: {path: {type: string}}}
+  output_schema: {type: object, additionalProperties: false, required: [summary], properties: {summary: {type: string}}}
+  execution: {mode: agent_loop, max_model_turns: 3, max_tool_calls: 2, max_duration_ms: 60000, on_result_unknown: stop}
+  deliverables: {required: false, allowed_types: [structured_result], evidence: output_schema}
+  evaluation: {timing: before_delivery, block_on_failure: true, suite: evals/suite.json}

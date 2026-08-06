@@ -64,7 +64,7 @@ struct EmployeeChatWorkspaceView: View {
             .background(palette.canvas)
 
             if showsInspector {
-                TaskInspectorView(run: selectedRun, employee: employee)
+                TaskInspectorView(run: selectedRun, employee: employee, store: store)
                     .frame(minWidth: 280, idealWidth: inspectorWidth, maxWidth: 420)
                     .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { newWidth in
                         inspectorWidth = min(max(newWidth, 280), 420)
@@ -169,42 +169,143 @@ private struct EmployeeMessageStream: View {
     let employee: Employee?
     let showsTasks: Bool
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let bottomAnchorID = "conversation-timeline-bottom"
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
-                if timeline.isEmpty {
-                    EmptyConversationView(employeeName: employee?.name ?? conversationStore.employeeName, supportsTasks: showsTasks)
-                }
-
-                ForEach(timeline) { entry in
-                    switch entry {
-                    case .message(let message):
-                        ConversationMessageBlock(
-                            message: message,
-                            employeeName: employee?.name ?? conversationStore.employeeName,
-                            edit: { conversationStore.draft = message.content }
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+                    if let historyError = store.historyError {
+                        UXFeedbackStateView(
+                            title: "无法读取工作记录",
+                            message: "当前会话仍然保留。\(historyError)",
+                            systemImage: "exclamationmark.triangle.fill",
+                            tone: .error,
+                            actionTitle: "重试",
+                            action: store.retryHistory
                         )
-                    case .run(let run):
-                        TaskConversationBlock(run: run)
-                            .id(run.id)
+                        .padding(AppTheme.Spacing.md)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(palette.error.opacity(0.06), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
                     }
+                    if timeline.isEmpty {
+                        EmptyConversationView(employeeName: employee?.name ?? conversationStore.employeeName, supportsTasks: showsTasks)
+                    }
+
+                    ForEach(timeline) { entry in
+                        switch entry {
+                        case .message(let message):
+                            ConversationMessageBlock(
+                                message: message,
+                                employeeName: employee?.name ?? conversationStore.employeeName,
+                                isEditable: message.role == "user" && message.id == conversationStore.latestUserMessageID && !conversationStore.isSending,
+                                revise: { conversationStore.reviseLatestUserMessage(id: message.id, content: $0) }
+                            )
+                        case .run(let run):
+                            TaskConversationBlock(run: run)
+                                .id(run.id)
+                        }
+                    }
+
+                    if conversationStore.isSending {
+                        PendingAssistantResponseView(
+                            employeeName: employee?.name ?? conversationStore.employeeName,
+                            content: conversationStore.streamingContent,
+                            startedAt: conversationStore.streamingStartedAt
+                        )
+                            .id("pending-assistant-response")
+                    }
+
+                    Color.clear.frame(height: 1).id(Self.bottomAnchorID)
                 }
+                .padding(.top, AppTheme.Spacing.lg)
+                .padding(.bottom, 132)
+                .frame(maxWidth: 820, alignment: .leading)
+                .padding(.horizontal, AppTheme.Spacing.lg)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
-            .padding(.top, AppTheme.Spacing.lg)
-            .padding(.bottom, 132)
-            .frame(maxWidth: 820, alignment: .leading)
-            .padding(.horizontal, AppTheme.Spacing.lg)
-            .frame(maxWidth: .infinity, alignment: .center)
+            .onChange(of: scrollSignal) { _, _ in scrollToLatest(using: proxy) }
+            .onChange(of: conversationStore.employeeID) { _, _ in scrollToLatest(using: proxy) }
         }
         .scrollContentBackground(.hidden)
         .background(palette.canvas)
+    }
+
+    private var scrollSignal: String {
+        "\(timeline.last?.id ?? "empty"):\(conversationStore.isSending):\(conversationStore.streamingContent.count)"
+    }
+
+    private func scrollToLatest(using proxy: ScrollViewProxy) {
+        Task { @MainActor in
+            await Task.yield()
+            if reduceMotion || conversationStore.isSending {
+                proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+            } else {
+                withAnimation(.easeOut(duration: AppTheme.Motion.standard)) {
+                    proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                }
+            }
+        }
     }
 
     private var timeline: [WorkTimelineEntry] {
         var entries = conversationStore.messages.map(WorkTimelineEntry.message)
         if showsTasks { entries.append(contentsOf: store.runs.map(WorkTimelineEntry.run)) }
         return entries.sorted { $0.createdAt < $1.createdAt }
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct PendingAssistantResponseView: View {
+    let employeeName: String
+    let content: String
+    let startedAt: Date?
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.md) {
+            StreamingStatusLine(employeeName: employeeName, startedAt: startedAt)
+            if content.isEmpty {
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    ProgressView().controlSize(.small).tint(palette.accentTeal)
+                    Text("消息已收到，正在组织回答")
+                        .font(.callout)
+                        .foregroundStyle(palette.muted)
+                }
+            } else {
+                ChatMarkdownBody(source: content)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(content.isEmpty ? "\(employeeName) 正在回复，消息已收到" : "\(employeeName) 正在回复：\(content)")
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct StreamingStatusLine: View {
+    let employeeName: String
+    let startedAt: Date?
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            HStack(spacing: AppTheme.Spacing.sm) {
+                Text(status(at: context.date))
+                    .font(.caption.monospacedDigit().weight(.medium))
+                    .foregroundStyle(palette.muted)
+                Rectangle().fill(palette.hairlineSoft).frame(height: 1)
+            }
+        }
+    }
+
+    private func status(at date: Date) -> String {
+        guard let startedAt else { return "\(employeeName) 正在回复" }
+        return "\(employeeName) 正在回复 · 已处理 \(max(0, Int(date.timeIntervalSince(startedAt)))) 秒"
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
@@ -246,31 +347,86 @@ private struct EmptyConversationView: View {
 private struct ConversationMessageBlock: View {
     let message: ChatMessage
     let employeeName: String
-    let edit: () -> Void
+    let isEditable: Bool
+    let revise: (String) -> Bool
     @State private var hovering = false
+    @State private var expanded = false
+    @State private var isEditing = false
+    @State private var editingText = ""
+    @FocusState private var editorFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
 
     @ViewBuilder
     var body: some View {
         if message.role == "user" {
             VStack(alignment: .trailing, spacing: 5) {
-                ContentSizedBubble(maxWidth: 680) {
+                if isEditing {
                     VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                        if !attachments.isEmpty {
-                            ChatAttachmentStack(attachments: attachments)
-                        }
-                        Text(message.content)
+                        TextEditor(text: $editingText)
                             .font(.body)
                             .foregroundStyle(palette.body)
-                            .textSelection(.enabled)
+                            .scrollContentBackground(.hidden)
+                            .frame(minHeight: 52, maxHeight: 140)
+                            .focused($editorFocused)
+                        HStack(spacing: AppTheme.Spacing.sm) {
+                            Text("修改后将重新生成这一轮回复")
+                                .font(.caption2)
+                                .foregroundStyle(palette.muted)
+                            Spacer(minLength: AppTheme.Spacing.md)
+                            Button("取消") { isEditing = false }
+                                .buttonStyle(.plain)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(palette.muted)
+                            Button {
+                                if revise(editingText) { isEditing = false }
+                            } label: {
+                                Label("重新发送", systemImage: "arrow.up")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(palette.onPrimary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(palette.primaryActive, in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(editingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
                     }
                     .padding(.horizontal, AppTheme.Spacing.md)
                     .padding(.vertical, AppTheme.Spacing.sm)
+                    .frame(minWidth: 380, idealWidth: 520, maxWidth: 600, alignment: .leading)
                     .background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous)
+                            .stroke(palette.primary.opacity(0.32), lineWidth: 1)
+                    }
+                    .onExitCommand { isEditing = false }
+                } else {
+                    ContentSizedBubble(maxWidth: 680) {
+                        VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                            if !attachments.isEmpty {
+                                ChatAttachmentStack(attachments: attachments)
+                            }
+                            Text(displayedContent)
+                                .font(.body)
+                                .foregroundStyle(palette.body)
+                                .textSelection(.enabled)
+                        }
+                        .padding(.horizontal, AppTheme.Spacing.md)
+                        .padding(.vertical, AppTheme.Spacing.sm)
+                        .background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+                    }
                 }
 
-                MessageHoverActions(createdAt: message.createdAt, text: message.content, edit: edit)
+                if isLong && !isEditing { foldButton }
+                if !isEditing {
+                    MessageHoverActions(
+                        createdAt: message.createdAt,
+                        text: message.content,
+                        edit: isEditable ? beginEditing : nil,
+                        actionsVisible: hovering
+                    )
                     .opacity(hovering ? 1 : 0)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
             .contentShape(Rectangle())
@@ -278,10 +434,71 @@ private struct ConversationMessageBlock: View {
             .animation(.easeOut(duration: AppTheme.Motion.fast), value: hovering)
             .accessibilityLabel("你：\(message.content)")
         } else {
-            ChatMarkdownBody(source: message.content)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityLabel("\(employeeName)：\(message.content)")
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    Text("\(employeeName) · \(TaskPresentation.time(message.createdAt))")
+                        .font(.caption.monospacedDigit().weight(.medium))
+                        .foregroundStyle(palette.muted)
+                    Rectangle().fill(palette.hairlineSoft).frame(height: 1)
+                }
+                ChatMarkdownBody(source: displayedContent)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(employeeName)：\(message.content)")
+                if isLong { foldButton }
+                Button {
+                    copy(message.content)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.caption.weight(.medium))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(palette.muted)
+                .opacity(hovering ? 1 : 0)
+                .help("复制完整回复")
+                .accessibilityLabel("复制 \(employeeName) 的回复")
+            }
+            .contentShape(Rectangle())
+            .onHover { hovering = $0 }
+            .animation(.easeOut(duration: AppTheme.Motion.fast), value: hovering)
         }
+    }
+
+    private func beginEditing() {
+        editingText = message.content
+        isEditing = true
+        Task { @MainActor in
+            await Task.yield()
+            editorFocused = true
+        }
+    }
+
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    private var isLong: Bool {
+        message.content.count > 900 || message.content.split(separator: "\n", omittingEmptySubsequences: false).count > 14
+    }
+
+    private var displayedContent: String {
+        guard isLong, !expanded else { return message.content }
+        let limit = message.role == "user" ? 520 : 900
+        return String(message.content.prefix(limit)).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
+    }
+
+    private var foldButton: some View {
+        Button {
+            withAnimation(.easeOut(duration: AppTheme.Motion.standard)) { expanded.toggle() }
+        } label: {
+            Label(expanded ? "收起" : "展开完整消息", systemImage: expanded ? "chevron.up" : "chevron.down")
+                .font(.caption.weight(.medium))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(palette.primaryActive)
+        .help(expanded ? "折叠长消息" : "查看完整消息")
     }
 
     private var attachments: [ChatAttachmentPresentation] {
@@ -398,12 +615,62 @@ private struct ChatMarkdownBody: View {
         case .numbered(let text): Text(inline(text)).foregroundStyle(palette.body).lineSpacing(3)
         case .quote(let text): Text(inline(text)).foregroundStyle(palette.muted).padding(.leading, 12).overlay(alignment: .leading) { Rectangle().fill(palette.primary.opacity(0.42)).frame(width: 2) }
         case .code(let text): Text(text).font(.system(.caption, design: .monospaced)).foregroundStyle(palette.body).padding(12).frame(maxWidth: .infinity, alignment: .leading).background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
-        case .divider: Divider().overlay(palette.hairlineSoft)
+        case .table(let headers, let rows): MarkdownTableView(headers: headers, rows: rows)
+        case .divider:
+            Rectangle()
+                .fill(palette.primaryActive.opacity(0.62))
+                .frame(width: 40, height: 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 6)
         case .spacing: Color.clear.frame(height: 3)
         }
     }
 
     private func inline(_ text: String) -> AttributedString { (try? AttributedString(markdown: text)) ?? AttributedString(text) }
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct MarkdownTableView: View {
+    let headers: [String]
+    let rows: [[String]]
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            Grid(horizontalSpacing: 0, verticalSpacing: 0) {
+                tableRow(headers, isHeader: true)
+                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                    tableRow(row, isHeader: false, shaded: index.isMultiple(of: 2))
+                }
+            }
+            .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.md).stroke(palette.hairline, lineWidth: 1) }
+            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md))
+        }
+        .scrollIndicators(.visible)
+        .accessibilityLabel("Markdown 表格，\(headers.count) 列，\(rows.count) 行")
+    }
+
+    private func tableRow(_ cells: [String], isHeader: Bool, shaded: Bool = false) -> some View {
+        GridRow {
+            ForEach(Array(cells.enumerated()), id: \.offset) { column, cell in
+                Text(inline(cell))
+                    .font(isHeader ? .callout.weight(.semibold) : .callout)
+                    .foregroundStyle(isHeader ? palette.ink : palette.body)
+                    .textSelection(.enabled)
+                    .frame(minWidth: 120, maxWidth: 280, minHeight: 38, alignment: .leading)
+                    .padding(.horizontal, AppTheme.Spacing.sm)
+                    .background(isHeader ? palette.surfaceSoft : (shaded ? palette.surfaceCard.opacity(0.55) : Color.clear))
+                    .overlay(alignment: .trailing) {
+                        if column < cells.count - 1 { Rectangle().fill(palette.hairlineSoft).frame(width: 1) }
+                    }
+            }
+        }
+    }
+
+    private func inline(_ text: String) -> AttributedString {
+        (try? AttributedString(markdown: text)) ?? AttributedString(text)
+    }
+
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
@@ -452,8 +719,7 @@ private struct UserMessageBlock: View {
                     .background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
             }
 
-            MessageHoverActions(createdAt: createdAt, text: text, edit: nil)
-                .opacity(hovering ? 1 : 0)
+            MessageHoverActions(createdAt: createdAt, text: text, edit: nil, actionsVisible: hovering)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .contentShape(Rectangle())
@@ -468,6 +734,7 @@ private struct MessageHoverActions: View {
     let createdAt: String
     let text: String
     let edit: (() -> Void)?
+    let actionsVisible: Bool
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -477,10 +744,13 @@ private struct MessageHoverActions: View {
                 .foregroundStyle(palette.mutedSoft)
                 .padding(.trailing, 4)
 
-            hoverButton("复制消息", systemImage: "doc.on.doc") { copyToPasteboard() }
-            if let edit {
-                hoverButton("编辑消息", systemImage: "pencil", action: edit)
+            HStack(spacing: 4) {
+                hoverButton("复制消息", systemImage: "doc.on.doc") { copyToPasteboard() }
+                if let edit {
+                    hoverButton("编辑消息", systemImage: "pencil", action: edit)
+                }
             }
+            .opacity(actionsVisible ? 1 : 0)
         }
         .frame(height: 24)
     }

@@ -83,7 +83,10 @@ def validate_tool_policy(payload: dict) -> None:
 
 
 def validate_skill_dag(payload: dict) -> None:
-    steps = payload["skill"]["workflow"]["steps"]
+    workflow = payload["skill"].get("workflow")
+    if workflow is None:
+        return
+    steps = workflow["steps"]
     step_ids = [step["id"] for step in steps]
     if len(set(step_ids)) != len(step_ids):
         raise AssertionError("workflow step ids must be unique")
@@ -160,6 +163,14 @@ def validate_contract(schema_name: str, payload_name: str) -> None:
 
 
 VALID_CASES = (
+    ("agent-decision.schema.json", "examples/agent-decision.valid.json"),
+    ("agent-run-request.schema.json", "examples/agent-run-request.valid.json"),
+    ("agent-run-state.schema.json", "examples/agent-run-state.valid.json"),
+    ("skill-run-result.schema.json", "examples/skill-run-result.valid.json"),
+    ("artifact-ref.schema.json", "examples/artifact-ref.valid.json"),
+    ("deliverable.schema.json", "examples/deliverable.valid.json"),
+    ("context-snapshot.schema.json", "examples/context-snapshot.valid.json"),
+    ("toolset-snapshot.schema.json", "examples/toolset-snapshot.valid.json"),
     ("tool-call.schema.json", "examples/tool-call.valid.json"),
     ("tool-result.schema.json", "examples/tool-result.valid.json"),
     ("tool-manifest.schema.json", "examples/tool-manifest.valid.json"),
@@ -172,6 +183,9 @@ VALID_CASES = (
 )
 
 INVALID_CASES = (
+    ("agent-decision.schema.json", "fixtures/agent-decision.forbidden-field.json"),
+    ("agent-run-state.schema.json", "fixtures/agent-run-state.invalid-phase.json"),
+    ("deliverable.schema.json", "fixtures/deliverable.invalid-status.json"),
     ("tool-call.schema.json", "fixtures/tool-call.invalid-schema-version.json"),
     ("tool-call.schema.json", "fixtures/tool-call.unknown-field.json"),
     ("tool-result.schema.json", "fixtures/tool-result.invalid-status.json"),

@@ -1,6 +1,6 @@
 # AI Employee OS Skill Engineering Guide v1.0
 
-> 实现状态：Skill 由仓库 Package 安装，经 `agent_skills` 绑定员工；客户端不创建 Package。MVP 工作主路径 Skill 为 `prd-generation`。编排见 ADR-031，不以 LangGraph 为状态源。
+> 实现状态：Skill 由仓库 Package 安装，经 `agent_skills` 绑定员工；客户端不创建 Package。新主路径使用 Skill Manifest v2 和通用 `agent_loop | workflow`，Runtime 不特判 `prd-generation`。见 ADR-032。
 
 目标：
 
