@@ -1,28 +1,25 @@
-# 工具库：说明文档 / 能力信息 / 权限与风险
+# 彻底删除默认员工 Alex
 
 ## 目标
 
-让 `file-tool`、`agent-reach-tool` 在工具库三个 Tab 展示真实、可读、与 manifest 一致的内容。
+用户可彻底删除 `ai-product-manager`，删除后 bootstrap 不再复活；客户端不再硬编码依赖 Alex。
 
-## 信息架构（已定设计）
+## 步骤
 
-| Tab | 回答什么 | 内容来源 |
-|---|---|---|
-| 说明文档 | 人话总览：用途、边界、依赖、审计原则 | 包内 `TOOL.md`（简体中文） |
-| 能力信息 | 能调用哪些 Action、各自做什么、运行参数 | manifest `actions`；`agent-reach` 另附数据源状态 |
-| 权限与风险 | 每个 Action 的权限、风险级、审批、副作用 | manifest 安全字段 |
-
-## 实现步骤
-
-- [x] 新增 `packages/tools/file-tool/TOOL.md`、`packages/tools/agent-reach-tool/TOOL.md`
-- [x] `tools-list`：从 manifest 抽出 `actions`；有 `--repository-root` 时读 `TOOL.md` 进 `documentation`
-- [x] Swift：`RuntimeToolItem` + `CapabilityStore` 映射三个 Tab；agent-reach 能力 Tab 叠加数据源
-- [x] 同步 `CapabilityLibraryDemoData`
-- [x] 中文摘要：客户端 `ToolPresentation` 映射（manifest description 保持英文给模型）
-- [x] 跑相关检查
+- [x] 路径确认：彻底删除且不再 bootstrap 复活
+- [x] migration：`runtime_flags` 记录 `default_agent_dismissed`
+- [x] `install_agent_package`：ON CONFLICT 不覆盖已有 `status`
+- [x] `ensure_default_agent`：已 dismiss 则跳过；仅当 agent 不存在时安装
+- [x] `employee_delete`：默认员工 purge 关联证据后硬删并写 dismiss；其他员工仅在有历史时停用
+- [x] 客户端：默认选中第一个 active 员工，不假设 Alex
+- [x] 清本地 DB（dev + Application Support）中的 Alex 并验证 list 不再种回
+- [x] 更新检查脚本与测试（fresh / disabled 保留 / dismissed 不种回）
 
 ## Review
 
-- 未改 ToolExecutor / 权限执行路径；仅扩展 `tools-list` 展示字段
-- 验证：`cargo test`（rust-core）通过；`check_employee_runtime.py` 通过；Swift `ClientModelChecks` 通过
-- 分发校验增加 `TOOL.md` 存在性检查
+- 新装仍会 seed Alex；删除后 `default_agent_dismissed=1`，`employees-list` 不再种回
+- disabled 后再 list（带 repository-root）不会被装回 active
+- 本地两处 runtime.db 已删干净，列表为空且带 dismissed 标记
+- 验证：`cargo test`、`scripts/check_employee_runtime.py`、`./scripts/check.sh` 通过
+- 用户确认本地文件主路径已跑通；根文档已对齐：`local-file-operations` 为主验证，`web-search` 已合入但真实网络非默认门禁
+- 用户下一步：通讯录新建员工，手动填 ID，绑定 Skill 后即可对话/工作

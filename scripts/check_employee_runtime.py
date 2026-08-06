@@ -184,4 +184,27 @@ with tempfile.TemporaryDirectory() as directory:
         == "disabled"
     )
 
+    deleted = run(database, "employee-delete", "--employee-id", "ai-product-manager")
+    assert deleted["disposition"] == "deleted"
+    after_delete = run(database, "employees-list", "--repository-root", str(ROOT))
+    assert all(item["id"] != "ai-product-manager" for item in after_delete["employees"])
+    with sqlite3.connect(database) as connection:
+        flag = connection.execute(
+            "SELECT value FROM runtime_flags WHERE key='default_agent_dismissed'"
+        ).fetchone()
+        assert flag == ("1",)
+
+with tempfile.TemporaryDirectory() as directory:
+    database = Path(directory) / "runtime-disabled.db"
+    listed = run(database, "employees-list", "--repository-root", str(ROOT))
+    assert any(item["id"] == "ai-product-manager" for item in listed["employees"])
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "UPDATE agents SET status='disabled' WHERE id='ai-product-manager'"
+        )
+        connection.commit()
+    listed_after = run(database, "employees-list", "--repository-root", str(ROOT))
+    alex = next(item for item in listed_after["employees"] if item["id"] == "ai-product-manager")
+    assert alex["status"] == "disabled"
+
 print("employee runtime checks: ok")

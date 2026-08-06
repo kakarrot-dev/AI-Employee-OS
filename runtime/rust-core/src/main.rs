@@ -95,38 +95,130 @@ fn employee_arguments(
     ))
 }
 
+const DEFAULT_AGENT_ID: &str = "ai-product-manager";
+const DEFAULT_AGENT_DISMISSED_FLAG: &str = "default_agent_dismissed";
+
 fn ensure_default_agent(connection: &mut Connection, root: &std::path::Path) -> Result<(), String> {
     let stamp = now();
     bootstrap_packages(connection, root, &stamp)?;
-    let default_agent = install_agent_package(
-        connection,
-        &root.join("packages/agents/ai-product-manager"),
-        &stamp,
-    )
-    .map_err(|error| format!("could not install default agent: {error:?}"))?;
-    let alex_identity = "把模糊需求转化为可执行的产品方案。\n\n职责：需求分析、产品方案、可评审文档。\n\n边界：不虚构缺失事实；没有授权时不执行外部操作。\n\n可靠、直接地协助用户完成产品工作。闲聊不会执行 Skill 或 Tool；工作能力在绑定仓库 Package 后接通。";
-    connection.execute(
-        "INSERT OR IGNORE INTO employee_profiles (agent_id,department,mission,responsibilities_json,boundaries_json,soul_json,base_prompt,config_version,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,1,?8,?8)",
-        rusqlite::params![
-            default_agent.id,
-            "产品部",
-            legacy_mission_from_base_prompt(alex_identity),
-            json!([]).to_string(),
-            json!([]).to_string(),
-            json!(["用户价值优先", "区分事实、推测与未知", "结论必须可执行和可验收"]).to_string(),
-            alex_identity,
-            stamp
-        ],
-    ).map_err(|error| error.to_string())?;
-    // Skill 未随仓库/Bundle 提供时不阻断员工列表与对话；有包再绑定。
-    let _ = bind_skill(
-        connection,
-        &default_agent.id,
-        "local-file-operations",
-        "1.0.0",
-        &stamp,
-    );
-    let _ = bind_skill(connection, &default_agent.id, "web-search", "1.0.0", &stamp);
+    if default_agent_dismissed(connection)? {
+        return Ok(());
+    }
+    let exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM agents WHERE id=?1)",
+            [DEFAULT_AGENT_ID],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if !exists {
+        let default_agent = install_agent_package(
+            connection,
+            &root.join("packages/agents/ai-product-manager"),
+            &stamp,
+        )
+        .map_err(|error| format!("could not install default agent: {error:?}"))?;
+        let alex_identity = "把模糊需求转化为可执行的产品方案。\n\n职责：需求分析、产品方案、可评审文档。\n\n边界：不虚构缺失事实；没有授权时不执行外部操作。\n\n可靠、直接地协助用户完成产品工作。闲聊不会执行 Skill 或 Tool；工作能力在绑定仓库 Package 后接通。";
+        connection.execute(
+            "INSERT OR IGNORE INTO employee_profiles (agent_id,department,mission,responsibilities_json,boundaries_json,soul_json,base_prompt,config_version,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,1,?8,?8)",
+            rusqlite::params![
+                default_agent.id,
+                "产品部",
+                legacy_mission_from_base_prompt(alex_identity),
+                json!([]).to_string(),
+                json!([]).to_string(),
+                json!(["用户价值优先", "区分事实、推测与未知", "结论必须可执行和可验收"]).to_string(),
+                alex_identity,
+                stamp
+            ],
+        ).map_err(|error| error.to_string())?;
+    }
+    let status: Option<String> = connection
+        .query_row(
+            "SELECT status FROM agents WHERE id=?1",
+            [DEFAULT_AGENT_ID],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    if status.as_deref() == Some("active") {
+        let _ = bind_skill(
+            connection,
+            DEFAULT_AGENT_ID,
+            "local-file-operations",
+            "1.0.0",
+            &stamp,
+        );
+        let _ = bind_skill(connection, DEFAULT_AGENT_ID, "web-search", "1.0.0", &stamp);
+    }
+    Ok(())
+}
+
+fn default_agent_dismissed(connection: &Connection) -> Result<bool, String> {
+    let value: Option<String> = connection
+        .query_row(
+            "SELECT value FROM runtime_flags WHERE key=?1",
+            [DEFAULT_AGENT_DISMISSED_FLAG],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    Ok(value.as_deref() == Some("1"))
+}
+
+fn dismiss_default_agent(connection: &Connection) -> Result<(), String> {
+    connection
+        .execute(
+            "INSERT INTO runtime_flags(key, value, updated_at) VALUES (?1, '1', ?2)
+             ON CONFLICT(key) DO UPDATE SET value='1', updated_at=excluded.updated_at",
+            rusqlite::params![DEFAULT_AGENT_DISMISSED_FLAG, now()],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn purge_agent_records(connection: &Connection, agent_id: &str) -> Result<(), String> {
+    connection
+        .execute(
+            "DELETE FROM scoped_permission_grants WHERE subject_id=?1
+             OR task_id IN (SELECT id FROM tasks WHERE agent_id=?1)",
+            [agent_id],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "DELETE FROM memory_provenance WHERE task_id IN (SELECT id FROM tasks WHERE agent_id=?1)",
+            [agent_id],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "DELETE FROM memories WHERE owner_type='agent' AND owner_id=?1",
+            [agent_id],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "DELETE FROM model_call_configs WHERE employee_id=?1",
+            [agent_id],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute("DELETE FROM conversations WHERE agent_id=?1", [agent_id])
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "DELETE FROM approvals WHERE agent_id=?1
+             OR task_id IN (SELECT id FROM tasks WHERE agent_id=?1)",
+            [agent_id],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute("DELETE FROM evaluations WHERE agent_id=?1", [agent_id])
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute("DELETE FROM tasks WHERE agent_id=?1", [agent_id])
+        .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -714,11 +806,33 @@ fn employee_delete(arguments: impl Iterator<Item = String>) -> Result<serde_json
     let (database, _, id) = employee_arguments(arguments, "--employee-id")?;
     let mut connection = Connection::open(database).map_err(|e| e.to_string())?;
     migrate(&mut connection).map_err(|e| e.to_string())?;
-    let (referenced, package_managed): (bool, bool) = connection.query_row(
-        "SELECT EXISTS(SELECT 1 FROM conversations WHERE agent_id=?1 UNION SELECT 1 FROM tasks WHERE agent_id=?1), package_path!='user-managed' FROM agents WHERE id=?1",
-        [&id], |r| Ok((r.get(0)?, r.get(1)?)),
-    ).map_err(|_| "employee not found".to_owned())?;
-    if referenced || package_managed {
+    let exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM agents WHERE id=?1)",
+            [&id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if !exists {
+        return Err("employee not found".to_owned());
+    }
+    let is_default = id == DEFAULT_AGENT_ID;
+    if is_default {
+        dismiss_default_agent(&connection)?;
+        purge_agent_records(&connection, &id)?;
+        connection
+            .execute("DELETE FROM agents WHERE id=?1", [&id])
+            .map_err(|e| e.to_string())?;
+        return Ok(json!({"schema_version":"1.0","id":id,"disposition":"deleted"}));
+    }
+    let referenced: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM conversations WHERE agent_id=?1 UNION SELECT 1 FROM tasks WHERE agent_id=?1)",
+            [&id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if referenced {
         connection
             .execute(
                 "UPDATE agents SET status='disabled',updated_at=?2 WHERE id=?1",

@@ -26,7 +26,7 @@
 
 AI Employee OS 将 AI 助手变成受治理的本地工作者。macOS 客户端负责交互与 Keychain 访问，Rust 运行时负责状态和权限，Python Worker 负责意图、上下文、规划和模型调用。
 
-默认员工是 AI 产品经理 Alex。客户端可以创建和编辑多个员工 Profile。工作执行要求已绑定且 Manifest `schema_version: 2.0.0`、readiness 为 `ready` 的 Skill。当前主线已验证的可执行示例是 `structured-summary`。Manifest 1.0 的遗留 Skill（如 `prd-generation`）仍可安装浏览，但对 Generic Run Kernel 为 `incompatible`。
+新装会种子化 AI 产品经理 Alex（`ai-product-manager`）；用户可彻底删除该种子，bootstrap 不会自动恢复。客户端可以创建和编辑多个员工 Profile。工作执行要求已绑定且 Manifest `schema_version: 2.0.0`、readiness 为 `ready` 的 Skill。当前主线已验证的可执行示例是 `local-file-operations`；bootstrap 同时绑定 `web-search`。Manifest 1.0 的遗留 Skill（如 `prd-generation`）若仍存在，对 Generic Run Kernel 为 `incompatible`。
 
 ## 当前能力
 
@@ -34,10 +34,11 @@ AI Employee OS 将 AI 助手变成受治理的本地工作者。macOS 客户端�
 - 基于 SQLite 持久化的多轮对话，可跨重启恢复。
 - 编辑员工的 Identity、Soul 和 Persona，由 Rust 运行时编译 Effective Prompt。
 - 识别对话意图，经 Resolver 与 Generic Run Kernel 在闲聊和受治理工作执行之间路由（Golden Path 已移除）。
-- 从仓库安装 Agent、Skill 和 Tool Package。主线内置 Tool 为 `file-tool`（读）与 `document-tool`。
+- 从仓库安装 Agent、Skill 和 Tool Package。主线内置 Tool 为 `file-tool`（读 / 创建 / 编辑）与 `agent-reach-tool`（`search_web`）。
+- 主线可执行 Skill：`local-file-operations`、`web-search`。
 - Task 与 Action 状态机，包括审批、取消、审计、事件和恢复。
 - 所有 Tool 调用通过 Rust `ToolExecutor` 执行，具备幂等和结果验证机制。
-- 进行中：本地文件创建/编辑（`local-file-operations`）与受控网络搜索（`agent-reach-tool` / `web-search`）。
+- 进行中：`web-search` 真实网络端到端（依赖本机 `mcporter` + Exa；默认门禁仍以 Fake Decision 验证到审批闸）。
 - 将 Swift 客户端、Rust 运行时、Python Worker 和内置 Package 打包到本地 macOS App Bundle。
 - 使用 Claude Cream 设计 Token，支持浅色和深色外观。
 
@@ -107,7 +108,7 @@ cd AI-Employee-OS
 
 1. 打开客户端设置。
 2. 将 DeepSeek API Key 保存到 macOS Keychain。
-3. 进入工作库并选择员工，默认员工为 Alex。
+3. 进入工作库并选择在职员工（新装种子为 Alex；若已删除种子，先在通讯录新建）。
 4. 开始对话或提交工作请求。
 
 DeepSeek Chat Completions 本身无状态。每次请求模型前，Runtime 都会从 SQLite 重建当前 Conversation 的有序消息。
@@ -160,7 +161,7 @@ script/                    App 打包与分发检查
 - 企业 RBAC
 - 公证发行、自动更新和 DMG 打包
 
-受控网络搜索（`agent-reach-tool` / `web-search`）进行中，尚未纳入主验证路径。
+受控网络搜索（`agent-reach-tool` / `web-search`）已打包并绑定，但真实网络端到端仍依赖本机 `mcporter` + Exa，不是默认 CI 门禁。
 
 Runtime 已经包含 Memory、Knowledge、Evaluation、权限、审批和 Trace 基础设施，但并非所有能力都已完整暴露到产品界面。
 

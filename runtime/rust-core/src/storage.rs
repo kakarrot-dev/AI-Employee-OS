@@ -19,7 +19,8 @@ pub const MIGRATION_009: &str =
 pub const MIGRATION_010: &str = include_str!("../../../storage/migrations/010_employee_avatar.sql");
 pub const MIGRATION_011: &str =
     include_str!("../../../storage/migrations/011_generic_agent_runs.sql");
-const LATEST_SCHEMA_VERSION: i64 = 11;
+pub const MIGRATION_012: &str = include_str!("../../../storage/migrations/012_runtime_flags.sql");
+const LATEST_SCHEMA_VERSION: i64 = 12;
 
 pub fn migrate(connection: &mut Connection) -> Result<()> {
     connection.busy_timeout(Duration::from_secs(5))?;
@@ -62,6 +63,9 @@ pub fn migrate(connection: &mut Connection) -> Result<()> {
     if current < 11 {
         transaction.execute_batch(MIGRATION_011)?;
     }
+    if current < 12 {
+        transaction.execute_batch(MIGRATION_012)?;
+    }
     transaction.commit()
 }
 
@@ -102,7 +106,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 36); // 35 canonical tables plus schema_migrations.
+        assert_eq!(count, 37); // 36 canonical tables plus schema_migrations.
 
         let integrity: String = connection
             .query_row("PRAGMA integrity_check", [], |row| row.get(0))
@@ -114,7 +118,7 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(migration_count, 11);
+        assert_eq!(migration_count, 12);
     }
 
     #[test]

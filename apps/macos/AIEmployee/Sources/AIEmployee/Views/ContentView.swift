@@ -157,9 +157,10 @@ struct ContentView: View {
     }
 
     private func beginWork() {
-        if let alex = employeeStore.employees.first(where: { $0.id == "ai-product-manager" }) {
-            employeeStore.selection = alex.id
-            conversationStore.select(employee: alex)
+        if let employee = employeeStore.employees.first(where: { $0.status == "active" })
+            ?? employeeStore.employees.first {
+            employeeStore.selection = employee.id
+            conversationStore.select(employee: employee)
         }
         destination.wrappedValue = .work
         workComposerPresented = capabilityStore.tasksEnabled

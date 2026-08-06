@@ -43,13 +43,17 @@ struct EmployeeDirectoryView: View {
             Button("好") { store.error = nil }
         } message: { Text(store.error ?? "") }
         .confirmationDialog("停用或删除 \(confirmingRemoval?.name ?? "员工")？", isPresented: Binding(get: { confirmingRemoval != nil }, set: { if !$0 { confirmingRemoval = nil } })) {
-            Button("继续", role: .destructive) {
+            Button(confirmingRemoval?.id == "ai-product-manager" ? "彻底删除" : "继续", role: .destructive) {
                 if let employee = confirmingRemoval { Task { await store.remove(employee) } }
                 confirmingRemoval = nil
             }
             Button("取消", role: .cancel) { confirmingRemoval = nil }
         } message: {
-            Text("没有历史记录时会删除；存在对话或任务记录时只会停用，以保留证据。")
+            if confirmingRemoval?.id == "ai-product-manager" {
+                Text("默认员工会被彻底删除，相关对话与任务一并清除，且不会在下次启动时自动恢复。")
+            } else {
+                Text("没有历史记录时会删除；存在对话或任务记录时只会停用，以保留证据。")
+            }
         }
         .onAppear {
             if let demo, !demo.employees.contains(where: { $0.id == store.selection }) {
@@ -96,7 +100,7 @@ struct EmployeeDirectoryView: View {
             if store.isLoading && demo == nil {
                 ProgressView("正在读取员工…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if filteredEmployees.isEmpty {
-                ContentUnavailableView(query.isEmpty ? "还没有 AI 员工" : "没有匹配的员工", systemImage: "person.2", description: Text(query.isEmpty ? "创建员工后，会在这里管理他的 Profile。" : "尝试其他姓名、岗位或部门。"))
+                directoryEmptyState
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 18) {
@@ -113,6 +117,24 @@ struct EmployeeDirectoryView: View {
             }
         }
         .background(palette.surfaceSoft)
+    }
+
+    private var directoryEmptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: query.isEmpty ? "person.2" : "magnifyingglass")
+                .font(.system(size: 22, weight: .light))
+                .foregroundStyle(palette.mutedSoft)
+            Text(query.isEmpty ? "还没有 AI 员工" : "没有匹配的员工")
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(palette.ink)
+            Text(query.isEmpty ? "点右上角新建，或从右侧开始创建。" : "尝试其他姓名、岗位或部门。")
+                .font(.caption)
+                .foregroundStyle(palette.muted)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 20)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .padding(.bottom, 24)
     }
 
     private func employeeRow(_ employee: Employee) -> some View {
@@ -167,13 +189,26 @@ struct EmployeeDirectoryView: View {
                 openChat: { if demo == nil { openChat(employee) } }
             )
         } else {
-            ContentUnavailableView {
-                Label("AI 员工 Profile", systemImage: "person.text.rectangle")
-            } description: {
+            VStack(spacing: 14) {
+                Image(systemName: "person.text.rectangle")
+                    .font(.system(size: 34, weight: .light))
+                    .foregroundStyle(palette.primaryActive)
+                Text("AI 员工 Profile")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(palette.ink)
                 Text("选择一名员工，查看 Identity、Soul、能力与权限。")
-            } actions: {
-                Button("新建 AI 员工", action: store.create).buttonStyle(.borderedProminent)
+                    .font(.callout)
+                    .foregroundStyle(palette.muted)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 360)
+                Button("新建 AI 员工") {
+                    if demo == nil { store.create() } else { editDemoEmployee(.draft()) }
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.top, 4)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(palette.canvas)
         }
     }
 

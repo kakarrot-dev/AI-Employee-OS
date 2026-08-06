@@ -183,8 +183,7 @@ struct WorkConversationList: View {
 
     private func preview(for employee: Employee) -> String {
         if let preview = WorkLibraryDemoData.current?.previews[employee.id] { return preview }
-        if employee.id == "ai-product-manager",
-           let active = runs(for: employee).first(where: { $0.status == .running || $0.status == .pending }) {
+        if let active = runs(for: employee).first(where: { $0.status == .running || $0.status == .pending }) {
             return active.input
         }
         if let preview = conversationStore.latestPreviewByEmployee[employee.id] { return preview }

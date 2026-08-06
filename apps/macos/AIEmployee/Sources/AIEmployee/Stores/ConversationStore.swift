@@ -10,8 +10,8 @@ extension Notification.Name {
 final class ConversationStore: ObservableObject {
     private let service: RuntimeService
     private let logger = Logger(subsystem: "com.kakarrot.ai-employee-os", category: "Conversation")
-    @Published private(set) var employeeID = "ai-product-manager"
-    @Published private(set) var employeeName = "Alex"
+    @Published private(set) var employeeID = ""
+    @Published private(set) var employeeName = ""
     @Published var messages: [ChatMessage] = []
     @Published var draft = ""
     @Published var isSending = false
@@ -34,6 +34,8 @@ final class ConversationStore: ObservableObject {
             }
             .store(in: &cancellables)
         if let demo = WorkLibraryDemoData.current {
+            employeeID = "ai-product-manager"
+            employeeName = "Alex"
             messages = demo.messages[employeeID] ?? []
             lastActivityByEmployee = demo.lastActivity
             latestPreviewByEmployee = demo.previews
@@ -101,6 +103,7 @@ final class ConversationStore: ObservableObject {
     }
 
     private func submit(_ content: String, replacing messageID: String?) -> Bool {
+        guard !employeeID.isEmpty else { error = "请先选择一名员工。"; return false }
         guard let key = KeychainService.load() else { error = "请先在设置中保存 DeepSeek API Key。"; return false }
         let generation = selectionGeneration
         let targetEmployeeID = employeeID
@@ -164,6 +167,10 @@ final class ConversationStore: ObservableObject {
     }
 
     private func reload(generation: Int, conversationID targetConversationID: String) async {
+        guard !employeeID.isEmpty else {
+            messages = []
+            return
+        }
         do {
             let loaded = try await service.chatHistory(targetConversationID).messages
             guard generation == selectionGeneration, targetConversationID == conversationID else { return }

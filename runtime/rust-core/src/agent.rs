@@ -118,7 +118,6 @@ pub fn install_agent_package(
            name = excluded.name,
            role = excluded.role,
            package_path = excluded.package_path,
-           status = excluded.status,
            updated_at = excluded.updated_at",
         params![
             package.agent.id,
@@ -206,5 +205,25 @@ mod tests {
             .query_row("SELECT count(*) FROM personas", [], |row| row.get(0))
             .unwrap();
         assert_eq!(persona_count, 1);
+    }
+
+    #[test]
+    fn reinstall_preserves_existing_agent_status() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        migrate(&mut connection).unwrap();
+        let package_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/agents/ai-product-manager");
+
+        install_agent_package(&mut connection, &package_path, "2026-08-04T00:00:00Z").unwrap();
+        connection
+            .execute(
+                "UPDATE agents SET status = 'disabled' WHERE id = 'ai-product-manager'",
+                [],
+            )
+            .unwrap();
+
+        let agent =
+            install_agent_package(&mut connection, &package_path, "2026-08-04T00:00:01Z").unwrap();
+        assert_eq!(agent.status, "disabled");
     }
 }

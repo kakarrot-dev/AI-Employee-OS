@@ -37,7 +37,8 @@ MVP canonical 数据模型现包含 28 张表；Conversation 扩展由追加 Mig
 - `employee_profiles` 保存部门、使命、职责、边界、Soul、基础 Prompt 和单调递增的配置版本。
 - Identity、Soul、Persona、基础 Prompt 与 Runtime 安全边界共同编译为 Effective Prompt；Swift 不拼装 System Prompt。
 - `model_call_configs` 按 ModelCall 保存员工、配置版本和 Prompt SHA-256，不保存第二份 Prompt 正文或 Secret。
-- 有 Conversation 或 Task 历史的员工禁止硬删除，只能停用；无引用员工允许确认后删除。
+- 普通员工：有 Conversation 或 Task 历史时禁止硬删除，只能停用；无引用时允许确认后删除。
+- 默认种子员工 `ai-product-manager`：用户确认删除时可清除其关联证据后硬删，并写入 `runtime_flags.default_agent_dismissed`，此后 bootstrap 不再自动恢复。
 
 此前定义的核心表如下：
 
@@ -48,6 +49,7 @@ MVP canonical 数据模型现包含 28 张表；Conversation 扩展由追加 Mig
 - Context：`memories`、`knowledge_sources`、`knowledge_chunks`
 - Security：`permissions`、`approvals`、`audit_logs`
 - Evaluation：`evaluations`、`feedbacks`、`metrics`
+- Runtime：`runtime_flags`
 
 Knowledge 表示外部事实和资料索引，Memory 表示运行中形成的偏好、经验、事实判断、决策与模式。两者保持分离。MVP 通过 Knowledge Tool 检索本地资料和 `knowledge/seed` 预置内容，不包含实时网页抓取。
 
@@ -379,6 +381,12 @@ CREATE TABLE metrics (
   FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE SET NULL
 );
 
+CREATE TABLE runtime_flags (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE INDEX idx_tasks_agent_status ON tasks(agent_id, status);
 CREATE INDEX idx_actions_task_created ON actions(task_id, created_at);
 CREATE INDEX idx_runtime_events_task_sequence ON runtime_events(task_id, sequence);
@@ -419,6 +427,7 @@ CREATE INDEX idx_metrics_name_recorded ON metrics(name, recorded_at);
 | `evaluations` | Task 与 Agent 的质量评分 | 关联 Task 与 Agent | Task 删除时级联，Agent 删除时限制 |
 | `feedbacks` | 用户对 Task 的评分和反馈 | 关联 Task | Task 删除时级联 |
 | `metrics` | 可按 Task 或 Agent 聚合的数值指标 | 可选关联 Task、Agent | 父记录删除时置空 |
+| `runtime_flags` | Runtime 持久化开关与用户选择 | 无外键；如 `default_agent_dismissed` | 可更新；删除默认员工时写入 |
 | `agent_runs` | Task 的一次通用 Runtime 执行实例 | 属于 Task，保存 phase、revision 与预算 | Task 删除时级联 |
 | `run_snapshots` | 锁定 Agent、Skill、Toolset、Context、Model 配置 | 属于 Run，每种类型唯一 | Run 删除时级联 |
 | `run_observations` | 已确认的模型决策、ToolResult 和继续输入 | Run 内 sequence 单调递增 | Run 删除时级联 |
