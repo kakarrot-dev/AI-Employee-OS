@@ -60,6 +60,15 @@ class ProviderRouterTests(unittest.TestCase):
         self.assertNotIn("secret", str(transport.calls[0][2]))
 
     @patch.dict("os.environ", {"DEEPSEEK_API_KEY": "secret"})
+    def test_deepseek_json_completion_requests_json_object(self):
+        transport = FakeTransport(HttpResponse(200, b'{"choices":[{"message":{"content":"{}"}}]}'))
+        result = DeepSeekProvider("deepseek-v4-flash", 30, transport).complete_json(
+            [{"role": "system", "content": "Return JSON"}]
+        )
+        self.assertEqual(result.content, "{}")
+        self.assertEqual(transport.calls[0][2]["response_format"], {"type": "json_object"})
+
+    @patch.dict("os.environ", {"DEEPSEEK_API_KEY": "secret"})
     def test_deepseek_stream_publishes_ordered_deltas_and_usage(self):
         transport = FakeTransport(HttpResponse(200, b""), [
             'data: {"choices":[{"delta":{"content":"你"}}]}\n'.encode(),

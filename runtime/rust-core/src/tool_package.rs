@@ -128,7 +128,7 @@ mod tests {
         let mut connection = Connection::open_in_memory().unwrap();
         migrate(&mut connection).unwrap();
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/tools");
-        for package in ["file-tool", "document-tool"] {
+        for package in ["file-tool", "agent-reach-tool"] {
             install_tool_package(&connection, &root.join(package), "2026-08-04T00:00:00Z").unwrap();
         }
         let count: i64 = connection

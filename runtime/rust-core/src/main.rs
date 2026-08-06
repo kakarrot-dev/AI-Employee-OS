@@ -1,23 +1,26 @@
 use std::{
-    env,
+    env, fs,
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Command, ExitCode, Stdio},
     time::{SystemTime, UNIX_EPOCH},
 };
 
+const WAITING_APPROVAL_MESSAGE: &str = "执行已暂停，等待你批准所需权限。";
+
 use ai_employee_runtime::agent::install_agent_package;
 use ai_employee_runtime::employee_prompt::{
     compile_effective_prompt, legacy_mission_from_base_prompt,
 };
 use ai_employee_runtime::knowledge::{import_source, search as knowledge_search};
+use ai_employee_runtime::memory::retrieve as retrieve_memory;
 use ai_employee_runtime::recovery::reconcile_interrupted;
 use ai_employee_runtime::run::{
     ContinueRunConfig, RunSkillConfig, continue_after_verified_action, continue_run as resume_run,
     continue_with_user_input, resolve_unknown_action, run_skill as execute_skill,
 };
 use ai_employee_runtime::skill_package::install_skill_package;
-use ai_employee_runtime::skill_resolver::{readiness as skill_readiness, resolve as resolve_skill};
+use ai_employee_runtime::skill_resolver::readiness as skill_readiness;
 use ai_employee_runtime::storage::migrate;
 use ai_employee_runtime::tool_package::install_tool_package;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, types::Type};
@@ -59,6 +62,7 @@ fn command() -> Result<serde_json::Value, String> {
         Some("run-task") => run_task(arguments),
         Some("run-skill") => run_skill(arguments),
         Some("run-status") => run_status(arguments),
+        Some("recover-runtime") => recover_runtime(arguments),
         Some("continue-run") => continue_run(arguments),
         Some("resolve-action-result") => resolve_action_result(arguments),
         Some("capability-readiness") => capability_readiness(arguments),
@@ -118,24 +122,11 @@ fn ensure_default_agent(connection: &mut Connection, root: &std::path::Path) -> 
     let _ = bind_skill(
         connection,
         &default_agent.id,
-        "prd-generation",
+        "local-file-operations",
         "1.0.0",
         &stamp,
     );
-    let _ = bind_skill(
-        connection,
-        &default_agent.id,
-        "requirement-analysis",
-        "1.0.0",
-        &stamp,
-    );
-    let _ = bind_skill(
-        connection,
-        &default_agent.id,
-        "structured-summary",
-        "1.0.0",
-        &stamp,
-    );
+    let _ = bind_skill(connection, &default_agent.id, "web-search", "1.0.0", &stamp);
     Ok(())
 }
 
@@ -144,9 +135,33 @@ fn bootstrap_packages(
     root: &std::path::Path,
     stamp: &str,
 ) -> Result<(), String> {
+    connection
+        .execute(
+            "UPDATE skills SET status='disabled',updated_at=?1 WHERE id IN (
+               'requirement-analysis','prd-generation','structured-summary','write-note',
+               'inspect-and-summarize','review-pipeline','review-and-save'
+             )",
+            [stamp],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "UPDATE agent_skills SET enabled=0 WHERE skill_id IN (
+               'requirement-analysis','prd-generation','structured-summary','write-note',
+               'inspect-and-summarize','review-pipeline','review-and-save'
+             )",
+            [],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "UPDATE tools SET status='disabled',updated_at=?1 WHERE id='document-tool'",
+            [stamp],
+        )
+        .map_err(|error| error.to_string())?;
     let tools = [
         root.join("packages/tools/file-tool"),
-        root.join("packages/tools/document-tool"),
+        root.join("packages/tools/agent-reach-tool"),
     ];
     for path in tools {
         if path.join("manifest.yaml").is_file() {
@@ -155,13 +170,8 @@ fn bootstrap_packages(
         }
     }
     let skills = [
-        root.join("packages/skills/requirement-analysis"),
-        root.join("packages/skills/prd-generation"),
-        root.join("packages/skills/structured-summary"),
-        root.join("packages/skills/write-note"),
-        root.join("packages/skills/inspect-and-summarize"),
-        root.join("packages/skills/review-pipeline"),
-        root.join("packages/skills/review-and-save"),
+        root.join("packages/skills/local-file-operations"),
+        root.join("packages/skills/web-search"),
     ];
     for path in skills {
         if path.join("manifest.yaml").is_file() {
@@ -330,16 +340,101 @@ fn skill_list_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value
         .and_then(|v| v.as_str())
         .unwrap_or("product")
         .to_owned();
+    let path = row.get::<_, String>(4)?;
+    let (package_files, documents) = read_skill_package_view(Path::new(&path));
     Ok(json!({
         "id": row.get::<_, String>(0)?,
         "name": row.get::<_, String>(1)?,
         "version": row.get::<_, String>(2)?,
         "status": row.get::<_, String>(3)?,
-        "path": row.get::<_, String>(4)?,
+        "path": path,
         "summary": description,
         "category": category,
-        "available": true
+        "available": true,
+        "package_files": package_files,
+        "documents": documents
     }))
+}
+
+fn read_skill_package_view(root: &Path) -> (Vec<Value>, serde_json::Map<String, Value>) {
+    fn visit(
+        root: &Path,
+        directory: &Path,
+        depth: usize,
+        files: &mut Vec<Value>,
+        documents: &mut serde_json::Map<String, Value>,
+        total_document_bytes: &mut usize,
+    ) {
+        if depth > 4 || files.len() >= 96 {
+            return;
+        }
+        let Ok(entries) = fs::read_dir(directory) else {
+            return;
+        };
+        let mut entries = entries.flatten().collect::<Vec<_>>();
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            if files.len() >= 96 {
+                break;
+            }
+            let Ok(metadata) = entry.file_type() else {
+                continue;
+            };
+            if metadata.is_symlink() {
+                continue;
+            }
+            let path = entry.path();
+            let Ok(relative) = path.strip_prefix(root) else {
+                continue;
+            };
+            let relative = relative.to_string_lossy().replace('\\', "/");
+            let parent = relative
+                .rsplit_once('/')
+                .map(|(parent, _)| parent.to_owned());
+            let is_directory = metadata.is_dir();
+            files.push(json!({
+                "path": relative,
+                "name": entry.file_name().to_string_lossy(),
+                "depth": depth,
+                "is_directory": is_directory,
+                "parent_path": parent
+            }));
+            if is_directory {
+                visit(
+                    root,
+                    &path,
+                    depth + 1,
+                    files,
+                    documents,
+                    total_document_bytes,
+                );
+            } else if path.extension().and_then(|value| value.to_str()) == Some("md") {
+                let Ok(content) = fs::read_to_string(&path) else {
+                    continue;
+                };
+                if content.len() <= 262_144 && *total_document_bytes + content.len() <= 524_288 {
+                    *total_document_bytes += content.len();
+                    documents.insert(relative, Value::String(content));
+                }
+            }
+        }
+    }
+
+    let Ok(root) = root.canonicalize() else {
+        return (Vec::new(), serde_json::Map::new());
+    };
+    let mut files = Vec::new();
+    let mut documents = serde_json::Map::new();
+    let mut total_document_bytes = 0;
+    visit(
+        &root,
+        &root,
+        1,
+        &mut files,
+        &mut documents,
+        &mut total_document_bytes,
+    );
+    (files, documents)
 }
 
 fn tools_list(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {
@@ -355,15 +450,15 @@ fn tools_list(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
     let mut connection =
         Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
     migrate(&mut connection).map_err(|e| e.to_string())?;
-    if let Some(root) = repository_root {
-        ensure_default_agent(&mut connection, &root)?;
+    if let Some(root) = &repository_root {
+        ensure_default_agent(&mut connection, root)?;
     }
     let mut statement = connection
         .prepare(
             "SELECT id, name, type, version, status, manifest_json FROM tools WHERE status='active' ORDER BY lower(name)",
         )
         .map_err(|e| e.to_string())?;
-    let tools = statement
+    let mut tools = statement
         .query_map([], |row| {
             let manifest: String = row.get(5)?;
             let parsed: serde_json::Value = serde_json::from_str(&manifest).unwrap_or(json!({}));
@@ -385,13 +480,111 @@ fn tools_list(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
                 "status": row.get::<_, String>(4)?,
                 "summary": description,
                 "category": runtime,
-                "available": true
+                "available": true,
+                "actions": tool_actions_from_manifest(&parsed)
             }))
         })
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
+    for tool in &mut tools {
+        let id = tool["id"].as_str().unwrap_or_default().to_owned();
+        if let Some(documentation) = tool_documentation(repository_root.as_deref(), &id) {
+            tool["documentation"] = Value::String(documentation);
+        }
+        if id == "agent-reach-tool" {
+            tool["data_sources"] = Value::Array(agent_reach_data_sources());
+        }
+    }
     Ok(json!({"schema_version":"1.0","tools":tools}))
+}
+
+fn tool_actions_from_manifest(parsed: &Value) -> Vec<Value> {
+    parsed
+        .pointer("/tool/actions")
+        .and_then(Value::as_array)
+        .map(|actions| {
+            actions
+                .iter()
+                .filter_map(|action| {
+                    let name = action.get("name")?.as_str()?;
+                    Some(json!({
+                        "name": name,
+                        "description": action.get("description").and_then(Value::as_str).unwrap_or(""),
+                        "required_permissions": action.get("required_permissions").cloned().unwrap_or_else(|| json!([])),
+                        "risk_level": action.get("risk_level").and_then(Value::as_u64).unwrap_or(3),
+                        "side_effect": action.get("side_effect").and_then(Value::as_str).unwrap_or("unknown"),
+                        "confirmation": action.get("confirmation").and_then(Value::as_str).unwrap_or("always"),
+                        "timeout_ms": action.get("timeout_ms").and_then(Value::as_u64).unwrap_or(0),
+                        "idempotency": action.get("idempotency").and_then(Value::as_str).unwrap_or("unsafe"),
+                        "concurrency_safe": action.get("concurrency_safe").and_then(Value::as_bool).unwrap_or(false),
+                        "sensitive_fields": action.get("sensitive_fields").cloned().unwrap_or_else(|| json!([]))
+                    }))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn tool_documentation(repository_root: Option<&Path>, tool_id: &str) -> Option<String> {
+    let root = repository_root?;
+    let path = root.join("packages/tools").join(tool_id).join("TOOL.md");
+    fs::read_to_string(path)
+        .ok()
+        .map(|content| content.trim().to_owned())
+        .filter(|content| !content.is_empty())
+}
+
+fn agent_reach_data_sources() -> Vec<Value> {
+    let checked_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let executable = [
+        PathBuf::from("agent-reach"),
+        PathBuf::from("/opt/homebrew/bin/agent-reach"),
+        PathBuf::from("/usr/local/bin/agent-reach"),
+    ];
+    let output = executable.iter().find_map(|candidate| {
+        Command::new(candidate)
+            .args(["doctor", "--json"])
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+    });
+    let parsed = output
+        .and_then(|output| serde_json::from_slice::<Value>(&output.stdout).ok())
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+
+    parsed.into_iter().map(|(id, source)| {
+        let doctor_status = source["status"].as_str().unwrap_or("warn");
+        let active_backend = source["active_backend"].as_str();
+        let (credential_type, credential_state, login_hint) = match id.as_str() {
+            "twitter" | "xueqiu" => ("cookie", "missing", "请在对应网站登录后，通过 Agent Reach 的显式配置流程授权凭据。"),
+            "reddit" | "facebook" | "instagram" | "xiaohongshu" => ("browser_session", "session_unverified", "请在浏览器扩展页启用 OpenCLI，并保持目标网站处于登录状态。"),
+            "github" => ("cli_auth", "present_unverified", "GitHub CLI 检测到认证配置，但尚未执行实时认证校验。"),
+            "linkedin" => ("mcp_auth", "missing", "需要配置 LinkedIn MCP，或使用无需登录的公开网页读取后端。"),
+            "xiaoyuzhou" => ("api_key", "missing", "需要由用户显式配置 Groq API Key。"),
+            "exa_search" => ("service_config", "present_unverified", "Exa 配置已存在，但 Doctor 未执行远端连通验证。"),
+            _ => ("none", "not_required", "无需登录。"),
+        };
+        let status = if doctor_status == "ok" { "ready" } else if credential_state == "present_unverified" { "configured_unverified" } else { "needs_attention" };
+        json!({
+            "id": id,
+            "name": source["name"].as_str().unwrap_or("未知数据源"),
+            "status": status,
+            "doctor_status": doctor_status,
+            "active_backend": active_backend,
+            "backends": source["backends"].as_array().cloned().unwrap_or_default(),
+            "credential_type": credential_type,
+            "credential_state": credential_state,
+            "last_checked_at": checked_at.to_string(),
+            "message": if doctor_status == "ok" { "运行时诊断通过。" } else { "当前诊断未通过；未读取或展示任何凭据原文。" },
+            "login_hint": login_hint,
+            "exposed_to_employee": id == "exa_search"
+        })
+    }).collect()
 }
 
 fn employees_list(
@@ -721,7 +914,14 @@ fn chat_send(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
     let tasks_enabled = skill_readiness(&connection, &agent_id)?
         .iter()
         .any(|item| item.readiness == "ready");
-    let intent = classify_user_intent(&root, &input)?;
+    let intent = classify_user_intent(
+        &connection,
+        &root,
+        &conversation_id,
+        &agent_id,
+        &system_prompt,
+        &input,
+    )?;
     if intent.is_task && tasks_enabled {
         return route_chat_to_run(
             &mut connection,
@@ -865,9 +1065,9 @@ fn continue_chat_run(
             .unwrap_or("还需要补充信息。")
             .to_owned()
     } else if phase == "waiting_approval" {
-        "执行已暂停，等待你批准所需权限。".to_owned()
-    } else if let Some(summary) = result.pointer("/output/summary").and_then(Value::as_str) {
-        summary.to_owned()
+        WAITING_APPROVAL_MESSAGE.to_owned()
+    } else if let Some(answer) = conversational_output(&result) {
+        answer.to_owned()
     } else {
         format!("工作执行已收敛（状态：{status}）。")
     };
@@ -943,11 +1143,76 @@ struct IntentResult {
     confidence: f64,
     source: String,
     is_task: bool,
+    skill_id: Option<String>,
 }
 
-fn classify_user_intent(root: &Path, text: &str) -> Result<IntentResult, String> {
+fn classify_user_intent(
+    connection: &Connection,
+    root: &Path,
+    conversation_id: &str,
+    agent_id: &str,
+    effective_prompt: &str,
+    text: &str,
+) -> Result<IntentResult, String> {
     let worker_root = root.join("runtime/python-agent");
-    let request = json!({"schema_version":"1.0","text":text,"use_llm":true});
+    let ready = skill_readiness(connection, agent_id)?;
+    let mut available_skills = Vec::new();
+    for item in ready.into_iter().filter(|item| item.readiness == "ready") {
+        let raw: String = connection
+            .query_row(
+                "SELECT manifest_json FROM skills WHERE id=?1 AND status='active'",
+                [&item.skill_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        let manifest: Value =
+            serde_json::from_str(&raw).map_err(|_| "package_invalid".to_owned())?;
+        available_skills.push(json!({
+            "id": item.skill_id,
+            "name": manifest["skill"]["name"],
+            "description": manifest["skill"]["description"]
+        }));
+    }
+    let mut statement = connection
+        .prepare(
+            "SELECT role,content FROM (
+               SELECT sequence,role,content FROM messages
+               WHERE conversation_id=?1 ORDER BY sequence DESC LIMIT 12
+             ) ORDER BY sequence",
+        )
+        .map_err(|error| error.to_string())?;
+    let conversation_context = statement
+        .query_map([conversation_id], |row| {
+            Ok(json!({
+                "role": row.get::<_, String>(0)?,
+                "content": row.get::<_, String>(1)?
+            }))
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    let mut memories = retrieve_memory(connection, "agent", agent_id, 4)?;
+    memories.extend(retrieve_memory(connection, "user", "local-user", 4)?);
+    let memories: Vec<Value> = memories
+        .into_iter()
+        .map(|item| {
+            json!({
+                "type": item.memory_type,
+                "content": item.content,
+                "confidence": item.confidence,
+                "trust": item.trust
+            })
+        })
+        .collect();
+    let request = json!({
+        "schema_version":"1.0",
+        "text":text,
+        "available_skills":available_skills,
+        "conversation_context":conversation_context,
+        "memories":memories,
+        "employee_context":{"agent_id":agent_id,"effective_prompt":effective_prompt},
+        "use_llm":true
+    });
     let mut child = Command::new("python3")
         .args(["-m", "app.intent_worker"])
         .env("PYTHONPATH", &worker_root)
@@ -980,12 +1245,17 @@ fn classify_user_intent(root: &Path, text: &str) -> Result<IntentResult, String>
         .and_then(|v| v.as_str())
         .unwrap_or("fallback")
         .to_owned();
-    let is_task = intent == "task" && confidence >= 0.55;
+    let skill_id = payload
+        .get("skill_id")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let is_task = intent == "task" && confidence >= 0.55 && skill_id.is_some();
     Ok(IntentResult {
         intent,
         confidence,
         source,
         is_task,
+        skill_id,
     })
 }
 
@@ -1001,17 +1271,21 @@ fn route_chat_to_run(
     nonce: u128,
     intent: &IntentResult,
 ) -> Result<serde_json::Value, String> {
-    let task_result = resolve_skill(connection, agent_id, input).and_then(|skill_id| {
-        execute_skill(RunSkillConfig {
-            connection,
-            repository_root: root,
-            python: Path::new("python3"),
-            agent_id,
-            skill_id: &skill_id,
-            input: json!({"text":input}),
-            conversation_id: Some(conversation_id),
-        })
-    });
+    let task_result = intent
+        .skill_id
+        .as_deref()
+        .ok_or_else(|| "capability_not_found".to_owned())
+        .and_then(|skill_id| {
+            execute_skill(RunSkillConfig {
+                connection,
+                repository_root: root,
+                python: Path::new("python3"),
+                agent_id,
+                skill_id,
+                input: json!({"text":input}),
+                conversation_id: Some(conversation_id),
+            })
+        });
     let completed = now();
     let (content, status, artifact, task_id_out, run_id, run_phase) = match task_result {
         Ok(value) => {
@@ -1045,13 +1319,9 @@ fn route_chat_to_run(
                     .unwrap_or("需要补充信息。")
                     .to_owned()
             } else if phase == "waiting_approval" {
-                "执行已暂停，等待你批准所需权限。".to_owned()
-            } else if let Some(summary) = value
-                .get("output")
-                .and_then(|item| item.get("summary"))
-                .and_then(Value::as_str)
-            {
-                summary.to_owned()
+                WAITING_APPROVAL_MESSAGE.to_owned()
+            } else if let Some(answer) = conversational_output(&value) {
+                answer.to_owned()
             } else if artifact.is_empty() {
                 format!("工作执行已收敛（状态：{status}）。")
             } else {
@@ -1128,6 +1398,14 @@ fn route_chat_to_run(
     }))
 }
 
+fn conversational_output(result: &Value) -> Option<&str> {
+    result
+        .pointer("/output/answer")
+        .or_else(|| result.pointer("/output/summary"))
+        .or_else(|| result.pointer("/output/content"))
+        .and_then(Value::as_str)
+}
+
 fn chat_messages(
     connection: &Connection,
     conversation_id: &str,
@@ -1165,12 +1443,11 @@ fn list_tasks(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
     let database = database.ok_or_else(usage)?;
     let mut connection = Connection::open(database).map_err(|error| error.to_string())?;
     migrate(&mut connection).map_err(|error| error.to_string())?;
-    reconcile_interrupted(&mut connection, &now()).map_err(|error| error.to_string())?;
     let mut statement = connection
         .prepare(
             "SELECT t.id,t.agent_id,t.input,t.status,t.created_at,t.updated_at,
                     COALESCE(json_group_array(json_object(
-                      'step_id', COALESCE(json_extract(a.input_json,'$.step_id'), substr(a.id, instr(a.id, ':') + 1)),
+                      'step_id', COALESCE(json_extract(a.input_json,'$.step_id'), json_extract(a.input_json,'$.action'), substr(a.id, instr(a.id, ':') + 1)),
                       'action_id', a.id,
                       'status', a.status,
                       'output_as', COALESCE(json_extract(a.input_json,'$.output_as'), '')
@@ -1194,6 +1471,15 @@ fn list_tasks(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
                     ,(SELECT title FROM deliverables WHERE task_id=t.id AND status='verified' ORDER BY created_at DESC LIMIT 1)
                     ,(SELECT status FROM deliverables WHERE task_id=t.id ORDER BY created_at DESC LIMIT 1)
                     ,(SELECT uri FROM artifacts WHERE task_id=t.id AND verification_status='verified' ORDER BY created_at DESC LIMIT 1)
+                    ,(SELECT json_extract(snapshot_json,'$.conversation_id') FROM run_snapshots
+                      WHERE run_id=(SELECT id FROM agent_runs WHERE task_id=t.id ORDER BY created_at DESC LIMIT 1)
+                        AND snapshot_type='context' LIMIT 1)
+                    ,(SELECT json_extract(snapshot_json,'$.id') FROM run_snapshots
+                      WHERE run_id=(SELECT id FROM agent_runs WHERE task_id=t.id ORDER BY created_at DESC LIMIT 1)
+                        AND snapshot_type='skill' LIMIT 1)
+                    ,(SELECT json_extract(snapshot_json,'$.version') FROM run_snapshots
+                      WHERE run_id=(SELECT id FROM agent_runs WHERE task_id=t.id ORDER BY created_at DESC LIMIT 1)
+                        AND snapshot_type='skill' LIMIT 1)
              FROM tasks t LEFT JOIN actions a ON a.task_id=t.id
              GROUP BY t.id ORDER BY t.created_at DESC, t.id DESC",
         )
@@ -1207,7 +1493,7 @@ fn list_tasks(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
             Ok(json!({
                 "task_id": row.get::<_, String>(0)?,
                 "agent_id": row.get::<_, String>(1)?,
-                "input": row.get::<_, String>(2)?,
+                "input": task_input_text(&row.get::<_, String>(2)?),
                 "status": row.get::<_, String>(3)?,
                 "created_at": row.get::<_, String>(4)?,
                 "updated_at": row.get::<_, String>(5)?,
@@ -1229,7 +1515,10 @@ fn list_tasks(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
                 "stop_reason": row.get::<_, Option<String>>(15)?,
                 "deliverable_title": row.get::<_, Option<String>>(16)?,
                 "deliverable_status": row.get::<_, Option<String>>(17)?,
-                "verified_artifact_path": row.get::<_, Option<String>>(18)?
+                "verified_artifact_path": row.get::<_, Option<String>>(18)?,
+                "conversation_id": row.get::<_, Option<String>>(19)?,
+                "skill_id": row.get::<_, Option<String>>(20)?,
+                "skill_version": row.get::<_, Option<String>>(21)?
             }))
         })
         .map_err(|error| error.to_string())?;
@@ -1237,6 +1526,35 @@ fn list_tasks(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| error.to_string())?;
     Ok(json!({"schema_version":"1.0","tasks":tasks}))
+}
+
+fn recover_runtime(
+    mut arguments: impl Iterator<Item = String>,
+) -> Result<serde_json::Value, String> {
+    let mut database = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            _ => return Err(usage()),
+        }
+    }
+    let database = database.ok_or_else(usage)?;
+    let mut connection = Connection::open(database).map_err(|error| error.to_string())?;
+    migrate(&mut connection).map_err(|error| error.to_string())?;
+    let summary =
+        reconcile_interrupted(&mut connection, &now()).map_err(|error| error.to_string())?;
+    Ok(json!({
+        "schema_version":"1.0",
+        "safe_failures":summary.safe_failures,
+        "result_unknown":summary.result_unknown
+    }))
+}
+
+fn task_input_text(raw: &str) -> String {
+    serde_json::from_str::<Value>(raw)
+        .ok()
+        .and_then(|value| value.get("text").and_then(Value::as_str).map(str::to_owned))
+        .unwrap_or_else(|| raw.to_owned())
 }
 
 fn cancel_task(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {
@@ -1468,14 +1786,136 @@ fn continue_run(mut arguments: impl Iterator<Item = String>) -> Result<serde_jso
             serde_json::from_str(&input).map_err(|_| "input_schema_invalid".to_owned())?,
         );
     }
-    resume_run(ContinueRunConfig {
+    let result = resume_run(ContinueRunConfig {
         connection: &mut connection,
         repository_root: &repository_root,
         python: &python,
         run_id: &run_id,
         authorized_root: &authorized_root.ok_or_else(usage)?,
         approve: approve.ok_or_else(usage)?,
-    })
+    })?;
+    append_run_result_to_conversation(&mut connection, &run_id, &result)?;
+    Ok(result)
+}
+
+fn append_run_result_to_conversation(
+    connection: &mut Connection,
+    run_id: &str,
+    result: &Value,
+) -> Result<(), String> {
+    if result.get("status").and_then(Value::as_str) != Some("succeeded")
+        || result.get("phase").and_then(Value::as_str) != Some("terminal")
+    {
+        return Ok(());
+    }
+    let Some(mut content) = conversational_output(result).map(str::to_owned) else {
+        return Ok(());
+    };
+    if let Some(sources) = result.pointer("/output/sources").and_then(Value::as_array) {
+        let sources: Vec<(String, &str)> = sources
+            .iter()
+            .enumerate()
+            .filter_map(|(index, source)| {
+                if let Some(url) = source.as_str() {
+                    return Some((format!("来源 {}", index + 1), url));
+                }
+                let title = source.get("title").and_then(Value::as_str)?.trim();
+                let url = source.get("url").and_then(Value::as_str)?;
+                Some((
+                    if title.is_empty() {
+                        format!("来源 {}", index + 1)
+                    } else {
+                        title.to_owned()
+                    },
+                    url,
+                ))
+            })
+            .collect();
+        if !sources.is_empty() {
+            content.push_str("\n\n## 来源\n");
+            content.push_str(
+                &sources
+                    .iter()
+                    .map(|(title, source)| format!("- [{}]({source})", markdown_link_title(title)))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            );
+        }
+    }
+    let snapshot: Option<String> = connection
+        .query_row(
+            "SELECT snapshot_json FROM run_snapshots
+             WHERE run_id=?1 AND snapshot_type='context'",
+            [run_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let conversation_id = snapshot
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+        .and_then(|value| value.get("conversation_id").cloned())
+        .and_then(|value| value.as_str().map(str::to_owned));
+    let Some(conversation_id) = conversation_id else {
+        return Ok(());
+    };
+    let stamp = now();
+    let transaction = connection
+        .transaction()
+        .map_err(|error| error.to_string())?;
+    let waiting_message_id: Option<String> = transaction
+        .query_row(
+            "SELECT id FROM messages
+             WHERE conversation_id=?1 AND role='assistant' AND content=?2
+               AND sequence > (
+                 SELECT COALESCE(MAX(sequence),0) FROM messages
+                 WHERE conversation_id=?1 AND role='user'
+               )
+             ORDER BY sequence DESC LIMIT 1",
+            rusqlite::params![conversation_id, WAITING_APPROVAL_MESSAGE],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    if let Some(message_id) = waiting_message_id {
+        transaction
+            .execute(
+                "UPDATE messages SET content=?2,created_at=?3 WHERE id=?1",
+                rusqlite::params![message_id, content, stamp],
+            )
+            .map_err(|error| error.to_string())?;
+    } else {
+        let sequence: i64 = transaction
+            .query_row(
+                "SELECT COALESCE(MAX(sequence),0)+1 FROM messages WHERE conversation_id=?1",
+                [&conversation_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO messages VALUES (?1,?2,?3,'assistant',?4,?5)",
+                rusqlite::params![
+                    format!("msg_assistant_{run_id}"),
+                    conversation_id,
+                    sequence,
+                    content,
+                    stamp
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    transaction
+        .execute(
+            "UPDATE conversations SET updated_at=?2 WHERE id=?1",
+            rusqlite::params![conversation_id, stamp],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction.commit().map_err(|error| error.to_string())
+}
+
+fn markdown_link_title(title: &str) -> String {
+    title.replace('[', "\\[").replace(']', "\\]")
 }
 
 fn resolve_action_result(
@@ -1810,6 +2250,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn task_input_text_extracts_user_text_without_leaking_transport_json() {
+        assert_eq!(
+            task_input_text(r#"{"text":"查询下chatgpt最新版本吧"}"#),
+            "查询下chatgpt最新版本吧"
+        );
+        assert_eq!(task_input_text("plain task"), "plain task");
+    }
+
+    #[test]
     fn revision_rejects_older_user_message_and_removes_only_latest_turn() {
         let mut connection = Connection::open_in_memory().unwrap();
         connection
@@ -1863,5 +2312,106 @@ mod tests {
             .query_row("SELECT count(*) FROM model_calls", [], |row| row.get(0))
             .unwrap();
         assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn completed_run_replaces_waiting_message_and_formats_source_links() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE messages(id TEXT PRIMARY KEY, conversation_id TEXT, sequence INTEGER, role TEXT, content TEXT, created_at TEXT);
+                 CREATE TABLE run_snapshots(run_id TEXT, snapshot_type TEXT, snapshot_json TEXT);
+                 CREATE TABLE conversations(id TEXT PRIMARY KEY, updated_at TEXT);
+                 INSERT INTO conversations VALUES ('c1','before');
+                 INSERT INTO messages VALUES ('waiting','c1',2,'assistant','执行已暂停，等待你批准所需权限。','before');
+                 INSERT INTO run_snapshots VALUES ('run1','context','{\"conversation_id\":\"c1\"}');",
+            )
+            .unwrap();
+
+        append_run_result_to_conversation(
+            &mut connection,
+            "run1",
+            &json!({
+                "status": "succeeded",
+                "phase": "terminal",
+                "output": {
+                    "answer": "## 主要动态\n- **发布更新**：内容",
+                    "sources": [{"title":"Example 发布说明","url":"https://example.com/long/path"}]
+                }
+            }),
+        )
+        .unwrap();
+
+        let messages: Vec<(String, String)> = connection
+            .prepare("SELECT id,content FROM messages ORDER BY sequence")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].0, "waiting");
+        assert!(messages[0].1.contains("## 主要动态"));
+        assert!(
+            messages[0]
+                .1
+                .contains("[Example 发布说明](https://example.com/long/path)")
+        );
+        assert!(!messages[0].1.contains(WAITING_APPROVAL_MESSAGE));
+    }
+
+    #[test]
+    fn polling_task_history_does_not_recover_a_live_execution() {
+        let database = env::temp_dir().join(format!("ai-employee-list-tasks-{}.db", now()));
+        let mut connection = Connection::open(&database).unwrap();
+        migrate(&mut connection).unwrap();
+        connection.execute("INSERT INTO agents VALUES ('alex','Alex','ai_product_manager','package','active','t','t')", []).unwrap();
+        connection
+            .execute(
+                "INSERT INTO tools VALUES ('tool','Tool','native','1.0.0','{}','active','t','t')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO tasks VALUES ('task','alex','input','running','t','t')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO actions VALUES ('action','task','tool','{}',NULL,'running','t','t')",
+                [],
+            )
+            .unwrap();
+        connection.execute("INSERT INTO tool_executions VALUES ('call','action','key',1,'running','none',NULL,'t',NULL,'trace')", []).unwrap();
+        drop(connection);
+
+        list_tasks(vec!["--database".to_owned(), database.display().to_string()].into_iter())
+            .unwrap();
+        let connection = Connection::open(&database).unwrap();
+        let status: String = connection
+            .query_row(
+                "SELECT status FROM tool_executions WHERE call_id='call'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "running");
+        drop(connection);
+
+        recover_runtime(vec!["--database".to_owned(), database.display().to_string()].into_iter())
+            .unwrap();
+        let connection = Connection::open(&database).unwrap();
+        let status: String = connection
+            .query_row(
+                "SELECT status FROM tool_executions WHERE call_id='call'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "failed");
+        drop(connection);
+        fs::remove_file(database).unwrap();
     }
 }

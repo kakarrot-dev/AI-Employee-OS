@@ -485,19 +485,44 @@ fn validate_dependencies(nodes: &[GraphNode]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        agent::install_agent_package, skill_package::install_skill_package, storage::migrate,
-        tool_package::install_tool_package,
-    };
+    use crate::{agent::install_agent_package, storage::migrate};
     use std::path::Path;
+
+    fn install_graph_fixture(connection: &Connection) {
+        let manifest = json!({
+            "schema_version":"1.0.0",
+            "skill":{
+                "id":"graph-test-skill","version":"1.0.0",
+                "required_tools":[{"id":"graph-test-tool","actions":["write"]}],
+                "workflow":{
+                    "engine":"runtime-dag-v1","max_steps":2,
+                    "steps":[
+                        {"id":"analyze","depends_on":[],"input_from":[],"output_as":"analysis","timeout_ms":1000,"retry_policy":{"max_attempts":1},"on_failure":"fail_skill"},
+                        {"id":"write","depends_on":["analyze"],"input_from":[],"output_as":"document","tool":{"id":"graph-test-tool","action":"write"},"arguments":{},"timeout_ms":1000,"retry_policy":{"max_attempts":1},"on_failure":"fail_skill"}
+                    ]
+                }
+            }
+        });
+        let tool_manifest = json!({
+            "schema_version":"1.0.0",
+            "tool":{"id":"graph-test-tool","version":"1.0.0","actions":[{"name":"write"}]}
+        });
+        connection.execute(
+            "INSERT INTO tools VALUES ('graph-test-tool','Graph Test Tool','native','1.0.0',?1,'active','t','t')",
+            [tool_manifest.to_string()],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO skills VALUES ('graph-test-skill','Graph Test Skill','1.0.0',?1,'/test/graph','active','t','t')",
+            params![manifest.to_string()],
+        ).unwrap();
+    }
 
     #[test]
     fn manifest_graph_materializes_into_canonical_actions() {
         let mut connection = Connection::open_in_memory().unwrap();
         migrate(&mut connection).unwrap();
         let packages = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages");
-        install_tool_package(&connection, &packages.join("tools/document-tool"), "t").unwrap();
-        install_skill_package(&connection, &packages.join("skills/prd-generation"), "t").unwrap();
+        install_graph_fixture(&connection);
         install_agent_package(
             &mut connection,
             &packages.join("agents/ai-product-manager"),
@@ -510,7 +535,7 @@ mod tests {
                 [],
             )
             .unwrap();
-        let graph = GraphPlan::load(&connection, "prd-generation", "1.0.0").unwrap();
+        let graph = GraphPlan::load(&connection, "graph-test-skill", "1.0.0").unwrap();
         graph.materialize(&connection, "task_1", "t").unwrap();
         assert!(
             graph
@@ -542,8 +567,7 @@ mod tests {
         let mut connection = Connection::open_in_memory().unwrap();
         migrate(&mut connection).unwrap();
         let packages = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages");
-        install_tool_package(&connection, &packages.join("tools/document-tool"), "t").unwrap();
-        install_skill_package(&connection, &packages.join("skills/prd-generation"), "t").unwrap();
+        install_graph_fixture(&connection);
         install_agent_package(
             &mut connection,
             &packages.join("agents/ai-product-manager"),
@@ -556,8 +580,8 @@ mod tests {
                 [],
             )
             .unwrap();
-        connection.execute("INSERT INTO task_execution_snapshots VALUES ('task_2','{\"id\":\"prd-generation\",\"version\":\"1.0.0\"}','[]','{}','{}','[]','{}','t')", []).unwrap();
-        let graph = GraphPlan::load(&connection, "prd-generation", "1.0.0").unwrap();
+        connection.execute("INSERT INTO task_execution_snapshots VALUES ('task_2','{\"id\":\"graph-test-skill\",\"version\":\"1.0.0\"}','[]','{}','{}','[]','{}','t')", []).unwrap();
+        let graph = GraphPlan::load(&connection, "graph-test-skill", "1.0.0").unwrap();
         graph.materialize(&connection, "task_2", "t").unwrap();
         graph
             .start_step(&connection, "task_2", "analyze", "t")
@@ -593,7 +617,7 @@ mod tests {
             .unwrap();
         assert_eq!(status, "result_unknown");
         connection
-            .execute("DELETE FROM skills WHERE id='prd-generation'", [])
+            .execute("DELETE FROM skills WHERE id='graph-test-skill'", [])
             .unwrap();
         assert!(GraphPlan::restore(&connection, "task_2").is_ok());
     }

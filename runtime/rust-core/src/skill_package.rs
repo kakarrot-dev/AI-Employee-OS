@@ -254,13 +254,11 @@ mod tests {
         let mut c = Connection::open_in_memory().unwrap();
         migrate(&mut c).unwrap();
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages");
-        install_tool_package(
-            &c,
-            &root.join("tools/document-tool"),
-            "2026-08-04T00:00:00Z",
-        )
-        .unwrap();
-        for s in ["requirement-analysis", "prd-generation"] {
+        for tool in ["file-tool", "agent-reach-tool"] {
+            install_tool_package(&c, &root.join("tools").join(tool), "2026-08-04T00:00:00Z")
+                .unwrap();
+        }
+        for s in ["local-file-operations", "web-search"] {
             install_skill_package(&c, &root.join("skills").join(s), "2026-08-04T00:00:00Z")
                 .unwrap();
         }

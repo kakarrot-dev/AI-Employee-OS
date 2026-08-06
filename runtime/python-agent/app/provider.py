@@ -89,13 +89,22 @@ class DeepSeekProvider:
         self.transport = transport or UrllibTransport()
 
     def complete(self, messages: list[dict[str, str]]) -> ProviderResponse:
+        return self._complete(messages, json_object=False)
+
+    def complete_json(self, messages: list[dict[str, str]]) -> ProviderResponse:
+        return self._complete(messages, json_object=True)
+
+    def _complete(self, messages: list[dict[str, str]], json_object: bool) -> ProviderResponse:
         key = os.getenv("DEEPSEEK_API_KEY")
         if not key:
             raise ProviderFailure(ProviderErrorKind.AUTHENTICATION, "DEEPSEEK_API_KEY is not configured")
+        payload = {"model": self.model, "messages": messages, "stream": False}
+        if json_object:
+            payload["response_format"] = {"type": "json_object"}
         response = self.transport.post(
             "https://api.deepseek.com/chat/completions",
             _headers(key),
-            {"model": self.model, "messages": messages, "stream": False},
+            payload,
             self.timeout,
         )
         _raise_http_error(response)
@@ -257,3 +266,6 @@ class DeterministicFakeProvider:
         if not self.responses:
             raise ProviderFailure(ProviderErrorKind.INVALID_RESPONSE, "no scripted response")
         return ProviderResponse(self.responses.pop(0), self.name)
+
+    def complete_json(self, messages: list[dict[str, str]]) -> ProviderResponse:
+        return self.complete(messages)

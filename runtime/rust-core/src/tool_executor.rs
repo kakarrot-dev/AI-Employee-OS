@@ -5,6 +5,7 @@ use std::{
     os::unix::ffi::OsStrExt,
     os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
+    process::Command,
     sync::mpsc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -715,7 +716,10 @@ fn execute_native_with_timeout(
     std::thread::spawn(move || {
         let result = match (tool_id.as_str(), action_name.as_str()) {
             ("file-tool", "read_file") => read_file(&arguments, &root),
+            ("file-tool", "create_file") => create_file(&arguments, &root),
+            ("file-tool", "edit_file") => edit_file(&arguments, &root),
             ("document-tool", "create_markdown") => create_markdown(&arguments, &root),
+            ("agent-reach-tool", "search_web") => search_web(&arguments),
             #[cfg(test)]
             ("document-tool", "slow_write") => {
                 std::thread::sleep(Duration::from_millis(20));
@@ -779,6 +783,289 @@ fn read_file(
     let content = fs::read_to_string(canonical_path)
         .map_err(|error| ("EXECUTION_FAILED", error.to_string(), SideEffectState::None))?;
     Ok((json!({"content": content}), SideEffectState::None))
+}
+
+fn create_file(
+    arguments: &Value,
+    root: &Path,
+) -> Result<(Value, SideEffectState), (&'static str, String, SideEffectState)> {
+    let path = requested_path(arguments)?;
+    let content = required_string(arguments, "content")?;
+    let (directory, leaf_name) = writable_parent(root, path)?;
+    let destination = std::ffi::CString::new(leaf_name.as_bytes()).map_err(|error| {
+        (
+            "INVALID_ARGUMENT",
+            error.to_string(),
+            SideEffectState::NotStarted,
+        )
+    })?;
+    let descriptor = unsafe {
+        libc::openat(
+            directory.as_raw_fd(),
+            destination.as_ptr(),
+            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            0o600,
+        )
+    };
+    if descriptor < 0 {
+        let error = std::io::Error::last_os_error();
+        let code = if error.kind() == std::io::ErrorKind::AlreadyExists {
+            "ALREADY_EXISTS"
+        } else {
+            "EXECUTION_FAILED"
+        };
+        return Err((code, error.to_string(), SideEffectState::NotStarted));
+    }
+    let mut file = unsafe { File::from_raw_fd(descriptor) };
+    if let Err(error) = file
+        .write_all(content.as_bytes())
+        .and_then(|_| file.sync_all())
+        .and_then(|_| directory.sync_all())
+    {
+        return Err((
+            "RESULT_UNKNOWN",
+            error.to_string(),
+            SideEffectState::Unknown,
+        ));
+    }
+    Ok((
+        json!({"path": path.to_string_lossy(), "bytes_written": content.len()}),
+        SideEffectState::Confirmed,
+    ))
+}
+
+fn edit_file(
+    arguments: &Value,
+    root: &Path,
+) -> Result<(Value, SideEffectState), (&'static str, String, SideEffectState)> {
+    let path = requested_path(arguments)?;
+    let old_text = required_string(arguments, "old_text")?;
+    let new_text = required_string(arguments, "new_text")?;
+    if old_text.is_empty() {
+        return Err((
+            "INVALID_ARGUMENT",
+            "old_text must not be empty".to_owned(),
+            SideEffectState::NotStarted,
+        ));
+    }
+    let canonical_root = root.canonicalize().map_err(|error| {
+        (
+            "INVALID_ARGUMENT",
+            error.to_string(),
+            SideEffectState::NotStarted,
+        )
+    })?;
+    let canonical_path = path.canonicalize().map_err(|error| {
+        (
+            "EXECUTION_FAILED",
+            error.to_string(),
+            SideEffectState::NotStarted,
+        )
+    })?;
+    if !canonical_path.starts_with(&canonical_root) {
+        return Err((
+            "PERMISSION_DENIED",
+            "path is outside authorized root".to_owned(),
+            SideEffectState::NotStarted,
+        ));
+    }
+    let content = fs::read_to_string(&canonical_path).map_err(|error| {
+        (
+            "EXECUTION_FAILED",
+            error.to_string(),
+            SideEffectState::NotStarted,
+        )
+    })?;
+    if content.matches(old_text).count() != 1 {
+        return Err((
+            "EDIT_CONFLICT",
+            "old_text must occur exactly once".to_owned(),
+            SideEffectState::NotStarted,
+        ));
+    }
+    let updated = content.replacen(old_text, new_text, 1);
+    atomic_replace(root, path, updated.as_bytes())?;
+    Ok((
+        json!({"path": path.to_string_lossy(), "replacements": 1}),
+        SideEffectState::Confirmed,
+    ))
+}
+
+fn required_string<'a>(
+    arguments: &'a Value,
+    field: &str,
+) -> Result<&'a str, (&'static str, String, SideEffectState)> {
+    arguments.get(field).and_then(Value::as_str).ok_or((
+        "INVALID_ARGUMENT",
+        format!("{field} is required"),
+        SideEffectState::NotStarted,
+    ))
+}
+
+fn writable_parent(
+    root: &Path,
+    path: &Path,
+) -> Result<(File, std::ffi::OsString), (&'static str, String, SideEffectState)> {
+    open_parent_beneath(root, path).map_err(|error| {
+        (
+            "PERMISSION_DENIED",
+            error.to_string(),
+            SideEffectState::NotStarted,
+        )
+    })
+}
+
+fn atomic_replace(
+    root: &Path,
+    path: &Path,
+    content: &[u8],
+) -> Result<(), (&'static str, String, SideEffectState)> {
+    let (directory, leaf_name) = writable_parent(root, path)?;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| {
+            (
+                "EXECUTION_FAILED",
+                error.to_string(),
+                SideEffectState::NotStarted,
+            )
+        })?
+        .as_nanos();
+    let name = path.file_name().and_then(|value| value.to_str()).ok_or((
+        "INVALID_ARGUMENT",
+        "file path has no valid file name".to_owned(),
+        SideEffectState::NotStarted,
+    ))?;
+    let temporary_name = format!(".{name}.{}-{nonce}.tmp", std::process::id());
+    let write_result = (|| -> std::io::Result<()> {
+        let temporary = std::ffi::CString::new(temporary_name.as_bytes())?;
+        let destination = std::ffi::CString::new(leaf_name.as_bytes())?;
+        let descriptor = unsafe {
+            libc::openat(
+                directory.as_raw_fd(),
+                temporary.as_ptr(),
+                libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                0o600,
+            )
+        };
+        if descriptor < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        let mut file = unsafe { File::from_raw_fd(descriptor) };
+        file.write_all(content)?;
+        file.sync_all()?;
+        let renamed = unsafe {
+            libc::renameat(
+                directory.as_raw_fd(),
+                temporary.as_ptr(),
+                directory.as_raw_fd(),
+                destination.as_ptr(),
+            )
+        };
+        if renamed != 0 {
+            unsafe {
+                libc::unlinkat(directory.as_raw_fd(), temporary.as_ptr(), 0);
+            }
+            return Err(std::io::Error::last_os_error());
+        }
+        directory.sync_all()
+    })();
+    write_result.map_err(|error| {
+        (
+            "RESULT_UNKNOWN",
+            error.to_string(),
+            SideEffectState::Unknown,
+        )
+    })
+}
+
+fn search_web(
+    arguments: &Value,
+) -> Result<(Value, SideEffectState), (&'static str, String, SideEffectState)> {
+    let query = required_string(arguments, "query")?;
+    if query.trim().is_empty() {
+        return Err((
+            "INVALID_ARGUMENT",
+            "query must not be empty".to_owned(),
+            SideEffectState::None,
+        ));
+    }
+    let num_results = arguments
+        .get("num_results")
+        .and_then(Value::as_u64)
+        .unwrap_or(5);
+    if !(1..=10).contains(&num_results) {
+        return Err((
+            "INVALID_ARGUMENT",
+            "num_results must be between 1 and 10".to_owned(),
+            SideEffectState::None,
+        ));
+    }
+    let payload = json!({"query": query, "numResults": num_results}).to_string();
+    let output = Command::new(mcporter_executable())
+        .args([
+            "--log-level",
+            "error",
+            "call",
+            "exa.web_search_exa",
+            "--args",
+            &payload,
+            "--timeout",
+            "25000",
+            "--output",
+            "json",
+            "--no-oauth",
+        ])
+        .output()
+        .map_err(|error| {
+            (
+                "DEPENDENCY_UNAVAILABLE",
+                format!("could not start Agent Reach search backend: {error}"),
+                SideEffectState::None,
+            )
+        })?;
+    if !output.status.success() {
+        let message = String::from_utf8_lossy(&output.stderr);
+        return Err((
+            "SEARCH_FAILED",
+            message.trim().chars().take(4096).collect(),
+            SideEffectState::None,
+        ));
+    }
+    let content = String::from_utf8(output.stdout).map_err(|error| {
+        (
+            "SEARCH_FAILED",
+            format!("search backend returned non-UTF-8 output: {error}"),
+            SideEffectState::None,
+        )
+    })?;
+    if content.len() > 1_048_576 {
+        return Err((
+            "RESULT_TOO_LARGE",
+            "search result exceeded 1 MiB".to_owned(),
+            SideEffectState::None,
+        ));
+    }
+    Ok((
+        json!({"provider": "agent-reach/exa", "content": content}),
+        SideEffectState::None,
+    ))
+}
+
+fn mcporter_executable() -> PathBuf {
+    if let Some(configured) = std::env::var_os("AI_EMPLOYEE_MCPORTER_PATH") {
+        let path = PathBuf::from(configured);
+        if path.is_file() {
+            return path;
+        }
+    }
+    for candidate in ["/opt/homebrew/bin/mcporter", "/usr/local/bin/mcporter"] {
+        let path = PathBuf::from(candidate);
+        if path.is_file() {
+            return path;
+        }
+    }
+    PathBuf::from("mcporter")
 }
 
 fn create_markdown(
@@ -1005,6 +1292,51 @@ mod tests {
             trace_id: "trace_1".to_owned(),
             attempt: 1,
         }
+    }
+
+    #[test]
+    fn creates_new_file_and_refuses_overwrite() {
+        let root = temp_root("create-file");
+        let path = root.join("created.txt");
+        let created = create_file(&json!({"path": path, "content": "hello"}), &root).unwrap();
+        assert_eq!(created.0["bytes_written"], 5);
+        assert_eq!(fs::read_to_string(&path).unwrap(), "hello");
+
+        let duplicate =
+            create_file(&json!({"path": path, "content": "replacement"}), &root).unwrap_err();
+        assert_eq!(duplicate.0, "ALREADY_EXISTS");
+        assert_eq!(fs::read_to_string(path).unwrap(), "hello");
+    }
+
+    #[test]
+    fn edits_only_one_exact_occurrence() {
+        let root = temp_root("edit-file");
+        let path = root.join("edited.txt");
+        fs::write(&path, "before and after").unwrap();
+        let edited = edit_file(
+            &json!({"path": path, "old_text": "before", "new_text": "after"}),
+            &root,
+        )
+        .unwrap();
+        assert_eq!(edited.0["replacements"], 1);
+        assert_eq!(fs::read_to_string(&path).unwrap(), "after and after");
+
+        let ambiguous = edit_file(
+            &json!({"path": path, "old_text": "after", "new_text": "changed"}),
+            &root,
+        )
+        .unwrap_err();
+        assert_eq!(ambiguous.0, "EDIT_CONFLICT");
+        assert_eq!(fs::read_to_string(path).unwrap(), "after and after");
+    }
+
+    #[test]
+    fn file_mutations_reject_paths_outside_authorized_root() {
+        let root = temp_root("file-boundary");
+        let outside = temp_root("file-outside").join("outside.txt");
+        let create_error =
+            create_file(&json!({"path": outside, "content": "no"}), &root).unwrap_err();
+        assert_eq!(create_error.0, "PERMISSION_DENIED");
     }
 
     #[test]

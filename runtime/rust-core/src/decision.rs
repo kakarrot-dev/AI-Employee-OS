@@ -71,4 +71,16 @@ mod tests {
                 .contains("decision_forbidden_field")
         );
     }
+
+    #[test]
+    fn rejects_unsupported_worker_schema_version() {
+        let value = serde_json::json!({
+            "schema_version":"2.0.0", "type":"complete", "output":{},
+            "deliverable_candidates":[], "evidence_refs":[]
+        });
+        assert_eq!(
+            AgentDecision::parse(value).unwrap_err(),
+            "decision_schema_invalid: unsupported schema_version"
+        );
+    }
 }

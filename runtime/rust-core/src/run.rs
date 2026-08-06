@@ -44,6 +44,7 @@ struct LockedRun {
     prompt: String,
     skill: Value,
     instructions: String,
+    tool_surface: Value,
     max_model_turns: i64,
     max_tool_calls: i64,
 }
@@ -582,6 +583,14 @@ fn resume_after_observation(
     tool_result: &Value,
     now: &str,
 ) -> Result<Value, String> {
+    let task_input_raw: String = config
+        .connection
+        .query_row("SELECT input FROM tasks WHERE id=?1", [task_id], |row| {
+            row.get(0)
+        })
+        .map_err(|_| "checkpoint_conflict".to_owned())?;
+    let task_input = serde_json::from_str::<Value>(&task_input_raw)
+        .unwrap_or_else(|_| json!({"text":task_input_raw}));
     let agent_raw: String = config
         .connection
         .query_row(
@@ -598,17 +607,27 @@ fn resume_after_observation(
             |row| row.get(0),
         )
         .map_err(|_| "checkpoint_conflict".to_owned())?;
+    let toolset_raw: String = config
+        .connection
+        .query_row(
+            "SELECT snapshot_json FROM run_snapshots WHERE run_id=?1 AND snapshot_type='toolset'",
+            [config.run_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| "checkpoint_conflict".to_owned())?;
     let agent: Value =
         serde_json::from_str(&agent_raw).map_err(|_| "checkpoint_conflict".to_owned())?;
     let skill_lock: Value =
         serde_json::from_str(&skill_raw).map_err(|_| "checkpoint_conflict".to_owned())?;
+    let toolset_lock: Value =
+        serde_json::from_str(&toolset_raw).map_err(|_| "checkpoint_conflict".to_owned())?;
     let skill = &skill_lock["manifest"]["skill"];
     let request = json!({
-        "schema_version":"1.0.0","task":{"id":task_id,"input":{}},
+        "schema_version":"1.0.0","task":{"id":task_id,"input":task_input},
         "run":{"id":config.run_id,"max_model_turns":skill["execution"]["max_model_turns"],"max_tool_calls":skill["execution"]["max_tool_calls"]},
         "agent":{"id":agent_id,"effective_prompt":agent["effective_prompt"]},
         "skill":{"id":skill["id"],"instructions":skill_lock["instructions"],"output_schema":skill["output_schema"]},
-        "tool_surface":skill["tools"],"context":{"sections":[],"source":"locked_snapshot"},"observations":[tool_result]
+        "tool_surface":toolset_lock["tools"],"context":{"sections":[],"source":"locked_snapshot"},"observations":[tool_result]
     });
     checkpoint(
         config.connection,
@@ -625,8 +644,18 @@ fn resume_after_observation(
         now,
     )?;
     consume_model_turn(config.connection, config.run_id, now)?;
-    let raw = invoke_worker(config.repository_root, config.python, &request)?;
-    let decision = AgentDecision::parse(raw.clone())?;
+    let raw = match invoke_worker(config.repository_root, config.python, &request) {
+        Ok(raw) => raw,
+        Err(error) => {
+            return fail_existing_run(config.connection, task_id, config.run_id, &error, now);
+        }
+    };
+    let decision = match AgentDecision::parse(raw.clone()) {
+        Ok(decision) => decision,
+        Err(error) => {
+            return fail_existing_run(config.connection, task_id, config.run_id, &error, now);
+        }
+    };
     observe(
         config.connection,
         config.run_id,
@@ -684,6 +713,7 @@ fn resume_after_observation(
                     .as_str()
                     .unwrap_or_default()
                     .to_owned(),
+                tool_surface: toolset_lock["tools"].clone(),
                 max_model_turns: skill["execution"]["max_model_turns"].as_i64().unwrap_or(1),
                 max_tool_calls: skill["execution"]["max_tool_calls"].as_i64().unwrap_or(0),
             };
@@ -827,6 +857,7 @@ fn lock_run(config: &mut RunSkillConfig<'_>, now: &str) -> Result<LockedRun, Str
         return Err("runtime_incompatible: run-skill requires Skill Manifest 2.0.0".to_owned());
     }
     let skill = manifest["skill"].clone();
+    let tool_surface = resolve_tool_surface(config.connection, &skill["tools"])?;
     validate_input(&skill["input_schema"], &config.input)?;
     let instructions_path =
         PathBuf::from(skill_path).join(skill["instructions"].as_str().ok_or("package_invalid")?);
@@ -869,7 +900,7 @@ fn lock_run(config: &mut RunSkillConfig<'_>, now: &str) -> Result<LockedRun, Str
             "skill",
             json!({"id":config.skill_id,"version":skill_version,"manifest":manifest,"instructions":instructions,"instructions_sha256":sha256(&instructions)}),
         ),
-        ("toolset", json!({"tools": skill["tools"].clone()})),
+        ("toolset", json!({"tools": tool_surface.clone()})),
         (
             "context",
             json!({"conversation_id":config.conversation_id,"input_sha256":sha256(&config.input.to_string())}),
@@ -901,6 +932,7 @@ fn lock_run(config: &mut RunSkillConfig<'_>, now: &str) -> Result<LockedRun, Str
         prompt,
         skill,
         instructions,
+        tool_surface,
         max_model_turns,
         max_tool_calls,
     })
@@ -920,8 +952,44 @@ fn request_payload(config: &RunSkillConfig<'_>, run: &LockedRun) -> Result<Value
         "run":{"id":run.run_id,"max_model_turns":run.max_model_turns,"max_tool_calls":run.max_tool_calls},
         "agent":{"id":config.agent_id,"effective_prompt":run.prompt},
         "skill":{"id":config.skill_id,"instructions":run.instructions,"output_schema":run.skill["output_schema"]},
-        "tool_surface":run.skill["tools"], "context":context, "observations":[]
+        "tool_surface":run.tool_surface, "context":context, "observations":[]
     }))
+}
+
+fn resolve_tool_surface(connection: &Connection, declarations: &Value) -> Result<Value, String> {
+    let declarations = declarations.as_array().ok_or("package_invalid")?;
+    let mut surface = Vec::with_capacity(declarations.len());
+    for declaration in declarations {
+        let tool_id = declaration["id"].as_str().ok_or("package_invalid")?;
+        let allowed_actions = declaration["actions"].as_array().ok_or("package_invalid")?;
+        let manifest_raw: String = connection
+            .query_row(
+                "SELECT manifest_json FROM tools WHERE id=?1 AND status='active'",
+                [tool_id],
+                |row| row.get(0),
+            )
+            .map_err(|_| "tool_not_allowed".to_owned())?;
+        let manifest: Value =
+            serde_json::from_str(&manifest_raw).map_err(|_| "package_invalid".to_owned())?;
+        let installed_actions = manifest["tool"]["actions"]
+            .as_array()
+            .ok_or("package_invalid")?;
+        let mut actions = Vec::with_capacity(allowed_actions.len());
+        for allowed in allowed_actions {
+            let action_name = allowed.as_str().ok_or("package_invalid")?;
+            let action = installed_actions
+                .iter()
+                .find(|candidate| candidate["name"] == action_name)
+                .ok_or("tool_action_not_allowed")?;
+            actions.push(json!({
+                "name": action_name,
+                "description": action["description"],
+                "input_schema": action["input_schema"]
+            }));
+        }
+        surface.push(json!({"id":tool_id,"actions":actions}));
+    }
+    Ok(Value::Array(surface))
 }
 
 fn invoke_worker(root: &Path, python: &Path, request: &Value) -> Result<Value, String> {
