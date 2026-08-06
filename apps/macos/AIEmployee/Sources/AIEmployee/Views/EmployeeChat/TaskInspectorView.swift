@@ -3,6 +3,7 @@ import SwiftUI
 struct TaskInspectorView: View {
     let run: TaskRun?
     @ObservedObject var store: TaskStore
+    let employeeName: String
 
     @State private var diagnosticsExpanded = false
     @State private var technicalDetailsExpanded = false
@@ -62,9 +63,12 @@ struct TaskInspectorView: View {
             if run.runPhase == "waiting_approval" {
                 HStack(spacing: AppTheme.Spacing.sm) {
                     Button("拒绝") { store.resolveApproval(for: run, approve: false) }
-                    Button("批准并继续") { store.resolveApproval(for: run, approve: true) }
+                    Button(store.isResolvingApproval(for: run) ? "处理中…" : "批准并继续") {
+                        store.resolveApproval(for: run, approve: true)
+                    }
                         .buttonStyle(.borderedProminent)
                 }
+                .disabled(store.isResolvingApproval(for: run))
                 .padding(.top, AppTheme.Spacing.xs)
             }
 
@@ -251,7 +255,10 @@ struct TaskInspectorView: View {
     }
 
     private func statusBadge(_ run: TaskRun) -> some View {
-        Label(run.status.title, systemImage: run.status.systemImage)
+        Label(
+            run.status == .running ? "\(employeeName) 正在处理" : run.status.title,
+            systemImage: run.status.systemImage
+        )
             .font(.caption.weight(.medium))
             .foregroundStyle(statusColor(run.status))
     }

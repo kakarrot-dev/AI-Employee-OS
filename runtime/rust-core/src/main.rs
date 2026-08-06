@@ -1591,6 +1591,12 @@ fn list_tasks(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
                         AND snapshot_type='skill' LIMIT 1)
                     ,COALESCE((SELECT json_group_array(DISTINCT json_extract(input_json,'$.skill_id'))
                       FROM actions WHERE task_id=t.id AND json_type(input_json,'$.skill_id')='text'),'[]')
+                    ,(SELECT COALESCE(
+                        json_extract(output_json,'$.answer'),
+                        json_extract(output_json,'$.summary'),
+                        json_extract(output_json,'$.content'))
+                      FROM deliverables WHERE task_id=t.id AND status='verified'
+                      ORDER BY created_at DESC LIMIT 1)
              FROM tasks t LEFT JOIN actions a ON a.task_id=t.id
              GROUP BY t.id ORDER BY t.created_at DESC, t.id DESC",
         )
@@ -1632,6 +1638,7 @@ fn list_tasks(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
                 "skill_version": row.get::<_, Option<String>>(21)?
                 ,"skill_ids": serde_json::from_str::<Value>(&row.get::<_, String>(22)?)
                     .unwrap_or_else(|_| json!([]))
+                ,"deliverable_message": row.get::<_, Option<String>>(23)?
             }))
         })
         .map_err(|error| error.to_string())?;

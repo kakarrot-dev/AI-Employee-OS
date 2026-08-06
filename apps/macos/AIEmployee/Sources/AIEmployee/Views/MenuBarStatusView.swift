@@ -15,7 +15,7 @@ struct MenuBarStatusView: View {
             openWindow(id: "main")
             NSApp.activate(ignoringOtherApps: true)
         }
-        Button("打开 Alex 工作区") {
+        Button("打开员工工作区") {
             destinationRaw = AppDestination.work.rawValue
             openWindow(id: "main")
             NSApp.activate(ignoringOtherApps: true)
@@ -26,6 +26,6 @@ struct MenuBarStatusView: View {
     }
 
     private var statusTitle: String {
-        runningCount > 0 ? "Alex 正在处理工作" : "Alex 可以接受新工作"
+        runningCount > 0 ? "AI 员工正在处理工作" : "AI 员工可以接受新工作"
     }
 }

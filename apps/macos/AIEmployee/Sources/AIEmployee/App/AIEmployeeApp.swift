@@ -41,7 +41,7 @@ struct AIEmployeeApp: App {
                 Button("打开命令面板") { store.presentCommandPalette() }
                     .keyboardShortcut("k")
                 Divider()
-                Button("打开 Alex 工作区") { destinationRaw = AppDestination.work.rawValue }
+                Button("打开员工工作区") { destinationRaw = AppDestination.work.rawValue }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
                     .disabled(store.isSubmitting)
             }

@@ -4,7 +4,7 @@ extension TaskRunStatus {
     var title: String {
         switch self {
         case .pending: "等待执行"
-        case .running: "Alex 正在处理"
+        case .running: "正在处理"
         case .succeeded: "已完成"
         case .failed: "未能完成"
         case .cancelled: "已取消"
@@ -70,7 +70,7 @@ enum TaskPresentation {
     static func eventTitle(_ type: String) -> String {
         switch type {
         case "task_created": "任务已创建"
-        case "task_started": "Alex 开始处理"
+        case "task_started": "员工开始处理"
         case "evaluation_passed": "交付质量检查通过"
         case "evaluation_blocked": "交付质量检查未通过"
         case "task_succeeded": "任务已完成"

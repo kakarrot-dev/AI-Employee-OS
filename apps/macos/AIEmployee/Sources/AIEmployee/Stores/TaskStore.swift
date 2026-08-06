@@ -15,6 +15,7 @@ final class TaskStore: ObservableObject {
     @Published private(set) var usage: OfficeSnapshot.UsageSummary?
 
     @Published private(set) var isSubmitting = false
+    @Published private var approvalRunsInFlight: Set<String> = []
     private var restoredTaskMonitors: [String: Task<Void, Never>] = [:]
 
     init(service: RuntimeService) {
@@ -74,11 +75,15 @@ final class TaskStore: ObservableObject {
 
     func resolveApproval(for run: TaskRun, approve: Bool) {
         guard let runID = run.runID else { return }
+        guard !approvalRunsInFlight.contains(runID) else { return }
         if approve && KeychainService.load() == nil {
             update(run.id) { $0.error = "请先在设置中配置 DeepSeek API Key。" }
             return
         }
+        approvalRunsInFlight.insert(runID)
+        update(run.id) { $0.error = nil }
         Task {
+            defer { approvalRunsInFlight.remove(runID) }
             do {
                 let result = try await service.continueRun(runID, approve, approve ? KeychainService.load() : nil)
                 await restoreHistory()
@@ -87,6 +92,10 @@ final class TaskStore: ObservableObject {
                 }
             } catch { update(run.id) { $0.error = error.localizedDescription } }
         }
+    }
+
+    func isResolvingApproval(for run: TaskRun) -> Bool {
+        run.runID.map(approvalRunsInFlight.contains) ?? false
     }
 
     func resolveUnknown(_ actionID: String, for run: TaskRun, succeeded: Bool) {
@@ -114,7 +123,7 @@ final class TaskStore: ObservableObject {
             let previousPersistedIDs = Set(runs.filter { $0.status != .running }.map(\.id))
             let history = try await service.loadHistory()
             let persistedRuns = history.tasks.map { item in
-                TaskRun(id: item.taskID, agentID: item.agentID, input: item.input, createdAt: item.createdAt, updatedAt: item.updatedAt, status: item.status, actions: item.actions, events: item.events, response: nil, error: nil, artifactPath: item.verifiedArtifactPath ?? item.artifactPath, evaluation: item.evaluation, isCancellationRequested: item.cancellationRequested, runID: item.runID, runPhase: item.runPhase, waitingReason: item.waitingReason, stopReason: item.stopReason, deliverableTitle: item.deliverableTitle, deliverableStatus: item.deliverableStatus, verifiedArtifactPath: item.verifiedArtifactPath, conversationID: item.conversationID, skillID: item.skillID, skillVersion: item.skillVersion, skillIDs: item.skillIDs)
+                TaskRun(id: item.taskID, agentID: item.agentID, input: item.input, createdAt: item.createdAt, updatedAt: item.updatedAt, status: item.status, actions: item.actions, events: item.events, response: nil, error: nil, artifactPath: item.verifiedArtifactPath ?? item.artifactPath, evaluation: item.evaluation, isCancellationRequested: item.cancellationRequested, runID: item.runID, runPhase: item.runPhase, waitingReason: item.waitingReason, stopReason: item.stopReason, deliverableTitle: item.deliverableTitle, deliverableStatus: item.deliverableStatus, verifiedArtifactPath: item.verifiedArtifactPath, conversationID: item.conversationID, skillID: item.skillID, skillVersion: item.skillVersion, skillIDs: item.skillIDs, deliverableMessage: item.deliverableMessage)
             }
             let persistedIDs = Set(persistedRuns.map(\.id))
             let optimisticRuns = runs.filter { !persistedIDs.contains($0.id) && $0.status == .running }
@@ -181,6 +190,7 @@ final class TaskStore: ObservableObject {
             run.skillID = item.skillID
             run.skillVersion = item.skillVersion
             run.skillIDs = item.skillIDs
+            run.deliverableMessage = item.deliverableMessage
             if item.status != .running { run.error = nil }
         }
     }

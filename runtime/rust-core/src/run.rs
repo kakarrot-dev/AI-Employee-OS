@@ -364,12 +364,16 @@ pub fn continue_run(config: ContinueRunConfig<'_>) -> Result<Value, String> {
             .connection
             .transaction()
             .map_err(|error| error.to_string())?;
-        tx.execute("UPDATE approvals SET status='rejected',resolved_at=?1 WHERE id=?2 AND status='pending'",params![now,approval_id]).map_err(|error| error.to_string())?;
-        tx.execute(
-            "UPDATE actions SET status='failed',updated_at=?1 WHERE id=?2 AND status='blocked'",
-            params![now, action_id],
-        )
-        .map_err(|error| error.to_string())?;
+        let approval_changed = tx.execute("UPDATE approvals SET status='rejected',resolved_at=?1 WHERE id=?2 AND status='pending'",params![now,approval_id]).map_err(|error| error.to_string())?;
+        let action_changed = tx
+            .execute(
+                "UPDATE actions SET status='failed',updated_at=?1 WHERE id=?2 AND status='blocked'",
+                params![now, action_id],
+            )
+            .map_err(|error| error.to_string())?;
+        if approval_changed != 1 || action_changed != 1 {
+            return Err("run_not_waiting_approval".to_owned());
+        }
         tx.execute(
             "UPDATE tasks SET status='failed',updated_at=?1 WHERE id=?2 AND status='running'",
             params![now, task_id],
@@ -424,16 +428,20 @@ pub fn continue_run(config: ContinueRunConfig<'_>) -> Result<Value, String> {
         .connection
         .transaction()
         .map_err(|error| error.to_string())?;
-    tx.execute(
+    let approval_changed = tx.execute(
         "UPDATE approvals SET status='approved',resolved_at=?1 WHERE id=?2 AND status='pending'",
         params![now, approval_id],
     )
     .map_err(|error| error.to_string())?;
-    tx.execute(
-        "UPDATE actions SET status='running',updated_at=?1 WHERE id=?2 AND status='blocked'",
-        params![now, action_id],
-    )
-    .map_err(|error| error.to_string())?;
+    let action_changed = tx
+        .execute(
+            "UPDATE actions SET status='running',updated_at=?1 WHERE id=?2 AND status='blocked'",
+            params![now, action_id],
+        )
+        .map_err(|error| error.to_string())?;
+    if approval_changed != 1 || action_changed != 1 {
+        return Err("run_not_waiting_approval".to_owned());
+    }
     for (grant_id, permission) in grant_ids.iter().zip(&permissions) {
         tx.execute(
             "INSERT INTO scoped_permission_grants VALUES (?1,?2,?3,?4,?5,?6,?7,NULL,?8)",
@@ -685,13 +693,13 @@ fn resume_after_observation(
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map_err(|_| "checkpoint_conflict".to_owned())?;
-    let compact_observation = compact_observation(tool_result);
+    let observations = completed_tool_observations(config.connection, task_id, tool_result)?;
     let request = json!({
         "schema_version":"1.0.0","task":{"id":task_id,"input":task_input},
         "run":{"id":config.run_id,"max_model_turns":max_model_turns,"max_tool_calls":max_tool_calls},
         "agent":{"id":agent_id,"effective_prompt":agent["effective_prompt"]},
         "capability_set":capability_set,
-        "tool_surface":toolset_lock["tools"],"context":{"sections":[],"source":"locked_snapshot"},"observations":[compact_observation]
+        "tool_surface":toolset_lock["tools"],"context":{"sections":[],"source":"locked_snapshot"},"observations":observations
     });
     checkpoint(
         config.connection,
@@ -721,7 +729,15 @@ fn resume_after_observation(
             return fail_existing_run(config.connection, task_id, config.run_id, &error, now);
         }
     };
-    let decision = match AgentDecision::parse(raw.clone()) {
+    let (decision, raw) = match parse_decision_bounded(
+        config.connection,
+        config.repository_root,
+        config.python,
+        config.run_id,
+        &request,
+        raw,
+        now,
+    ) {
         Ok(decision) => decision,
         Err(error) => {
             return fail_existing_run(config.connection, task_id, config.run_id, &error, now);
@@ -1121,7 +1137,11 @@ fn resolve_tool_surface(connection: &Connection, declarations: &Value) -> Result
                 "input_schema": action["input_schema"]
             }));
         }
-        surface.push(json!({"id":tool_id,"actions":actions}));
+        surface.push(json!({
+            "id":tool_id,
+            "max_calls":declaration["max_calls"],
+            "actions":actions
+        }));
     }
     Ok(Value::Array(surface))
 }
@@ -1177,14 +1197,40 @@ fn invoke_worker_bounded(
             )?;
             consume_model_turn(connection, run_id, now).map_err(|_| first.clone())?;
             let mut retry = request.clone();
-            retry["observations"] = json!([{
-                "kind":"protocol_error","error":first,
-                "instruction":"Return exactly one valid decision object matching the contract. Do not repeat a completed Tool call."
-            }]);
+            append_protocol_error_observation(&mut retry, &first)?;
             checkpoint(connection, run_id, "before_model", &retry, now)?;
             invoke_worker(root, python, &retry)
         }
         Err(error) => Err(error),
+    }
+}
+
+fn parse_decision_bounded(
+    connection: &Connection,
+    root: &Path,
+    python: &Path,
+    run_id: &str,
+    request: &Value,
+    raw: Value,
+    now: &str,
+) -> Result<(AgentDecision, Value), String> {
+    match AgentDecision::parse(raw.clone()) {
+        Ok(decision) => Ok((decision, raw)),
+        Err(first) => {
+            observe(
+                connection,
+                run_id,
+                "system",
+                &json!({"protocol_error":first,"retry":1}),
+                now,
+            )?;
+            consume_model_turn(connection, run_id, now).map_err(|_| first.clone())?;
+            let mut retry = request.clone();
+            append_protocol_error_observation(&mut retry, &first)?;
+            checkpoint(connection, run_id, "before_model", &retry, now)?;
+            let retried = invoke_worker(root, python, &retry)?;
+            Ok((AgentDecision::parse(retried.clone())?, retried))
+        }
     }
 }
 
@@ -1202,6 +1248,67 @@ fn compact_observation(value: &Value) -> Value {
         "content_preview": preview,
         "truncated_for_context": true
     })
+}
+
+fn completed_tool_observations(
+    connection: &Connection,
+    task_id: &str,
+    latest_observation: &Value,
+) -> Result<Value, String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT te.call_id,a.tool_id,a.input_json,te.result_json
+             FROM actions a JOIN tool_executions te ON te.action_id=a.id
+             WHERE a.task_id=?1 AND te.status='succeeded'
+             ORDER BY te.started_at,te.call_id",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([task_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .map_err(|error| error.to_string())?;
+    let mut observations = Vec::new();
+    let mut latest_is_in_history = false;
+    for row in rows {
+        let (call_id, tool_id, input_raw, result_raw) = row.map_err(|error| error.to_string())?;
+        let input: Value = serde_json::from_str(&input_raw).map_err(|_| "checkpoint_conflict")?;
+        let result: Value = serde_json::from_str(&result_raw).map_err(|_| "checkpoint_conflict")?;
+        latest_is_in_history |= &result == latest_observation;
+        observations.push(compact_observation(&json!({
+            "kind":"completed_tool_call",
+            "call_id":call_id,
+            "skill_id":input["skill_id"],
+            "tool_id":tool_id,
+            "action":input["action"],
+            "arguments":input["arguments"],
+            "status":result["status"],
+            "output":result["output"]
+        })));
+    }
+    if !latest_is_in_history {
+        observations.push(compact_observation(&json!({
+            "kind":"runtime_observation",
+            "value":latest_observation
+        })));
+    }
+    Ok(Value::Array(observations))
+}
+
+fn append_protocol_error_observation(request: &mut Value, error: &str) -> Result<(), String> {
+    request["observations"]
+        .as_array_mut()
+        .ok_or_else(|| "checkpoint_conflict".to_owned())?
+        .push(json!({
+            "kind":"protocol_error","error":error,
+            "instruction":"Return exactly one valid decision object matching the contract. Do not repeat a completed Tool call."
+        }));
+    Ok(())
 }
 
 fn set_phase(
@@ -1338,6 +1445,25 @@ fn request_tool(
     if !declared {
         return fail_run(connection, run, "tool_action_not_allowed", now);
     }
+    let skill_call_limit = run
+        .tool_surface
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|tool| tool["id"] == tool_id && tool["skill_id"] == skill_id)
+        .and_then(|tool| tool["max_calls"].as_i64())
+        .ok_or_else(|| "package_invalid".to_owned())?;
+    let skill_calls_used: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM actions
+             WHERE task_id=?1 AND tool_id=?2 AND json_extract(input_json,'$.skill_id')=?3",
+            params![run.task_id, tool_id, skill_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if skill_calls_used >= skill_call_limit {
+        return fail_run(connection, run, "skill_tool_budget_exceeded", now);
+    }
     let manifest_raw: String = connection
         .query_row(
             "SELECT manifest_json FROM tools WHERE id=?1 AND status='active'",
@@ -1469,4 +1595,97 @@ fn timestamp_seconds() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{fs, os::unix::fs::PermissionsExt};
+
+    #[test]
+    fn protocol_retry_preserves_completed_tool_observations() {
+        let mut request = json!({
+            "observations":[{
+                "kind":"completed_tool_call",
+                "skill_id":"local-file-operations",
+                "tool_id":"file-tool",
+                "action":"create_file",
+                "status":"succeeded",
+                "output":{"path":"report.md"}
+            }]
+        });
+        append_protocol_error_observation(&mut request, "invalid JSON").unwrap();
+
+        let observations = request["observations"].as_array().unwrap();
+        assert_eq!(observations.len(), 2);
+        assert_eq!(observations[0]["action"], "create_file");
+        assert_eq!(observations[1]["kind"], "protocol_error");
+    }
+
+    #[test]
+    fn semantic_decision_error_retries_without_losing_tool_history() {
+        let root = std::env::temp_dir().join(format!("decision-retry-{}", nonce()));
+        fs::create_dir_all(root.join("runtime/python-agent")).unwrap();
+        let worker = root.join("fake-python");
+        fs::write(
+            &worker,
+            "#!/bin/sh\nprintf '%s\\n' '{\"schema_version\":\"1.0.0\",\"type\":\"complete\",\"output\":{\"summary\":\"ok\"},\"deliverable_candidates\":[],\"evidence_refs\":[]}'\n",
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&worker).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&worker, permissions).unwrap();
+
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE agent_runs(id TEXT PRIMARY KEY,revision INTEGER,model_turns_used INTEGER,max_model_turns INTEGER,updated_at TEXT);
+                 CREATE TABLE run_observations(run_id TEXT,sequence INTEGER,kind TEXT,summary_json TEXT,result_ref TEXT,created_at TEXT);
+                 CREATE TABLE run_checkpoints(id TEXT,run_id TEXT,revision INTEGER,checkpoint_kind TEXT,state_sha256 TEXT,created_at TEXT);
+                 INSERT INTO agent_runs VALUES ('run',1,1,3,'now');",
+            )
+            .unwrap();
+        let request = json!({
+            "observations":[{
+                "kind":"completed_tool_call",
+                "skill_id":"local-file-operations",
+                "tool_id":"file-tool",
+                "action":"create_file",
+                "status":"succeeded"
+            }]
+        });
+        let (decision, _) = parse_decision_bounded(
+            &connection,
+            &root,
+            &worker,
+            "run",
+            &request,
+            json!({"valid_json":"wrong_contract"}),
+            "now",
+        )
+        .unwrap();
+
+        assert!(matches!(decision, AgentDecision::Complete { .. }));
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT model_turns_used FROM agent_runs WHERE id='run'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT count(*) FROM run_observations WHERE kind='system'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
 }

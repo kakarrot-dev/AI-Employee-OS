@@ -166,6 +166,7 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-generic-") as directory:
     search_tool = next(item for item in toolset["tools"] if item["skill_id"] == "web-search")
     search_action = search_tool["actions"][0]
     assert search_action["name"] == "search_web"
+    assert search_tool["max_calls"] == 1
     assert "num_results" in search_action["input_schema"]["properties"]
     assert "max_results" not in search_action["input_schema"]["properties"]
     rejected = run(
@@ -237,6 +238,46 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-generic-") as directory:
         ).fetchone()
     assert used_skills == {"local-file-operations", "web-search"}
     assert artifact == (str(output / "cross-skill.md"), "verified")
+
+    repeated_search = run(
+        "chat-send",
+        *common,
+        "--conversation-id",
+        "conversation_repeated_search",
+        "--employee-id",
+        "ai-product-manager",
+        "--input",
+        "先搜索资料，再生成本地 Markdown 文档",
+        env={
+            "DEEPSEEK_API_KEY": "test",
+            "AI_EMPLOYEE_FAKE_INTENT": '{"intent":"task","confidence":0.99}',
+            "AI_EMPLOYEE_FAKE_DECISION": '{"schema_version":"1.0.0","type":"tool_call","skill_id":"web-search","tool_id":"agent-reach-tool","action":"search_web","arguments":{"query":"AI employee","num_results":1},"rationale_summary":"first search"}',
+        },
+    )
+    repeated_error = run_failure(
+        "continue-run",
+        *common,
+        "--run-id",
+        repeated_search["run_id"],
+        "--authorized-root",
+        str(output),
+        "--approve",
+        env={
+            "DEEPSEEK_API_KEY": "test",
+            "AI_EMPLOYEE_MCPORTER_PATH": str(fake_mcporter),
+            "AI_EMPLOYEE_FAKE_DECISION": '{"schema_version":"1.0.0","type":"tool_call","skill_id":"web-search","tool_id":"agent-reach-tool","action":"search_web","arguments":{"query":"AI employee again","num_results":1},"rationale_summary":"repeat search"}',
+        },
+    )
+    assert "skill_tool_budget_exceeded" in repeated_error
+    with sqlite3.connect(database) as connection:
+        repeated_actions = connection.execute(
+            "SELECT count(*) FROM actions WHERE task_id=?", (repeated_search["task_id"],)
+        ).fetchone()[0]
+        repeated_stop_reason = connection.execute(
+            "SELECT stop_reason FROM agent_runs WHERE id=?", (repeated_search["run_id"],)
+        ).fetchone()[0]
+    assert repeated_actions == 1
+    assert repeated_stop_reason == "skill_tool_budget_exceeded"
 
     mismatched = run(
         "chat-send",

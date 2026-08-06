@@ -68,7 +68,11 @@ struct EmployeeChatWorkspaceView: View {
             .background(palette.canvas)
 
             if showsInspector {
-                TaskInspectorView(run: selectedRun, store: store)
+                TaskInspectorView(
+                    run: selectedRun,
+                    store: store,
+                    employeeName: employee?.name ?? conversationStore.employeeName
+                )
                     .frame(minWidth: 280, idealWidth: inspectorWidth, maxWidth: 420)
                     .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { newWidth in
                         inspectorWidth = min(max(newWidth, 280), 420)
@@ -265,6 +269,14 @@ private struct EmployeeMessageStream: View {
             guard message.role == "assistant",
                   message.content == "执行已暂停，等待你批准所需权限。" else { return true }
             return !showsTasks
+        }.filter { message in
+            guard showsTasks, message.role == "assistant" else { return true }
+            return !store.runs.contains { run in
+                run.status == .succeeded
+                    && !TaskPresentation.isChronologicallyBefore(message.createdAt, run.createdAt)
+                    && run.conversationID == "conversation_\(conversationStore.employeeID)_primary"
+                    && run.deliverableMessage == message.content
+            }
         }
         var entries = visibleMessages.map(WorkTimelineEntry.message)
         if showsTasks {
@@ -811,6 +823,11 @@ private struct TaskConversationBlock: View {
                     InlineFailureMessage(error: error)
                 }
 
+                if let message = deliveryMessage {
+                    ChatMarkdownBody(source: message)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
                 if let path = run.verifiedArtifactPath ?? run.response?.artifactPath ?? run.artifactPath {
                     ArtifactMessageBlock(run: run, path: path)
                 }
@@ -824,9 +841,23 @@ private struct TaskConversationBlock: View {
         case .pending: "工作已保存，等待 Runtime 开始"
         case .running: run.isCancellationRequested ? "正在停止这项工作" : "正在处理这项工作"
         case .succeeded: "已完成这项工作"
+        case .failed where run.artifactPath != nil || run.verifiedArtifactPath != nil:
+            "文件已生成，但最终回复未完成"
         case .failed: "未能完成这项工作"
         case .cancelled: "这项工作已停止"
         }
+    }
+
+    private var deliveryMessage: String? {
+        if let message = run.deliverableMessage?.trimmingCharacters(in: .whitespacesAndNewlines), !message.isEmpty {
+            return message
+        }
+        if let path = run.verifiedArtifactPath ?? run.response?.artifactPath ?? run.artifactPath {
+            return run.status == .failed
+                ? "文件已经生成：`\(URL(fileURLWithPath: path).lastPathComponent)`。但最终回复阶段未能完成，你仍可以打开并检查文件内容。"
+                : "已完成这项工作，并生成文件：`\(URL(fileURLWithPath: path).lastPathComponent)`。"
+        }
+        return nil
     }
 
     private var statusColor: Color {
@@ -1174,9 +1205,12 @@ private struct LiveActionApprovalBar: View {
         HStack(spacing: AppTheme.Spacing.xs) {
             Button("拒绝", role: .destructive) { store.resolveApproval(for: run, approve: false) }
                 .buttonStyle(CreamSecondaryButtonStyle())
-            Button("允许一次") { store.resolveApproval(for: run, approve: true) }
+            Button(store.isResolvingApproval(for: run) ? "处理中…" : "允许一次") {
+                store.resolveApproval(for: run, approve: true)
+            }
                 .buttonStyle(CreamPrimaryButtonStyle())
         }
+        .disabled(store.isResolvingApproval(for: run))
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }

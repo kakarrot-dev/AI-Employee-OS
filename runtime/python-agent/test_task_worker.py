@@ -44,7 +44,9 @@ class TaskWorkerTests(unittest.TestCase):
         payload = json.loads(messages[1]["content"])
         self.assertEqual(payload["task_input"]["text"], "查询郑州新闻")
         self.assertEqual(payload["runtime_observations"][0]["output"]["content"], "news evidence")
-        self.assertIn("do not repeat the same Tool call", messages[0]["content"])
+        self.assertIn("do not repeat a completed Tool call", messages[0]["content"])
+        self.assertIn("continue with the next unmet requirement", messages[0]["content"])
+        self.assertIn("Respect each Tool surface max_calls limit", messages[0]["content"])
 
     def test_fake_complete_protocol(self):
         request = {
