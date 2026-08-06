@@ -7,6 +7,9 @@ struct OfficeWorkspaceView: View {
     let openChat: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var contentVisible = false
+    @State private var dataAnimationProgress = 0.0
 
     private var snapshot: OfficeSnapshot {
         if let scene = OfficeDemoScene.current { return scene.snapshot }
@@ -14,7 +17,8 @@ struct OfficeWorkspaceView: View {
             employees: employeeStore.employees,
             runs: store.runs,
             isLoading: employeeStore.isLoading,
-            runtimeMessage: employeeStore.error ?? store.historyError
+            runtimeMessage: employeeStore.error ?? store.historyError,
+            usage: store.usage
         )
     }
 
@@ -24,11 +28,17 @@ struct OfficeWorkspaceView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: compact ? 28 : 36) {
                     pageHeader(compact: compact)
+                        .opacity(contentVisible ? 1 : 0)
+                        .offset(y: contentVisible || reduceMotion ? 0 : 8)
                     if let message = snapshot.runtimeMessage { runtimeBanner(message) }
                     if snapshot.isLoading { loadingState }
                     else {
+                        currentWorkSection(compact: compact)
+                            .opacity(contentVisible ? 1 : 0)
+                            .offset(y: contentVisible || reduceMotion ? 0 : 10)
                         usageSection(compact: compact)
-                        deliveriesSection(compact: compact)
+                            .opacity(contentVisible ? 1 : 0)
+                            .offset(y: contentVisible || reduceMotion ? 0 : 12)
                     }
                 }
                 .frame(maxWidth: 1180, alignment: .leading)
@@ -36,10 +46,30 @@ struct OfficeWorkspaceView: View {
                 .padding(.top, compact ? 26 : 34)
                 .padding(.bottom, 64)
                 .frame(maxWidth: .infinity)
+                .animation(reduceMotion ? nil : .easeOut(duration: AppTheme.Motion.standard), value: snapshotRevision)
             }
         }
         .background(palette.canvas)
         .moduleNavigationTitle(.office)
+        .onAppear {
+            guard !contentVisible else { return }
+            if reduceMotion {
+                contentVisible = true
+                dataAnimationProgress = 1
+            } else {
+                withAnimation(.easeOut(duration: AppTheme.Motion.standard)) {
+                    contentVisible = true
+                }
+                replayDataAnimation()
+            }
+        }
+        .onChange(of: snapshotRevision) {
+            replayDataAnimation()
+        }
+        .onDisappear {
+            contentVisible = false
+            dataAnimationProgress = 0
+        }
     }
 
     private func pageHeader(compact: Bool) -> some View {
@@ -71,27 +101,28 @@ struct OfficeWorkspaceView: View {
                         .padding(.top, 7)
                 }
             }
-            officePulse(compact: compact)
+            officePulse()
         }
     }
 
-    private func officePulse(compact: Bool) -> some View {
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: compact ? 2 : 3)
+    private func officePulse() -> some View {
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 2)
         return LazyVGrid(columns: columns, spacing: 0) {
-            pulseItem(value: "\(snapshot.currentWork.count)", label: "进行中的工作", color: snapshot.currentWork.isEmpty ? palette.mutedSoft : palette.accentTeal)
-            pulseItem(value: "\(attentionCount)", label: "需要你处理", color: attentionCount == 0 ? palette.mutedSoft : palette.warning)
-            pulseItem(value: "\(snapshot.deliveries.count)", label: "最近交付", color: palette.primaryActive)
+            pulseItem(value: snapshot.currentWork.count, label: "进行中的工作", color: snapshot.currentWork.isEmpty ? palette.mutedSoft : palette.accentTeal)
+            pulseItem(value: attentionCount, label: "需要你处理", color: attentionCount == 0 ? palette.mutedSoft : palette.warning)
         }
         .padding(.vertical, 16)
         .background(palette.surfaceSoft.opacity(0.72), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
         .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg).stroke(palette.hairlineSoft) }
     }
 
-    private func pulseItem(value: String, label: String, color: Color) -> some View {
+    private func pulseItem(value: Int, label: String, color: Color) -> some View {
         HStack(spacing: 11) {
             Circle().fill(color).frame(width: 7, height: 7)
             VStack(alignment: .leading, spacing: 2) {
-                Text(value).font(.system(size: 19, weight: .semibold, design: .rounded)).foregroundStyle(palette.ink)
+                CountingMetricText(value: Double(value) * dataAnimationProgress) { "\(Int($0.rounded()))" }
+                    .font(.system(size: 19, weight: .semibold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(palette.ink)
                 Text(label).font(.caption).foregroundStyle(palette.muted)
             }
             Spacer(minLength: 4)
@@ -110,36 +141,67 @@ struct OfficeWorkspaceView: View {
         let active = snapshot.currentWork.count
         let names = snapshot.currentWork.prefix(2).map(\.employeeName).joined(separator: "、")
         if active == 0 { return "\(snapshot.employees.count) 位 AI 员工已就绪，今天还没有进行中的工作。" }
-        return "\(names) 正在推进 \(active) 项工作，最近有 \(snapshot.deliveries.count) 份交付可查看。"
+        return "\(names) 正在推进 \(active) 项工作。"
     }
 
-    private func deliveriesSection(compact: Bool) -> some View {
-        section(title: "最近交付", subtitle: "由 AI 员工完成并可继续回看的成果") {
-            if snapshot.deliveries.isEmpty {
-                Text("完成工作并生成交付物后，会出现在这里。")
-                    .font(.callout).foregroundStyle(palette.muted).padding(.vertical, 8)
+    private func currentWorkSection(compact: Bool) -> some View {
+        section(title: "当前工作", subtitle: "正在执行、等待确认或需要处理的工作") {
+            if snapshot.currentWork.isEmpty {
+                Text("当前没有进行中的工作。新工作会从员工对话进入这里。")
+                    .font(.callout)
+                    .foregroundStyle(palette.muted)
+                    .padding(.vertical, 8)
             } else {
                 VStack(spacing: 0) {
-                    ForEach(Array(snapshot.deliveries.enumerated()), id: \.element.id) { index, item in
+                    ForEach(Array(snapshot.currentWork.enumerated()), id: \.element.id) { index, item in
                         Button {
                             guard !snapshot.isDemo else { return }
-                            store.selection = item.id; openChat()
+                            store.selection = item.id
+                            openChat()
                         } label: {
-                            HStack(spacing: 14) {
-                                Image(systemName: fileIcon(item.artifactName))
-                                    .font(.callout).foregroundStyle(palette.primaryActive)
+                            HStack(alignment: .top, spacing: 14) {
+                                Image(systemName: workIcon(item.state))
+                                    .font(.callout)
+                                    .foregroundStyle(workColor(item.state))
                                     .frame(width: 34, height: 34)
-                                    .background(palette.primary.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(item.title).font(.callout.weight(.medium)).foregroundStyle(palette.ink).lineLimit(compact ? 2 : 1)
-                                    Text("\(item.employeeName) · \(item.artifactName)").font(.caption).foregroundStyle(palette.muted).lineLimit(1)
+                                    .background(workColor(item.state).opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
+                                    .contentTransition(.symbolEffect(.replace))
+                                VStack(alignment: .leading, spacing: 5) {
+                                    HStack(spacing: 8) {
+                                        Text(item.employeeName)
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(workColor(item.state))
+                                        Text(workLabel(item.state))
+                                            .font(.caption2)
+                                            .foregroundStyle(palette.muted)
+                                    }
+                                    Text(item.goal)
+                                        .font(.callout.weight(.medium))
+                                        .foregroundStyle(palette.ink)
+                                        .lineLimit(compact ? 3 : 2)
+                                    Text(item.detail)
+                                        .font(.caption)
+                                        .foregroundStyle(palette.muted)
+                                        .lineLimit(2)
+                                    if let progress = item.progress {
+                                        ProgressView(value: progress)
+                                            .tint(workColor(item.state))
+                                            .frame(maxWidth: compact ? .infinity : 320)
+                                    }
                                 }
-                                Spacer()
-                                if !compact { Text(TaskPresentation.date(item.createdAt)).font(.caption).foregroundStyle(palette.mutedSoft) }
-                                Image(systemName: "chevron.right").font(.caption2).foregroundStyle(palette.mutedSoft)
-                            }.padding(.vertical, 11).contentShape(Rectangle())
-                        }.buttonStyle(.plain)
-                        if index < snapshot.deliveries.count - 1 { Divider().overlay(palette.hairlineSoft) }
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2)
+                                    .foregroundStyle(palette.mutedSoft)
+                                    .padding(.top, 9)
+                            }
+                            .padding(.vertical, 12)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        if index < snapshot.currentWork.count - 1 {
+                            Divider().overlay(palette.hairlineSoft)
+                        }
                     }
                 }
             }
@@ -156,10 +218,10 @@ struct OfficeWorkspaceView: View {
                     alignment: .leading,
                     spacing: 18
                 ) {
-                    usageMetric("总 Token", value: abbreviated(usage.totalTokens), note: "输入 + 输出")
-                    usageMetric("输入", value: abbreviated(usage.inputTokens), note: "上下文与提示词")
-                    usageMetric("输出", value: abbreviated(usage.outputTokens), note: "模型生成内容")
-                    usageMetric("预估成本", value: currency(usage.estimatedCost), note: "\(usage.modelCalls) 次模型调用")
+                    usageMetric("总 Token", value: Double(usage.totalTokens), note: "输入 + 输出") { abbreviated(Int($0.rounded())) }
+                    usageMetric("输入", value: Double(usage.inputTokens), note: "上下文与提示词") { abbreviated(Int($0.rounded())) }
+                    usageMetric("输出", value: Double(usage.outputTokens), note: "模型生成内容") { abbreviated(Int($0.rounded())) }
+                    usageMetric("预估成本", value: usage.estimatedCostCNY, note: "按输入缓存未命中价") { currencyCNY($0) }
                 }
 
                 Divider().overlay(palette.hairlineSoft)
@@ -195,10 +257,15 @@ struct OfficeWorkspaceView: View {
         }
     }
 
-    private func usageMetric(_ label: String, value: String, note: String) -> some View {
+    private func usageMetric(
+        _ label: String,
+        value: Double,
+        note: String,
+        formatter: @escaping (Double) -> String
+    ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label).font(.caption).foregroundStyle(palette.muted)
-            Text(value)
+            CountingMetricText(value: value * dataAnimationProgress, formatter: formatter)
                 .font(.system(size: 22, weight: .semibold, design: .rounded).monospacedDigit())
                 .foregroundStyle(palette.ink)
             Text(note).font(.caption2).foregroundStyle(palette.mutedSoft).lineLimit(1)
@@ -228,6 +295,15 @@ struct OfficeWorkspaceView: View {
         .chartLegend(.hidden)
         .chartXAxis { usageXAxis }
         .chartYAxis { usageYAxis }
+        .chartPlotStyle { plotArea in
+            plotArea.mask(alignment: .leading) {
+                GeometryReader { proxy in
+                    Rectangle()
+                        .frame(width: proxy.size.width * dataAnimationProgress)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
     }
 
     private func usageEmptyChart(_ points: [OfficeSnapshot.UsagePoint]) -> some View {
@@ -286,8 +362,22 @@ struct OfficeWorkspaceView: View {
         return "\(value)"
     }
 
-    private func currency(_ value: Double) -> String {
-        String(format: "$%.2f", value)
+    private func currencyCNY(_ value: Double) -> String {
+        if value > 0, value < 0.01 { return "<¥0.01" }
+        return String(format: "¥%.2f", value)
+    }
+
+    private func replayDataAnimation() {
+        guard !reduceMotion else {
+            dataAnimationProgress = 1
+            return
+        }
+        dataAnimationProgress = 0
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.9)) {
+                dataAnimationProgress = 1
+            }
+        }
     }
 
     private func section<Content: View>(title: String, subtitle: String, @ViewBuilder content: () -> Content) -> some View {
@@ -313,12 +403,32 @@ struct OfficeWorkspaceView: View {
         }.foregroundStyle(palette.surfaceSoft).redacted(reason: .placeholder)
     }
 
-    private func fileIcon(_ filename: String) -> String {
-        let ext = URL(fileURLWithPath: filename).pathExtension.lowercased()
-        switch ext {
-        case "csv", "xlsx": return "tablecells"
-        case "pdf": return "doc.richtext"
-        default: return "doc.text"
+    private func workLabel(_ state: OfficeSnapshot.WorkItem.State) -> String {
+        switch state {
+        case .pending: "等待开始"
+        case .running: "进行中"
+        case .blocked: "等待确认"
+        case .resultUnknown: "结果待核验"
+        case .failed: "执行失败"
+        }
+    }
+
+    private func workIcon(_ state: OfficeSnapshot.WorkItem.State) -> String {
+        switch state {
+        case .pending: "clock"
+        case .running: "arrow.trianglehead.2.clockwise.rotate.90"
+        case .blocked: "hand.raised"
+        case .resultUnknown: "questionmark.circle"
+        case .failed: "exclamationmark.triangle"
+        }
+    }
+
+    private func workColor(_ state: OfficeSnapshot.WorkItem.State) -> Color {
+        switch state {
+        case .pending: palette.muted
+        case .running: palette.accentTeal
+        case .blocked, .resultUnknown: palette.warning
+        case .failed: palette.error
         }
     }
 
@@ -329,7 +439,27 @@ struct OfficeWorkspaceView: View {
         return formatter
     }()
 
+    private var snapshotRevision: String {
+        let work = snapshot.currentWork.map { "\($0.id):\(workLabel($0.state)):\($0.progress ?? -1)" }.joined(separator: "|")
+        let usage = snapshot.usage.map { "\($0.inputTokens):\($0.outputTokens):\($0.modelCalls)" } ?? "empty"
+        return "\(work)#\(usage)#\(snapshot.isLoading)#\(snapshot.runtimeMessage ?? "")"
+    }
+
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct CountingMetricText: View, Animatable {
+    var value: Double
+    let formatter: (Double) -> String
+
+    var animatableData: Double {
+        get { value }
+        set { value = newValue }
+    }
+
+    var body: some View {
+        Text(formatter(value))
+    }
 }
 
 struct AlexMark: View {

@@ -24,6 +24,7 @@ struct RuntimeService: Sendable {
 
     let recover: @Sendable () async throws -> Void
     let loadHistory: @Sendable () async throws -> TaskHistoryResponse
+    let loadUsageSummary: @Sendable () async throws -> UsageSummaryResponse
     let events: @Sendable (String, Int) async throws -> RuntimeEventsResponse
     let cancel: @Sendable (String) async throws -> Void
     let continueRun: @Sendable (String, Bool, String?) async throws -> RunContinuationResponse
@@ -73,6 +74,25 @@ struct RuntimeService: Sendable {
                 do { return try JSONDecoder().decode(TaskHistoryResponse.self, from: output) }
                 catch { throw RuntimeError.invalidResponse(error.localizedDescription) }
             }.value
+        }, loadUsageSummary: {
+            let layout = try runtimeLayout()
+            let database = layout.database
+            guard FileManager.default.fileExists(atPath: database.path) else {
+                return UsageSummaryResponse(
+                    schemaVersion: "1.0",
+                    inputTokens: 0,
+                    outputTokens: 0,
+                    estimatedCostCNY: 0,
+                    modelCalls: 0,
+                    points: [],
+                    pricingModel: "deepseek-v4-flash",
+                    pricingBasis: "input_cache_miss"
+                )
+            }
+            return try await decodeCommand(
+                ["usage-summary", "--database", database.path],
+                as: UsageSummaryResponse.self
+            )
         }, events: { taskID, after in
             try await decodeCommand(["events", "--database", try databaseURL().path, "--task-id", taskID, "--after", String(after)], as: RuntimeEventsResponse.self)
         }, cancel: { taskID in

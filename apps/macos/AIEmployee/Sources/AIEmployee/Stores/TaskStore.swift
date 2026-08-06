@@ -12,6 +12,7 @@ final class TaskStore: ObservableObject {
     @Published var isCommandPalettePresented = false
     @Published var awaitingWorkConfirmation = false
     @Published private(set) var historyError: String?
+    @Published private(set) var usage: OfficeSnapshot.UsageSummary?
 
     @Published private(set) var isSubmitting = false
     private var restoredTaskMonitors: [String: Task<Void, Never>] = [:]
@@ -127,6 +128,12 @@ final class TaskStore: ObservableObject {
         } catch {
             historyError = error.localizedDescription
             logger.error("Could not restore task history")
+        }
+        do {
+            usage = try await service.loadUsageSummary().officeSummary
+        } catch {
+            usage = nil
+            logger.error("Could not load usage summary")
         }
     }
 

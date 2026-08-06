@@ -107,6 +107,119 @@ enum ClientModelChecks {
         expect(ToolPresentation.actionTitle("create_file") == "创建文件", "tool action titles stay localized")
         expect(ToolPresentation.riskLabel(2) == "每次确认", "tool risk labels stay localized")
         expect(!AppDestination.primary.contains(.settings), "settings stays at the bottom of the global sidebar")
+
+        var alex = Employee.draft()
+        alex.id = "ai-product-manager"
+        alex.name = "Alex"
+        alex.role = "AI 产品经理"
+        alex.department = "产品部"
+        var maya = Employee.draft()
+        maya.id = "maya"
+        maya.name = "Maya"
+        maya.role = "用户研究员"
+        maya.department = "研究部"
+
+        let titledDelivery = TaskRun(
+            id: "task-title-only",
+            agentID: "maya",
+            input: "原始目标文案",
+            createdAt: "2026-08-05T10:00:00Z",
+            status: .succeeded,
+            actions: [],
+            events: [],
+            response: nil,
+            error: nil,
+            artifactPath: nil,
+            evaluation: nil,
+            isCancellationRequested: false,
+            deliverableTitle: "访谈洞察报告"
+        )
+        let verifiedDelivery = TaskRun(
+            id: "task-verified",
+            agentID: "ai-product-manager",
+            input: "写 PRD",
+            createdAt: "2026-08-05T11:00:00Z",
+            status: .succeeded,
+            actions: [],
+            events: [],
+            response: nil,
+            error: nil,
+            artifactPath: "/tmp/draft.md",
+            evaluation: nil,
+            isCancellationRequested: false,
+            deliverableTitle: "产品需求文档",
+            verifiedArtifactPath: "/tmp/outputs/prd.md"
+        )
+        let ignored = TaskRun(
+            id: "task-empty",
+            agentID: "ai-product-manager",
+            input: "无交付",
+            createdAt: "2026-08-05T12:00:00Z",
+            status: .succeeded,
+            actions: [],
+            events: [],
+            response: nil,
+            error: nil,
+            artifactPath: nil,
+            evaluation: nil,
+            isCancellationRequested: false
+        )
+        let office = OfficeSnapshot.live(
+            employees: [alex, maya],
+            runs: [titledDelivery, verifiedDelivery, ignored],
+            isLoading: false,
+            runtimeMessage: nil,
+            usage: OfficeSnapshot.UsageSummary(
+                inputTokens: 100,
+                outputTokens: 40,
+                estimatedCostCNY: 0.01,
+                modelCalls: 2,
+                points: [
+                    OfficeSnapshot.UsagePoint(id: "2026-08-05", label: "今天", inputTokens: 100, outputTokens: 40)
+                ]
+            )
+        )
+        expect(office.deliveries.count == 2, "live office keeps title-only and path deliveries")
+        expect(
+            office.deliveries.contains { $0.title == "访谈洞察报告" && $0.employeeName == "Maya" && $0.artifactName == "访谈洞察报告" },
+            "title-only delivery uses deliverable title and agent name"
+        )
+        expect(
+            office.deliveries.contains { $0.title == "产品需求文档" && $0.employeeName == "Alex" && $0.artifactName == "prd.md" },
+            "verified artifact path wins for delivery filename"
+        )
+        expect(office.usage?.modelCalls == 2 && office.usage?.totalTokens == 140, "live office keeps usage summary")
+        let runningWork = TaskRun(
+            id: "task-running",
+            agentID: "maya",
+            input: "整理访谈记录",
+            createdAt: "2026-08-05T13:00:00Z",
+            status: .running,
+            actions: [],
+            events: [],
+            response: nil,
+            error: nil,
+            artifactPath: nil,
+            evaluation: nil,
+            isCancellationRequested: false
+        )
+        let officeWithRunningWork = OfficeSnapshot.live(
+            employees: [alex, maya],
+            runs: [runningWork],
+            isLoading: false,
+            runtimeMessage: nil
+        )
+        expect(officeWithRunningWork.currentWork.count == 1, "live office exposes current work details")
+        let usagePayload = """
+        {"schema_version":"1.0","input_tokens":2000000,"output_tokens":500000,"estimated_cost_cny":3.0,"model_calls":2,"points":[{"id":"2026-08-05","label":"今天","input_tokens":1000000,"output_tokens":500000},{"id":"2026-08-04","label":"8/4","input_tokens":1000000,"output_tokens":0}],"pricing_model":"deepseek-v4-flash","pricing_basis":"input_cache_miss"}
+        """.data(using: .utf8)!
+        let usageDecoded = try! JSONDecoder().decode(UsageSummaryResponse.self, from: usagePayload)
+        expect(usageDecoded.officeSummary?.estimatedCostCNY == 3.0, "usage-summary decodes official CNY estimate")
+        let emptyUsage = """
+        {"schema_version":"1.0","input_tokens":0,"output_tokens":0,"estimated_cost_cny":0,"model_calls":0,"points":[],"pricing_model":"deepseek-v4-flash","pricing_basis":"input_cache_miss"}
+        """.data(using: .utf8)!
+        expect(try! JSONDecoder().decode(UsageSummaryResponse.self, from: emptyUsage).officeSummary == nil, "zero model calls stay as empty placeholder")
+
         print("client model checks passed")
     }
 

@@ -13,7 +13,7 @@ struct OfficeSnapshot {
     struct UsageSummary {
         let inputTokens: Int
         let outputTokens: Int
-        let estimatedCost: Double
+        let estimatedCostCNY: Double
         let modelCalls: Int
         let points: [UsagePoint]
 
@@ -34,7 +34,7 @@ struct OfficeSnapshot {
                     outputTokens: 0
                 )
             }
-            return Self(inputTokens: 0, outputTokens: 0, estimatedCost: 0, modelCalls: 0, points: points)
+            return Self(inputTokens: 0, outputTokens: 0, estimatedCostCNY: 0, modelCalls: 0, points: points)
         }
     }
 
@@ -75,11 +75,15 @@ struct OfficeSnapshot {
     let isDemo: Bool
     let usage: UsageSummary?
 
-    static func live(employees: [Employee], runs: [TaskRun], isLoading: Bool, runtimeMessage: String?) -> Self {
-        let employeeItems = employees.filter { $0.status == "active" }.map {
-            EmployeeItem(id: $0.id, name: $0.name, role: $0.role, status: "可工作")
-        }
-        let defaultName = employeeItems.first?.name ?? "AI 员工"
+    static func live(
+        employees: [Employee],
+        runs: [TaskRun],
+        isLoading: Bool,
+        runtimeMessage: String?,
+        usage: UsageSummary? = nil
+    ) -> Self {
+        let nameByID = Dictionary(uniqueKeysWithValues: employees.map { ($0.id, $0.name) })
+        let fallbackName = "AI 员工"
         let active = runs.compactMap { run -> WorkItem? in
             let unknown = run.actions.contains { $0.status == "result_unknown" }
             let blocked = run.actions.contains { $0.status == "blocked" }
@@ -95,7 +99,7 @@ struct OfficeSnapshot {
             let progress = run.actions.isEmpty ? nil : Double(completed) / Double(run.actions.count)
             return WorkItem(
                 id: run.id,
-                employeeName: defaultName,
+                employeeName: nameByID[run.agentID] ?? fallbackName,
                 goal: run.input,
                 state: state,
                 detail: workDetail(for: state, run: run),
@@ -103,16 +107,30 @@ struct OfficeSnapshot {
                 createdAt: run.createdAt
             )
         }
-        let deliveries = runs.filter { $0.status == .succeeded && $0.artifactPath != nil }.prefix(3).map { run in
-            DeliveryItem(
+        let employeeItems = employees.filter { $0.status == "active" }.map {
+            EmployeeItem(id: $0.id, name: $0.name, role: $0.role, status: "可工作")
+        }
+        let deliveries = Array(runs.compactMap { run -> DeliveryItem? in
+            guard run.status == .succeeded else { return nil }
+            let path = run.verifiedArtifactPath ?? run.artifactPath
+            guard path != nil || run.deliverableTitle != nil else { return nil }
+            return DeliveryItem(
                 id: run.id,
-                title: run.input,
-                employeeName: defaultName,
-                artifactName: URL(fileURLWithPath: run.artifactPath ?? "交付物").lastPathComponent,
+                title: run.deliverableTitle ?? run.input,
+                employeeName: nameByID[run.agentID] ?? fallbackName,
+                artifactName: path.map { URL(fileURLWithPath: $0).lastPathComponent } ?? (run.deliverableTitle ?? "交付物"),
                 createdAt: run.createdAt
             )
-        }
-        return Self(employees: employeeItems, currentWork: active, deliveries: deliveries, isLoading: isLoading, runtimeMessage: runtimeMessage, isDemo: false, usage: nil)
+        }.prefix(3))
+        return Self(
+            employees: employeeItems,
+            currentWork: active,
+            deliveries: deliveries,
+            isLoading: isLoading,
+            runtimeMessage: runtimeMessage,
+            isDemo: false,
+            usage: usage
+        )
     }
 
     private static func workDetail(for state: WorkItem.State, run: TaskRun) -> String {
@@ -123,6 +141,60 @@ struct OfficeSnapshot {
         case .resultUnknown: "外部操作结果未知，需要人工核验"
         case .failed: run.error ?? "执行失败，请打开工作查看原因"
         }
+    }
+
+}
+
+struct UsageSummaryResponse: Codable, Sendable {
+    struct Point: Codable, Sendable {
+        let id: String
+        let label: String
+        let inputTokens: Int
+        let outputTokens: Int
+
+        enum CodingKeys: String, CodingKey {
+            case id, label
+            case inputTokens = "input_tokens"
+            case outputTokens = "output_tokens"
+        }
+    }
+
+    let schemaVersion: String
+    let inputTokens: Int
+    let outputTokens: Int
+    let estimatedCostCNY: Double
+    let modelCalls: Int
+    let points: [Point]
+    let pricingModel: String
+    let pricingBasis: String
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case inputTokens = "input_tokens"
+        case outputTokens = "output_tokens"
+        case estimatedCostCNY = "estimated_cost_cny"
+        case modelCalls = "model_calls"
+        case points
+        case pricingModel = "pricing_model"
+        case pricingBasis = "pricing_basis"
+    }
+
+    var officeSummary: OfficeSnapshot.UsageSummary? {
+        guard modelCalls > 0 else { return nil }
+        return OfficeSnapshot.UsageSummary(
+            inputTokens: inputTokens,
+            outputTokens: outputTokens,
+            estimatedCostCNY: estimatedCostCNY,
+            modelCalls: modelCalls,
+            points: points.map {
+                OfficeSnapshot.UsagePoint(
+                    id: $0.id,
+                    label: $0.label,
+                    inputTokens: $0.inputTokens,
+                    outputTokens: $0.outputTokens
+                )
+            }
+        )
     }
 }
 
@@ -173,7 +245,7 @@ enum OfficeDemoScene: String {
         let usage = OfficeSnapshot.UsageSummary(
             inputTokens: usagePoints.reduce(0) { $0 + $1.inputTokens },
             outputTokens: usagePoints.reduce(0) { $0 + $1.outputTokens },
-            estimatedCost: 4.82,
+            estimatedCostCNY: 2.47,
             modelCalls: 47,
             points: usagePoints
         )

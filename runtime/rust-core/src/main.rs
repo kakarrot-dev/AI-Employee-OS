@@ -67,11 +67,18 @@ fn command() -> Result<serde_json::Value, String> {
         Some("resolve-action-result") => resolve_action_result(arguments),
         Some("capability-readiness") => capability_readiness(arguments),
         Some("list-tasks") => list_tasks(arguments),
+        Some("usage-summary") => usage_summary(arguments),
         Some("cancel-task") => cancel_task(arguments),
         Some("events") => list_events(arguments),
         _ => Err(usage()),
     }
 }
+
+/// DeepSeek V4 Flash 官方人民币单价（CNY / million tokens）。
+/// model_calls 尚未记录缓存命中拆分，因此输入统一按缓存未命中价保守估算。
+/// Source: https://api-docs.deepseek.com/zh-cn/quick_start/pricing/
+const USAGE_INPUT_CACHE_MISS_CNY_PER_MTOK: f64 = 1.0;
+const USAGE_OUTPUT_CNY_PER_MTOK: f64 = 2.0;
 
 fn employee_arguments(
     mut arguments: impl Iterator<Item = String>,
@@ -1796,7 +1803,109 @@ fn task_command_arguments(
 }
 
 fn usage() -> String {
-    "usage: ai-employee-runtime employees-list|employee-save|employee-delete|effective-prompt|capabilities|capability-readiness|skills-list|tools-list|install-tool|install-skill|bind-skill|unbind-skill|knowledge-import|knowledge-search|chat-history|chat-send|chat-delete|run-task|run-skill|run-status|continue-run|resolve-action-result|list-tasks|cancel-task|events".to_owned()
+    "usage: ai-employee-runtime employees-list|employee-save|employee-delete|effective-prompt|capabilities|capability-readiness|skills-list|tools-list|install-tool|install-skill|bind-skill|unbind-skill|knowledge-import|knowledge-search|chat-history|chat-send|chat-delete|run-task|run-skill|run-status|continue-run|resolve-action-result|list-tasks|usage-summary|cancel-task|events".to_owned()
+}
+
+fn usage_summary(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {
+    let mut database = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            _ => return Err(usage()),
+        }
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|error| error.to_string())?;
+    migrate(&mut connection).map_err(|error| error.to_string())?;
+    usage_summary_from_connection(&connection)
+}
+
+fn usage_md_component(value: &str) -> &str {
+    let trimmed = value.trim_start_matches('0');
+    if trimmed.is_empty() { "0" } else { trimmed }
+}
+
+fn usage_day_label(iso_date: &str, is_today: bool) -> String {
+    if is_today {
+        return "今天".to_owned();
+    }
+    let mut parts = iso_date.split('-');
+    let _year = parts.next();
+    let month = parts.next().unwrap_or("1");
+    let day = parts.next().unwrap_or("1");
+    format!("{}/{}", usage_md_component(month), usage_md_component(day))
+}
+
+fn usage_summary_from_connection(connection: &Connection) -> Result<serde_json::Value, String> {
+    let mut day_totals: std::collections::HashMap<String, (i64, i64, i64)> =
+        std::collections::HashMap::new();
+    let mut statement = connection
+        .prepare(
+            "SELECT date(CAST(created_at AS INTEGER) / 1000, 'unixepoch', 'localtime') AS day,
+                    COALESCE(SUM(input_tokens), 0),
+                    COALESCE(SUM(output_tokens), 0),
+                    COUNT(*)
+             FROM model_calls
+             WHERE status = 'succeeded'
+               AND date(CAST(created_at AS INTEGER) / 1000, 'unixepoch', 'localtime')
+                   >= date('now', 'localtime', '-6 days')
+             GROUP BY day",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        })
+        .map_err(|error| error.to_string())?;
+    for row in rows {
+        let (day, input, output, calls) = row.map_err(|error| error.to_string())?;
+        day_totals.insert(day, (input, output, calls));
+    }
+
+    let mut points = Vec::with_capacity(7);
+    let mut input_tokens = 0_i64;
+    let mut output_tokens = 0_i64;
+    let mut model_calls = 0_i64;
+    for offset in (0..7).rev() {
+        let day: String = connection
+            .query_row(
+                "SELECT date('now', 'localtime', ?1)",
+                [format!("-{offset} days")],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        let (day_input, day_output, day_calls) = day_totals.get(&day).copied().unwrap_or((0, 0, 0));
+        input_tokens += day_input;
+        output_tokens += day_output;
+        model_calls += day_calls;
+        points.push(json!({
+            "id": day,
+            "label": usage_day_label(&day, offset == 0),
+            "input_tokens": day_input,
+            "output_tokens": day_output
+        }));
+    }
+
+    let estimated_cost_cny = (input_tokens as f64) * USAGE_INPUT_CACHE_MISS_CNY_PER_MTOK
+        / 1_000_000.0
+        + (output_tokens as f64) * USAGE_OUTPUT_CNY_PER_MTOK / 1_000_000.0;
+
+    Ok(json!({
+        "schema_version": "1.0",
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "estimated_cost_cny": estimated_cost_cny,
+        "pricing_model": "deepseek-v4-flash",
+        "pricing_basis": "input_cache_miss",
+        "pricing_source": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/",
+        "model_calls": model_calls,
+        "points": points
+    }))
 }
 
 fn run_skill(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {
@@ -2526,6 +2635,166 @@ mod tests {
             .unwrap();
         assert_eq!(status, "failed");
         drop(connection);
+        fs::remove_file(database).unwrap();
+    }
+
+    fn millis_for_local_day_offset(connection: &Connection, offset: i64) -> String {
+        let day_modifier = if offset == 0 {
+            "0 days".to_owned()
+        } else {
+            format!("-{offset} days")
+        };
+        connection
+            .query_row(
+                "SELECT CAST(
+                    strftime('%s', date('now', 'localtime', ?1) || ' 12:00:00')
+                    + (strftime('%s', 'now') - strftime('%s', 'now', 'localtime'))
+                 AS INTEGER) * 1000",
+                [day_modifier],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap()
+            .to_string()
+    }
+
+    fn seed_succeeded_model_call(
+        connection: &Connection,
+        call_id: &str,
+        user_message_id: &str,
+        sequence: i64,
+        input_tokens: i64,
+        output_tokens: i64,
+        created_at: &str,
+    ) {
+        connection
+            .execute(
+                "INSERT INTO messages VALUES (?1,'c1',?2,'user','hello',?3)",
+                rusqlite::params![user_message_id, sequence, created_at],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO model_calls (id,conversation_id,user_message_id,assistant_message_id,provider,model,status,input_tokens,output_tokens,error_code,created_at,completed_at)
+                 VALUES (?1,'c1',?2,NULL,'deepseek','deepseek-v4-flash','succeeded',?3,?4,NULL,?5,?5)",
+                rusqlite::params![call_id, user_message_id, input_tokens, output_tokens, created_at],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn usage_summary_empty_database_returns_seven_zero_points() {
+        let database = env::temp_dir().join(format!("ai-employee-usage-empty-{}.db", now()));
+        let mut connection = Connection::open(&database).unwrap();
+        migrate(&mut connection).unwrap();
+        drop(connection);
+
+        let summary = usage_summary(
+            vec!["--database".to_owned(), database.display().to_string()].into_iter(),
+        )
+        .unwrap();
+        assert_eq!(summary["schema_version"], "1.0");
+        assert_eq!(summary["input_tokens"], 0);
+        assert_eq!(summary["output_tokens"], 0);
+        assert_eq!(summary["model_calls"], 0);
+        assert_eq!(summary["estimated_cost_cny"], 0.0);
+        assert_eq!(summary["pricing_model"], "deepseek-v4-flash");
+        assert_eq!(summary["pricing_basis"], "input_cache_miss");
+        assert_eq!(
+            summary["pricing_source"],
+            "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/"
+        );
+        let points = summary["points"].as_array().unwrap();
+        assert_eq!(points.len(), 7);
+        assert_eq!(points.last().unwrap()["label"], "今天");
+        assert!(
+            points
+                .iter()
+                .all(|point| { point["input_tokens"] == 0 && point["output_tokens"] == 0 })
+        );
+        fs::remove_file(database).unwrap();
+    }
+
+    #[test]
+    fn usage_summary_aggregates_succeeded_calls_and_estimates_cost() {
+        let database = env::temp_dir().join(format!("ai-employee-usage-data-{}.db", now()));
+        let mut connection = Connection::open(&database).unwrap();
+        migrate(&mut connection).unwrap();
+        connection
+            .execute(
+                "INSERT INTO agents VALUES ('alex','Alex','ai_product_manager','package','active','t','t')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO conversations VALUES ('c1','alex','chat','active','t','t')",
+                [],
+            )
+            .unwrap();
+
+        let today = millis_for_local_day_offset(&connection, 0);
+        let yesterday = millis_for_local_day_offset(&connection, 1);
+        let eight_days_ago = millis_for_local_day_offset(&connection, 8);
+
+        seed_succeeded_model_call(
+            &connection,
+            "call-today",
+            "u-today",
+            1,
+            1_000_000,
+            500_000,
+            &today,
+        );
+        seed_succeeded_model_call(
+            &connection,
+            "call-yesterday",
+            "u-yesterday",
+            2,
+            1_000_000,
+            0,
+            &yesterday,
+        );
+        seed_succeeded_model_call(
+            &connection,
+            "call-old",
+            "u-old",
+            3,
+            9_000_000,
+            9_000_000,
+            &eight_days_ago,
+        );
+        connection
+            .execute(
+                "INSERT INTO messages VALUES ('u-failed','c1',99,'user','fail','t')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO model_calls (id,conversation_id,user_message_id,assistant_message_id,provider,model,status,input_tokens,output_tokens,error_code,created_at,completed_at)
+                 VALUES ('call-failed','c1','u-failed',NULL,'deepseek','deepseek-v4-flash','failed',100,100,NULL,?1,?1)",
+                [&today],
+            )
+            .unwrap();
+        drop(connection);
+
+        let summary = usage_summary(
+            vec!["--database".to_owned(), database.display().to_string()].into_iter(),
+        )
+        .unwrap();
+        assert_eq!(summary["input_tokens"], 2_000_000);
+        assert_eq!(summary["output_tokens"], 500_000);
+        assert_eq!(summary["model_calls"], 2);
+        // DeepSeek V4 Flash：2M 输入（缓存未命中）* ¥1/M + 0.5M 输出 * ¥2/M = ¥3。
+        assert!((summary["estimated_cost_cny"].as_f64().unwrap() - 3.0).abs() < 1e-9);
+
+        let points = summary["points"].as_array().unwrap();
+        assert_eq!(points.len(), 7);
+        assert_eq!(points[6]["label"], "今天");
+        assert_eq!(points[6]["input_tokens"], 1_000_000);
+        assert_eq!(points[6]["output_tokens"], 500_000);
+        assert_eq!(points[5]["input_tokens"], 1_000_000);
+        assert_eq!(points[5]["output_tokens"], 0);
         fs::remove_file(database).unwrap();
     }
 }
