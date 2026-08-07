@@ -10,7 +10,7 @@
     "event_id": { "type": "string", "minLength": 1 },
     "sequence": { "type": "integer", "minimum": 1 },
     "task_id": { "type": "string", "minLength": 1 },
-    "type": { "enum": ["task_created", "task_started", "task_succeeded", "task_failed", "task_cancelled", "evaluation_passed", "evaluation_blocked"] },
+    "type": { "enum": ["task_created", "task_started", "task_succeeded", "task_failed", "task_cancelled", "evaluation_passed", "evaluation_blocked", "business_flow.created", "business_flow.started", "work_order.ready", "work_order.started", "work_order.waiting_dependency", "work_order.completed", "handoff.created", "handoff.accepted", "handoff.rejected", "business_flow.waiting_user", "business_flow.verification_required", "business_flow.completed", "business_flow.failed", "business_flow.cancel_requested"] },
     "occurred_at": { "type": "string", "minLength": 1 },
     "payload": { "type": "object" }
   }

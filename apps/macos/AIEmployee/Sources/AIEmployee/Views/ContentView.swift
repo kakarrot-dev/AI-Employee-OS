@@ -6,6 +6,7 @@ struct ContentView: View {
     @ObservedObject var employeeStore: EmployeeStore
     @ObservedObject var capabilityStore: CapabilityStore
     @StateObject private var knowledgeStore = KnowledgeLibraryStore()
+    @StateObject private var scenarioStore = ScenarioStore()
     @AppStorage("appDestination") private var destinationRaw = AppDestination.office.rawValue
     @SceneStorage("workComposerPresented") private var workComposerPresented = false
     @State private var demoEditorEmployee: Employee?
@@ -96,6 +97,7 @@ struct ContentView: View {
                 if scene.hasPrefix("knowledge") { destinationRaw = AppDestination.knowledge.rawValue }
                 if scene.hasPrefix("tools") { destinationRaw = AppDestination.tools.rawValue }
                 if scene.hasPrefix("work") { destinationRaw = AppDestination.work.rawValue }
+                if scene.hasPrefix("scenes") { destinationRaw = AppDestination.scenes.rawValue }
             }
 #endif
             Task {
@@ -123,8 +125,14 @@ struct ContentView: View {
                 conversationStore: conversationStore,
                 employeeStore: employeeStore,
                 capabilityStore: capabilityStore,
+                scenarioStore: scenarioStore,
                 employee: selectedEmployee,
                 isCreatingWork: $workComposerPresented
+            )
+        case .scenes:
+            ScenarioLibraryWorkspaceView(
+                store: scenarioStore,
+                employees: employeeStore.employees
             )
         case .skills:
             CapabilityLibraryWorkspaceView(scope: .skills, capabilityStore: capabilityStore)

@@ -95,9 +95,14 @@ enum ClientModelChecks {
             "mixed Runtime and ISO timestamps sort chronologically"
         )
         expect(
-            AppDestination.allCases == [.office, .contacts, .work, .knowledge, .skills, .tools, .settings],
-            "main shell exposes the approved seven destinations"
+            AppDestination.allCases == [.office, .contacts, .work, .scenes, .knowledge, .skills, .tools, .settings],
+            "main shell exposes the approved destinations with scenes after work"
         )
+        let flowPayload = """
+        {"schema_version":"1.0.0","business_flow_id":"flow_12345678","root_task_id":"task_root","scenario_id":"scenario_launch","scenario_version_id":"scenario_launch:v1","scenario_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"发布准备","objective":"形成发布方案","status":"running","root_deliverable_id":null,"work_orders":[{"id":"work_12345678","node_id":"research","child_task_id":"task_child","assignee_agent_id":"maya","role":"executor","goal":"研究","status":"ready","revision":1}]}
+        """.data(using: .utf8)!
+        let flow = try! JSONDecoder().decode(BusinessFlowProjection.self, from: flowPayload)
+        expect(flow.workOrders.first?.status == "ready" && flow.rootDeliverableID == nil, "business flow projection decodes Runtime state")
         let toolsPayload = """
         {"schema_version":"1.0","tools":[{"id":"file-tool","name":"File Tool","type":"native","version":"1.0.0","status":"active","summary":"Read files","category":"rust-native-v1","available":true,"documentation":"# 本地文件","actions":[{"name":"read_file","description":"Read","required_permissions":["filesystem.read"],"risk_level":0,"side_effect":"none","confirmation":"never","timeout_ms":10000,"idempotency":"safe","concurrency_safe":true,"sensitive_fields":["arguments.path"]}],"data_sources":null}]}
         """.data(using: .utf8)!
@@ -107,6 +112,7 @@ enum ClientModelChecks {
         expect(ToolPresentation.actionTitle("create_file") == "创建文件", "tool action titles stay localized")
         expect(ToolPresentation.riskLabel(2) == "每次确认", "tool risk labels stay localized")
         expect(!AppDestination.primary.contains(.settings), "settings stays at the bottom of the global sidebar")
+        expect(AppDestination.primary.firstIndex(of: .scenes) == 3, "scenes is placed between work and knowledge")
 
         var alex = Employee.draft()
         alex.id = "ai-product-manager"

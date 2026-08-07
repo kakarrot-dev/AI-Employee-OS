@@ -79,5 +79,5 @@ case "$MODE" in
   --logs|logs) open_app; /usr/bin/log stream --info --style compact --predicate "process == \"$APP_NAME\"" ;;
   --telemetry|telemetry) open_app; /usr/bin/log stream --info --style compact --predicate "subsystem == \"$BUNDLE_ID\"" ;;
   --verify|verify) open_app; sleep 1; pgrep -x "$APP_NAME" >/dev/null; codesign --verify --deep --strict "$APP_BUNDLE" ;;
-  *) echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--ui-demo office|contacts|work|skills|tools]" >&2; exit 2 ;;
+  *) echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--ui-demo office|contacts|work|scenes|knowledge|skills|tools]" >&2; exit 2 ;;
 esac

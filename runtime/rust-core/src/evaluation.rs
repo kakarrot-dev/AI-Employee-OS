@@ -191,7 +191,7 @@ mod tests {
         connection.execute("INSERT INTO agents VALUES ('alex','Alex','ai_product_manager','package','active','t','t')", []).unwrap();
         connection
             .execute(
-                "INSERT INTO tasks VALUES ('task','alex','input','running','t','t')",
+                "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','alex','input','running','t','t')",
                 [],
             )
             .unwrap();

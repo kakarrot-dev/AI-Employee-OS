@@ -7,6 +7,7 @@ struct EmployeeChatWorkspaceView: View {
     @ObservedObject var conversationStore: ConversationStore
     @ObservedObject var employeeStore: EmployeeStore
     @ObservedObject var capabilityStore: CapabilityStore
+    @ObservedObject var scenarioStore: ScenarioStore
     let employee: Employee?
     @Binding var isCreatingWork: Bool
 
@@ -77,6 +78,10 @@ struct EmployeeChatWorkspaceView: View {
             }
 
             VStack(spacing: 0) {
+                if !scenarioStore.flows.isEmpty {
+                    BusinessFlowHistoryBar(store: scenarioStore, flows: scenarioStore.flows)
+                    Divider().overlay(palette.hairlineSoft)
+                }
                 EmployeeMessageStream(store: store, conversationStore: conversationStore, employee: employee, showsTasks: supportsTasks)
                 EmployeeComposerContainer(
                     store: store,
@@ -102,6 +107,7 @@ struct EmployeeChatWorkspaceView: View {
                     }
             }
         }
+        .task { await scenarioStore.reload() }
     }
 
     private func showsInspector(availableWidth: CGFloat) -> Bool {
@@ -110,6 +116,84 @@ struct EmployeeChatWorkspaceView: View {
 
     private func showsConversationList(availableWidth: CGFloat) -> Bool {
         appWindowWidth >= Self.conversationListMinimumWindowWidth && availableWidth >= 700
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct BusinessFlowHistoryBar: View {
+    @ObservedObject var store: ScenarioStore
+    let flows: [BusinessFlowProjection]
+    @State private var selectedFlowID: String?
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var selected: BusinessFlowProjection? {
+        flows.first { $0.id == selectedFlowID } ?? flows.first
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Label("业务流", systemImage: "point.3.connected.trianglepath.dotted")
+                    .font(.caption.weight(.semibold)).foregroundStyle(palette.muted)
+                Picker("业务流", selection: Binding(
+                    get: { selected?.id ?? "" },
+                    set: { selectedFlowID = $0 }
+                )) {
+                    ForEach(flows) { flow in
+                        Text(flow.title).tag(flow.id)
+                    }
+                }
+                .labelsHidden().frame(maxWidth: 260)
+                Spacer()
+                if let selected {
+                    Text(selected.status)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(selected.status == "succeeded" ? palette.success : palette.primaryActive)
+                    if selected.status == "running" {
+                        Button("继续") { Task { await store.continueFlow(selected) } }
+                            .buttonStyle(.borderedProminent)
+                        Button("取消") { Task { await store.cancelFlow(selected) } }
+                    }
+                }
+            }
+            if let selected {
+                HStack(spacing: 0) {
+                    ForEach(Array(selected.workOrders.enumerated()), id: \.element.id) { index, work in
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(work.status == "succeeded" ? palette.success : palette.primaryActive)
+                                .frame(width: 7, height: 7)
+                            Text(work.goal).lineLimit(1)
+                            Text(work.status).foregroundStyle(palette.muted)
+                        }
+                        .font(.caption)
+                        if index < selected.workOrders.count - 1 {
+                            Rectangle().fill(palette.hairline).frame(width: 24, height: 1).padding(.horizontal, 8)
+                        }
+                    }
+                }
+            }
+            if let pending = store.pendingRun {
+                HStack(spacing: 8) {
+                    if pending.phase == "waiting_approval" || pending.status == "waiting_approval" {
+                        Text("下一步需要审批").font(.caption).foregroundStyle(palette.warning)
+                        Button("批准") { Task { await store.resolvePendingRun(approve: true) } }
+                        Button("拒绝") { Task { await store.resolvePendingRun(approve: false) } }
+                    } else if pending.phase == "verification_required" || pending.status == "verification_required" {
+                        Text("执行结果未知，禁止自动重试").font(.caption).foregroundStyle(palette.error)
+                        Button("标记成功") { Task { await store.resolveUnknown(status: "succeeded") } }
+                        Button("标记失败") { Task { await store.resolveUnknown(status: "failed") } }
+                    }
+                }
+            }
+            if let error = store.errorMessage {
+                Text(error).font(.caption).foregroundStyle(palette.error).lineLimit(2)
+            }
+        }
+        .padding(.horizontal, 18).padding(.vertical, 10)
+        .background(palette.surfaceSoft)
+        .disabled(store.isLoading)
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }

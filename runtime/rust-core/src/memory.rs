@@ -281,7 +281,7 @@ mod tests {
         )
         .unwrap();
         c.execute(
-            "INSERT INTO tasks VALUES ('task_1','agent_1','test','running',?1,?1)",
+            "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task_1','agent_1','test','running',?1,?1)",
             ["2026-08-04T00:00:00Z"],
         )
         .unwrap();
@@ -332,7 +332,7 @@ mod tests {
         )
         .unwrap();
         c.execute(
-            "INSERT INTO tasks VALUES ('task_1','agent_1','test','running',?1,?1)",
+            "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task_1','agent_1','test','running',?1,?1)",
             ["2026-08-04T00:00:00Z"],
         )
         .unwrap();

@@ -1,0 +1,1 @@
+{"id":"flow_launch001:work:draft","business_flow_id":"flow_launch001","node_id":"draft","child_task_id":"task","assignee_agent_id":"writer","role":"executor","goal":"draft","status":"ready","revision":1,"dependency_ids":["flow_other0001:work:research"]}

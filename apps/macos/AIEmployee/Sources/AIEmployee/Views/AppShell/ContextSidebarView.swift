@@ -44,7 +44,7 @@ struct ContextSidebarView: View {
             EmployeeDirectorySidebar(store: employeeStore)
         case .work:
             WorkConversationList(store: store, conversationStore: conversationStore, employeeStore: employeeStore)
-        case .office, .knowledge, .skills, .tools, .settings:
+        case .office, .scenes, .knowledge, .skills, .tools, .settings:
             EmptyView()
         }
     }

@@ -609,3 +609,8 @@ Python 返回 `ask_user`，Rust 保存问题、所需输入 Schema 和 checkpoin
 - **Approach**：先显式 Skill Run 和 Rust Native Tool，再渐进加载/Resolver，再聊天接入，最后恢复能力与旧路径退出。
 - **Key decisions**：`agent_loop` 默认；Rust 生成安全字段；`waiting_user` 是 Run phase；Deliverable 必须验证；`tasks_enabled` 降为派生兼容字段。
 - **Unknowns**：无阻塞实现的未决项。MCP/HTTP 的认证与网络策略由后续独立 Spec 负责，不属于本轮交付。
+# Business Flow 接入 Generic Run Kernel
+
+Scheduler 每次只选择一个 `ready` WorkOrder。Child Task 在原有 Task ID 上建立正常 AgentRun、Snapshot、Capability Set、Action、Approval、ToolExecution、Deliverable 与 Evaluation；禁止为 WorkOrder 另建影子 Task。Root Task 只由 Rust 编排，不调用 Python、不创建 AgentRun。
+
+Child 成功后的公共尾部验证 Deliverable/Evidence，幂等接受 Handoff 并计算下一个 ready WorkOrder。`continue-run` 与人工核验成功后使用同一尾部。`result_unknown` 禁止自动重放并阻断依赖链。

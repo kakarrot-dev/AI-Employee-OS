@@ -54,7 +54,7 @@ def seed_document_runtime(
             ("document-tool", "Document Tool", "native", "1.0.0", json.dumps(manifest), "active", now, now),
         )
         connection.execute(
-            "INSERT INTO tasks VALUES (?,?,?,?,?,?)",
+            "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES (?,?,?,?,?,?)",
             (task_id, "ai-product-manager", "eval", "running", now, now),
         )
         connection.execute(

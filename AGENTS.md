@@ -51,9 +51,15 @@
 - Memory、Knowledge、Evaluation 基础设施
 - Generic Run Snapshot、Checkpoint、Deliverable、基础恢复与 Evaluation
 
+### Phase 1 Release Candidate
+
+- 场景库支持手工或 AI 草案创建串行多员工 Business Flow。
+- Root/Child Task、WorkOrder、Handoff、Root 输出绑定均由 Rust Runtime 管理；Child 复用 Generic Run Kernel。
+- 当前并发固定 1；私人 Conversation/Memory 不跨员工共享。
+
 ### 暂不包含
 
-Computer Use、任意站点网页抓取、Multi-Agent 协作、Cloud Sync、Marketplace、企业 RBAC、公证发行与自动更新。
+并行 Multi-Agent 调度、员工群聊、Computer Use、任意站点网页抓取、Cloud Sync、Marketplace、企业 RBAC、公证发行与自动更新。
 
 ## 架构边界
 

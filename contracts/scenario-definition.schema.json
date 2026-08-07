@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-employee-os.local/contracts/scenario-definition.schema.json",
+  "title": "ScenarioDefinition",
+  "type": "object",
+  "required": ["schema_version", "id", "title", "description", "status", "current_version", "version"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "id": {"type": "string", "minLength": 1},
+    "title": {"type": "string", "minLength": 1, "maxLength": 120},
+    "description": {"type": "string", "maxLength": 2000},
+    "status": {"enum": ["active", "disabled"]},
+    "current_version": {"type": "integer", "minimum": 1},
+    "version": {
+      "type": "object",
+      "required": ["id", "version", "source", "definition", "sha256", "confirmed_at", "created_at"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "version": {"type": "integer", "minimum": 1},
+        "source": {"enum": ["manual", "ai_proposal"]},
+        "definition": {"$ref": "scenario-proposal.schema.json"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "confirmed_at": {"type": "string", "minLength": 1},
+        "created_at": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

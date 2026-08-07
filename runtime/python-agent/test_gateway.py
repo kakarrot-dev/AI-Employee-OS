@@ -163,7 +163,7 @@ class CrossProcessGatewayTests(unittest.TestCase):
                     (tool_id, tool_id, "native", "1.0.0", json.dumps(manifest), "active", now, now),
                 )
             connection.execute(
-                "INSERT INTO tasks VALUES (?,?,?,?,?,?)",
+                "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES (?,?,?,?,?,?)",
                 ("task-1", "ai-product-manager", "test", "running", now, now),
             )
             connection.execute(

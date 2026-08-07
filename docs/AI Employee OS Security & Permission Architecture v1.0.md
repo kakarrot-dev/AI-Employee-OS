@@ -1113,3 +1113,8 @@ Local Security Boundary
 ```
 
 ---
+# 多员工业务流权限边界
+
+Flow、Root Task 或 Coordinator 身份不产生额外权限。每个 Child ToolCall 仍逐次验证 `Child → Assignee → locked Capability Set → Skill → Tool → Action → Permission/Approval`。Handoff 只扩大经过验证的 Context 引用可见范围，不能扩大文件根、Secret、Tool surface 或预算。
+
+场景草案不得携带 Conversation/Employee Memory 引用。SharedContextRef 必须包含来源、Hash、Sensitivity 与 allowed agents；未知来源、未验证 Deliverable、未授权目标或 Hash 不符默认拒绝。

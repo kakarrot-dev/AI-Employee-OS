@@ -10,6 +10,20 @@ pub enum EventType {
     TaskCancelled,
     EvaluationPassed,
     EvaluationBlocked,
+    BusinessFlowCreated,
+    BusinessFlowStarted,
+    WorkOrderReady,
+    WorkOrderStarted,
+    WorkOrderWaitingDependency,
+    WorkOrderCompleted,
+    HandoffCreated,
+    HandoffAccepted,
+    HandoffRejected,
+    BusinessFlowWaitingUser,
+    BusinessFlowVerificationRequired,
+    BusinessFlowCompleted,
+    BusinessFlowFailed,
+    BusinessFlowCancelRequested,
 }
 
 impl EventType {
@@ -22,6 +36,20 @@ impl EventType {
             Self::TaskCancelled => "task_cancelled",
             Self::EvaluationPassed => "evaluation_passed",
             Self::EvaluationBlocked => "evaluation_blocked",
+            Self::BusinessFlowCreated => "business_flow.created",
+            Self::BusinessFlowStarted => "business_flow.started",
+            Self::WorkOrderReady => "work_order.ready",
+            Self::WorkOrderStarted => "work_order.started",
+            Self::WorkOrderWaitingDependency => "work_order.waiting_dependency",
+            Self::WorkOrderCompleted => "work_order.completed",
+            Self::HandoffCreated => "handoff.created",
+            Self::HandoffAccepted => "handoff.accepted",
+            Self::HandoffRejected => "handoff.rejected",
+            Self::BusinessFlowWaitingUser => "business_flow.waiting_user",
+            Self::BusinessFlowVerificationRequired => "business_flow.verification_required",
+            Self::BusinessFlowCompleted => "business_flow.completed",
+            Self::BusinessFlowFailed => "business_flow.failed",
+            Self::BusinessFlowCancelRequested => "business_flow.cancel_requested",
         }
     }
 }

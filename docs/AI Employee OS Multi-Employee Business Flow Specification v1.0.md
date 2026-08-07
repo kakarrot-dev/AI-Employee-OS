@@ -1,7 +1,7 @@
 # AI Employee OS Multi-Employee Business Flow Specification v1.0
 
 > 文档类型：产品与 Runtime 契约规范
-> 状态：Approved（2026-08-07）
+> 状态：Approved with Scenario Coordinator amendment（2026-08-07）
 > 日期：2026-08-07
 > 前置规划：`docs/plans/AI Employee OS 多员工业务流规划 v0.1.md`
 > 前置决策：ADR-034 Accepted
@@ -9,13 +9,19 @@
 
 ## 1. 结论
 
-AI Employee OS 的多员工协作采用独立 Business Flow 工作区：一个 Root Task 表达业务总目标，每个 WorkOrder 绑定一名员工和一个 canonical Child Task，员工之间通过 verified Deliverable、ArtifactRef 和结构化 Handoff 交接。
+AI Employee OS 的多员工协作分为场景定义与场景运行。用户可以在独立的「场景库（暂定）」中手动配置节点，也可以让受限的 AI 场景协调器生成草案；两种入口都形成同一种 `ScenarioDefinition`。启动后，一个 `BusinessFlow` 对应一次不可变的场景版本快照，一个 Root Task 表达业务总目标，每个 WorkOrder 绑定一名员工和一个 canonical Child Task，员工之间通过 verified Deliverable、ArtifactRef 和结构化 Handoff 交接。
 
 ```text
 Private Conversation A ─┐
 Private Conversation B ─┤  不共享 Message / Memory
                         │
-User ──> Business Flow ─┴─> Root Task（Rust 编排聚合，不运行 Agent）
+User ──> Scenario Definition ──> Plan Preview / Confirm
+                |                         |
+                | manual edit             | AI Coordinator Proposal
+                +─────────────────────────+
+                                          |
+                                          v
+                        Business Flow Run ─┴─> Root Task（Rust 编排聚合，不运行 Agent）
                                 |
                                 +─ WorkOrder A ─> Child Task A / Agent Run A
                                 |                       |
@@ -32,7 +38,7 @@ User ──> Business Flow ─┴─> Root Task（Rust 编排聚合，不运行 
                                               Root verified Deliverable
 ```
 
-Phase 1 只实现用户显式指定的线性 `A → B` 顺序协作，最大并发固定为 1。模板、并行、Reviewer 返工和智能协调属于后续独立阶段，不进入 Phase 1 发布门禁。
+Phase 1 支持用户手动编辑或由 AI 场景协调器生成场景草案。场景可以声明有向无环依赖，但最大并发固定为 1；Rust 按已满足依赖的稳定顺序执行节点。用户必须在启动前确认员工分配、权限、预算和验收标准。运行中自动增删节点、并行、Reviewer 返工和无需确认的自主重排属于后续阶段。
 
 ## 2. 目标与成功标准
 
@@ -43,31 +49,33 @@ Phase 1 只实现用户显式指定的线性 `A → B` 顺序协作，最大并�
 - 上游只通过显式引用把已验证成果交给下游；不复制私人聊天或完整 Runtime Context。
 - Root、Child、Action、Run、Approval、ToolExecution、Deliverable、Event 和 Audit 可恢复、可追溯、可取消。
 - Swift 只展示 Runtime 投影，不编排员工、不推断完成、不维护第二套状态。
+- AI 场景协调器只输出结构化提案，不直接创建 Task、调用员工、执行 Tool 或扩大权限。
+- 同一场景定义可多次运行；每次运行锁定定义版本、节点、员工、Capability、预算和验收快照。
 
 ### 2.2 Phase 1 发布级成功标准
 
 以下条件必须同时成立：
 
-1. 用户创建两名 active 员工并显式指定 Coordinator、WorkOrder A 和 WorkOrder B 的 Assignee。
-2. `business-flow-plan` 在不持久化、不调用模型、不执行 Tool 的前提下验证输入、员工、Capability、预算和线性依赖。
-3. `business-flow-start` 原子创建 Root Task、A/B/Finalization 三个 Child Task、三个 WorkOrder、依赖和共享 Context 引用。
-4. A 的 Child Task 复用 Generic Run Kernel；A 的 Deliverable 未 verified 前，B 保持 pending 且不调用模型或 Tool。
-5. A verified 后，Runtime 创建并接受 Handoff；B 只能看到 Handoff 明确列出的引用。
-6. B verified 后，Coordinator 的 Finalization WorkOrder 生成最终 Deliverable；Root Task 才能 succeeded。
+1. 用户先以 Markdown SOP 描述背景与目标、输入、执行步骤、约束和验收，再手动配置场景，或让 AI 场景协调器根据完整 SOP 生成包含节点、员工候选、依赖、验收和预算的草案。`objective` 字段在 Phase 1 客户端承载该完整 SOP，不是一句话摘要。
+2. AI 草案必须进入可编辑预览；未经用户确认不得持久化为 active 场景或启动运行。
+3. `business-flow-plan` 在不持久化、不调用模型、不执行 Tool 的前提下验证场景快照、员工、Capability、预算和无环依赖。
+4. `business-flow-start` 原子创建 Root Task、每节点 Child Task、WorkOrder、依赖和共享 Context 引用，并锁定 `scenario_version` 与 `scenario_hash`。
+5. 上游 Deliverable 未 verified 前，下游保持 pending 且不调用模型或 Tool；上游 verified 后，Runtime 只通过 Handoff 传递明确引用。
+6. Coordinator 的 Finalization WorkOrder 生成最终 Deliverable 后，Root Task 才能 succeeded。
 7. App 或 Runtime 重启不会重复创建 Child Task、Handoff、Action 或 Tool 副作用。
 8. 任一依赖 Action 为 `result_unknown` 时，下游不得启动，只有人工核验后才能继续或失败。
-9. 员工 B 无法读取员工 A 的私人 Conversation、非授权 Memory、完整 Context 或未引用 ToolResult。
-10. Work Library 可查看目标、员工、依赖、当前 Action、审批、阻塞原因、Artifact、成本和最终交付。
+9. 下游员工无法读取上游员工的私人 Conversation、非授权 Memory、完整 Context 或未引用 ToolResult。
+10. 场景库可管理场景定义；工作库可查看每次运行的 Action、审批、Artifact、成本和最终交付。
 
 ## 3. 非目标
 
 Phase 1 不实现：
 
 - 员工群聊、员工自由对话或共享私人 Conversation；
-- 模型自动选择员工、自动拆分 WorkOrder 或重排依赖；
+- AI 场景协调器未经用户确认自动启动、扩大权限、扩大预算或在运行中直接改图；
 - Python Worker 直接启动 Child Task、调用其他 Worker、访问 SQLite 或执行 Tool；
 - 并行 WorkOrder、Reviewer 驳回与自动返工；
-- Workflow Package 模板安装；
+- 可执行代码型 Workflow Package 模板安装；
 - 任意递归委派、动态创建员工、Subagent、Computer Use；
 - Cloud Sync、Marketplace、企业 RBAC；
 - LangGraph、Deep Agents 或第三方队列作为状态源；
@@ -86,13 +94,16 @@ Phase 1 不实现：
 6. 生成并确认 Multi-Employee Business Flow Implementation Plan；
 7. 最后才追加 Migration 和实现代码。
 
-在步骤 1–6 完成前，本文只表达目标契约，不是已实现事实。
+在步骤 1 至 6 完成前，本文只表达目标契约，不是已实现事实。
 
 ## 5. 核心术语与所有权
 
 | 对象 | 定义 | 唯一所有者 |
 |---|---|---|
-| Business Flow | 一个多员工业务目标及其 WorkOrder 集合 | Rust + SQLite |
+| Scenario Definition | 可复用的场景名称、节点、边、默认员工映射、验收和预算模板 | Rust + SQLite；Swift 通过 Runtime CRUD |
+| Scenario Version | Scenario Definition 的不可变修订；已启动运行只引用该版本 | Rust + SQLite |
+| Coordinator Proposal | AI 场景协调器返回的结构化场景草案，不是执行事实 | Python proposal worker；Rust 校验 |
+| Business Flow | Scenario Version 的一次运行实例及其 WorkOrder 集合 | Rust + SQLite |
 | Root Task | Flow 的总目标、总预算、取消和最终交付聚合 | Rust Orchestrator；不创建 AgentRun |
 | WorkOrder | 分配给一名员工的结构化子目标 | Rust + SQLite |
 | Child Task | WorkOrder 的 canonical 执行 Task | Rust Generic Run Kernel |
@@ -102,6 +113,36 @@ Phase 1 不实现：
 | Handoff | verified Deliverable 到下游输入的显式交接 | Rust + SQLite |
 | SharedContextRef | Flow 内授权共享的持久化引用 | Rust Context Pipeline |
 | Flow Projection | 面向 Swift 的聚合读取模型 | Rust 生成，Swift 只读 |
+
+### 5.1 AI 场景协调器
+
+AI 场景协调器是 System-owned 的受限规划角色，不作为普通员工出现在通讯录，也不持有全局 Tool、Memory、Conversation 或文件权限。它接收用户提供的目标、约束、可选输入，以及 Rust 提供的最小员工能力目录，返回严格的 `ScenarioProposal`：场景名称、目标、总验收、节点目标、建议员工、所需 Capability、输入、依赖、预算、失败策略、假设和风险。
+
+```text
+schema_version
+proposal_id
+title
+objective
+overall_acceptance_criteria[]
+coordinator_agent_id
+nodes[]
+  node_id
+  goal
+  suggested_agent_id
+  required_capabilities[]
+  input_refs[]
+  acceptance_criteria[]
+  budget
+  failure_policy
+edges[]
+  predecessor_node_id
+  successor_node_id
+assumptions[]
+risks[]
+questions_for_user[]
+```
+
+Python 只生成提案。Rust 必须验证员工存在且 active、Capability readiness、依赖无环、引用授权、预算与硬上限。用户确认前，提案不得创建 Scenario Version、Business Flow、Task、Action、Approval 或 ToolExecution。换员工、扩大 Context、权限、预算和节点数量属于高影响变化；运行中如需这些变化，必须生成新 revision 并再次请求用户确认。
 
 ## 6. Conversation、Task 与 Flow 边界
 
@@ -278,6 +319,19 @@ created_at
 
 ## 11. 数据模型
 
+### 11.0 场景定义与版本
+
+新增：
+
+| 表 | 用途 |
+|---|---|
+| `scenario_definitions` | 用户可管理的场景身份、名称、描述、active 状态和当前版本 |
+| `scenario_versions` | 不可变的场景版本、来源、canonical JSON、Hash 和创建时间 |
+| `scenario_nodes` | 版本内节点目标、默认 Assignee、Capability、输入、验收、预算和失败策略 |
+| `scenario_edges` | 版本内有向依赖；禁止 self-edge，完整无环校验由 Rust 执行 |
+
+`scenario_versions.source` 只允许 `manual | ai_proposal`。保存 AI 草案时必须记录生成模型的非 Secret 配置摘要和用户确认时间，但不保存 reasoning。编辑已被运行引用的版本必须创建新版本，不得原地更新节点或边。
+
 正式 Unified Data Model 更新必须通过追加 Migration 引入：
 
 ### 11.1 `tasks.parent_task_id`
@@ -298,6 +352,9 @@ title
 objective
 acceptance_json
 budget_json
+scenario_definition_id FK
+scenario_version_id FK
+scenario_hash NOT NULL
 template_id NULL
 template_version NULL
 template_hash NULL
@@ -354,7 +411,7 @@ CHECK predecessor != successor
 `business-flow-plan`：
 
 1. 严格解析 `BusinessFlowPlanRequest`；未知字段/版本拒绝。
-2. 验证目标、验收、员工 active、角色、线性依赖和硬上限。
+2. 验证目标、验收、员工 active、角色、依赖无环和硬上限。
 3. 对每个 WorkOrder 解析 Capability readiness、输入 Schema、Tool 依赖和预算。
 4. 验证 SharedContextRef 可访问但不读取超出预览所需的正文。
 5. 返回标准化 Plan、风险、估算上限和 `plan_hash`。
@@ -385,10 +442,11 @@ Phase 1 必须把 Finalization 表达为最后一个 WorkOrder：
 - Assignee 为 Coordinator；
 - 输入只含 A、B verified Deliverable 和允许的 SharedContextRef；
 - Acceptance 与 Root 总验收一致；
-- 产生 Child verified Deliverable 后，Rust 创建 Root Deliverable，Evidence 引用 Finalization Deliverable 及其上游链；
-- Root Deliverable verified 后 Root Task succeeded。
+- 产生 Child verified Deliverable 后，Rust 在 `business_flow_outputs` 创建 Root 输出绑定；该绑定把 Root Task 映射到 Finalization verified Deliverable，上游证据继续由 Deliverable Evidence 与 Handoff 链追溯；
+- Root 输出绑定持久化后 Root Task 才能 succeeded。
 
 Root Task 本身不创建 AgentRun，避免一个 Task 同时承担编排和员工执行。
+由于 canonical `deliverables.run_id` 必须引用真实 AgentRun，Root 不复制或伪造第二份 Deliverable；产品层的 Root Deliverable 是上述不可变绑定投影。
 
 ## 13. 取消、失败与恢复
 
@@ -432,7 +490,7 @@ Phase 1：
 
 - 至少 2 名不同员工参与 E2E；产品允许 Coordinator 与 Executor 重合；
 - 最多 5 名参与员工；
-- 最多 12 个 WorkOrder，Phase 1 产品只创建 3 个：A、B、Finalization；
+- 每次运行包含 2 至 12 个 WorkOrder，其中最后一个必须是 Coordinator Finalization；
 - 最大并发固定为 1；
 - 每个 WorkOrder Phase 1 不自动返工；
 - Start 请求必须包含 Flow 和每个 WorkOrder 的 `max_input_tokens`、`max_output_tokens`、`max_tool_rounds`、`max_elapsed_ms`；
@@ -442,6 +500,16 @@ Phase 1：
 成本展示按 Child Task 实际 ModelCall/ToolExecution 聚合；预估必须标注 estimate，不当作账单。
 
 ## 16. CLI 与响应
+
+### 16.0 场景定义与 AI 提案
+
+新增 CLI：
+
+- `scenario-list | scenario-get | scenario-save | scenario-disable`：通过 Runtime 管理场景定义和不可变版本；不提供硬删除已被运行引用的版本。
+- `scenario-propose`：调用受控 proposal worker 生成 `ScenarioProposal`，不写数据库、不创建 Task、不执行 Tool。
+- `scenario-validate`：由 Rust 对手工草案或 AI 草案执行 Schema、DAG、员工、Capability、引用和预算校验。
+
+`scenario-save` 必须提交通过校验的 canonical proposal、`proposal_hash`、用户确认标记和幂等键。AI 提案与手工编辑使用同一 Schema 和保存入口。
 
 ### 16.1 `business-flow-plan`
 
@@ -521,18 +589,20 @@ Audit 至少记录：Flow 创建、分配、重新分配、预算、SharedContex
 ### 19.1 信息架构
 
 - 一对一聊天仍在“员工会话”；
-- 多员工协作入口和运行记录位于“工作库”；
+- 新增独立主导航「场景库（暂定）」，位于“工作库”和“知识库”之间；
+- 场景库管理定义、版本、AI 草案与手工编辑；工作库只展示运行实例和历史结果；
+- 场景编辑是场景库主区域内的页面，不使用模态 Sheet，并以「业务 SOP」「节点配置」「校验与启动」三个页签组织配置；
 - Business Flow 是独立详情，不混入任一员工私人时间线；
 - 员工私人聊天可显示一个只读 Flow 引用，但默认不自动插入。
 
 ### 19.2 创建流程
 
-1. 输入目标、总验收和 Flow Budget；
-2. 选择 Coordinator；
-3. 配置 WorkOrder A、B 的 Assignee、目标、Capability、输入、验收、预算；
-4. 自动生成 Coordinator Finalization WorkOrder；
-5. 调用 plan，展示 readiness、依赖、权限和预算风险；
-6. 用户确认后 start。
+1. 用户选择“让 AI 组织”或“手动创建”。
+2. 用户在业务 SOP 页签编辑 Markdown 文档；AI 模式基于原始 SOP 返回可编辑节点草案，手工模式直接配置节点，二者共用校验与保存契约且不得覆盖 SOP 原文。
+3. 编辑器使用节点列表和依赖选择器，不以自由画布作为首版门禁。每个节点配置 Assignee、目标、Capability、输入、验收、预算和失败策略。
+4. Runtime 执行 `scenario-validate`，展示 readiness、依赖环、权限、引用和预算风险。
+5. 用户确认后保存 Scenario Version；点击“运行”后再执行 `business-flow-plan/start`。
+6. 保存场景不要求模型 Key；生成 AI 草案和启动实际工作分别按各自调用边界读取 Keychain Key。
 
 ### 19.3 运行工作区
 
@@ -550,6 +620,9 @@ Audit 至少记录：Flow 创建、分配、重新分配、预算、SharedContex
 
 Implementation Plan 必须新增：
 
+- `contracts/scenario-proposal.schema.json`
+- `contracts/scenario-definition.schema.json`
+- `contracts/scenario-validation.schema.json`
 - `contracts/business-flow-plan.schema.json`
 - `contracts/business-flow-status.schema.json`
 - `contracts/work-order.schema.json`
@@ -565,6 +638,10 @@ Implementation Plan 必须新增：
 | 类别 | 必测案例 | 通过标准 |
 |---|---|---|
 | Happy path | A → B → Finalization | Root/Child/Deliverable/Handoff 全链可追溯 |
+| AI proposal | 目标生成草案并由用户编辑确认 | 未确认前无 Scenario Version、Task 或 ToolExecution |
+| 手工场景 | 手工配置 3 节点 DAG 并保存 | 与 AI 草案使用同一 Schema、校验和运行入口 |
+| 场景版本 | 运行后修改场景 | 新运行引用新版本，历史运行 Hash 不变 |
+| 协调器越权 | 提案请求扩大权限、预算或读取私人 Context | Rust 在持久化和副作用前拒绝 |
 | Conversation 隔离 | B 请求 A 私人消息 | Runtime 拒绝，B Context 不含 A Message |
 | Memory 隔离 | B 请求 A Agent Memory | 无 SharedContextRef 时拒绝 |
 | Capability | B 缺依赖 Skill/Tool | start 前失败，无模型/Tool 调用 |
@@ -622,8 +699,8 @@ Python 只提出 BusinessFlowPlanProposal；Rust 校验、用户确认、高影�
 
 ## 25. Approved Design Summary
 
-- **Building**：独立 Business Flow 工作区，使用 Root Task、每员工 Child Task、WorkOrder、SharedContextRef、Handoff 和 verified Root Deliverable 支持可恢复的两员工顺序协作。
-- **Not building**：员工群聊、自由互调、自动分配、并行、Reviewer 返工、递归委派和第二套状态源。
+- **Building**：独立场景库、可复用 Scenario Definition、受限 AI 场景协调器，以及使用 Root Task、每员工 Child Task、WorkOrder、SharedContextRef、Handoff 和 verified Root Deliverable 的可恢复运行。
+- **Not building**：员工群聊、自由互调、无需确认的自动分配或重排、并行、Reviewer 自动返工、递归委派和第二套状态源。
 - **Approach**：Rust 确定性编排并复用 Generic Run Kernel；私人 Conversation/Memory 隔离；成果通过显式引用交接。
-- **Key decisions**：Root Task 不创建 AgentRun；WorkOrder 状态只做派生投影；Handoff 不复制正文；Phase 1 并发固定 1；最终汇总是 Coordinator 的显式 Finalization WorkOrder。
+- **Key decisions**：AI 协调器只提案，Rust 校验与调度，用户确认高影响变化；场景定义与运行实例分离；Root Task 不创建 AgentRun；WorkOrder 状态只做派生投影；Handoff 不复制正文；Phase 1 并发固定 1。
 - **Unknowns**：无阻塞设计决策。当前最新 Migration 为 013，因此无并发漂移时使用 014；若实施前已有新 Migration，只能使用下一个可用编号，不得改写已发布 Migration。目标文件与提交拆分在下一份 Implementation Plan 中逐项列出。

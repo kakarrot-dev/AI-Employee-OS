@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Handoff",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "id", "business_flow_id", "source_work_order_id", "target_work_order_id", "deliverable_id", "deliverable_status", "target_agent_allowed", "acceptance", "summary"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "id": {"type": "string", "minLength": 1},
+    "business_flow_id": {"type": "string", "minLength": 1},
+    "source_work_order_id": {"type": "string", "minLength": 1},
+    "target_work_order_id": {"type": "string", "minLength": 1},
+    "deliverable_id": {"type": "string", "minLength": 1},
+    "deliverable_status": {"const": "verified"},
+    "target_agent_allowed": {"const": true},
+    "acceptance": {"enum": ["pending", "accepted", "rejected"]},
+    "summary": {"type": "string", "minLength": 1, "maxLength": 2000}
+  }
+}

@@ -1,0 +1,1 @@
+{"schema_version":"1.0.0","id":"handoff-1","business_flow_id":"flow_launch001","source_work_order_id":"flow_launch001:work:research","target_work_order_id":"flow_launch001:work:draft","deliverable_id":"deliverable-research","deliverable_status":"verified","target_agent_allowed":true,"acceptance":"accepted","summary":"研究证据已验证"}

@@ -1252,3 +1252,8 @@ Custom Skill Runtime
 Custom Tool Runtime
 
 ```
+# System Scenario Coordinator
+
+顶层协调能力属于系统 Runtime，不是拥有全局权限的“超级员工”。Python `scenario_coordinator` 只接收目标、约束与 Rust 生成的最小员工/ready Capability 目录，输出 ScenarioProposal；它不能读取 SQLite、Conversation、Memory，不能调用 Tool、创建 Task 或生成安全字段。
+
+用户确认后，Rust 才保存不可变版本并物化 Root/Child/WorkOrder。Finalization 是 Coordinator 员工执行的普通 Child Run，Root 不参与模型推理。

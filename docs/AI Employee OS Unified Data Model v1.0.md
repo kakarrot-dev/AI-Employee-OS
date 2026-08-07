@@ -499,3 +499,10 @@ Run phase 不增加或替代 Task/Action 状态。`waiting_user` 与 `waiting_ap
 - Migration 只追加在 `storage/migrations/`，字段与约束必须依据本文档生成。
 - Skill 和 Tool 的包内 manifest 只是安装输入。Loader 必须先按对应 JSON Schema 校验，再将规范化 JSON 写入 `manifest_json`；Task 开始后只能使用已锁定版本的数据库快照。
 - 若未来实现与本文档冲突，先通过 ADR 记录变更，再同步本文档和 migration；不得直接在专题 Guide 中产生第二套 schema。
+# Phase 1 多员工业务流扩展
+
+多员工业务流复用 canonical `tasks`：一个 Root Task 表达编排生命周期，每个 WorkOrder 绑定一个 `parent_task_id=Root` 的 Child Task。`business_flows` 与 `work_orders` 不保存第二套状态；展示状态由 Root/Child Task、Action、Handoff 派生。
+
+Scenario Definition 的当前版本只指向不可变 `scenario_versions`。WorkOrder 记录员工、Capability、预算、验收与失败策略；依赖属于同一 Flow。Handoff 只能引用 verified Deliverable/Evidence，并将 `deliverable:<id>` 写入目标 Child 输入。`business_flow_outputs` 将 Root Task 映射到 Finalization verified Deliverable；Root 不创建 AgentRun。
+
+`shared_context_refs` 只保存带 Hash、Sensitivity 和 allowed agents 的引用，不保存私人 Conversation、Employee Memory、Secret 或完整 ToolResult。

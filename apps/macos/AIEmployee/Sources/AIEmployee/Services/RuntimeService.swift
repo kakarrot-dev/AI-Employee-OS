@@ -43,6 +43,13 @@ struct RuntimeService: Sendable {
     let knowledgeList: @Sendable () async throws -> KnowledgeListResponse
     let bindSkill: @Sendable (String, String, String) async throws -> BindSkillResponse
     let unbindSkill: @Sendable (String, String) async throws -> UnbindSkillResponse
+    let scenarioList: @Sendable () async throws -> [ScenarioSummary]
+    let scenarioPropose: @Sendable (String, String) async throws -> ScenarioProposalResponse
+    let scenarioSave: @Sendable (String, String, ScenarioProposal) async throws -> ScenarioSaved
+    let businessFlowPlan: @Sendable (String) async throws -> BusinessFlowPlan
+    let businessFlowStart: @Sendable (String, String, String) async throws -> BusinessFlowProjection
+    let businessFlowList: @Sendable () async throws -> [BusinessFlowProjection]
+    let businessFlowContinue: @Sendable (String, String?) async throws -> BusinessFlowContinueResponse
 
     static func live() -> Self {
         Self(recover: {
@@ -170,6 +177,53 @@ struct RuntimeService: Sendable {
                 "--agent-id", agentID,
                 "--skill-id", skillID
             ], as: UnbindSkillResponse.self)
+        }, scenarioList: {
+            try await decodeCommand([
+                "scenario-list", "--database", try databaseURL().path
+            ], as: [ScenarioSummary].self)
+        }, scenarioPropose: { objective, key in
+            let input = try JSONSerialization.data(withJSONObject: [
+                "objective": objective,
+                "constraints": ["Phase 1 固定串行执行"],
+                "overall_acceptance_criteria": ["最终交付物引用全部上游 verified Deliverable"],
+            ])
+            let layout = try runtimeLayout()
+            return try await decodeCommand([
+                "scenario-propose",
+                "--repository-root", layout.resourceRoot.path,
+                "--database", try databaseURL().path,
+                "--input-json", String(decoding: input, as: UTF8.self),
+            ], environment: ["DEEPSEEK_API_KEY": key], as: ScenarioProposalResponse.self)
+        }, scenarioSave: { scenarioID, source, proposal in
+            let payload = String(decoding: try JSONEncoder().encode(proposal), as: UTF8.self)
+            return try await decodeCommand([
+                "scenario-save", "--database", try databaseURL().path,
+                "--scenario-id", scenarioID, "--source", source,
+                "--input-json", payload, "--confirmed",
+            ], as: ScenarioSaved.self)
+        }, businessFlowPlan: { scenarioID in
+            try await decodeCommand([
+                "business-flow-plan", "--database", try databaseURL().path,
+                "--scenario-id", scenarioID,
+            ], as: BusinessFlowPlan.self)
+        }, businessFlowStart: { flowID, scenarioID, planHash in
+            try await decodeCommand([
+                "business-flow-start", "--database", try databaseURL().path,
+                "--flow-id", flowID, "--scenario-id", scenarioID,
+                "--plan-hash", planHash,
+            ], as: BusinessFlowProjection.self)
+        }, businessFlowList: {
+            try await decodeCommand([
+                "business-flow-list", "--database", try databaseURL().path,
+            ], as: [BusinessFlowProjection].self)
+        }, businessFlowContinue: { flowID, key in
+            let layout = try runtimeLayout()
+            return try await decodeCommand([
+                "business-flow-continue",
+                "--repository-root", layout.resourceRoot.path,
+                "--database", try databaseURL().path,
+                "--flow-id", flowID,
+            ], environment: key.map { ["DEEPSEEK_API_KEY": $0] } ?? [:], as: BusinessFlowContinueResponse.self)
         })
     }
 

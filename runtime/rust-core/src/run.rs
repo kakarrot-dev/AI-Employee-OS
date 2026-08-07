@@ -27,6 +27,7 @@ pub struct RunSkillConfig<'a> {
     pub input: Value,
     pub conversation_id: Option<&'a str>,
     pub capability_mode: bool,
+    pub existing_task_id: Option<&'a str>,
 }
 
 pub struct ContinueRunConfig<'a> {
@@ -70,6 +71,39 @@ pub fn run_agent(
         input,
         conversation_id,
         capability_mode: true,
+        existing_task_id: None,
+    })
+}
+
+pub fn run_existing_agent_task(
+    connection: &mut Connection,
+    repository_root: &Path,
+    python: &Path,
+    task_id: &str,
+) -> Result<Value, String> {
+    let (agent_id, input, status): (String, String, String) = connection
+        .query_row(
+            "SELECT agent_id,input,status FROM tasks WHERE id=?1 AND parent_task_id IS NOT NULL",
+            [task_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|_| "existing_task_not_found".to_owned())?;
+    if status != "pending" {
+        return Err("existing_task_not_dispatchable".into());
+    }
+    let input: Value = serde_json::from_str(&input).map_err(|_| "task_input_invalid")?;
+    let skills = crate::skill_resolver::ready_skill_ids(connection, &agent_id)?;
+    let first = skills.first().ok_or("capability_not_found")?.clone();
+    run_skill(RunSkillConfig {
+        connection,
+        repository_root,
+        python,
+        agent_id: &agent_id,
+        skill_id: &first,
+        input,
+        conversation_id: None,
+        capability_mode: true,
+        existing_task_id: Some(task_id),
     })
 }
 
@@ -1014,7 +1048,10 @@ fn lock_run(config: &mut RunSkillConfig<'_>, now: &str) -> Result<LockedRun, Str
     if !matches!(execution["mode"].as_str(), Some("agent_loop" | "workflow")) {
         return Err("runtime_incompatible: unsupported execution mode".to_owned());
     }
-    let task_id = format!("task_{}", nonce());
+    let task_id = config
+        .existing_task_id
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("task_{}", nonce()));
     let run_id = format!("run_{}", nonce());
     let max_duration_ms = execution["max_duration_ms"].as_i64().unwrap_or(120_000);
     let deadline = (timestamp_seconds() + (max_duration_ms / 1000).max(1) as u64).to_string();
@@ -1022,11 +1059,24 @@ fn lock_run(config: &mut RunSkillConfig<'_>, now: &str) -> Result<LockedRun, Str
         .connection
         .transaction()
         .map_err(|error| error.to_string())?;
-    tx.execute(
-        "INSERT INTO tasks VALUES (?1,?2,?3,'running',?4,?4)",
-        params![task_id, config.agent_id, config.input.to_string(), now],
-    )
-    .map_err(|error| error.to_string())?;
+    if config.existing_task_id.is_some() {
+        let changed = tx
+            .execute(
+                "UPDATE tasks SET status='running',updated_at=?1
+             WHERE id=?2 AND agent_id=?3 AND status='pending' AND parent_task_id IS NOT NULL",
+                params![now, task_id, config.agent_id],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("existing_task_not_dispatchable".into());
+        }
+    } else {
+        tx.execute(
+            "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES (?1,?2,?3,'running',?4,?4)",
+            params![task_id, config.agent_id, config.input.to_string(), now],
+        )
+        .map_err(|error| error.to_string())?;
+    }
     tx.execute(
         "INSERT INTO agent_runs(id,task_id,schema_version,phase,revision,model_turns_used,tool_calls_used,max_model_turns,max_tool_calls,deadline,created_at,updated_at)
          VALUES (?1,?2,'1.0.0','preflight',1,0,0,?3,?4,?5,?6,?6)",

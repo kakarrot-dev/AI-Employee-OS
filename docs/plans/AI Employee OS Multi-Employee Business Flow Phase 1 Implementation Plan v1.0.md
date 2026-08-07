@@ -1,18 +1,21 @@
 # AI Employee OS Multi-Employee Business Flow Phase 1 Implementation Plan v1.0
 
 > 文档类型：可执行实施计划
-> 状态：Draft for approval；未授权编码
+> 状态：Implemented / Release Candidate（2026-08-07）；Phase 1A → 1B → 1C → 1D 已实施并通过本地确定性门禁。真实 DeepSeek / Exa 多员工端到端仍属于明确未验证边界。
 > 日期：2026-08-07
 > 目标规范：`docs/AI Employee OS Multi-Employee Business Flow Specification v1.0.md`
 > 前置决策：ADR-034 Accepted；ADR-017 Superseded
-> 实施范围：Phase 1 显式两员工顺序协作，不包含 Phase 2–4
+> 实施范围：Phase 1 场景定义、AI/手工草案、用户确认和串行 DAG 执行，不包含并行及运行中自主重排
 
 ## 1. 交付目标
 
-交付一个可从 CLI 和 macOS Work Library 使用的多员工顺序业务流：
+交付独立「场景库（暂定）」以及可从 CLI 和 macOS 使用的多员工业务流。用户可以手工配置场景，也可以让受限 AI 场景协调器生成草案；确认后的场景以不可变版本启动运行：
 
 ```text
-User confirms normalized plan
+User goal ──> Manual Draft or AI Coordinator Proposal
+        |
+        v
+Rust validates ──> User confirms Scenario Version
         |
         v
 Root Task / Business Flow
@@ -32,13 +35,13 @@ Finalization WorkOrder / Coordinator Child Task
 Root verified Deliverable / Root Task succeeded
 ```
 
-Phase 1 固定并发 1，员工和 WorkOrder 由用户显式指定。Root Task 不创建 AgentRun；三个 Child Task 复用现有 Generic Run Kernel。私人 Conversation、Employee Memory、权限和 Tool surface 继续隔离。
+Phase 1 固定并发 1，允许包含分支的有向无环节点图；Rust 按依赖满足后的稳定顺序执行。AI 可以建议员工和节点，但用户必须确认最终分配、权限、预算和验收。Root Task 不创建 AgentRun，每个节点的 Child Task 复用现有 Generic Run Kernel。私人 Conversation、Employee Memory、权限和 Tool surface 继续隔离。
 
 ## 2. 明确不做
 
-- 不实现业务流模板安装、并行、Reviewer、自动返工或智能员工分配。
+- 不实现并行、Reviewer 自动返工、运行中自主增删节点、无需确认的智能分配或递归委派。
 - 不修改 Python Worker 协议，不增加 Worker-to-Worker 调用。
-- 不增加新 AppDestination；入口仍位于 Work Library。
+- 不实现自由画布；首版使用节点列表和依赖选择器。
 - 不把 Business Flow 写入员工私人 Conversation 时间线。
 - 不新增 WorkOrder status、第二套 Task/Action/Event/Approval/Audit 状态源。
 - 不引入 LangGraph、Deep Agents、消息队列、Cloud Sync 或 Marketplace。
@@ -77,7 +80,7 @@ git diff -- runtime/rust-core/src/main.rs \
 
 - Root/Child Task 状态只允许 `pending | running | succeeded | failed | cancelled`。
 - Action 状态只允许 `pending | running | succeeded | failed | blocked | result_unknown | cancelled`。
-- Root Task 不创建 AgentRun；Child Task 一对一属于 WorkOrder并使用 Generic Run Kernel。
+- Root Task 不创建 AgentRun；Child Task 一对一属于 WorkOrder 并使用 Generic Run Kernel。
 - WorkOrder UI 状态只从 Child Task/Run/Action/Handoff 派生。
 - 所有 Tool 调用经过 Rust ToolExecutor；Python 不执行 Tool、不读 SQLite。
 - 下游只有在上游 Child succeeded、Deliverable verified、Handoff accepted 后才能启动。
@@ -92,8 +95,8 @@ git diff -- runtime/rust-core/src/main.rs \
 四个实施阶段均必须保持 `./scripts/check.sh` 绿色并可独立合并：
 
 1. Contract + Storage Foundation：冻结机器边界和可重放持久化；产品入口不变。
-2. Runtime CLI Vertical Slice：提供可用的本地 CLI `A → B → Finalization`。
-3. macOS Work Library：把已验证 CLI 能力暴露为原生连续工作区。
+2. Runtime CLI Vertical Slice：提供可用的本地串行 DAG CLI；`A → B → Finalization` 作为标准验收样例。
+3. macOS Scenario Library：增加独立主导航、场景编辑与运行工作区。
 4. Recovery/Eval/Docs Gate：完成崩溃、取消、隔离、E2E 和下游文档同步，形成 Phase 1 RC。
 
 每阶段一个单一目的提交；任一阶段未完成时，之前阶段仍安全可用，后续阶段不成为前一阶段正确性的前提。
@@ -133,6 +136,9 @@ git diff -- runtime/rust-core/src/main.rs \
 
 新增：
 
+- `contracts/scenario-proposal.schema.json`
+- `contracts/scenario-definition.schema.json`
+- `contracts/scenario-validation.schema.json`
 - `contracts/business-flow-plan.schema.json`
 - `contracts/business-flow-status.schema.json`
 - `contracts/work-order.schema.json`
@@ -182,7 +188,7 @@ git diff -- runtime/rust-core/src/main.rs \
 Migration 必须：
 
 1. `ALTER TABLE tasks ADD COLUMN parent_task_id TEXT REFERENCES tasks(id) ON DELETE RESTRICT CHECK (parent_task_id IS NULL OR parent_task_id != id)`。
-2. 创建 `business_flows`、`business_flow_participants`、`work_orders`、`work_order_dependencies`、`handoffs`、`shared_context_refs`。
+2. 创建 `scenario_definitions`、`scenario_versions`、`scenario_nodes`、`scenario_edges`、`business_flows`、`business_flow_participants`、`work_orders`、`work_order_dependencies`、`handoffs`、`shared_context_refs`。
 3. 使用 CHECK 固定 role、failure policy、handoff acceptance、source type、sensitivity、revision 和 required boolean。
 4. 使用 UNIQUE 固定 Root/Flow、Child/WorkOrder、Handoff source-target-deliverable、Flow/source/hash 幂等关系。
 5. 创建 `tasks(parent_task_id,status,created_at)`、Flow Root、WorkOrder Flow/Child/Assignee、Dependency successor、Handoff target/acceptance、SharedRef Flow/source 索引。
@@ -210,10 +216,11 @@ Migration 必须：
 
 `business_flow.rs` 只包含：
 
+- `ScenarioProposal`、`ScenarioDefinition`、`ScenarioVersion`、`ScenarioNodeSpec`、`ScenarioEdgeSpec`；
 - `BusinessFlowPlanRequest`、`NormalizedBusinessFlowPlan`、`FlowBudget`；
 - `WorkOrderSpec`、`AcceptanceCriterion`、`SharedContextRefSpec`；
 - `WorkOrderProjectionStatus`、`HandoffAcceptance`、`FailurePolicy`；
-- 严格反序列化、hard-limit、线性依赖、预算和 ID 校验；
+- 严格反序列化、hard-limit、DAG、预算和 ID 校验；
 - canonical JSON 序列化与 SHA-256 `plan_hash`；
 - 不访问数据库、不启动 Task、不调用模型或 Tool。
 
@@ -239,13 +246,14 @@ git diff --check
 
 ### 7.1 独立价值
 
-无需 Swift UI，即可通过本地 CLI 运行、查看、取消和恢复 `A → B → Finalization`；这是 Phase 1 的首个完整可执行产品面。
+无需 Swift UI，即可通过本地 CLI 生成或手工保存场景、校验版本，并运行、查看、取消和恢复串行 DAG；这是 Phase 1 的首个完整可执行产品面。
 
 ### 7.2 Persistence / Scheduler Service
 
 新增：
 
 - `runtime/rust-core/src/business_flow_service.rs`
+- `runtime/python-agent/app/scenario_coordinator.py`
 
 修改：
 
@@ -257,12 +265,14 @@ git diff --check
 
 `business_flow_service.rs` 负责：
 
+- `validate_scenario`：严格验证手工草案或 AI 提案，生成 canonical JSON 和 Hash；
+- `save_scenario`：在用户确认后幂等保存不可变版本；
 - `plan_flow`：读取 Agent/readiness/SharedRef 元数据，返回 normalized plan/hash/expiry，无写入；
-- `start_flow`：Immediate transaction 创建 Root/Flow/Participant/三个 Child/三个 WorkOrder/Dependencies/SharedRefs/Audit/Root Event；
+- `start_flow`：Immediate transaction 按 Scenario Version 创建 Root/Flow/Participants、每节点 Child/WorkOrder、Dependencies/SharedRefs/Audit/Root Event；
 - `project_flow`：从 Root/Child/Run/Action/Handoff 派生 WorkOrder projection；
 - `advance_flow`：幂等选择唯一 ready WorkOrder，Phase 1 并发固定 1；
 - `accept_handoff`：验证 Deliverable、Evidence、Artifact Hash、sensitivity、allowed agents、目标 input schema；
-- `complete_root`：Finalization verified 后创建 Root Deliverable 并收敛 Root Task；
+- `complete_root`：Finalization verified 后创建 `business_flow_outputs` Root 输出绑定并收敛 Root Task；
 - `cancel_root`：向未终结 Child 写 cancellation request，取消未启动 Child；
 - `recover_flows`：从 Child/Checkpoint/Handoff 唯一键恢复，不根据 Message/UI 推断。
 
@@ -270,7 +280,7 @@ git diff --check
 
 - 新增 `create_child(id, parent_task_id, agent_id, input, now)`；
 - 新增仅供 Rust Orchestrator 使用的 `start_root_without_snapshot`，只允许 `business_flows.root_task_id` 对应 Root；
-- 新增 Root completion gate：三个 Child succeeded、三个 Deliverable verified、Handoff accepted、Root Deliverable verified；
+- 新增 Root completion gate：所有必需 Child succeeded、Deliverable verified、Handoff accepted、Root 输出绑定已指向 Finalization verified Deliverable；
 - 不放宽普通 Task 的 Snapshot/Evaluation 要求。
 
 ### 7.3 Generic Run 接入
@@ -291,6 +301,8 @@ git diff --check
 
 禁止在 `run.rs` 硬编码员工 ID、业务主题、Skill ID 或 A/B 文案。
 
+`scenario_coordinator.py` 只接收 Rust 提供的目标、约束和最小员工能力目录，返回 `ScenarioProposal`。它不能访问 SQLite、调用 Tool、启动 Child Task、读取私人 Conversation/Memory 或生成安全字段。Rust 对提案执行与手工草案相同的 Schema、DAG、员工、Capability、权限和预算校验。
+
 ### 7.4 CLI
 
 修改：
@@ -300,6 +312,12 @@ git diff --check
 新增命令：
 
 ```text
+scenario-list
+scenario-get
+scenario-propose
+scenario-validate
+scenario-save
+scenario-disable
 business-flow-plan
 business-flow-start
 business-flow-status
@@ -314,7 +332,7 @@ recover-runtime
 resolve-action-result
 ```
 
-参数与响应严格按 Spec；stdout 只输出一个 JSON 或 NDJSON 流，诊断写 stderr。`plan`/`status` 不要求 API Key；`start`/继续 Child Run 只从受控环境读取 `DEEPSEEK_API_KEY`。
+参数与响应严格按 Spec；stdout 只输出一个 JSON 或 NDJSON 流，诊断写 stderr。`scenario-propose`、`start` 和继续 Child Run 只从受控环境读取 `DEEPSEEK_API_KEY`；手工场景 CRUD、validate、plan 和 status 不要求 API Key。
 
 幂等：
 
@@ -345,6 +363,10 @@ Audit 写入 Flow 创建、分配、SharedRef、Handoff、取消传播、人工�
 Rust 单测放入 `business_flow_service.rs` 与现有相关模块，覆盖：
 
 - plan 无写入、无模型/Tool；
+- AI proposal 未确认前无 Scenario Version、Task、Action 或 ToolExecution；
+- 手工草案与 AI 草案产生同一种 canonical Scenario Version；
+- 修改已运行场景创建新版本，历史 Flow 的 scenario hash 不变；
+- AI 提案中的依赖环、未知员工、越权 Context 和超预算在保存前拒绝；
 - start 原子性与重复 key；
 - A 未 verified 时 B 无 AgentRun；
 - verified A → accepted Handoff → B ready；
@@ -380,7 +402,7 @@ python3 scripts/check_contracts.py
 git diff --check
 ```
 
-手动 CLI 验收使用临时数据库和仓库 Runtime binary，按 `plan → start → status → recover → status` 执行；保存 Flow/Root/Child/Handoff/Artifact ID 作为实施证据。
+手动 CLI 验收使用临时数据库和仓库 Runtime binary，分别执行 `scenario-propose → validate → save → plan → start → status` 与 `manual draft → validate → save → start`，然后执行 recover/status；保存 Scenario Version/Flow/Root/Child/Handoff/Artifact ID 作为实施证据。
 
 提交范围：Rust Service/Task/Run/Main/Event/Context/Recovery、runtime-event contract、业务流脚本；不包含 Swift。
 
@@ -388,18 +410,20 @@ git diff --check
 
 ---
 
-## 8. Phase 1C：macOS Work Library
+## 8. Phase 1C：macOS Scenario Library
 
 ### 8.1 独立价值
 
-用户无需 Terminal 即可规划、确认、运行、查看和取消业务流；现有员工私人聊天与单员工工作继续可用。
+用户无需 Terminal 即可用 AI 或手工方式创建场景、确认版本、启动运行，并在工作库查看运行记录；现有员工私人聊天与单员工工作继续可用。
 
 ### 8.2 Models / Service
 
 新增：
 
 - `apps/macos/AIEmployee/Sources/AIEmployee/Models/BusinessFlow.swift`
+- `apps/macos/AIEmployee/Sources/AIEmployee/Models/ScenarioDefinition.swift`
 - `apps/macos/AIEmployee/Sources/AIEmployee/Stores/BusinessFlowStore.swift`
+- `apps/macos/AIEmployee/Sources/AIEmployee/Stores/ScenarioStore.swift`
 
 修改：
 
@@ -410,7 +434,7 @@ git diff --check
 
 `RuntimeService` 新增四个 CLI closure；`plan`/`status` 不注入 Key，`start`/continue 只注入 Keychain Key；stderr 仍通过 RuntimeError 投影。
 
-`BusinessFlowStore` 单独持有：
+当前最小实现由 `ScenarioStore` 同时持有 Scenario 与 Business Flow 聚合投影，职责仍按字段和 Runtime closure 分离，避免为 Phase 1 引入无调用收益的第二个 Store。它持有：
 
 - Flow 列表和当前 Flow；
 - 创建草案、plan preview、plan hash/expiry；
@@ -420,10 +444,15 @@ git diff --check
 
 禁止复用 `ConversationStore.messages` 或把 Flow 状态写入 `TaskStore.runs` 作为事实源；TaskStore 可继续显示 Child Task 历史，但 BusinessFlowStore 通过 `business-flow-status` 读取聚合投影。
 
+`ScenarioStore` 持有列表、当前定义、草案、校验结果和保存状态。草案可以来自手工编辑或 AI 提案，但保存和启动必须分别经过用户确认；Store 不自行判断 DAG、readiness、权限或预算是否合法。
+
 ### 8.3 Views
 
 新增：
 
+- `apps/macos/AIEmployee/Sources/AIEmployee/Views/Scenario/ScenarioLibraryView.swift`
+- `apps/macos/AIEmployee/Sources/AIEmployee/Views/Scenario/ScenarioEditorView.swift`
+- `apps/macos/AIEmployee/Sources/AIEmployee/Views/Scenario/ScenarioProposalView.swift`
 - `apps/macos/AIEmployee/Sources/AIEmployee/Views/BusinessFlow/BusinessFlowCreationView.swift`
 - `apps/macos/AIEmployee/Sources/AIEmployee/Views/BusinessFlow/BusinessFlowWorkspaceView.swift`
 - `apps/macos/AIEmployee/Sources/AIEmployee/Views/BusinessFlow/BusinessFlowTimelineView.swift`
@@ -432,19 +461,22 @@ git diff --check
 修改：
 
 - `apps/macos/AIEmployee/Sources/AIEmployee/Views/ContentView.swift`
+- `apps/macos/AIEmployee/Sources/AIEmployee/Models/AppDestination.swift`
+- `apps/macos/AIEmployee/Sources/AIEmployee/Views/AppShell/ModuleRailView.swift`
 - `apps/macos/AIEmployee/Sources/AIEmployee/Views/EmployeeChat/EmployeeChatWorkspaceView.swift`
 - `apps/macos/AIEmployee/Sources/AIEmployee/Views/AppShell/ContextSidebarView.swift`
 - `apps/macos/AIEmployee/Sources/AIEmployee/Views/CommandPaletteView.swift`
 
 交互：
 
-1. Work Library 左侧分成“员工会话”和“业务流”两个 Section，不增加主导航。
-2. “新建业务流”打开创建 Sheet：目标/总验收/预算、Coordinator、A、B、Capability、输入、验收、WorkOrder budget。
-3. 先 plan；展示 readiness、风险、预算、线性依赖；只有无 blocking issue 且 Keychain 可用时允许 start。
-4. Workspace 使用连续时间线：A → Handoff → B → Handoff → Finalization；不做卡片仪表盘。
-5. Inspector 只展示当前 WorkOrder 的 Action、Evidence、Approval、Artifact、失败恢复。
-6. Root cancel 使用现有危险操作确认；不提供删除 Flow。
-7. 员工聊天时间线继续只按 employee/conversation 过滤，不渲染 Flow Child Task。
+1. 新增 `AppDestination.scenes`，用户可见标题为「场景库（暂定）」，位于工作库和知识库之间。
+2. 场景库以主区域页面承载创建与配置，不使用 Sheet；编辑页使用「业务 SOP」「节点配置」「校验与启动」三个页签。用户先写 Markdown SOP，再选择让 AI 基于 SOP 组织节点或手工配置节点。
+3. 节点编辑器使用列表、依赖选择器和 Inspector，配置目标、员工、Capability、输入、验收、预算与失败策略；不做自由画布。
+4. 保存前执行 scenario validate；启动前执行 business-flow plan。只有无 blocking issue、用户已确认且所需 Keychain Key 可用时允许相应操作。
+5. 工作库展示 Flow 运行记录；Workspace 使用连续时间线展示依赖、Handoff 和 Finalization，不做卡片仪表盘。
+6. Inspector 只展示当前 WorkOrder 的 Action、Evidence、Approval、Artifact、失败恢复。
+7. Root cancel 使用现有危险操作确认；不提供删除 Flow。
+8. 员工聊天时间线继续只按 employee/conversation 过滤，不渲染 Flow Child Task。
 
 UI 状态：
 
@@ -469,8 +501,9 @@ UI 状态：
 
 检查：
 
-- AppDestination 数量不变化；
-- Flow 与员工会话是 Work Library 内不同 Section；
+- AppDestination 新增且只新增 `.scenes`，顺序为工作库、场景库、知识库；
+- 场景定义与 Flow 运行实例分属场景库和工作库；
+- AI 提案和手工草案复用同一编辑器与保存契约；
 - BusinessFlow models 解码 valid payload、拒绝未知 enum/version；
 - timeline 只使用 `flow.workOrders`，不使用全局 `TaskStore.runs`；
 - Conversation timeline 继续使用 employee+conversation 过滤；
@@ -491,7 +524,7 @@ git diff --check
 真实 UI 验收：
 
 1. 保修员工等无 Conversation 员工仍显示空私人聊天；
-2. 业务流只在“业务流”Section 出现；
+2. 场景定义只在场景库出现，运行实例只在工作库出现；
 3. A/B/Finalization 状态与 SQLite/CLI status 一致；
 4. 切换 Flow/员工不会显示上一个对象的消息、WorkOrder 或 streaming state；
 5. 重启 App 后恢复当前 Flow 与 Root cursor；
@@ -499,7 +532,7 @@ git diff --check
 
 提交范围：BusinessFlow Swift model/store/views、必要的现有 Swift 调用方、design-system 和客户端检查；不重构无关页面。
 
-回滚：隐藏 Work Library Flow Section；CLI/历史数据继续可用，不删除本地 Flow。
+回滚：隐藏场景库的新建与 AI 提案入口，保留历史场景和 Flow 只读；CLI/status/cancel 继续可用，不删除本地数据。
 
 ---
 
@@ -573,7 +606,7 @@ python3 scripts/check_business_flow_ui.py
 - 错误/恢复/取消；
 - 已验证证据和未验证边界；
 - 回滚为只读、不得删除 Audit/Artifact；
-- Phase 2–4 仍未实现。
+- Phase 2 至 4 仍未实现。
 
 更新 `README.md` 仅在当前 README 已包含产品能力表时添加 Phase 1 状态；不得提前宣称并行、自动分配或员工群聊。
 
@@ -605,6 +638,9 @@ git status --short --branch -uall
 
 ### Documents / Contracts
 
+- `contracts/scenario-proposal.schema.json`
+- `contracts/scenario-definition.schema.json`
+- `contracts/scenario-validation.schema.json`
 - `contracts/business-flow-plan.schema.json`
 - `contracts/business-flow-status.schema.json`
 - `contracts/work-order.schema.json`
@@ -621,6 +657,11 @@ git status --short --branch -uall
 
 ### Swift
 
+- `apps/macos/AIEmployee/Sources/AIEmployee/Models/ScenarioDefinition.swift`
+- `apps/macos/AIEmployee/Sources/AIEmployee/Stores/ScenarioStore.swift`
+- `apps/macos/AIEmployee/Sources/AIEmployee/Views/Scenario/ScenarioLibraryView.swift`
+- `apps/macos/AIEmployee/Sources/AIEmployee/Views/Scenario/ScenarioEditorView.swift`
+- `apps/macos/AIEmployee/Sources/AIEmployee/Views/Scenario/ScenarioProposalView.swift`
 - `apps/macos/AIEmployee/Sources/AIEmployee/Models/BusinessFlow.swift`
 - `apps/macos/AIEmployee/Sources/AIEmployee/Stores/BusinessFlowStore.swift`
 - `apps/macos/AIEmployee/Sources/AIEmployee/Views/BusinessFlow/BusinessFlowCreationView.swift`
@@ -648,9 +689,12 @@ git status --short --branch -uall
 - `runtime/rust-core/src/recovery.rs`
 - `runtime/rust-core/src/run.rs`
 - `runtime/rust-core/src/main.rs`
+- `runtime/python-agent/app/scenario_coordinator.py`
 - `apps/macos/AIEmployee/Sources/AIEmployee/Services/RuntimeService.swift`
 - `apps/macos/AIEmployee/Sources/AIEmployee/App/AIEmployeeApp.swift`
 - `apps/macos/AIEmployee/Sources/AIEmployee/Views/ContentView.swift`
+- `apps/macos/AIEmployee/Sources/AIEmployee/Models/AppDestination.swift`
+- `apps/macos/AIEmployee/Sources/AIEmployee/Views/AppShell/ModuleRailView.swift`
 - `apps/macos/AIEmployee/Sources/AIEmployee/Views/EmployeeChat/EmployeeChatWorkspaceView.swift`
 - `apps/macos/AIEmployee/Sources/AIEmployee/Views/AppShell/ContextSidebarView.swift`
 - `apps/macos/AIEmployee/Sources/AIEmployee/Views/CommandPaletteView.swift`
@@ -665,7 +709,7 @@ git status --short --branch -uall
 
 1. `feat(runtime): add business flow contracts and storage foundation`
 2. `feat(runtime): add persisted sequential business flow CLI`
-3. `feat(macos): add multi-employee flow workspace`
+3. `feat(macos): add scenario library and flow workspace`
 4. `test(runtime): gate business flow recovery and isolation`
 
 每次提交前：
@@ -687,9 +731,9 @@ git diff --cached --check
 - 需要新增 WorkOrder status、第二套 Event/Approval/Audit；
 - Handoff 必须复制私人 Conversation、Memory 或完整 ToolResult 才能运行；
 - Generic Run 不能在不硬编码 Skill/员工/业务场景的情况下执行 Child；
-- Migration 需要修改 001–013；
+- Migration 需要修改 001 至 013；
 - UI 需要用本地状态覆盖 Runtime canonical 状态；
-- Phase 1 必须依赖并行、Reviewer 或自动分配才可使用；
+- Phase 1 必须依赖并行、Reviewer、无需确认的自动分配或运行中自主改图才可使用；
 - 真实副作用无法建立幂等键、明确超时和可验证结果。
 
 ## 14. 实施完成定义
@@ -701,10 +745,10 @@ Phase 1 只有在以下全部成立时完成：
 - CLI `plan/start/status/continue/cancel/recover` 可运行；
 - A → Handoff → B → Handoff → Finalization → Root verified 全链通过；
 - restart/cancel/result_unknown/approval/idempotency/预算/隔离通过；
-- macOS Work Library 可创建和查看 Flow，私人聊天无串流；
+- macOS 场景库可通过 AI 或手工方式创建同契约场景，工作库可查看 Flow，私人聊天无串流；
 - `./scripts/check.sh`、Swift build、真实 App 验收通过；
 - release 文档如实区分 Fake external service 与真实网络未验证项；
-- 未实现 Phase 2–4，且没有以隐藏入口或业务硬编码提前加入。
+- 未实现 Phase 2 至 4，且没有以隐藏入口或业务硬编码提前加入。
 
 ## 15. 下一步授权边界
 

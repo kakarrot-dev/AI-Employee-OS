@@ -115,7 +115,7 @@ required_capabilities[]
 dependency_ids[]
 deadline_at?
 budget
-failure_policy       stop | ask_user | continue_independent
+failure_policy       stop | ask_user
 created_at
 ```
 

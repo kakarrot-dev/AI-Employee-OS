@@ -110,7 +110,7 @@ mod tests {
         connection.execute("INSERT OR IGNORE INTO tools VALUES ('tool','tool','native','1.0.0','{}','active','t','t')", []).unwrap();
         connection
             .execute(
-                "INSERT OR IGNORE INTO tasks VALUES ('task','alex','input','running','t','t')",
+                "INSERT OR IGNORE INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','alex','input','running','t','t')",
                 [],
             )
             .unwrap();

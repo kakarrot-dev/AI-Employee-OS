@@ -1155,3 +1155,8 @@ Performance
     
 7. Observability & Evaluation ✅
     
+# Business Flow Observability
+
+Root Task 维护单调 Runtime Event 时间线，覆盖 Flow 创建/启动/完成、WorkOrder ready/started/completed、Handoff created/accepted/rejected、waiting_user、verification_required、failed 与 cancel_requested。Root Event 只含 ID、稳定 reason code、非敏感摘要和 Hash，不复制 Child 完整事件。
+
+Eval 从 Root 输出绑定反查 Finalization Deliverable、上游 Handoff、Child Deliverable/Evidence、Artifact Hash 和 ToolExecution。自动化门禁必须分别报告 Fake Decision、Fake external service、真实 App UI 与未验证真实外部服务。

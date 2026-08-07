@@ -1227,3 +1227,6 @@ Dynamic Retrieval
 Evaluation Feedback Loop
 
 ```
+# Business Flow 与 Memory 隔离
+
+员工私人 Conversation 与 Employee Memory 不因共同参与 Flow 而共享。下游 Context 只能出现用户显式共享且授权的 SharedContextRef，或 Rust 接受的 `deliverable:<id>` Handoff 引用。模型摘要、消息文本和 UI 状态不能作为恢复或授权事实。

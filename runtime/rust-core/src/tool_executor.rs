@@ -1258,7 +1258,7 @@ mod tests {
             )
             .unwrap();
         connection.execute(
-            "INSERT INTO tasks VALUES ('task_1', 'ai-product-manager', 'test', 'running', ?1, ?1)",
+            "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task_1', 'ai-product-manager', 'test', 'running', ?1, ?1)",
             [now],
         ).unwrap();
         connection.execute(

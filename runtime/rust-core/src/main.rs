@@ -9,6 +9,12 @@ use std::{
 const WAITING_APPROVAL_MESSAGE: &str = "执行已暂停，等待你批准所需权限。";
 
 use ai_employee_runtime::agent::install_agent_package;
+use ai_employee_runtime::business_flow::ScenarioProposal;
+use ai_employee_runtime::business_flow_service::{
+    advance_after_child_success, disable_scenario, get_scenario, list_business_flows,
+    list_scenarios, next_ready_work_order, project_business_flow, record_work_order_started,
+    save_scenario, settle_failed_work_order, start_business_flow, validate_scenario,
+};
 use ai_employee_runtime::employee_prompt::{
     compile_effective_prompt, legacy_mission_from_base_prompt,
 };
@@ -18,7 +24,7 @@ use ai_employee_runtime::recovery::reconcile_interrupted;
 use ai_employee_runtime::run::{
     ContinueRunConfig, RunSkillConfig, continue_after_verified_action, continue_run as resume_run,
     continue_with_user_input, resolve_unknown_action, run_agent as execute_agent,
-    run_skill as execute_skill,
+    run_existing_agent_task, run_skill as execute_skill,
 };
 use ai_employee_runtime::skill_package::install_skill_package;
 use ai_employee_runtime::skill_resolver::readiness as skill_readiness;
@@ -73,8 +79,416 @@ fn command() -> Result<serde_json::Value, String> {
         Some("usage-summary") => usage_summary(arguments),
         Some("cancel-task") => cancel_task(arguments),
         Some("events") => list_events(arguments),
+        Some("scenario-list") => scenario_list(arguments),
+        Some("scenario-propose") => scenario_propose(arguments),
+        Some("scenario-get") => scenario_get(arguments),
+        Some("scenario-validate") => scenario_validate(arguments),
+        Some("scenario-save") => scenario_save(arguments),
+        Some("scenario-disable") => scenario_disable(arguments),
+        Some("business-flow-start") => business_flow_start(arguments),
+        Some("business-flow-plan") => business_flow_plan(arguments),
+        Some("business-flow-status") => business_flow_status(arguments),
+        Some("business-flow-list") => business_flow_list(arguments),
+        Some("business-flow-continue") => business_flow_continue(arguments),
         _ => Err(usage()),
     }
+}
+
+fn business_flow_list(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            _ => return Err(usage()),
+        }
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    serde_json::to_value(list_business_flows(&connection)?).map_err(|e| e.to_string())
+}
+
+fn business_flow_continue(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    let mut repository_root = None;
+    let mut flow_id = None;
+    let mut python = PathBuf::from("python3");
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--repository-root" => repository_root = arguments.next().map(PathBuf::from),
+            "--flow-id" => flow_id = arguments.next(),
+            "--python" => python = PathBuf::from(arguments.next().ok_or_else(usage)?),
+            _ => return Err(usage()),
+        }
+    }
+    let flow_id = flow_id.ok_or_else(usage)?;
+    let repository_root = repository_root.ok_or_else(usage)?;
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    bootstrap_packages(&mut connection, &repository_root, &now())?;
+    let ready = next_ready_work_order(&connection, &flow_id)?;
+    let Some(work_order) = ready else {
+        return serde_json::to_value(project_business_flow(&connection, &flow_id)?)
+            .map_err(|e| e.to_string());
+    };
+    record_work_order_started(&connection, &flow_id, &work_order.id, &now())?;
+    let result = run_existing_agent_task(
+        &mut connection,
+        &repository_root,
+        &python,
+        &work_order.child_task_id,
+    )?;
+    if result["status"] == "succeeded" {
+        let deliverable_id = result["deliverable_id"]
+            .as_str()
+            .ok_or("deliverable_missing")?;
+        return serde_json::to_value(advance_after_child_success(
+            &mut connection,
+            &flow_id,
+            &work_order.id,
+            deliverable_id,
+            &now(),
+        )?)
+        .map_err(|e| e.to_string());
+    }
+    if result["status"] == "failed" {
+        let projection = settle_failed_work_order(
+            &connection,
+            &flow_id,
+            &work_order.id,
+            result["reason"].as_str().unwrap_or("child_run_failed"),
+            &now(),
+        )?;
+        return Ok(json!({"flow":projection,"run":result}));
+    }
+    if result["reason"] == "result_unknown" {
+        let root_task_id = project_business_flow(&connection, &flow_id)?.root_task_id;
+        let mut event_log = ai_employee_runtime::event::EventLog::default();
+        event_log
+            .append_persisted(
+                &connection,
+                &root_task_id,
+                ai_employee_runtime::event::EventType::BusinessFlowVerificationRequired,
+                &now(),
+                json!({"work_order_id":work_order.id,"reason":"result_unknown"}),
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(json!({"flow":project_business_flow(&connection,&flow_id)?,"run":result}))
+}
+
+fn scenario_propose(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    let mut repository_root = None;
+    let mut input_json = None;
+    let mut python = PathBuf::from("python3");
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--repository-root" => repository_root = arguments.next().map(PathBuf::from),
+            "--input-json" => input_json = arguments.next(),
+            "--python" => python = PathBuf::from(arguments.next().ok_or_else(usage)?),
+            _ => return Err(usage()),
+        }
+    }
+    let input: Value = serde_json::from_str(&input_json.ok_or_else(usage)?)
+        .map_err(|_| "scenario_proposal_input_invalid".to_owned())?;
+    let allowed = ["objective", "constraints", "overall_acceptance_criteria"];
+    let object = input.as_object().ok_or("scenario_proposal_input_invalid")?;
+    if object.keys().any(|key| !allowed.contains(&key.as_str()))
+        || !input["objective"].is_string()
+        || !input["constraints"].is_array()
+        || !input["overall_acceptance_criteria"].is_array()
+    {
+        return Err("scenario_proposal_input_invalid".into());
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    let mut statement = connection
+        .prepare(
+            "SELECT a.id, a.name FROM agents a
+             JOIN employee_profiles p ON p.agent_id=a.id
+             WHERE a.status='active' ORDER BY a.id",
+        )
+        .map_err(|error| error.to_string())?;
+    let employees = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    drop(statement);
+    let catalog = employees
+        .into_iter()
+        .filter_map(|(agent_id, display_name)| {
+            let capabilities =
+                ai_employee_runtime::skill_resolver::ready_skill_ids(&connection, &agent_id)
+                    .ok()?;
+            (!capabilities.is_empty()).then(|| {
+                json!({
+                    "agent_id":agent_id,
+                    "display_name":display_name,
+                    "ready_capabilities":capabilities
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    if catalog.is_empty() {
+        return Err("scenario_employee_catalog_empty".into());
+    }
+    let request = json!({
+        "schema_version":"1.0.0",
+        "objective":input["objective"],
+        "constraints":input["constraints"],
+        "overall_acceptance_criteria":input["overall_acceptance_criteria"],
+        "employee_catalog":catalog
+    });
+    let root = repository_root.ok_or_else(usage)?;
+    let worker_root = root.join("runtime/python-agent");
+    let mut child = Command::new(python)
+        .args(["-m", "app.scenario_coordinator"])
+        .env("PYTHONPATH", &worker_root)
+        .current_dir(&worker_root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("scenario_coordinator_disconnect:{error}"))?;
+    child
+        .stdin
+        .take()
+        .ok_or("scenario_coordinator_disconnect")?
+        .write_all(request.to_string().as_bytes())
+        .map_err(|e| e.to_string())?;
+    let output = child.wait_with_output().map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(format!(
+            "scenario_coordinator_failed:{}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let proposal: ScenarioProposal = serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("scenario_schema_invalid:{error}"))?;
+    let validated = validate_scenario(&connection, proposal)?;
+    Ok(json!({
+        "schema_version":"1.0.0",
+        "proposal":validated.proposal,
+        "proposal_hash":validated.proposal_hash,
+        "execution_order":validated.execution_order,
+        "persisted":false
+    }))
+}
+
+fn scenario_list(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            _ => return Err(usage()),
+        }
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    serde_json::to_value(list_scenarios(&connection)?).map_err(|e| e.to_string())
+}
+
+fn scenario_get(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    let mut scenario_id = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--scenario-id" => scenario_id = arguments.next(),
+            _ => return Err(usage()),
+        }
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    serde_json::to_value(get_scenario(&connection, &scenario_id.ok_or_else(usage)?)?)
+        .map_err(|e| e.to_string())
+}
+
+fn scenario_validate(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    let mut input_json = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--input-json" => input_json = arguments.next(),
+            _ => return Err(usage()),
+        }
+    }
+    let proposal: ScenarioProposal = serde_json::from_str(&input_json.ok_or_else(usage)?)
+        .map_err(|error| format!("scenario_schema_invalid:{error}"))?;
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    let validated = validate_scenario(&connection, proposal)?;
+    Ok(json!({
+        "schema_version":"1.0.0",
+        "valid":true,
+        "proposal_hash":validated.proposal_hash,
+        "issues":[],
+        "execution_order":validated.execution_order,
+        "normalized_proposal":validated.proposal
+    }))
+}
+
+fn scenario_save(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    let mut scenario_id = None;
+    let mut source = None;
+    let mut input_json = None;
+    let mut confirmed = false;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--scenario-id" => scenario_id = arguments.next(),
+            "--source" => source = arguments.next(),
+            "--input-json" => input_json = arguments.next(),
+            "--confirmed" => confirmed = true,
+            _ => return Err(usage()),
+        }
+    }
+    if !confirmed {
+        return Err("scenario_confirmation_required".into());
+    }
+    let proposal: ScenarioProposal = serde_json::from_str(&input_json.ok_or_else(usage)?)
+        .map_err(|error| format!("scenario_schema_invalid:{error}"))?;
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    let saved = save_scenario(
+        &mut connection,
+        &scenario_id.ok_or_else(usage)?,
+        &source.ok_or_else(usage)?,
+        proposal,
+        &now(),
+    )?;
+    serde_json::to_value(saved).map_err(|e| e.to_string())
+}
+
+fn scenario_disable(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    let mut scenario_id = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--scenario-id" => scenario_id = arguments.next(),
+            _ => return Err(usage()),
+        }
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    let scenario_id = scenario_id.ok_or_else(usage)?;
+    disable_scenario(&connection, &scenario_id, &now())?;
+    Ok(json!({"scenario_id":scenario_id,"status":"disabled"}))
+}
+
+fn business_flow_start(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    let mut flow_id = None;
+    let mut scenario_id = None;
+    let mut plan_hash = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--flow-id" => flow_id = arguments.next(),
+            "--scenario-id" => scenario_id = arguments.next(),
+            "--plan-hash" => plan_hash = arguments.next(),
+            _ => return Err(usage()),
+        }
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    let projection = start_business_flow(
+        &mut connection,
+        &flow_id.ok_or_else(usage)?,
+        &scenario_id.ok_or_else(usage)?,
+        &plan_hash.ok_or_else(usage)?,
+        &now(),
+    )?;
+    serde_json::to_value(projection).map_err(|e| e.to_string())
+}
+
+fn business_flow_plan(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    let mut scenario_id = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--scenario-id" => scenario_id = arguments.next(),
+            _ => return Err(usage()),
+        }
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    let scenario = get_scenario(&connection, &scenario_id.ok_or_else(usage)?)?;
+    let validated = validate_scenario(&connection, scenario.definition)?;
+    let work_orders = validated
+        .execution_order
+        .iter()
+        .map(|node_id| {
+            let node = validated
+                .proposal
+                .nodes
+                .iter()
+                .find(|node| &node.node_id == node_id)
+                .expect("validated execution order references known nodes");
+            let dependencies = validated
+                .proposal
+                .edges
+                .iter()
+                .filter(|edge| edge.required && edge.successor_node_id == *node_id)
+                .map(|edge| edge.predecessor_node_id.clone())
+                .collect::<Vec<_>>();
+            json!({
+                "node_id":node.node_id,
+                "assignee_agent_id":node.suggested_agent_id,
+                "role":node.role,
+                "dependency_ids":dependencies,
+                "budget":node.budget
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(json!({
+        "schema_version":"1.0.0",
+        "scenario_id":scenario.id,
+        "scenario_version_id":scenario.version_id,
+        "plan_hash":scenario.sha256,
+        "execution_order":validated.execution_order,
+        "work_orders":work_orders,
+        "blocking_issues":[]
+    }))
+}
+
+fn business_flow_status(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    let mut flow_id = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--flow-id" => flow_id = arguments.next(),
+            _ => return Err(usage()),
+        }
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    serde_json::to_value(project_business_flow(
+        &connection,
+        &flow_id.ok_or_else(usage)?,
+    )?)
+    .map_err(|e| e.to_string())
 }
 
 /// DeepSeek V4 Flash 官方人民币单价（CNY / million tokens）。
@@ -1809,6 +2223,59 @@ fn cancel_task(mut arguments: impl Iterator<Item = String>) -> Result<serde_json
             rusqlite::params![task_id, now],
         )
         .map_err(|error| error.to_string())?;
+    let is_flow_root: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM business_flows WHERE root_task_id=?1)",
+            [&task_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if is_flow_root {
+        transaction
+            .execute(
+                "INSERT INTO task_cancellation_requests(task_id,requested_at,acknowledged_at)
+                 SELECT id,?2,NULL FROM tasks
+                 WHERE parent_task_id=?1 AND status IN ('pending','running')
+                 ON CONFLICT(task_id) DO NOTHING",
+                rusqlite::params![task_id, now],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "UPDATE actions SET status='cancelled',updated_at=?2
+                 WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=?1)
+                   AND status IN ('pending','blocked')",
+                rusqlite::params![task_id, now],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "UPDATE approvals SET status='rejected',resolved_at=?2
+                 WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=?1)
+                   AND status='pending'",
+                rusqlite::params![task_id, now],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "UPDATE tasks SET status='cancelled',updated_at=?2
+                 WHERE parent_task_id=?1 AND status IN ('pending','running')
+                   AND NOT EXISTS(
+                     SELECT 1 FROM actions
+                     WHERE actions.task_id=tasks.id AND actions.status IN ('running','result_unknown')
+                   )",
+                rusqlite::params![task_id, now],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "UPDATE task_cancellation_requests SET acknowledged_at=?2
+                 WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=?1 AND status='cancelled')
+                   AND acknowledged_at IS NULL",
+                rusqlite::params![task_id, now],
+            )
+            .map_err(|error| error.to_string())?;
+    }
     let state: (String, bool) = transaction
         .query_row(
             "SELECT status, EXISTS(SELECT 1 FROM task_cancellation_requests WHERE task_id=tasks.id)
@@ -1822,7 +2289,9 @@ fn cancel_task(mut arguments: impl Iterator<Item = String>) -> Result<serde_json
     }
     let active_actions: i64 = transaction
         .query_row(
-            "SELECT count(*) FROM actions WHERE task_id=?1 AND status IN ('running','result_unknown')",
+            "SELECT count(*) FROM actions
+             WHERE (task_id=?1 OR task_id IN (SELECT id FROM tasks WHERE parent_task_id=?1))
+               AND status IN ('running','result_unknown')",
             [&task_id],
             |row| row.get(0),
         )
@@ -1914,7 +2383,7 @@ fn task_command_arguments(
 }
 
 fn usage() -> String {
-    "usage: ai-employee-runtime employees-list|employee-save|employee-delete|effective-prompt|capabilities|capability-readiness|skills-list|tools-list|install-tool|install-skill|bind-skill|unbind-skill|knowledge-import|knowledge-list|knowledge-search|chat-history|chat-send|chat-abort|chat-delete|run-task|run-skill|run-status|continue-run|resolve-action-result|list-tasks|usage-summary|cancel-task|events".to_owned()
+    "usage: ai-employee-runtime employees-list|employee-save|employee-delete|effective-prompt|capabilities|capability-readiness|skills-list|tools-list|install-tool|install-skill|bind-skill|unbind-skill|knowledge-import|knowledge-list|knowledge-search|chat-history|chat-send|chat-abort|chat-delete|run-task|run-skill|run-status|continue-run|resolve-action-result|list-tasks|usage-summary|cancel-task|events|scenario-list|scenario-propose|scenario-get|scenario-validate|scenario-save|scenario-disable|business-flow-plan|business-flow-start|business-flow-list|business-flow-status|business-flow-continue".to_owned()
 }
 
 fn usage_summary(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {
@@ -2071,6 +2540,7 @@ fn run_skill(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
         input,
         conversation_id: conversation_id.as_deref(),
         capability_mode: false,
+        existing_task_id: None,
     })
 }
 
@@ -2129,13 +2599,15 @@ fn continue_run(mut arguments: impl Iterator<Item = String>) -> Result<serde_jso
     let repository_root = repository_root.ok_or_else(usage)?;
     let run_id = run_id.ok_or_else(usage)?;
     if let Some(input) = input_json {
-        return continue_with_user_input(
+        let result = continue_with_user_input(
             &mut connection,
             &repository_root,
             &python,
             &run_id,
             serde_json::from_str(&input).map_err(|_| "input_schema_invalid".to_owned())?,
-        );
+        )?;
+        advance_parent_flow_if_any(&mut connection, &result)?;
+        return Ok(result);
     }
     let result = resume_run(ContinueRunConfig {
         connection: &mut connection,
@@ -2146,7 +2618,32 @@ fn continue_run(mut arguments: impl Iterator<Item = String>) -> Result<serde_jso
         approve: approve.ok_or_else(usage)?,
     })?;
     append_run_result_to_conversation(&mut connection, &run_id, &result)?;
+    advance_parent_flow_if_any(&mut connection, &result)?;
     Ok(result)
+}
+
+fn advance_parent_flow_if_any(connection: &mut Connection, result: &Value) -> Result<(), String> {
+    if result.get("status").and_then(Value::as_str) != Some("succeeded") {
+        return Ok(());
+    }
+    let Some(task_id) = result.get("task_id").and_then(Value::as_str) else {
+        return Ok(());
+    };
+    let Some(deliverable_id) = result.get("deliverable_id").and_then(Value::as_str) else {
+        return Ok(());
+    };
+    let parent: Option<(String, String)> = connection
+        .query_row(
+            "SELECT work.business_flow_id,work.id FROM work_orders work WHERE work.child_task_id=?1",
+            [task_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    if let Some((flow_id, work_order_id)) = parent {
+        advance_after_child_success(connection, &flow_id, &work_order_id, deliverable_id, &now())?;
+    }
+    Ok(())
 }
 
 fn append_run_result_to_conversation(
@@ -2303,13 +2800,10 @@ fn resolve_action_result(
     if resolved["status"] == "succeeded" {
         if let Some(root) = repository_root {
             let run_id = resolved["run_id"].as_str().ok_or("run_not_found")?;
-            return continue_after_verified_action(
-                &mut connection,
-                &root,
-                &python,
-                run_id,
-                evidence,
-            );
+            let result =
+                continue_after_verified_action(&mut connection, &root, &python, run_id, evidence)?;
+            advance_parent_flow_if_any(&mut connection, &result)?;
+            return Ok(result);
         }
     }
     Ok(resolved)
@@ -2400,6 +2894,7 @@ fn run_task(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::V
             .map_err(|_| "input_schema_invalid".to_owned())?,
         conversation_id: None,
         capability_mode: false,
+        existing_task_id: None,
     })
 }
 
@@ -2800,7 +3295,7 @@ mod tests {
             .unwrap();
         connection
             .execute(
-                "INSERT INTO tasks VALUES ('task','alex','input','running','t','t')",
+                "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','alex','input','running','t','t')",
                 [],
             )
             .unwrap();
@@ -2854,7 +3349,7 @@ mod tests {
             .unwrap();
         connection
             .execute(
-                "INSERT INTO tasks VALUES ('task','alex','input','succeeded','1','9')",
+                "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','alex','input','succeeded','1','9')",
                 [],
             )
             .unwrap();

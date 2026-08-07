@@ -131,9 +131,71 @@ def validate_eval_report(payload: dict) -> None:
         raise AssertionError("eval gate is inconsistent")
 
 
+def validate_scenario_proposal(schema: dict, payload: dict) -> None:
+    for index, node in enumerate(payload["nodes"]):
+        validate(schema["$defs"]["node"], node, f"$.nodes[{index}]")
+        validate(schema["$defs"]["budget"], node["budget"], f"$.nodes[{index}].budget")
+    for index, edge in enumerate(payload["edges"]):
+        validate(schema["$defs"]["edge"], edge, f"$.edges[{index}]")
+    node_ids = [node["node_id"] for node in payload["nodes"]]
+    if len(node_ids) != len(set(node_ids)):
+        raise AssertionError("scenario node ids must be unique")
+    known = set(node_ids)
+    dependencies = {node_id: set() for node_id in node_ids}
+    for edge in payload["edges"]:
+        predecessor = edge["predecessor_node_id"]
+        successor = edge["successor_node_id"]
+        if predecessor not in known or successor not in known or predecessor == successor:
+            raise AssertionError("scenario edge references invalid nodes")
+        dependencies[successor].add(predecessor)
+    ready = [node_id for node_id, deps in dependencies.items() if not deps]
+    visited: set[str] = set()
+    while ready:
+        current = ready.pop()
+        if current in visited:
+            continue
+        visited.add(current)
+        for node_id, deps in dependencies.items():
+            if node_id not in visited and deps <= visited:
+                ready.append(node_id)
+    if visited != known:
+        raise AssertionError("scenario dependencies must be acyclic")
+    finalization = [node for node in payload["nodes"] if node["role"] == "finalization"]
+    if len(finalization) != 1 or finalization[0]["suggested_agent_id"] != payload["coordinator_agent_id"]:
+        raise AssertionError("scenario requires one coordinator finalization node")
+
+
+def validate_business_flow_plan(schema: dict, payload: dict) -> None:
+    known = {item["node_id"] for item in payload["work_orders"]}
+    dependencies: dict[str, set[str]] = {}
+    for index, item in enumerate(payload["work_orders"]):
+        validate(schema["$defs"]["work_order"], item, f"$.work_orders[{index}]")
+        validate(schema["$defs"]["budget"], item["budget"], f"$.work_orders[{index}].budget")
+        dependencies[item["node_id"]] = set(item["dependency_ids"])
+    if known != set(payload["execution_order"]):
+        raise AssertionError("flow plan execution order must match work orders")
+    if any(not refs <= known for refs in dependencies.values()):
+        raise AssertionError("flow plan dependency references unknown node")
+    visited: set[str] = set()
+    while len(visited) < len(known):
+        ready = sorted(node for node, refs in dependencies.items() if node not in visited and refs <= visited)
+        if not ready:
+            raise AssertionError("flow plan dependency cycle")
+        visited.add(ready[0])
+
+
+def validate_work_order(payload: dict) -> None:
+    prefix = payload["business_flow_id"] + ":work:"
+    if not payload["id"].startswith(prefix):
+        raise AssertionError("work order belongs to another flow")
+    if any(not dependency.startswith(prefix) for dependency in payload["dependency_ids"]):
+        raise AssertionError("work order dependency belongs to another flow")
+
+
 def validate_contract(schema_name: str, payload_name: str) -> None:
     payload = load(f"contracts/{payload_name}")
-    validate(load(f"contracts/{schema_name}"), payload)
+    schema = load(f"contracts/{schema_name}")
+    validate(schema, payload)
     if schema_name == "tool-manifest.schema.json":
         validate_tool_policy(payload)
     if schema_name == "skill-manifest.schema.json":
@@ -160,6 +222,12 @@ def validate_contract(schema_name: str, payload_name: str) -> None:
             raise AssertionError("decision context sections must be unique")
     if schema_name == "eval-report.schema.json":
         validate_eval_report(payload)
+    if schema_name == "scenario-proposal.schema.json":
+        validate_scenario_proposal(schema, payload)
+    if schema_name == "business-flow-plan.schema.json":
+        validate_business_flow_plan(schema, payload)
+    if schema_name == "work-order.schema.json":
+        validate_work_order(payload)
 
 
 VALID_CASES = (
@@ -180,6 +248,12 @@ VALID_CASES = (
     ("runtime-event.schema.json", "examples/runtime-event.valid.json"),
     ("chat-message.schema.json", "examples/chat-message.valid.json"),
     ("employee-profile.schema.json", "examples/employee-profile.valid.json"),
+    ("scenario-proposal.schema.json", "examples/scenario-proposal.valid.json"),
+    ("business-flow-plan.schema.json", "examples/business-flow-plan.valid.json"),
+    ("business-flow-status.schema.json", "examples/business-flow-status.valid.json"),
+    ("work-order.schema.json", "examples/work-order.valid.json"),
+    ("handoff.schema.json", "examples/handoff.valid.json"),
+    ("shared-context-ref.schema.json", "examples/shared-context-ref.valid.json"),
 )
 
 INVALID_CASES = (
@@ -196,6 +270,17 @@ INVALID_CASES = (
     ("runtime-event.schema.json", "fixtures/runtime-event.invalid-type.json"),
     ("chat-message.schema.json", "fixtures/chat-message.invalid-role.json"),
     ("employee-profile.schema.json", "fixtures/employee-profile.invalid-status.json"),
+    ("scenario-proposal.schema.json", "fixtures/scenario-proposal.invalid-cycle.json"),
+    ("business-flow-plan.schema.json", "fixtures/business-flow-plan.invalid-version.json"),
+    ("business-flow-plan.schema.json", "fixtures/business-flow-plan.invalid-extra-field.json"),
+    ("business-flow-plan.schema.json", "fixtures/business-flow-plan.invalid-budget.json"),
+    ("business-flow-plan.schema.json", "fixtures/business-flow-plan.invalid-dependency-cycle.json"),
+    ("work-order.schema.json", "fixtures/work-order.invalid-assignee.json"),
+    ("work-order.schema.json", "fixtures/work-order.invalid-cross-flow-dependency.json"),
+    ("handoff.schema.json", "fixtures/handoff.invalid-unverified-deliverable.json"),
+    ("handoff.schema.json", "fixtures/handoff.invalid-target-grant.json"),
+    ("shared-context-ref.schema.json", "fixtures/shared-context-ref.invalid-hash.json"),
+    ("shared-context-ref.schema.json", "fixtures/shared-context-ref.invalid-sensitivity.json"),
 )
 
 for schema_name, payload_name in VALID_CASES:

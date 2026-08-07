@@ -531,7 +531,7 @@ mod tests {
         .unwrap();
         connection
             .execute(
-                "INSERT INTO tasks VALUES ('task_1','ai-product-manager','prd','running','t','t')",
+                "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task_1','ai-product-manager','prd','running','t','t')",
                 [],
             )
             .unwrap();
@@ -576,7 +576,7 @@ mod tests {
         .unwrap();
         connection
             .execute(
-                "INSERT INTO tasks VALUES ('task_2','ai-product-manager','prd','running','t','t')",
+                "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task_2','ai-product-manager','prd','running','t','t')",
                 [],
             )
             .unwrap();

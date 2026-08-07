@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-employee-os.local/contracts/scenario-proposal.schema.json",
+  "title": "ScenarioProposal",
+  "type": "object",
+  "required": ["schema_version", "proposal_id", "title", "objective", "overall_acceptance_criteria", "coordinator_agent_id", "nodes", "edges", "assumptions", "risks", "questions_for_user"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "proposal_id": {"type": "string", "minLength": 1},
+    "title": {"type": "string", "minLength": 1, "maxLength": 120},
+    "objective": {"type": "string", "minLength": 1, "maxLength": 4000},
+    "overall_acceptance_criteria": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"type": "string", "minLength": 1}},
+    "coordinator_agent_id": {"type": "string", "minLength": 1},
+    "nodes": {"type": "array", "minItems": 2, "maxItems": 12, "items": {"$ref": "#/$defs/node"}},
+    "edges": {"type": "array", "maxItems": 66, "items": {"$ref": "#/$defs/edge"}},
+    "assumptions": {"type": "array", "maxItems": 20, "items": {"type": "string", "minLength": 1}},
+    "risks": {"type": "array", "maxItems": 20, "items": {"type": "string", "minLength": 1}},
+    "questions_for_user": {"type": "array", "maxItems": 20, "items": {"type": "string", "minLength": 1}}
+  },
+  "$defs": {
+    "budget": {
+      "type": "object",
+      "required": ["max_input_tokens", "max_output_tokens", "max_tool_rounds", "max_elapsed_ms"],
+      "properties": {
+        "max_input_tokens": {"type": "integer", "minimum": 1},
+        "max_output_tokens": {"type": "integer", "minimum": 1},
+        "max_tool_rounds": {"type": "integer", "minimum": 0},
+        "max_elapsed_ms": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "node": {
+      "type": "object",
+      "required": ["node_id", "role", "goal", "suggested_agent_id", "required_capabilities", "input_refs", "acceptance_criteria", "budget", "failure_policy"],
+      "properties": {
+        "node_id": {"type": "string", "minLength": 1},
+        "role": {"enum": ["coordinator", "executor", "finalization"]},
+        "goal": {"type": "string", "minLength": 1},
+        "suggested_agent_id": {"type": "string", "minLength": 1},
+        "required_capabilities": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "input_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "acceptance_criteria": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "budget": {"$ref": "#/$defs/budget"},
+        "failure_policy": {"enum": ["stop", "ask_user"]}
+      },
+      "additionalProperties": false
+    },
+    "edge": {
+      "type": "object",
+      "required": ["predecessor_node_id", "successor_node_id", "required"],
+      "properties": {
+        "predecessor_node_id": {"type": "string", "minLength": 1},
+        "successor_node_id": {"type": "string", "minLength": 1},
+        "required": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

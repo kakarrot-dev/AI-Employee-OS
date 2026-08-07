@@ -1348,3 +1348,8 @@ Swift：
 4. ADR（含 ADR-027～031）
 5. AI Product Manager Agent 规范（主路径 Alex + `prd-generation`）
     
+# Phase 1 Scenario / Business Flow CLI
+
+Runtime 新增 `scenario-list|get|propose|validate|save|disable` 与 `business-flow-plan|start|list|status|continue`。`scenario-propose` 只返回未持久化草案；`scenario-save` 必须显式 `--confirmed`。Plan 无写入，Start 必须携带不可变版本 Hash；同 Flow ID/Hash 幂等，不同 Hash 返回 `flow_revision_conflict`。
+
+Root 取消继续使用 `cancel-task`；Child 审批、用户输入和 `result_unknown` 继续使用现有 `continue-run`、`resolve-action-result`。所有 stdout 响应为 JSON，诊断写 stderr。

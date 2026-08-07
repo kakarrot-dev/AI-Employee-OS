@@ -22,7 +22,11 @@ pub const MIGRATION_011: &str =
 pub const MIGRATION_012: &str = include_str!("../../../storage/migrations/012_runtime_flags.sql");
 pub const MIGRATION_013: &str =
     include_str!("../../../storage/migrations/013_capability_set_runs.sql");
-const LATEST_SCHEMA_VERSION: i64 = 13;
+pub const MIGRATION_014: &str =
+    include_str!("../../../storage/migrations/014_multi_employee_business_flows.sql");
+pub const MIGRATION_015: &str =
+    include_str!("../../../storage/migrations/015_business_flow_outputs.sql");
+const LATEST_SCHEMA_VERSION: i64 = 15;
 
 pub fn migrate(connection: &mut Connection) -> Result<()> {
     connection.busy_timeout(Duration::from_secs(5))?;
@@ -71,6 +75,12 @@ pub fn migrate(connection: &mut Connection) -> Result<()> {
     if current < 13 {
         transaction.execute_batch(MIGRATION_013)?;
     }
+    if current < 14 {
+        transaction.execute_batch(MIGRATION_014)?;
+    }
+    if current < 15 {
+        transaction.execute_batch(MIGRATION_015)?;
+    }
     transaction.commit()
 }
 
@@ -111,7 +121,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 37); // 36 canonical tables plus schema_migrations.
+        assert_eq!(count, 48); // 47 canonical tables plus schema_migrations.
 
         let integrity: String = connection
             .query_row("PRAGMA integrity_check", [], |row| row.get(0))
@@ -123,7 +133,7 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(migration_count, 13);
+        assert_eq!(migration_count, 15);
     }
 
     #[test]
@@ -144,7 +154,7 @@ mod tests {
             .unwrap();
 
         let result = connection.execute(
-            "INSERT INTO tasks VALUES ('task_1', 'agent_1', 'test', 'blocked', ?1, ?1)",
+            "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task_1', 'agent_1', 'test', 'blocked', ?1, ?1)",
             ["2026-08-04T00:00:00Z"],
         );
         assert!(result.is_err());
@@ -161,7 +171,7 @@ mod tests {
         assert_eq!(enabled, 1);
 
         let result = connection.execute(
-            "INSERT INTO tasks VALUES ('task_orphan', 'missing_agent', 'test', 'pending', ?1, ?1)",
+            "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task_orphan', 'missing_agent', 'test', 'pending', ?1, ?1)",
             ["2026-08-04T00:00:00Z"],
         );
         assert!(result.is_err());
@@ -197,7 +207,56 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(index_count, 24);
+        assert_eq!(index_count, 35);
+    }
+
+    #[test]
+    fn migration_enforces_scenario_versions_and_edges() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        migrate(&mut connection).unwrap();
+        connection
+            .execute(
+                "INSERT INTO agents VALUES ('agent_1','Alex','Coordinator','package','active','t','t')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO scenario_definitions VALUES ('scenario_1','Launch','','active',1,'t','t')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO scenario_versions VALUES ('version_1','scenario_1',1,'manual','{}',?1,NULL,'t','t')",
+                ["a".repeat(64)],
+            )
+            .unwrap();
+        let duplicate_version = connection.execute(
+            "INSERT INTO scenario_versions VALUES ('version_2','scenario_1',1,'manual','{}',?1,NULL,'t','t')",
+            ["b".repeat(64)],
+        );
+        assert!(duplicate_version.is_err());
+
+        for (id, key, position) in [("node_1", "a", 0), ("node_2", "b", 1)] {
+            connection
+                .execute(
+                    "INSERT INTO scenario_nodes VALUES (?1,'version_1',?2,'executor','goal','agent_1','[]','[]','[]','{}','stop',?3)",
+                    rusqlite::params![id, key, position],
+                )
+                .unwrap();
+        }
+        let self_edge = connection.execute(
+            "INSERT INTO scenario_edges VALUES ('version_1','node_1','node_1',1,'t')",
+            [],
+        );
+        assert!(self_edge.is_err());
+        connection
+            .execute(
+                "INSERT INTO scenario_edges VALUES ('version_1','node_1','node_2',1,'t')",
+                [],
+            )
+            .unwrap();
     }
 
     #[test]
@@ -299,7 +358,7 @@ mod tests {
             .unwrap();
         connection
             .execute(
-                "INSERT INTO tasks VALUES ('task_1', 'agent_1', 'test', 'running', ?1, ?1)",
+                "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task_1', 'agent_1', 'test', 'running', ?1, ?1)",
                 ["2026-08-04T00:00:00Z"],
             )
             .unwrap();
