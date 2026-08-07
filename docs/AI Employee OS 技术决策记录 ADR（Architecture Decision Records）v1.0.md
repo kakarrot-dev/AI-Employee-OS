@@ -1,6 +1,47 @@
 # AI Employee OS 技术决策记录 ADR（Architecture Decision Records）v1.0
 
-> 阅读顺序：先读文首 ADR-032（现行 Runtime 决策）及 ADR-027～031，再读 ADR-001 起的历史记录。ADR-031 已被 ADR-032 取代；迁移完成前只保留兼容意义。
+> 阅读顺序：先读文首 ADR-034、ADR-033、ADR-032，再读 ADR-027～031 和 ADR-001 起的历史记录。ADR-031 已被 ADR-032 取代；ADR-017 已被 ADR-034 取代，只保留历史意义。
+
+## ADR-034：多员工协作采用 Root Task、WorkOrder 与结构化 Handoff
+
+### 状态
+
+Accepted（2026-08-07）
+
+### 背景
+
+单员工 Conversation 已按员工隔离，Generic Run Kernel 已建立 `Agent → Skill → Tool → Deliverable` 主链。后续业务需要多个员工围绕一个目标工作，但共享私人聊天、Worker 互调或另建编排状态机会破坏权限、恢复、审计、成本和交付证据边界。
+
+### 决策
+
+1. 多员工业务流使用独立 Business Flow 工作区，不使用员工私人 Conversation 作为协作总线；私人 Message 与 Employee Memory 继续按员工隔离。
+2. 每个 Business Flow 对应一个由 Coordinator 员工持有的 Root Task；每个 WorkOrder 对应一个明确 Assignee 的 Child Task，并通过 `parent_task_id` 关联 Root Task。
+3. WorkOrder 的运行状态从 canonical Child Task、Run 和 Action 派生，不维护第二套 Task/Action 状态；Root Task 只有在全部必需 WorkOrder 和最终 Deliverable 通过验证后才能成功。
+4. 员工之间只通过 Handoff 传递 verified Deliverable、ArtifactRef、摘要、验收结果和显式授权的 Context Reference；不得自动共享源员工的 Conversation、Memory、完整 Context 或未引用 ToolResult。
+5. Rust Runtime 是 Root/Child Task、WorkOrder 调度、权限、审批、副作用、Checkpoint、Handoff、Deliverable、Evaluation 和 Audit 的唯一事实源。Python Worker 不得直接启动 Child Task、调用其他 Worker、选择权限或扩大预算。
+6. 首版只支持用户显式指定 Coordinator、Executor 和线性 `A → B` 顺序依赖。声明式模板、有界并行、Reviewer 返工和智能协调按独立阶段后续加入。
+7. Root 取消向未终结 Child Task 写入 canonical cancellation request；已确认副作用和证据不回滚。任何依赖链上的 `result_unknown` 禁止自动重放并阻止下游启动。
+
+### 安全与成本约束
+
+- 权限必须绑定具体 Child Task、Action、Agent 和 Resource；Business Flow 参与身份不产生全局读取授权。
+- Flow 启动必须显式提交 Token 与 wall-clock 预算；缺少预算时拒绝启动。
+- v1 硬上限为每个 Flow 最多 5 名员工、12 个 WorkOrder、每个 WorkOrder 最多返工 1 次、最大并发 3；Phase 1 实际并发固定为 1。
+- 每个 Child Task 独立记录模型、Token、时间、Tool 调用、失败原因和 Deliverable 质量；Root 只做可追溯聚合，不伪造账单事实。
+
+### 取代关系与实施门禁
+
+本 ADR supersede ADR-017 的“MVP 不实现 Multi-Agent 协作”结论；ADR-017 继续保留为历史阶段记录。ADR-032、ADR-033 的 Rust 单一事实源、Capability Set、ToolExecutor 和 Deliverable gate 继续有效。
+
+在独立 Implementation Plan 获批前，不得新增 Migration、机器契约、Runtime 调度或 Swift 业务流入口。
+
+### 禁止方案
+
+- 多员工共享同一个私人 Conversation 或把其他员工消息写入当前员工时间线；
+- Python Worker 直接调用另一个员工、Worker、Tool 或数据库；
+- 用 LangGraph、Deep Agents、客户端 Store 或第三方队列建立第二套持久化状态源；
+- 通过复制完整 Context、Memory 或 ToolResult 实现协作；
+- 允许模型自行创建员工、安装 Package、授予 Secret、扩大授权根目录、预算、并发或递归委派。
 
 ## ADR-033：聊天工作采用 Capability Set Run
 
@@ -56,7 +97,7 @@ Alex 的 Conversation/Message 是连续交流事实，Task/Action 是受控执�
 
 ## ADR-029：Identity / Soul 为唯一用户提示词
 
-客户端以「身份提示词」(`base_prompt`) 与「灵魂提示词」(`soul_json` 段落) 作为唯一可编辑提示词。Effective Prompt 由姓名/岗位/部门 + `base_prompt` + `soul` + `persona` 编译；`mission` / `responsibilities` / `boundaries` 仅为 DB 遗留列，由 Runtime 在保存时填充兼容值，不再驱动 Prompt，也不再作为 Client 编辑面。用户修改提示词后，下一次 `chat-send` 必须使用递增后的 `config_version` 与新 Prompt。
+客户端以「身份提示词」(`base_prompt`) 与「灵魂提示词」(`soul_json` 段落) 作为唯一可编辑提示词。Effective Prompt 由姓名/岗位/部门 + `base_prompt` + `soul` + `persona` 编译；`mission` / `responsibilities` / `boundaries` 仅为 DB 遗留列，由 Runtime 在保存时填充兼容值，不再驱动 Prompt、不得进入员工 API 响应，也不再作为 Client 编辑面。用户修改提示词后，下一次 `chat-send` 必须使用递增后的 `config_version` 与新 Prompt。
 
 ## ADR-030：Skill/Tool 仓库安装，Client 只读
 
@@ -1025,7 +1066,7 @@ Computer Tool Adapter
 
 ## 状态
 
-Accepted
+Superseded by ADR-034（2026-08-07）
 
 ---
 

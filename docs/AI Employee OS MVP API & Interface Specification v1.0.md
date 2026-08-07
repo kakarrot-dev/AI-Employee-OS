@@ -70,6 +70,8 @@
 
 ```
 
+Conversation 所有权是 Runtime 强制隔离边界：`chat-history`、`chat-send`、`chat-abort`、`chat-delete` 均必须同时提交 `conversation_id` 与 `employee_id`。已有 Conversation 的 `agent_id` 与请求员工不一致时，Runtime 必须以 `conversation_employee_mismatch` 拒绝；不得读取、追加、中止或删除其他员工的会话。Conversation 尚不存在时，仅 `chat-send` 可为当前员工创建该会话。
+
 ---
 
 # 2. Service Boundary

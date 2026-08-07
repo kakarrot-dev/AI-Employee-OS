@@ -29,7 +29,7 @@ AI Employee macOS Client 使用 Claude Cream 作为唯一自定义视觉 Token�
 
 ## 通用页面规则
 
-- 目标 App Shell 使用原生两栏结构，以 `办公室 / 通讯录 / 工作库 / 技能库 / 工具库` 为主入口，设置固定在 Sidebar 底部并在主 Workspace 内打开。
+- 目标 App Shell 使用原生两栏结构，以 `办公室 / 通讯录 / 工作库 / 知识库 / 技能库 / 工具库` 为主入口，设置固定在 Sidebar 底部并在主 Workspace 内打开。
 - 默认窗口为 `1280 × 820pt`，最小窗口为 `720 × 520pt`；紧凑宽度折叠全局 Sidebar，页面级 Inspector 默认收起。
 - Task Workspace 的扫描顺序固定为：目标、状态、执行进度、交付结果、Artifact、运行诊断。
 - Artifact 是完成页的视觉主锚点；原始 Event 和 Task ID 默认折叠。
@@ -41,7 +41,7 @@ AI Employee macOS Client 使用 Claude Cream 作为唯一自定义视觉 Token�
 
 ## 历史说明
 
-早期 Release 3 曾以 Company / Alex / Tasks 五栏为壳。现行导航为「办公室 / 通讯录 / 工作库 / 技能库 / 工具库 / 设置」，以 Main Interface Spec v2.0 为准；不得用 Mock 冒充尚未接通的能力。
+早期 Release 3 曾以 Company / Alex / Tasks 五栏为壳。现行导航为「办公室 / 通讯录 / 工作库 / 知识库 / 技能库 / 工具库 / 设置」，以 Main Interface Spec v2.0 为准；不得用 Mock 冒充尚未接通的能力。
 
 **视觉命题**：温暖、克制、高密度的 macOS 原生工作台。Claude Cream 只承担品牌识别、焦点和关键状态。
 
