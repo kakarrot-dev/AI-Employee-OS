@@ -2,8 +2,9 @@ use std::collections::BTreeSet;
 
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
-use crate::business_flow::{ScenarioProposal, ValidatedScenario};
+use crate::business_flow::{AcceptanceCriterion, ScenarioProposal, ValidatedScenario};
 
 #[derive(Debug, Serialize)]
 pub struct ScenarioSummary {
@@ -392,7 +393,7 @@ pub fn start_business_flow(
                 params![
                     child_task_id,
                     node.suggested_agent_id,
-                    serde_json::json!({"goal":node.goal,"input_refs":node.input_refs}).to_string(),
+                    serde_json::json!({"goal":node.goal,"input_refs":node.input_refs,"acceptance_criteria":node.acceptance_criteria}).to_string(),
                     now,
                     root_task_id
                 ],
@@ -655,20 +656,41 @@ pub fn accept_handoff(
     if source_status != "succeeded" {
         return Err("handoff_source_not_succeeded".into());
     }
-    let deliverable_valid: bool = connection
+    let deliverable_output: Option<String> = connection
         .query_row(
-            "SELECT EXISTS(
-               SELECT 1 FROM deliverables deliverable
+            "SELECT deliverable.output_json FROM deliverables deliverable
                WHERE deliverable.id=?1 AND deliverable.task_id=?2 AND deliverable.status='verified'
-                 AND EXISTS(SELECT 1 FROM deliverable_evidence evidence WHERE evidence.deliverable_id=deliverable.id)
-             )",
+                 AND EXISTS(
+                   SELECT 1 FROM deliverable_evidence evidence
+                   JOIN evaluations evaluation ON evaluation.id=evidence.evidence_ref
+                   WHERE evidence.deliverable_id=deliverable.id AND evidence.evidence_type='evaluation'
+                     AND json_extract(evaluation.metrics_json,'$.delivery_allowed')=1
+                 )",
             params![deliverable_id, source_task_id],
             |row| row.get(0),
         )
+        .optional()
         .map_err(|error| error.to_string())?;
-    if !deliverable_valid {
+    let Some(deliverable_output) = deliverable_output else {
         return Err("handoff_evidence_missing".into());
+    };
+    let acceptance_raw: String = connection
+        .query_row(
+            "SELECT acceptance_json FROM work_orders WHERE id=?1 AND business_flow_id=?2",
+            params![source_work_order_id, flow_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if !acceptance_satisfied(connection, deliverable_id, &acceptance_raw)? {
+        return Err("handoff_acceptance_failed".into());
     }
+    let target_agent_id: String = connection
+        .query_row(
+            "SELECT assignee_agent_id FROM work_orders WHERE id=?1 AND business_flow_id=?2",
+            params![target_work_order_id, flow_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| "handoff_target_missing".to_owned())?;
     let handoff_id =
         format!("handoff:{source_work_order_id}:{target_work_order_id}:{deliverable_id}");
     let transaction = connection
@@ -682,6 +704,14 @@ pub fn accept_handoff(
             params![handoff_id, flow_id, source_work_order_id, target_work_order_id, deliverable_id, summary, now],
         )
         .map_err(|error| error.to_string())?;
+    let context_ref_id = format!("context:{handoff_id}");
+    let content_sha256 = format!("{:x}", Sha256::digest(deliverable_output.as_bytes()));
+    transaction.execute(
+        "INSERT INTO shared_context_refs(id,business_flow_id,source_type,source_id,sensitivity,allowed_agents_json,content_sha256,added_by,created_at)
+         VALUES (?1,?2,'deliverable',?3,'internal',?4,?5,'runtime',?6)
+         ON CONFLICT(business_flow_id,source_type,source_id,content_sha256) DO NOTHING",
+        params![context_ref_id, flow_id, deliverable_id, serde_json::json!([target_agent_id]).to_string(), content_sha256, now],
+    ).map_err(|error| error.to_string())?;
     transaction
         .execute(
             "UPDATE work_orders SET input_refs_json=json_insert(input_refs_json,'$[#]',?1),updated_at=?2
@@ -841,6 +871,16 @@ pub fn advance_after_child_success(
         )
         .map_err(|error| error.to_string())?;
     if !unfinished {
+        let overall_acceptance: String = connection
+            .query_row(
+                "SELECT acceptance_json FROM business_flows WHERE id=?1",
+                [flow_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if !acceptance_satisfied(connection, deliverable_id, &overall_acceptance)? {
+            return Err("root_acceptance_failed".into());
+        }
         let finalization_valid: bool = connection
             .query_row(
                 "SELECT EXISTS(
@@ -849,6 +889,12 @@ pub fn advance_after_child_success(
                    JOIN deliverables deliverable ON deliverable.id=?3
                    WHERE work.id=?2 AND work.business_flow_id=?1 AND work.role='finalization'
                      AND work.child_task_id=deliverable.task_id AND deliverable.status='verified'
+                     AND EXISTS(
+                       SELECT 1 FROM deliverable_evidence evidence
+                       JOIN evaluations evaluation ON evaluation.id=evidence.evidence_ref
+                       WHERE evidence.deliverable_id=deliverable.id AND evidence.evidence_type='evaluation'
+                         AND json_extract(evaluation.metrics_json,'$.delivery_allowed')=1
+                     )
                  )",
                 params![flow_id, source_work_order_id, deliverable_id],
                 |row| row.get(0),
@@ -890,6 +936,26 @@ pub fn advance_after_child_success(
             .map_err(|error| error.to_string())?;
     }
     project_business_flow(connection, flow_id)
+}
+
+fn acceptance_satisfied(
+    connection: &Connection,
+    deliverable_id: &str,
+    acceptance_raw: &str,
+) -> Result<bool, String> {
+    let criteria: Vec<AcceptanceCriterion> = serde_json::from_str(acceptance_raw)
+        .map_err(|_| "acceptance_contract_invalid".to_owned())?;
+    for criterion in criteria.iter().filter(|criterion| criterion.required) {
+        let exists: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM deliverable_evidence WHERE deliverable_id=?1 AND evidence_type=?2)",
+            params![deliverable_id, criterion.evidence_type],
+            |row| row.get(0),
+        ).map_err(|error| error.to_string())?;
+        if !exists {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 pub fn record_work_order_started(
@@ -1017,6 +1083,12 @@ mod tests {
                 [],
             )
             .unwrap();
+        let criterion = || AcceptanceCriterion {
+            criterion_id: "verified".into(),
+            description: "verified".into(),
+            evidence_type: "evaluation".into(),
+            required: true,
+        };
         let node = |id: &str, role| ScenarioNodeSpec {
             node_id: id.into(),
             role,
@@ -1024,7 +1096,7 @@ mod tests {
             suggested_agent_id: "alex".into(),
             required_capabilities: vec!["local-file-operations".into()],
             input_refs: vec![],
-            acceptance_criteria: vec!["verified".into()],
+            acceptance_criteria: vec![criterion()],
             budget: WorkBudget {
                 max_input_tokens: 1,
                 max_output_tokens: 1,
@@ -1038,7 +1110,7 @@ mod tests {
             proposal_id: "p".into(),
             title: "Launch".into(),
             objective: "Ship".into(),
-            overall_acceptance_criteria: vec!["verified".into()],
+            overall_acceptance_criteria: vec![criterion()],
             coordinator_agent_id: "alex".into(),
             nodes: vec![
                 node("work", ScenarioNodeRole::Executor),
@@ -1105,7 +1177,8 @@ mod tests {
     #[test]
     fn requires_verified_evidence_before_unlocking_downstream() {
         let mut connection = Connection::open_in_memory().unwrap();
-        let proposal = fixture(&mut connection);
+        let mut proposal = fixture(&mut connection);
+        proposal.nodes[0].acceptance_criteria[0].evidence_type = "tool_result".into();
         save_scenario(&mut connection, "scenario", "manual", proposal, "t1").unwrap();
         let hash = get_scenario(&connection, "scenario").unwrap().sha256;
         start_business_flow(&mut connection, "flow", "scenario", &hash, "t2").unwrap();
@@ -1136,6 +1209,22 @@ mod tests {
              VALUES ('deliverable','flow:task:work','run','document','Output','Verified','verified','{}','t3','t3')", []).unwrap();
         connection.execute(
             "INSERT INTO deliverable_evidence VALUES ('deliverable','structured_output','output:hash','t3')", []).unwrap();
+        connection.execute("INSERT INTO evaluations(id,task_id,agent_id,score,metrics_json,created_at) VALUES ('evaluation','flow:task:work','alex',1.0,'{\"delivery_allowed\":true}','t3')", []).unwrap();
+        connection.execute("INSERT INTO deliverable_evidence VALUES ('deliverable','evaluation','evaluation','t3')", []).unwrap();
+        assert_eq!(
+            accept_handoff(
+                &mut connection,
+                "flow",
+                "flow:work:work",
+                "flow:work:finalize",
+                "deliverable",
+                "verified output",
+                "t4"
+            )
+            .unwrap_err(),
+            "handoff_acceptance_failed"
+        );
+        connection.execute("INSERT INTO deliverable_evidence VALUES ('deliverable','tool_result','tool-call','t3')", []).unwrap();
         let handoff = accept_handoff(
             &mut connection,
             "flow",
@@ -1244,6 +1333,8 @@ mod tests {
             "INSERT INTO deliverables(id,task_id,run_id,deliverable_type,title,summary,status,output_json,created_at,verified_at)
              VALUES ('deliverable','flow:task:work','run','document','Output','Verified','verified','{}','t3','t3')", []).unwrap();
         connection.execute("INSERT INTO deliverable_evidence VALUES ('deliverable','structured_output','hash','t3')", []).unwrap();
+        connection.execute("INSERT INTO evaluations(id,task_id,agent_id,score,metrics_json,created_at) VALUES ('evaluation','flow:task:work','alex',1.0,'{\"delivery_allowed\":true}','t3')", []).unwrap();
+        connection.execute("INSERT INTO deliverable_evidence VALUES ('deliverable','evaluation','evaluation','t3')", []).unwrap();
         accept_handoff(
             &mut connection,
             "flow",
@@ -1264,6 +1355,18 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&input).unwrap()["input_refs"][0],
             "deliverable:deliverable"
+        );
+        let resolved = crate::run::resolve_shared_context(
+            &connection,
+            "flow:task:finalize",
+            "alex",
+            serde_json::from_str(&input).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(resolved["shared_context"][0]["source_id"], "deliverable");
+        assert_eq!(
+            resolved["shared_context"][0]["content"],
+            serde_json::json!({})
         );
     }
 }

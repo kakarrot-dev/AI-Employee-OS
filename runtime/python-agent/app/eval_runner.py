@@ -8,9 +8,13 @@ from typing import Callable
 @dataclass(frozen=True)
 class EvalCase:
     id: str
-    category: str
-    input: str
-    expected: str
+    input: dict
+    expected_tool: str | None = None
+    expected_error: str | None = None
+
+    @property
+    def category(self) -> str:
+        return "tool_selection" if self.expected_tool else "expected_failure"
 
 
 @dataclass(frozen=True)
@@ -75,25 +79,22 @@ class PrdRubricResult:
 def load_cases(path: Path) -> tuple[EvalCase, ...]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     cases = tuple(EvalCase(**item) for item in payload)
-    if len(cases) < 12 or len({case.id for case in cases}) != len(cases):
-        raise ValueError("eval suite requires at least 12 uniquely identified cases")
+    if len(cases) < 2 or len({case.id for case in cases}) != len(cases):
+        raise ValueError("eval suite requires at least 2 uniquely identified cases")
     suite = json.loads(path.with_name("suite.json").read_text(encoding="utf-8"))
-    counts: dict[str, int] = {}
     for case in cases:
-        counts[case.category] = counts.get(case.category, 0) + 1
-    missing = {
-        category: minimum
-        for category, minimum in suite["required_categories"].items()
-        if counts.get(category, 0) < minimum
-    }
-    if missing:
-        raise ValueError(f"eval suite category coverage is incomplete: {missing}")
+        if bool(case.expected_tool) == bool(case.expected_error):
+            raise ValueError(f"eval case {case.id} must declare exactly one expected outcome")
+        if not isinstance(case.input, dict) or not case.input:
+            raise ValueError(f"eval case {case.id} input must be a non-empty object")
+    if suite.get("schema_version") != "1.0.0" or not suite.get("skill_id") or suite.get("cases") != path.name:
+        raise ValueError("eval suite identity is invalid")
     return cases
 
 
 def run_suite(
     cases: tuple[EvalCase, ...],
-    generate: Callable[[str], str],
+    generate: Callable[[dict], str],
     evaluate: Callable[[EvalCase, str], float],
     threshold: float = 0.8,
 ) -> EvalSuiteResult:

@@ -96,6 +96,31 @@ pub fn reconcile_interrupted(
             )
             .map_err(|error| error.to_string())?;
     }
+    let interrupted_runs = {
+        let mut statement = transaction.prepare(
+            "SELECT run.id,run.task_id FROM agent_runs run
+             JOIN tasks task ON task.id=run.task_id
+             WHERE task.status='running' AND run.phase IN ('preflight','context_build','model_decision','observe','validate_output','evaluate')
+               AND NOT EXISTS(SELECT 1 FROM tool_executions execution JOIN actions action ON action.id=execution.action_id WHERE action.task_id=task.id AND execution.status='running')",
+        ).map_err(|error| error.to_string())?;
+        statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?
+    };
+    for (run_id, task_id) in interrupted_runs {
+        let changed = transaction.execute(
+            "UPDATE agent_runs SET phase='terminal',stop_reason='interrupted_before_terminal_commit',revision=revision+1,updated_at=?1 WHERE id=?2 AND phase!='terminal'",
+            params![now, run_id],
+        ).map_err(|error| error.to_string())?;
+        if changed == 1 {
+            transaction.execute("UPDATE tasks SET status='failed',updated_at=?1 WHERE id=?2 AND status='running'",params![now,task_id]).map_err(|error|error.to_string())?;
+            summary.safe_failures += 1;
+        }
+    }
     transaction.commit().map_err(|error| error.to_string())?;
     Ok(summary)
 }
@@ -166,5 +191,23 @@ mod tests {
                 result_unknown: 0
             }
         );
+    }
+
+    #[test]
+    fn restart_converges_an_interrupted_model_phase() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        migrate(&mut connection).unwrap();
+        connection
+            .execute(
+                "INSERT INTO agents VALUES ('alex','Alex','role','path','active','t','t')",
+                [],
+            )
+            .unwrap();
+        connection.execute("INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','alex','{}','running','t','t')", []).unwrap();
+        connection.execute("INSERT INTO agent_runs(id,task_id,schema_version,phase,revision,model_turns_used,tool_calls_used,max_model_turns,max_tool_calls,deadline,waiting_reason,stop_reason,created_at,updated_at) VALUES ('run','task','1.0.0','model_decision',1,1,0,2,1,'9999999999',NULL,NULL,'t','t')", []).unwrap();
+        let summary = reconcile_interrupted(&mut connection, "t2").unwrap();
+        assert_eq!(summary.safe_failures, 1);
+        let state: (String, String) = connection.query_row("SELECT task.status,run.phase FROM tasks task JOIN agent_runs run ON run.task_id=task.id WHERE task.id='task'", [], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
+        assert_eq!(state, ("failed".into(), "terminal".into()));
     }
 }

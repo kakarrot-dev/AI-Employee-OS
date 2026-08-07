@@ -55,7 +55,7 @@ enum ClientModelChecks {
             input: "生成 PRD",
             createdAt: "2026-08-05T00:00:00Z",
             status: .running,
-            actions: [GraphNodeEvidence(stepID: "write", actionID: "action-1", status: "blocked", outputAs: "prd")],
+            actions: [GraphNodeEvidence(stepID: "write", actionID: "action-1", status: "blocked", outputAs: "prd", toolID: "file-tool", action: "create_file", resource: "/tmp/prd.md", rationaleSummary: "创建交付文件")],
             events: [],
             response: nil,
             error: nil,

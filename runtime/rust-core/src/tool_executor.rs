@@ -13,6 +13,7 @@ use std::{
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 
+use crate::json_schema;
 use crate::tool::{
     SideEffectState, ToolAction, ToolCall, ToolError, ToolManifestSnapshot, ToolResult,
     ToolResultStatus,
@@ -75,7 +76,7 @@ impl<'a> ToolExecutor<'a> {
         if now > call.deadline.as_str() {
             return self.reject(call, now, "TIMEOUT", "tool call deadline has elapsed");
         }
-        if let Err(message) = validate_schema(&action.input_schema, &call.arguments, "$") {
+        if let Err(message) = json_schema::validate(&action.input_schema, &call.arguments) {
             return self.reject(call, now, "INVALID_ARGUMENT", &message);
         }
         if let Err((code, message)) = self.validate_context(call, action, now) {
@@ -92,7 +93,7 @@ impl<'a> ToolExecutor<'a> {
         let execution = execute_native_with_timeout(call, action, authorized_root);
         match execution {
             Ok((output, side_effect_state)) => {
-                if let Err(message) = validate_schema(&action.output_schema, &output, "$") {
+                if let Err(message) = json_schema::validate(&action.output_schema, &output) {
                     let result = failed_result(
                         call,
                         now,
@@ -642,61 +643,6 @@ fn failed_result(
     }
 }
 
-fn validate_schema(schema: &Value, value: &Value, path: &str) -> Result<(), String> {
-    if let Some(expected) = schema.get("type").and_then(Value::as_str) {
-        let valid = match expected {
-            "object" => value.is_object(),
-            "array" => value.is_array(),
-            "string" => value.is_string(),
-            "integer" => value.as_i64().is_some() || value.as_u64().is_some(),
-            "number" => value.is_number(),
-            "boolean" => value.is_boolean(),
-            "null" => value.is_null(),
-            _ => false,
-        };
-        if !valid {
-            return Err(format!("{path}: expected {expected}"));
-        }
-    }
-    if let Some(allowed) = schema.get("enum").and_then(Value::as_array) {
-        if !allowed.contains(value) {
-            return Err(format!("{path}: unsupported value"));
-        }
-    }
-    if let Some(object) = value.as_object() {
-        let properties = schema.get("properties").and_then(Value::as_object);
-        if let Some(required) = schema.get("required").and_then(Value::as_array) {
-            for field in required.iter().filter_map(Value::as_str) {
-                if !object.contains_key(field) {
-                    return Err(format!("{path}: missing required field {field}"));
-                }
-            }
-        }
-        if schema.get("additionalProperties") == Some(&Value::Bool(false)) {
-            let allowed = properties
-                .ok_or_else(|| format!("{path}: closed object schema must declare properties"))?;
-            if let Some(field) = object.keys().find(|field| !allowed.contains_key(*field)) {
-                return Err(format!("{path}: unknown field {field}"));
-            }
-        }
-        if let Some(properties) = properties {
-            for (field, field_schema) in properties {
-                if let Some(field_value) = object.get(field) {
-                    validate_schema(field_schema, field_value, &format!("{path}.{field}"))?;
-                }
-            }
-        }
-    }
-    if let Some(items) = value.as_array() {
-        if let Some(item_schema) = schema.get("items") {
-            for (index, item) in items.iter().enumerate() {
-                validate_schema(item_schema, item, &format!("{path}[{index}]"))?;
-            }
-        }
-    }
-    Ok(())
-}
-
 type NativeExecution = Result<(Value, SideEffectState), (&'static str, String, SideEffectState)>;
 
 fn execute_native_with_timeout(
@@ -712,25 +658,12 @@ fn execute_native_with_timeout(
     let tool_id = call.tool_id.clone();
     let action_name = call.action.clone();
     let arguments = call.arguments.clone();
+    if action.side_effect != "none" {
+        return execute_native(&tool_id, &action_name, &arguments, &root);
+    }
     let (sender, receiver) = mpsc::sync_channel(1);
     std::thread::spawn(move || {
-        let result = match (tool_id.as_str(), action_name.as_str()) {
-            ("file-tool", "read_file") => read_file(&arguments, &root),
-            ("file-tool", "create_file") => create_file(&arguments, &root),
-            ("file-tool", "edit_file") => edit_file(&arguments, &root),
-            ("document-tool", "create_markdown") => create_markdown(&arguments, &root),
-            ("agent-reach-tool", "search_web") => search_web(&arguments),
-            #[cfg(test)]
-            ("document-tool", "slow_write") => {
-                std::thread::sleep(Duration::from_millis(20));
-                Ok((json!({"path": "late.md"}), SideEffectState::Confirmed))
-            }
-            _ => Err((
-                "ACTION_NOT_FOUND",
-                "no native adapter is registered".to_owned(),
-                SideEffectState::NotStarted,
-            )),
-        };
+        let result = execute_native(&tool_id, &action_name, &arguments, &root);
         let _ = sender.send(result);
     });
     match receiver.recv_timeout(Duration::from_millis(action.timeout_ms)) {
@@ -749,6 +682,31 @@ fn execute_native_with_timeout(
             "EXECUTION_FAILED",
             "native tool worker disconnected".to_owned(),
             SideEffectState::Unknown,
+        )),
+    }
+}
+
+fn execute_native(
+    tool_id: &str,
+    action_name: &str,
+    arguments: &Value,
+    root: &Path,
+) -> NativeExecution {
+    match (tool_id, action_name) {
+        ("file-tool", "read_file") => read_file(arguments, root),
+        ("file-tool", "create_file") => create_file(arguments, root),
+        ("file-tool", "edit_file") => edit_file(arguments, root),
+        ("document-tool", "create_markdown") => create_markdown(arguments, root),
+        ("agent-reach-tool", "search_web") => search_web(arguments),
+        #[cfg(test)]
+        ("document-tool", "slow_write") => {
+            std::thread::sleep(Duration::from_millis(20));
+            Ok((json!({"path": "late.md"}), SideEffectState::Confirmed))
+        }
+        _ => Err((
+            "ACTION_NOT_FOUND",
+            "no native adapter is registered".to_owned(),
+            SideEffectState::NotStarted,
         )),
     }
 }
@@ -1002,7 +960,8 @@ fn search_web(
         ));
     }
     let payload = json!({"query": query, "numResults": num_results}).to_string();
-    let output = Command::new(mcporter_executable())
+    let mut command = mcporter_command();
+    let output = command
         .args([
             "--log-level",
             "error",
@@ -1050,6 +1009,26 @@ fn search_web(
         json!({"provider": "agent-reach/exa", "content": content}),
         SideEffectState::None,
     ))
+}
+
+fn mcporter_command() -> Command {
+    let mut command = Command::new(mcporter_executable());
+    command.env_clear();
+    for name in [
+        "PATH",
+        "HOME",
+        "USER",
+        "TMPDIR",
+        "LANG",
+        "LC_ALL",
+        "XDG_CONFIG_HOME",
+        "EXA_API_KEY",
+    ] {
+        if let Some(value) = std::env::var_os(name) {
+            command.env(name, value);
+        }
+    }
+    command
 }
 
 fn mcporter_executable() -> PathBuf {
@@ -1604,7 +1583,7 @@ mod tests {
     }
 
     #[test]
-    fn side_effecting_timeout_becomes_result_unknown() {
+    fn side_effecting_native_call_settles_before_returning() {
         let root = temp_root("timeout");
         let mut connection = setup("document-tool", "slow_write", "document.write", 0, &root);
         let manifest_json: String = connection
@@ -1630,8 +1609,8 @@ mod tests {
             ),
             "2026-08-04T00:00:01Z",
         );
-        assert_eq!(result.status, ToolResultStatus::ResultUnknown);
-        assert_eq!(result.side_effect_state, SideEffectState::Unknown);
+        assert_eq!(result.status, ToolResultStatus::Succeeded);
+        assert_eq!(result.side_effect_state, SideEffectState::Confirmed);
         let persisted: String = connection
             .query_row(
                 "SELECT status FROM tool_executions WHERE call_id = 'call_1'",
@@ -1639,7 +1618,17 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(persisted, "result_unknown");
+        assert_eq!(persisted, "succeeded");
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn external_tool_environment_excludes_model_credentials() {
+        let command = mcporter_command();
+        assert!(
+            command
+                .get_envs()
+                .all(|(name, _)| name != "DEEPSEEK_API_KEY")
+        );
     }
 }

@@ -75,7 +75,7 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-business-flow-") as directo
         return {
             "node_id": identifier, "role": role, "goal": goal,
             "suggested_agent_id": agent_id, "required_capabilities": [skill_id],
-            "input_refs": [], "acceptance_criteria": ["产生 verified Deliverable"],
+            "input_refs": [], "acceptance_criteria": [{"criterion_id": f"{identifier}-evaluation", "description": "产生通过 Runtime Evaluation 的 Deliverable", "evidence_type": "evaluation", "required": True}],
             "budget": {"max_input_tokens": 4000, "max_output_tokens": 2000, "max_tool_rounds": 4, "max_elapsed_ms": 120000},
             "failure_policy": "stop",
         }
@@ -83,7 +83,7 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-business-flow-") as directo
     proposal = {
         "schema_version": "1.0.0", "proposal_id": "proposal-multi-employee",
         "title": "双员工发布方案", "objective": "搜索证据并生成 Markdown 发布方案",
-        "overall_acceptance_criteria": ["最终输出引用研究证据"],
+        "overall_acceptance_criteria": [{"criterion_id": "final-evaluation", "description": "最终输出通过 Runtime Evaluation", "evidence_type": "evaluation", "required": True}],
         "coordinator_agent_id": "researcher-001",
         "nodes": [
             node("research", "executor", "researcher-001", "web-search", "搜索发布证据"),

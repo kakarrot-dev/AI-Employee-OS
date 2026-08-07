@@ -39,6 +39,7 @@ def _messages(request: dict) -> list[dict[str, str]]:
         "You are the system-owned scenario coordinator for a local-first AI employee product.",
         "Return exactly one JSON object and no markdown.",
         "The object must use exactly these top-level fields: schema_version, proposal_id, title, objective, overall_acceptance_criteria, coordinator_agent_id, nodes, edges, assumptions, risks, questions_for_user.",
+        "Every acceptance criterion must be an object with exactly criterion_id, description, evidence_type, required. evidence_type must be one of structured_output, artifact, tool_result, verification, evaluation. Use only evidence that the assigned Skill can actually produce.",
         "Create a serial DAG with 2 to 12 nodes. Include exactly one finalization node, assign it to coordinator_agent_id, and make it the last node.",
         "Each node must use only an agent_id and required_capabilities present together in employee_catalog.",
         "Node roles are coordinator, executor, finalization. failure_policy is stop, ask_user, or continue_independent.",

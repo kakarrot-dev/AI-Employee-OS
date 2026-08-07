@@ -15,20 +15,21 @@ class TaskWorkerTests(unittest.TestCase):
             "tool_surface": [{"id": "agent-reach-tool", "actions": [{"name": "search_web", "input_schema": {"type": "object", "properties": {"num_results": {"type": "integer"}}}}]}],
             "task": {"input": {"text": "查询最新版本"}},
             "observations": [],
+            "context": {"sections": [
+                {"kind": "tool_descriptions", "trust": "trusted_registry", "content": [{"id": "agent-reach-tool", "actions": [{"name": "search_web", "input_schema": {"type": "object", "properties": {"num_results": {"type": "integer"}}}}]}]},
+                {"kind": "task_input", "trust": "untrusted_data", "content": {"text": "查询最新版本"}}
+            ], "max_bytes": 65536},
         }
         messages = _messages(request)
         system = messages[0]["content"]
         self.assertIn("Do not return schema_version", system)
         self.assertIn('"type": "tool_call"', system)
         self.assertIn('"rationale_summary": "string"', system)
-        self.assertIn('"num_results": {"type": "integer"}', system)
+        self.assertIn('"num_results": {"type": "integer"}', messages[1]["content"])
         self.assertIn("write readable Markdown that matches the information", system)
         self.assertIn("tables only for real comparisons", system)
-        self.assertGreater(system.rfind("Do not return schema_version"), system.find("search"))
-        self.assertEqual(json.loads(messages[1]["content"]), {
-            "task_input": {"text": "查询最新版本"},
-            "runtime_observations": [],
-        })
+        self.assertIn("complete ordered context", system)
+        self.assertEqual(json.loads(messages[1]["content"])["context"], request["context"])
 
     def test_followup_turn_contains_original_task_and_tool_observation(self):
         from app.task_worker import _messages
@@ -39,11 +40,11 @@ class TaskWorkerTests(unittest.TestCase):
             "tool_surface": [{"id": "agent-reach-tool", "actions": []}],
             "task": {"input": {"text": "查询郑州新闻"}},
             "observations": [{"status": "succeeded", "output": {"content": "news evidence"}}],
+            "context": {"sections": [{"kind": "observations", "trust": "untrusted_data", "content": [{"status": "succeeded", "output": {"content": "news evidence"}}]}], "max_bytes": 65536},
         }
         messages = _messages(request)
         payload = json.loads(messages[1]["content"])
-        self.assertEqual(payload["task_input"]["text"], "查询郑州新闻")
-        self.assertEqual(payload["runtime_observations"][0]["output"]["content"], "news evidence")
+        self.assertEqual(payload["context"], request["context"])
         self.assertIn("do not repeat a completed Tool call", messages[0]["content"])
         self.assertIn("continue with the next unmet requirement", messages[0]["content"])
         self.assertIn("Respect each Tool surface max_calls limit", messages[0]["content"])
@@ -56,7 +57,7 @@ class TaskWorkerTests(unittest.TestCase):
             "agent": {"id": "agent", "effective_prompt": "help"},
             "capability_set": [{"id": "summary", "instructions": "summarize", "output_schema": {"type": "object"}}],
             "tool_surface": [],
-            "context": {"sections": [], "sha256": "x", "size_bytes": 0},
+            "context": {"sections": [], "sha256": "x", "size_bytes": 0, "max_bytes": 65536},
             "observations": [],
         }
         env = dict(os.environ)
@@ -80,7 +81,7 @@ class TaskWorkerTests(unittest.TestCase):
             "agent": {"id": "agent", "effective_prompt": "help"},
             "capability_set": [{"id": "search", "instructions": "search", "output_schema": {"type": "object"}}],
             "tool_surface": [{"id": "agent-reach-tool", "actions": ["search_web"]}],
-            "context": {"sections": [], "sha256": "x", "size_bytes": 0},
+            "context": {"sections": [], "sha256": "x", "size_bytes": 0, "max_bytes": 65536},
             "observations": [],
         }
         env = dict(os.environ)
@@ -103,7 +104,7 @@ class TaskWorkerTests(unittest.TestCase):
             "agent": {"id": "agent", "effective_prompt": "help"},
             "capability_set": [{"id": "search", "instructions": "search", "output_schema": {"type": "object"}}],
             "tool_surface": [{"id": "agent-reach-tool", "actions": ["search_web"]}],
-            "context": {"sections": [], "sha256": "x", "size_bytes": 0},
+            "context": {"sections": [], "sha256": "x", "size_bytes": 0, "max_bytes": 65536},
             "observations": [{"status": "succeeded", "output": {"content": "evidence"}}],
         }
         env = dict(os.environ)

@@ -6,6 +6,7 @@ cargo test --workspace
 cargo build --bin tool-gateway
 cargo build --bin ai-employee-runtime
 python3 scripts/check_contracts.py
+python3 scripts/check_skill_evals.py
 python3 scripts/check_keychain_boundaries.py
 python3 scripts/check_chat_feedback.py
 python3 scripts/check_office_motion.py

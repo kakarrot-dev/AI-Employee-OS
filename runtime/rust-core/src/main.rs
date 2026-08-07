@@ -2069,7 +2069,11 @@ fn list_tasks(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
                       'step_id', COALESCE(json_extract(a.input_json,'$.step_id'), json_extract(a.input_json,'$.action'), substr(a.id, instr(a.id, ':') + 1)),
                       'action_id', a.id,
                       'status', a.status,
-                      'output_as', COALESCE(json_extract(a.input_json,'$.output_as'), '')
+                      'output_as', COALESCE(json_extract(a.input_json,'$.output_as'), ''),
+                      'tool_id', a.tool_id,
+                      'action', COALESCE(json_extract(a.input_json,'$.action'), ''),
+                      'resource', COALESCE(json_extract(a.input_json,'$.arguments.path'), json_extract(a.input_json,'$.arguments.query'), ''),
+                      'rationale_summary', COALESCE(json_extract(a.input_json,'$.rationale_summary'), '')
                       ) AS action_json
                       FROM actions a WHERE a.task_id=t.id
                       ORDER BY a.created_at,a.id

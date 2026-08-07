@@ -674,7 +674,14 @@ private struct ScenarioEditorPage: View {
             suggestedAgentID: employeeID,
             requiredCapabilities: ["local-file-operations"],
             inputRefs: [],
-            acceptanceCriteria: ["产生 verified Deliverable"],
+            acceptanceCriteria: [
+                AcceptanceCriterion(
+                    criterionID: "\(role)-evaluation",
+                    description: "产生通过 Runtime Evaluation 的 Deliverable",
+                    evidenceType: "evaluation",
+                    required: true
+                )
+            ],
             budget: ScenarioBudget(),
             failurePolicy: "stop"
         )

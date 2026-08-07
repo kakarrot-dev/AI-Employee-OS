@@ -117,11 +117,17 @@ struct RuntimeService: Sendable {
             ], environment: key.map { ["DEEPSEEK_API_KEY": $0] } ?? [:], as: RunContinuationResponse.self)
         }, resolveUnknown: { actionID, status in
             let layout = try runtimeLayout()
+            let evidence = try JSONSerialization.data(withJSONObject: [
+                "method": "manual_user_verification",
+                "observation": status == "succeeded" ? "用户确认副作用已发生且结果正确" : "用户确认副作用未成功完成或结果不正确",
+                "observed_at": ISO8601DateFormatter().string(from: Date())
+            ], options: [.sortedKeys])
+            let evidenceJSON = String(decoding: evidence, as: UTF8.self)
             return try await decodeCommand([
                 "resolve-action-result", "--repository-root", layout.resourceRoot.path,
                 "--database", try databaseURL().path,
                 "--action-id", actionID, "--status", status,
-                "--evidence-json", "{\"verified_by\":\"user\"}"
+                "--evidence-json", evidenceJSON
             ], environment: KeychainService.load().map { ["DEEPSEEK_API_KEY": $0] } ?? [:], as: RunContinuationResponse.self)
         }, chatHistory: { conversationID, employeeID in
             try await decodeCommand(["chat-history", "--database", try databaseURL().path, "--conversation-id", conversationID, "--employee-id", employeeID], as: ChatHistoryResponse.self)
@@ -185,7 +191,12 @@ struct RuntimeService: Sendable {
             let input = try JSONSerialization.data(withJSONObject: [
                 "objective": objective,
                 "constraints": ["Phase 1 固定串行执行"],
-                "overall_acceptance_criteria": ["最终交付物引用全部上游 verified Deliverable"],
+                "overall_acceptance_criteria": [[
+                    "criterion_id": "final-evaluation",
+                    "description": "最终交付物通过 Runtime Evaluation",
+                    "evidence_type": "evaluation",
+                    "required": true
+                ]],
             ])
             let layout = try runtimeLayout()
             return try await decodeCommand([

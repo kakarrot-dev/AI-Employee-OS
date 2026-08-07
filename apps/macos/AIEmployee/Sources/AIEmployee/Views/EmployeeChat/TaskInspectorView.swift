@@ -189,7 +189,7 @@ struct TaskInspectorView: View {
                 .font(.callout.weight(.medium))
                 .foregroundStyle(palette.ink)
             if let evaluation = run.response?.evaluation ?? run.evaluation {
-                Text(evaluation.deliveryAllowed ? "质量检查通过" : "未达到交付门槛")
+                Text(evaluation.deliveryAllowed ? "运行时检查通过" : "未达到交付门槛")
                     .font(.caption)
                     .foregroundStyle(evaluation.deliveryAllowed ? palette.success : palette.warning)
             }

@@ -15,7 +15,7 @@ def request() -> dict:
         "schema_version": "1.0.0",
         "objective": "形成发布方案",
         "constraints": ["串行执行"],
-        "overall_acceptance_criteria": ["引用全部证据"],
+        "overall_acceptance_criteria": [{"criterion_id": "final-evaluation", "description": "引用全部证据", "evidence_type": "evaluation", "required": True}],
         "employee_catalog": [{
             "agent_id": "alex",
             "display_name": "Alex",

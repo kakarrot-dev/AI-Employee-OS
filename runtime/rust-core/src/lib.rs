@@ -10,6 +10,7 @@ pub mod employee_prompt;
 pub mod evaluation;
 pub mod event;
 pub mod graph_runtime;
+pub mod json_schema;
 pub mod knowledge;
 pub mod memory;
 pub mod observability;

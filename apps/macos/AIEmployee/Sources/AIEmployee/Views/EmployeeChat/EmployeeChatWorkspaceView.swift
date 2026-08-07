@@ -1185,6 +1185,14 @@ private struct LiveActionApprovalBar: View {
 
             if expanded {
                 Divider().overlay(palette.hairlineSoft)
+                if let pendingAction {
+                    approvalFact("工具", pendingAction.toolID ?? "未知")
+                    approvalFact("动作", pendingAction.action ?? pendingAction.stepID)
+                    approvalFact("目标", pendingAction.resource?.isEmpty == false ? pendingAction.resource! : "未提供可展示目标")
+                    if let rationale = pendingAction.rationaleSummary, !rationale.isEmpty {
+                        approvalFact("原因", rationale)
+                    }
+                }
                 Text("允许一次只对当前工作生效；拒绝会结束本次工作。所有 Tool 调用仍由 Runtime 经过权限与审计检查后执行。")
                     .font(.caption)
                     .foregroundStyle(palette.muted)
@@ -1203,6 +1211,14 @@ private struct LiveActionApprovalBar: View {
         .shadow(color: .black.opacity(0.09), radius: 12, y: 4)
         .frame(maxWidth: 820)
         .frame(maxWidth: .infinity)
+    }
+
+    private func approvalFact(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
+            Text(label).foregroundStyle(palette.muted).frame(width: 44, alignment: .leading)
+            Text(value).foregroundStyle(palette.body).textSelection(.enabled)
+        }
+        .font(.caption)
     }
 
     private var summary: some View {

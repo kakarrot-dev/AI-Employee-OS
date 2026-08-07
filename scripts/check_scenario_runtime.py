@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-scenario-") as directory:
         "--input-json", json.dumps({
             "objective": "形成经过验证的产品发布方案",
             "constraints": ["串行执行"],
-            "overall_acceptance_criteria": ["最终交付物引用全部上游证据"],
+            "overall_acceptance_criteria": [{"criterion_id": "final-evaluation", "description": "最终交付物通过 Runtime Evaluation", "evidence_type": "evaluation", "required": True}],
         }, ensure_ascii=False),
         env=coordinator_env,
     )

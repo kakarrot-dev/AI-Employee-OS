@@ -29,6 +29,20 @@ struct ScenarioBudget: Codable, Sendable, Equatable {
     }
 }
 
+struct AcceptanceCriterion: Codable, Sendable, Equatable {
+    var criterionID: String
+    var description: String
+    var evidenceType: String
+    var required: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case criterionID = "criterion_id"
+        case description
+        case evidenceType = "evidence_type"
+        case required
+    }
+}
+
 struct ScenarioNode: Codable, Identifiable, Sendable, Equatable {
     var nodeID: String
     var role: String
@@ -36,7 +50,7 @@ struct ScenarioNode: Codable, Identifiable, Sendable, Equatable {
     var suggestedAgentID: String
     var requiredCapabilities: [String]
     var inputRefs: [String]
-    var acceptanceCriteria: [String]
+    var acceptanceCriteria: [AcceptanceCriterion]
     var budget: ScenarioBudget
     var failurePolicy: String
 
@@ -71,7 +85,7 @@ struct ScenarioProposal: Codable, Sendable, Equatable {
     var proposalID: String
     var title: String
     var objective: String
-    var overallAcceptanceCriteria: [String]
+    var overallAcceptanceCriteria: [AcceptanceCriterion]
     var coordinatorAgentID: String
     var nodes: [ScenarioNode]
     var edges: [ScenarioEdge]

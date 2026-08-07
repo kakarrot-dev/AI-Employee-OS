@@ -3,11 +3,11 @@
   "proposal_id": "proposal_cycle",
   "title": "循环场景",
   "objective": "必须被拒绝",
-  "overall_acceptance_criteria": ["无环"],
+  "overall_acceptance_criteria": [{"criterion_id":"acyclic","description":"无环","evidence_type":"evaluation","required":true}],
   "coordinator_agent_id": "ai-product-manager",
   "nodes": [
-    {"node_id": "a", "role": "executor", "goal": "A", "suggested_agent_id": "ai-product-manager", "required_capabilities": ["local-file-operations"], "input_refs": [], "acceptance_criteria": ["A"], "budget": {"max_input_tokens": 1, "max_output_tokens": 1, "max_tool_rounds": 0, "max_elapsed_ms": 1}, "failure_policy": "stop"},
-    {"node_id": "b", "role": "finalization", "goal": "B", "suggested_agent_id": "ai-product-manager", "required_capabilities": ["local-file-operations"], "input_refs": [], "acceptance_criteria": ["B"], "budget": {"max_input_tokens": 1, "max_output_tokens": 1, "max_tool_rounds": 0, "max_elapsed_ms": 1}, "failure_policy": "stop"}
+    {"node_id": "a", "role": "executor", "goal": "A", "suggested_agent_id": "ai-product-manager", "required_capabilities": ["local-file-operations"], "input_refs": [], "acceptance_criteria": [{"criterion_id":"a","description":"A","evidence_type":"evaluation","required":true}], "budget": {"max_input_tokens": 1, "max_output_tokens": 1, "max_tool_rounds": 0, "max_elapsed_ms": 1}, "failure_policy": "stop"},
+    {"node_id": "b", "role": "finalization", "goal": "B", "suggested_agent_id": "ai-product-manager", "required_capabilities": ["local-file-operations"], "input_refs": [], "acceptance_criteria": [{"criterion_id":"b","description":"B","evidence_type":"evaluation","required":true}], "budget": {"max_input_tokens": 1, "max_output_tokens": 1, "max_tool_rounds": 0, "max_elapsed_ms": 1}, "failure_policy": "stop"}
   ],
   "edges": [
     {"predecessor_node_id": "a", "successor_node_id": "b", "required": true},

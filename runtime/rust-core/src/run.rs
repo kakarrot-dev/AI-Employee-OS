@@ -2,7 +2,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use rusqlite::{Connection, OptionalExtension, params};
@@ -14,6 +14,7 @@ use crate::{
     decision::AgentDecision,
     employee_prompt::compile_effective_prompt,
     graph_runtime::GraphPlan,
+    json_schema,
     tool::{PermissionContext, ToolCall, ToolResultStatus},
     tool_executor::ToolExecutor,
 };
@@ -92,6 +93,7 @@ pub fn run_existing_agent_task(
         return Err("existing_task_not_dispatchable".into());
     }
     let input: Value = serde_json::from_str(&input).map_err(|_| "task_input_invalid")?;
+    let input = resolve_shared_context(connection, task_id, &agent_id, input)?;
     let skills = crate::skill_resolver::ready_skill_ids(connection, &agent_id)?;
     let first = skills.first().ok_or("capability_not_found")?.clone();
     run_skill(RunSkillConfig {
@@ -105,6 +107,47 @@ pub fn run_existing_agent_task(
         capability_mode: true,
         existing_task_id: Some(task_id),
     })
+}
+
+pub(crate) fn resolve_shared_context(
+    connection: &Connection,
+    task_id: &str,
+    agent_id: &str,
+    mut input: Value,
+) -> Result<Value, String> {
+    let Some(refs) = input.get("input_refs").and_then(Value::as_array) else {
+        return Ok(input);
+    };
+    let mut shared = Vec::new();
+    for reference in refs.iter().filter_map(Value::as_str) {
+        let Some(deliverable_id) = reference.strip_prefix("deliverable:") else {
+            return Err("shared_context_ref_invalid".to_owned());
+        };
+        let row: Option<(String, String, String)> = connection.query_row(
+            "SELECT ref.content_sha256,ref.allowed_agents_json,deliverable.output_json
+             FROM work_orders work
+             JOIN shared_context_refs ref ON ref.business_flow_id=work.business_flow_id AND ref.source_type='deliverable' AND ref.source_id=?2
+             JOIN deliverables deliverable ON deliverable.id=ref.source_id AND deliverable.status='verified'
+             WHERE work.child_task_id=?1 AND work.assignee_agent_id=?3",
+            params![task_id, deliverable_id, agent_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).optional().map_err(|error| error.to_string())?;
+        let (expected_hash, allowed_raw, output_raw) = row.ok_or("shared_context_forbidden")?;
+        let allowed: Vec<String> =
+            serde_json::from_str(&allowed_raw).map_err(|_| "shared_context_invalid")?;
+        if !allowed.iter().any(|allowed_id| allowed_id == agent_id)
+            || sha256(&output_raw) != expected_hash
+        {
+            return Err("shared_context_forbidden".to_owned());
+        }
+        let output: Value =
+            serde_json::from_str(&output_raw).map_err(|_| "shared_context_invalid")?;
+        shared.push(json!({"source_type":"deliverable","source_id":deliverable_id,"content_sha256":expected_hash,"content":output}));
+    }
+    if let Some(object) = input.as_object_mut() {
+        object.insert("shared_context".to_owned(), Value::Array(shared));
+    }
+    Ok(input)
 }
 
 pub fn run_skill(mut config: RunSkillConfig<'_>) -> Result<Value, String> {
@@ -200,73 +243,16 @@ pub fn run_skill(mut config: RunSkillConfig<'_>) -> Result<Value, String> {
             output,
             evidence_refs,
             ..
-        } => {
-            validate_output(&locked.skill["output_schema"], &output)?;
-            set_phase(
-                config.connection,
-                &locked.run_id,
-                "validate_output",
-                None,
-                &now,
-            )?;
-            let deliverable_id = format!("deliverable_{}", nonce());
-            config.connection.execute(
-                "INSERT INTO deliverables(id,task_id,run_id,deliverable_type,title,summary,status,output_json,created_at,verified_at)
-                 VALUES (?1,?2,?3,'structured_result',?4,?5,'verified',?6,?7,?7)",
-                params![deliverable_id, locked.task_id, locked.run_id, locked.skill["name"].as_str().unwrap_or("Skill result"), summarize(&output), output.to_string(), now],
-            ).map_err(|error| error.to_string())?;
-            config
-                .connection
-                .execute(
-                    "INSERT INTO deliverable_evidence VALUES (?1,'structured_output',?2,?3)",
-                    params![deliverable_id, sha256(&output.to_string()), now],
-                )
-                .map_err(|error| error.to_string())?;
-            for reference in evidence_refs {
-                config.connection.execute(
-                    "INSERT OR IGNORE INTO deliverable_evidence VALUES (?1,'verification',?2,?3)",
-                    params![deliverable_id, reference, now],
-                ).map_err(|error| error.to_string())?;
-            }
-            checkpoint(
-                config.connection,
-                &locked.run_id,
-                "deliverable_verified",
-                &output,
-                &now,
-            )?;
-            set_phase(config.connection, &locked.run_id, "evaluate", None, &now)?;
-            config
-                .connection
-                .execute(
-                    "INSERT INTO evaluations(id,task_id,agent_id,score,metrics_json,created_at)
-                 VALUES (?1,?2,?3,1.0,?4,?5)",
-                    params![
-                        format!("eval_{}", nonce()),
-                        locked.task_id,
-                        config.agent_id,
-                        deterministic_evaluation(&locked.run_id, 1, 0).to_string(),
-                        now
-                    ],
-                )
-                .map_err(|error| error.to_string())?;
-            config.connection.execute(
-                "UPDATE tasks SET status='succeeded',updated_at=?1 WHERE id=?2 AND status='running'",
-                params![now, locked.task_id],
-            ).map_err(|error| error.to_string())?;
-            set_phase(
-                config.connection,
-                &locked.run_id,
-                "terminal",
-                Some("succeeded"),
-                &now,
-            )?;
-            Ok(json!({
-                "schema_version":"1.0.0", "task_id":locked.task_id, "run_id":locked.run_id,
-                "status":"succeeded", "phase":"terminal", "output":output,
-                "deliverable_id":deliverable_id
-            }))
-        }
+        } => finalize_existing_run(
+            config.connection,
+            &locked.task_id,
+            &locked.run_id,
+            config.agent_id,
+            &locked.skill,
+            output,
+            evidence_refs,
+            &now,
+        ),
     }
 }
 
@@ -295,9 +281,10 @@ fn run_workflow(config: RunSkillConfig<'_>, locked: LockedRun, now: &str) -> Res
         plan.start_step(config.connection, &locked.task_id, &node.id, now)?;
         let context = context_pipeline::build(
             &locked.prompt,
-            &locked.instructions,
+            &json!([{"id":config.skill_id,"instructions":format!("{}\n\nWorkflow step: {}\nOutput as: {}", locked.instructions, node.id, node.output_as),"output_schema":locked.skill["output_schema"]}]),
             &config.input,
-            &locked.skill["tools"],
+            &json!([]),
+            &Value::Array(observations.clone()),
             locked.skill["context"]["max_bytes"]
                 .as_u64()
                 .unwrap_or(65_536) as usize,
@@ -325,7 +312,12 @@ fn run_workflow(config: RunSkillConfig<'_>, locked: LockedRun, now: &str) -> Res
             now,
         )?;
         consume_model_turn(config.connection, &locked.run_id, now)?;
-        let raw = invoke_worker(config.repository_root, config.python, &request)?;
+        let raw = invoke_worker(
+            config.repository_root,
+            config.python,
+            &request,
+            Some((config.connection, &locked.run_id)),
+        )?;
         let decision = AgentDecision::parse(raw.clone())?;
         observe(
             config.connection,
@@ -603,7 +595,20 @@ pub fn resolve_unknown_action(
         "SELECT a.task_id,t.agent_id,r.id FROM actions a JOIN tasks t ON t.id=a.task_id JOIN agent_runs r ON r.task_id=t.id WHERE a.id=?1 AND a.status='result_unknown'",
         [action_id],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?)),
     ).map_err(|_|"recovery_requires_verification".to_owned())?;
-    if evidence.as_object().is_none_or(|item| item.is_empty()) {
+    let evidence_valid = evidence.as_object().is_some_and(|item| {
+        item.get("method")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.trim().is_empty())
+            && item
+                .get("observation")
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.trim().is_empty())
+            && item
+                .get("observed_at")
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.trim().is_empty())
+    });
+    if !evidence_valid {
         return Err("recovery_requires_verification".to_owned());
     }
     let tx = connection.transaction().map_err(|e| e.to_string())?;
@@ -728,12 +733,20 @@ fn resume_after_observation(
         )
         .map_err(|_| "checkpoint_conflict".to_owned())?;
     let observations = completed_tool_observations(config.connection, task_id, tool_result)?;
+    let context = context_pipeline::build(
+        agent["effective_prompt"].as_str().unwrap_or_default(),
+        &capability_set,
+        &task_input,
+        &toolset_lock["tools"],
+        &observations,
+        65_536,
+    )?;
     let request = json!({
         "schema_version":"1.0.0","task":{"id":task_id,"input":task_input},
         "run":{"id":config.run_id,"max_model_turns":max_model_turns,"max_tool_calls":max_tool_calls},
         "agent":{"id":agent_id,"effective_prompt":agent["effective_prompt"]},
         "capability_set":capability_set,
-        "tool_surface":toolset_lock["tools"],"context":{"sections":[],"source":"locked_snapshot"},"observations":observations
+        "tool_surface":toolset_lock["tools"],"context":context,"observations":observations
     });
     checkpoint(
         config.connection,
@@ -875,7 +888,8 @@ fn finalize_existing_run(
     let tx = connection
         .unchecked_transaction()
         .map_err(|error| error.to_string())?;
-    tx.execute("INSERT INTO deliverables(id,task_id,run_id,deliverable_type,title,summary,status,output_json,created_at,verified_at) VALUES (?1,?2,?3,'structured_result',?4,?5,'verified',?6,?7,?7)",params![deliverable_id,task_id,run_id,skill["name"].as_str().unwrap_or("Skill result"),summarize(&output),output.to_string(),now]).map_err(|error| error.to_string())?;
+    ensure_run_can_advance(&tx, task_id, run_id)?;
+    tx.execute("INSERT INTO deliverables(id,task_id,run_id,deliverable_type,title,summary,status,output_json,created_at,verified_at) VALUES (?1,?2,?3,'structured_result',?4,?5,'candidate',?6,?7,NULL)",params![deliverable_id,task_id,run_id,skill["name"].as_str().unwrap_or("Skill result"),summarize(&output),output.to_string(),now]).map_err(|error| error.to_string())?;
     tx.execute(
         "INSERT INTO deliverable_evidence VALUES (?1,'structured_output',?2,?3)",
         params![deliverable_id, sha256(&output.to_string()), now],
@@ -910,6 +924,21 @@ fn finalize_existing_run(
         .map_err(|error| error.to_string())?;
     }
     for reference in evidence_refs {
+        let reference_exists: bool = tx.query_row(
+            "SELECT EXISTS(
+               SELECT 1 FROM tool_executions execution JOIN actions action ON action.id=execution.action_id
+               WHERE action.task_id=?1 AND execution.status='succeeded'
+                 AND (execution.call_id=?2 OR instr(COALESCE(execution.result_json,''),?2)>0)
+               UNION ALL
+               SELECT 1 FROM artifacts artifact WHERE artifact.task_id=?1 AND artifact.verification_status='verified'
+                 AND (artifact.id=?2 OR artifact.uri=?2)
+             )",
+            params![task_id, reference],
+            |row| row.get(0),
+        ).map_err(|error| error.to_string())?;
+        if !reference_exists {
+            return Err("evidence_reference_invalid".to_owned());
+        }
         tx.execute(
             "INSERT OR IGNORE INTO deliverable_evidence VALUES (?1,'verification',?2,?3)",
             params![deliverable_id, reference, now],
@@ -923,33 +952,99 @@ fn finalize_existing_run(
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map_err(|error| error.to_string())?;
-    tx.execute("INSERT INTO evaluations(id,task_id,agent_id,score,metrics_json,created_at) VALUES (?1,?2,?3,1.0,?4,?5)",params![format!("eval_{}",nonce()),task_id,agent_id,deterministic_evaluation(run_id,usage.0,usage.1).to_string(),now]).map_err(|error| error.to_string())?;
+    let evaluation_id = format!("eval_{}", nonce());
+    let evaluation = deterministic_evaluation(&tx, run_id, task_id, usage.0, usage.1)?;
+    let delivery_allowed = evaluation["delivery_allowed"].as_bool() == Some(true);
+    let score = evaluation["score"].as_f64().unwrap_or(0.0);
+    tx.execute("INSERT INTO evaluations(id,task_id,agent_id,score,metrics_json,created_at) VALUES (?1,?2,?3,?4,?5,?6)",params![evaluation_id,task_id,agent_id,score,evaluation.to_string(),now]).map_err(|error| error.to_string())?;
     tx.execute(
-        "UPDATE tasks SET status='succeeded',updated_at=?1 WHERE id=?2 AND status='running'",
-        params![now, task_id],
+        "INSERT INTO deliverable_evidence VALUES (?1,'evaluation',?2,?3)",
+        params![deliverable_id, evaluation_id, now],
     )
     .map_err(|error| error.to_string())?;
-    tx.execute("UPDATE agent_runs SET phase='terminal',stop_reason='succeeded',revision=revision+1,updated_at=?1 WHERE id=?2",params![now,run_id]).map_err(|error| error.to_string())?;
+    if !delivery_allowed {
+        tx.execute(
+            "UPDATE deliverables SET status='rejected' WHERE id=?1 AND status='candidate'",
+            [&deliverable_id],
+        )
+        .map_err(|error| error.to_string())?;
+        tx.commit().map_err(|error| error.to_string())?;
+        return Err("evaluation_blocked".to_owned());
+    }
+    ensure_run_can_advance(&tx, task_id, run_id)?;
+    let verified = tx.execute("UPDATE deliverables SET status='verified',verified_at=?2 WHERE id=?1 AND status='candidate'",params![deliverable_id,now]).map_err(|error|error.to_string())?;
+    let task_changed = tx
+        .execute(
+            "UPDATE tasks SET status='succeeded',updated_at=?1 WHERE id=?2 AND status='running'",
+            params![now, task_id],
+        )
+        .map_err(|error| error.to_string())?;
+    let run_changed = tx.execute("UPDATE agent_runs SET phase='terminal',stop_reason='succeeded',revision=revision+1,updated_at=?1 WHERE id=?2 AND phase!='terminal'",params![now,run_id]).map_err(|error| error.to_string())?;
+    if verified != 1 || task_changed != 1 || run_changed != 1 {
+        return Err("run_state_conflict".to_owned());
+    }
     tx.commit().map_err(|error| error.to_string())?;
     Ok(
         json!({"schema_version":"1.0.0","task_id":task_id,"run_id":run_id,"status":"succeeded","phase":"terminal","output":output,"deliverable_id":deliverable_id}),
     )
 }
 
-fn deterministic_evaluation(run_id: &str, model_turns: i64, tool_calls: i64) -> Value {
-    json!({
+fn deterministic_evaluation(
+    connection: &Connection,
+    run_id: &str,
+    task_id: &str,
+    model_turns: i64,
+    tool_calls: i64,
+) -> Result<Value, String> {
+    let unsafe_actions: i64 = connection.query_row("SELECT count(*) FROM actions WHERE task_id=?1 AND status IN ('blocked','running','result_unknown')",[task_id],|row|row.get(0)).map_err(|error|error.to_string())?;
+    let failed_tools: i64 = connection.query_row("SELECT count(*) FROM tool_executions execution JOIN actions action ON action.id=execution.action_id WHERE action.task_id=?1 AND execution.status!='succeeded'",[task_id],|row|row.get(0)).map_err(|error|error.to_string())?;
+    let cancelled: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM task_cancellation_requests WHERE task_id=?1)",
+            [task_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    let budget_ok: bool = connection.query_row("SELECT model_turns_used<=max_model_turns AND tool_calls_used<=max_tool_calls FROM agent_runs WHERE id=?1",[run_id],|row|row.get(0)).map_err(|error|error.to_string())?;
+    let passed = [
+        true,
+        unsafe_actions == 0 && failed_tools == 0,
+        unsafe_actions == 0,
+        budget_ok,
+        !cancelled,
+    ];
+    let score = passed.iter().filter(|value| **value).count() as f64 / passed.len() as f64;
+    Ok(json!({
         "schema_version":"1.0.0",
         "run_id":run_id,
-        "delivery_allowed":true,
+        "score":score,
+        "delivery_allowed":passed.iter().all(|value| *value),
         "reports":{
             "result":{"status":"passed","rule":"output_schema"},
-            "trajectory":{"status":"passed","model_turns":model_turns},
-            "side_effect":{"status":"passed","tool_calls":tool_calls},
-            "recovery":{"status":"passed","result_unknown":false},
-            "cost":{"status":"passed","model_turns":model_turns,"tool_calls":tool_calls},
-            "risk":{"status":"passed","policy":"rust_authority"}
+            "trajectory":{"status":if unsafe_actions==0{"passed"}else{"failed"},"model_turns":model_turns,"unfinished_actions":unsafe_actions},
+            "side_effect":{"status":if failed_tools==0{"passed"}else{"failed"},"tool_calls":tool_calls,"non_succeeded":failed_tools},
+            "recovery":{"status":if unsafe_actions==0{"passed"}else{"failed"},"result_unknown":unsafe_actions>0},
+            "cost":{"status":if budget_ok{"passed"}else{"failed"},"model_turns":model_turns,"tool_calls":tool_calls},
+            "risk":{"status":if !cancelled{"passed"}else{"failed"},"policy":"rust_authority","cancellation_requested":cancelled}
         }
-    })
+    }))
+}
+
+fn ensure_run_can_advance(
+    connection: &Connection,
+    task_id: &str,
+    run_id: &str,
+) -> Result<(), String> {
+    let allowed: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM tasks task JOIN agent_runs run ON run.task_id=task.id WHERE task.id=?1 AND run.id=?2 AND task.status='running' AND run.phase!='terminal' AND NOT EXISTS(SELECT 1 FROM task_cancellation_requests request WHERE request.task_id=task.id))",
+        params![task_id, run_id],
+        |row| row.get(0),
+    ).map_err(|error| error.to_string())?;
+    if allowed {
+        Ok(())
+    } else {
+        Err("run_not_advancable".to_owned())
+    }
 }
 
 fn consume_model_turn(connection: &Connection, run_id: &str, now: &str) -> Result<(), String> {
@@ -1142,9 +1237,10 @@ fn request_payload(config: &RunSkillConfig<'_>, run: &LockedRun) -> Result<Value
     let max_bytes = run.skill["context"]["max_bytes"].as_u64().unwrap_or(65_536) as usize;
     let context = context_pipeline::build(
         &run.prompt,
-        &run.instructions,
+        &run.capability_set,
         &config.input,
-        &run.skill["tools"],
+        &run.tool_surface,
+        &json!([]),
         max_bytes,
     )?;
     Ok(json!({
@@ -1196,7 +1292,12 @@ fn resolve_tool_surface(connection: &Connection, declarations: &Value) -> Result
     Ok(Value::Array(surface))
 }
 
-fn invoke_worker(root: &Path, python: &Path, request: &Value) -> Result<Value, String> {
+fn invoke_worker(
+    root: &Path,
+    python: &Path,
+    request: &Value,
+    run: Option<(&Connection, &str)>,
+) -> Result<Value, String> {
     let mut child = Command::new(python)
         .args(["-m", "app.task_worker"])
         .current_dir(root.join("runtime/python-agent"))
@@ -1211,6 +1312,28 @@ fn invoke_worker(root: &Path, python: &Path, request: &Value) -> Result<Value, S
         .ok_or("worker_disconnect")?
         .write_all(request.to_string().as_bytes())
         .map_err(|error| error.to_string())?;
+    loop {
+        if child
+            .try_wait()
+            .map_err(|error| error.to_string())?
+            .is_some()
+        {
+            break;
+        }
+        if let Some((connection, run_id)) = run {
+            let stopped: bool = connection.query_row(
+                "SELECT phase='terminal' OR deadline<?2 OR EXISTS(SELECT 1 FROM task_cancellation_requests request WHERE request.task_id=agent_runs.task_id) FROM agent_runs WHERE id=?1",
+                params![run_id, timestamp_seconds().to_string()],
+                |row| row.get(0),
+            ).map_err(|error| error.to_string())?;
+            if stopped {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("run_cancelled_or_deadline_exceeded".to_owned());
+            }
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
     let output = child
         .wait_with_output()
         .map_err(|error| error.to_string())?;
@@ -1232,7 +1355,7 @@ fn invoke_worker_bounded(
     request: &Value,
     now: &str,
 ) -> Result<Value, String> {
-    match invoke_worker(root, python, request) {
+    match invoke_worker(root, python, request, Some((connection, run_id))) {
         Ok(value) => Ok(value),
         Err(first)
             if first.contains("decision_schema_invalid")
@@ -1249,7 +1372,7 @@ fn invoke_worker_bounded(
             let mut retry = request.clone();
             append_protocol_error_observation(&mut retry, &first)?;
             checkpoint(connection, run_id, "before_model", &retry, now)?;
-            invoke_worker(root, python, &retry)
+            invoke_worker(root, python, &retry, Some((connection, run_id)))
         }
         Err(error) => Err(error),
     }
@@ -1278,7 +1401,7 @@ fn parse_decision_bounded(
             let mut retry = request.clone();
             append_protocol_error_observation(&mut retry, &first)?;
             checkpoint(connection, run_id, "before_model", &retry, now)?;
-            let retried = invoke_worker(root, python, &retry)?;
+            let retried = invoke_worker(root, python, &retry, Some((connection, run_id)))?;
             Ok((AgentDecision::parse(retried.clone())?, retried))
         }
     }
@@ -1427,13 +1550,15 @@ fn fail_run(
     reason: &str,
     now: &str,
 ) -> Result<Value, String> {
-    connection
+    let changed = connection
         .execute(
-            "UPDATE tasks SET status='failed',updated_at=?1 WHERE id=?2",
+            "UPDATE tasks SET status='failed',updated_at=?1 WHERE id=?2 AND status='running' AND NOT EXISTS(SELECT 1 FROM task_cancellation_requests WHERE task_id=?2)",
             params![now, run.task_id],
         )
         .map_err(|error| error.to_string())?;
-    set_phase(connection, &run.run_id, "terminal", Some(reason), now)?;
+    if changed == 1 {
+        connection.execute("UPDATE agent_runs SET phase='terminal',stop_reason=?1,revision=revision+1,updated_at=?2 WHERE id=?3 AND phase!='terminal'",params![reason,now,run.run_id]).map_err(|error|error.to_string())?;
+    }
     Err(reason.to_owned())
 }
 
@@ -1450,7 +1575,7 @@ fn fail_existing_run(
             params![now, task_id],
         )
         .map_err(|error| error.to_string())?;
-    connection.execute("UPDATE agent_runs SET phase='terminal',stop_reason=?1,revision=revision+1,updated_at=?2 WHERE id=?3",params![reason,now,run_id]).map_err(|error| error.to_string())?;
+    connection.execute("UPDATE agent_runs SET phase='terminal',stop_reason=?1,revision=revision+1,updated_at=?2 WHERE id=?3 AND phase!='terminal'",params![reason,now,run_id]).map_err(|error| error.to_string())?;
     Ok(
         json!({"schema_version":"1.0.0","task_id":task_id,"run_id":run_id,"status":"failed","phase":"terminal","reason":reason}),
     )
@@ -1468,6 +1593,7 @@ fn request_tool(
     now: &str,
     existing_action_id: Option<String>,
 ) -> Result<Value, String> {
+    ensure_run_can_advance(connection, &run.task_id, &run.run_id)?;
     let budget_available: bool = connection
         .query_row(
             "SELECT tool_calls_used < max_tool_calls FROM agent_runs WHERE id=?1",
@@ -1598,30 +1724,7 @@ fn validate_output(schema: &Value, value: &Value) -> Result<(), String> {
     validate_object(schema, value, "output_schema_invalid")
 }
 fn validate_object(schema: &Value, value: &Value, code: &str) -> Result<(), String> {
-    if schema["type"] == "object" {
-        let object = value
-            .as_object()
-            .ok_or_else(|| format!("{code}: expected object"))?;
-        for required in schema["required"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-        {
-            if !object.contains_key(required) {
-                return Err(format!("{code}: missing {required}"));
-            }
-        }
-        if schema["additionalProperties"] == false {
-            let properties = schema["properties"]
-                .as_object()
-                .ok_or_else(|| format!("{code}: properties missing"))?;
-            if let Some(key) = object.keys().find(|key| !properties.contains_key(*key)) {
-                return Err(format!("{code}: unknown {key}"));
-            }
-        }
-    }
-    Ok(())
+    json_schema::validate(schema, value).map_err(|error| format!("{code}: {error}"))
 }
 
 fn summarize(value: &Value) -> String {
@@ -1689,10 +1792,11 @@ mod tests {
         let connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(
-                "CREATE TABLE agent_runs(id TEXT PRIMARY KEY,revision INTEGER,model_turns_used INTEGER,max_model_turns INTEGER,updated_at TEXT);
+                "CREATE TABLE agent_runs(id TEXT PRIMARY KEY,task_id TEXT,phase TEXT,deadline TEXT,revision INTEGER,model_turns_used INTEGER,max_model_turns INTEGER,updated_at TEXT);
+                 CREATE TABLE task_cancellation_requests(task_id TEXT);
                  CREATE TABLE run_observations(run_id TEXT,sequence INTEGER,kind TEXT,summary_json TEXT,result_ref TEXT,created_at TEXT);
                  CREATE TABLE run_checkpoints(id TEXT,run_id TEXT,revision INTEGER,checkpoint_kind TEXT,state_sha256 TEXT,created_at TEXT);
-                 INSERT INTO agent_runs VALUES ('run',1,1,3,'now');",
+                 INSERT INTO agent_runs VALUES ('run','task','model_decision','9999999999',1,1,3,'now');",
             )
             .unwrap();
         let request = json!({
@@ -1737,5 +1841,29 @@ mod tests {
             1
         );
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cancellation_prevents_a_terminal_run_from_advancing() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        crate::storage::migrate(&mut connection).unwrap();
+        connection
+            .execute(
+                "INSERT INTO agents VALUES ('alex','Alex','role','path','active','t','t')",
+                [],
+            )
+            .unwrap();
+        connection.execute("INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','alex','{}','cancelled','t','t')", []).unwrap();
+        connection.execute("INSERT INTO agent_runs(id,task_id,schema_version,phase,revision,model_turns_used,tool_calls_used,max_model_turns,max_tool_calls,deadline,waiting_reason,stop_reason,created_at,updated_at) VALUES ('run','task','1.0.0','terminal',1,0,0,1,1,'9999999999',NULL,'cancelled','t','t')", []).unwrap();
+        connection
+            .execute(
+                "INSERT INTO task_cancellation_requests VALUES ('task','t','t')",
+                [],
+            )
+            .unwrap();
+        assert_eq!(
+            ensure_run_can_advance(&connection, "task", "run").unwrap_err(),
+            "run_not_advancable"
+        );
     }
 }

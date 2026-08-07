@@ -3,7 +3,7 @@
   "proposal_id": "proposal_launch_1",
   "title": "产品发布准备",
   "objective": "形成经过验证的产品发布方案",
-  "overall_acceptance_criteria": ["最终交付物引用全部上游证据"],
+  "overall_acceptance_criteria": [{"criterion_id":"final-evaluation","description":"最终交付物通过 Runtime Evaluation","evidence_type":"evaluation","required":true}],
   "coordinator_agent_id": "ai-product-manager",
   "nodes": [
     {
@@ -13,7 +13,7 @@
       "suggested_agent_id": "ai-product-manager",
       "required_capabilities": ["local-file-operations"],
       "input_refs": [],
-      "acceptance_criteria": ["输出经过验证的 Markdown 文件"],
+      "acceptance_criteria": [{"criterion_id":"research-output","description":"输出结构化研究结论","evidence_type":"structured_output","required":true}],
       "budget": {"max_input_tokens": 4000, "max_output_tokens": 2000, "max_tool_rounds": 4, "max_elapsed_ms": 120000},
       "failure_policy": "stop"
     },
@@ -24,7 +24,7 @@
       "suggested_agent_id": "ai-product-manager",
       "required_capabilities": ["local-file-operations"],
       "input_refs": [],
-      "acceptance_criteria": ["输出结构完整的发布草案"],
+      "acceptance_criteria": [{"criterion_id":"draft-output","description":"输出结构完整的发布草案","evidence_type":"structured_output","required":true}],
       "budget": {"max_input_tokens": 4000, "max_output_tokens": 2000, "max_tool_rounds": 4, "max_elapsed_ms": 120000},
       "failure_policy": "stop"
     },
@@ -35,7 +35,7 @@
       "suggested_agent_id": "ai-product-manager",
       "required_capabilities": ["local-file-operations"],
       "input_refs": [],
-      "acceptance_criteria": ["引用研究与草案节点的 verified Deliverable"],
+      "acceptance_criteria": [{"criterion_id":"final-evaluation","description":"引用研究与草案节点的 verified Deliverable","evidence_type":"evaluation","required":true}],
       "budget": {"max_input_tokens": 4000, "max_output_tokens": 2000, "max_tool_rounds": 2, "max_elapsed_ms": 120000},
       "failure_policy": "stop"
     }

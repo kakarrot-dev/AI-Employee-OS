@@ -18,7 +18,7 @@ pub struct ScenarioProposal {
     pub proposal_id: String,
     pub title: String,
     pub objective: String,
-    pub overall_acceptance_criteria: Vec<String>,
+    pub overall_acceptance_criteria: Vec<AcceptanceCriterion>,
     pub coordinator_agent_id: String,
     pub nodes: Vec<ScenarioNodeSpec>,
     pub edges: Vec<ScenarioEdgeSpec>,
@@ -36,9 +36,18 @@ pub struct ScenarioNodeSpec {
     pub suggested_agent_id: String,
     pub required_capabilities: Vec<String>,
     pub input_refs: Vec<String>,
-    pub acceptance_criteria: Vec<String>,
+    pub acceptance_criteria: Vec<AcceptanceCriterion>,
     pub budget: WorkBudget,
     pub failure_policy: FailurePolicy,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct AcceptanceCriterion {
+    pub criterion_id: String,
+    pub description: String,
+    pub evidence_type: String,
+    pub required: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -151,6 +160,7 @@ impl ScenarioProposal {
         if self.overall_acceptance_criteria.is_empty() {
             return Err("scenario_acceptance_required".into());
         }
+        validate_acceptance(&self.overall_acceptance_criteria)?;
         let participants = self
             .nodes
             .iter()
@@ -173,6 +183,7 @@ impl ScenarioProposal {
             {
                 return Err("scenario_node_invalid".into());
             }
+            validate_acceptance(&node.acceptance_criteria)?;
             if node.budget.max_input_tokens > MAX_WORK_INPUT_TOKENS
                 || node.budget.max_output_tokens > MAX_WORK_OUTPUT_TOKENS
                 || node.budget.max_tool_rounds > MAX_WORK_TOOL_ROUNDS
@@ -249,6 +260,23 @@ impl ScenarioProposal {
     }
 }
 
+fn validate_acceptance(criteria: &[AcceptanceCriterion]) -> Result<(), String> {
+    let mut ids = BTreeSet::new();
+    for criterion in criteria {
+        if criterion.criterion_id.trim().is_empty()
+            || criterion.description.trim().is_empty()
+            || !matches!(
+                criterion.evidence_type.as_str(),
+                "structured_output" | "artifact" | "tool_result" | "evaluation"
+            )
+            || !ids.insert(&criterion.criterion_id)
+        {
+            return Err("invalid acceptance criterion".to_owned());
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,7 +287,7 @@ mod tests {
             proposal_id: "proposal".into(),
             title: "Launch".into(),
             objective: "Ship".into(),
-            overall_acceptance_criteria: vec!["verified".into()],
+            overall_acceptance_criteria: vec![criterion("overall", "evaluation")],
             coordinator_agent_id: "alex".into(),
             nodes: vec![
                 node("research", ScenarioNodeRole::Executor),
@@ -284,7 +312,7 @@ mod tests {
             suggested_agent_id: "alex".into(),
             required_capabilities: vec!["local-file-operations".into()],
             input_refs: vec![],
-            acceptance_criteria: vec!["verified".into()],
+            acceptance_criteria: vec![criterion("verified", "evaluation")],
             budget: WorkBudget {
                 max_input_tokens: 1,
                 max_output_tokens: 1,
@@ -292,6 +320,15 @@ mod tests {
                 max_elapsed_ms: 1,
             },
             failure_policy: FailurePolicy::Stop,
+        }
+    }
+
+    fn criterion(id: &str, evidence_type: &str) -> AcceptanceCriterion {
+        AcceptanceCriterion {
+            criterion_id: id.into(),
+            description: id.into(),
+            evidence_type: evidence_type.into(),
+            required: true,
         }
     }
 

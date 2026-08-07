@@ -1,6 +1,37 @@
 # AI Employee OS 技术决策记录 ADR（Architecture Decision Records）v1.0
 
-> 阅读顺序：先读文首 ADR-034、ADR-033、ADR-032，再读 ADR-027～031 和 ADR-001 起的历史记录。ADR-031 已被 ADR-032 取代；ADR-017 已被 ADR-034 取代，只保留历史意义。
+> 阅读顺序：先读文首 ADR-035、ADR-034、ADR-033、ADR-032，再读 ADR-027～031 和 ADR-001 起的历史记录。ADR-031 已被 ADR-032 取代；ADR-017 已被 ADR-034 取代，只保留历史意义。
+
+## ADR-035：可信 Agent 执行闭环采用候选完成、确定性验证与原子收敛
+
+### 状态
+
+Accepted（2026-08-07）
+
+### 背景
+
+ADR-032 与 ADR-034 已规定模型 `complete` 不是成功事实、Deliverable 必须验证、取消必须持久化、Handoff 必须授权。但真实实现仍存在固定满分 Evaluation、浅层 Schema、最终 Context 未计量、取消后继续推进、Tool 子进程继承模型 Secret，以及 Handoff 未解析授权数据等偏差。逐点添加条件分支会继续扩大状态竞争和事实源分裂。
+
+### 决策
+
+1. 将 `AgentDecision.complete` 定义为 Candidate Completion。只有 Rust 在同一事务内通过递归 Schema、Evidence、确定性 Evaluation、WorkOrder Acceptance 和 cancellation/terminal 再检查后，才能写 verified Deliverable、Task succeeded 与 Run terminal。
+2. Python Provider 最终接收的完整消息是 Context 预算唯一对象。Capability、Tool、Task、Observation 与授权 SharedContextRef 必须进入同一个 canonical Context；禁止 Rust 构建一份未消费 Context、Python 再拼另一份未计量 Prompt。
+3. Cancellation Request 是持久化停止令牌。模型返回、Action 创建、Tool 开始与 Deliverable 提交都是 cancellation safe point；terminal Run 不得被后续响应复活。
+4. `result_unknown` 表示执行仍可能产生迟到副作用。执行单元未确认退出前不得人工收敛；核验必须提交结构化、可审计 Evidence，固定占位 JSON 无效。
+5. Secret 按最小进程注入。模型 API Key 只进入 Provider Worker；Tool/MCP/CLI 子进程使用环境白名单，不能继承模型 Secret。
+6. Handoff 是唯一跨员工数据平面。接受前验证 Acceptance、Sensitivity、allow-list 与 Hash；接受时创建 SharedContextRef，下游由 Rust 解析有界内容。
+7. Recovery 覆盖所有非 terminal Run checkpoint；确定性验证可以幂等重放，Tool 副作用不能推测或自动重放。
+
+### 禁止方案
+
+- 用 UI 文案、固定 score 或 `verified_by:user` 冒充验证；
+- 仅依赖 Prompt 声明抵御 ToolResult/网页提示注入；
+- 通过继承父进程环境解决 Tool 配置；
+- 取消后忽略迟到 Worker 响应但不做数据库条件更新；
+- 将 Deliverable ID 字符串直接当作下游可用 Context；
+- 修改已发布 Migration 或建立第二套 Run/Handoff 状态。
+
+完整协议与验收见 `docs/AI Employee OS Trusted Agent Execution Closure Specification v1.0.md`。
 
 ## ADR-034：多员工协作采用 Root Task、WorkOrder 与结构化 Handoff
 
