@@ -188,28 +188,14 @@ struct ScenarioLibraryWorkspaceView: View {
     private func beginManual() {
         guard let employee = employees.first(where: { $0.status == "active" }) else { return }
         store.selectedID = nil
-        let ids = ["research", "draft", "finalize"]
         store.draft = ScenarioProposal(
             proposalID: "proposal_\(UUID().uuidString.lowercased().prefix(10))",
             title: "未命名场景",
             objective: "# 业务 SOP\n\n## 背景与目标\n\n说明为什么要执行这项业务，以及最终要达成什么结果。\n\n## 输入\n\n- 列出启动流程前必须具备的资料或条件。\n\n## 执行步骤\n\n1. 描述第一阶段工作。\n2. 描述后续处理与交接。\n3. 汇总并验证最终交付。\n\n## 约束\n\n- 仅使用已授权的数据与工具。\n- 不满足条件时停止并请求用户确认。\n\n## 验收标准\n\n- 最终交付物可追溯到全部上游证据。",
             overallAcceptanceCriteria: ["最终交付物引用全部上游 verified Deliverable"],
             coordinatorAgentID: employee.id,
-            nodes: ids.enumerated().map { index, id in
-                ScenarioNode(
-                    nodeID: id,
-                    role: index == ids.count - 1 ? "finalization" : "executor",
-                    goal: index == ids.count - 1 ? "汇总并验证最终交付" : "完成阶段 \(index + 1)",
-                    suggestedAgentID: employee.id,
-                    requiredCapabilities: ["local-file-operations"],
-                    inputRefs: [], acceptanceCriteria: ["产生 verified Deliverable"],
-                    budget: ScenarioBudget(), failurePolicy: "stop"
-                )
-            },
-            edges: [
-                ScenarioEdge(predecessorNodeID: "research", successorNodeID: "draft"),
-                ScenarioEdge(predecessorNodeID: "draft", successorNodeID: "finalize"),
-            ]
+            nodes: [],
+            edges: []
         )
         editorSource = "manual"
         editorTab = .sop
@@ -336,31 +322,74 @@ private struct ScenarioEditorPage: View {
     private func nodesPage(_ binding: Binding<ScenarioProposal>) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("节点配置").font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
-                    Text("按执行顺序配置节点目标、执行员工、依赖关系和运行策略。")
-                        .font(.callout).foregroundStyle(palette.muted)
-                }
-
-                VStack(spacing: 0) {
-                    ForEach(Array(binding.nodes.enumerated()), id: \.element.wrappedValue.nodeID) { index, $node in
-                        nodeEditor($node, proposal: binding, nodeCount: binding.nodes.count)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 18)
-                        if index < binding.nodes.count - 1 {
-                            Divider().overlay(palette.hairlineSoft).padding(.leading, 120)
-                        }
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("节点配置").font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
+                        Text("按执行顺序配置节点目标、执行员工、依赖关系和运行策略。")
+                            .font(.callout).foregroundStyle(palette.muted)
+                    }
+                    Spacer()
+                    if !binding.nodes.wrappedValue.isEmpty {
+                        Button("让 AI 根据 SOP 重新组织") { proposeFromSOP() }
+                            .buttonStyle(CreamSecondaryButtonStyle())
+                            .disabled(store.isLoading)
                     }
                 }
-                .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
-                .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.xl).stroke(palette.hairlineSoft) }
 
-                Button {
-                    addNode()
-                } label: {
-                    Label("新增执行节点", systemImage: "plus")
+                if store.isProposing {
+                    proposalLoadingView
+                } else if binding.nodes.wrappedValue.isEmpty {
+                    VStack(spacing: 14) {
+                        Image(systemName: "point.3.connected.trianglepath.dotted")
+                            .font(.system(size: 30, weight: .light))
+                            .foregroundStyle(palette.primaryActive)
+                        Text("尚未配置节点")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(palette.ink)
+                        Text("可以让 AI 根据当前 SOP 生成节点草案，也可以从一个执行节点开始人工配置。")
+                            .font(.callout)
+                            .foregroundStyle(palette.muted)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 440)
+                        HStack(spacing: 8) {
+                            Button("让 AI 根据 SOP 组织节点") { proposeFromSOP() }
+                                .buttonStyle(CreamPrimaryButtonStyle())
+                            Button("新增执行节点") { addNode() }
+                                .buttonStyle(CreamSecondaryButtonStyle())
+                        }
+                        if let error = store.errorMessage {
+                            Label(error, systemImage: "exclamationmark.triangle.fill")
+                                .font(.callout)
+                                .foregroundStyle(palette.error)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: 520)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 280)
+                    .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
+                    .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.xl).stroke(palette.hairlineSoft) }
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(binding.nodes.enumerated()), id: \.element.wrappedValue.nodeID) { index, $node in
+                            nodeEditor($node, proposal: binding)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 18)
+                            if index < binding.nodes.count - 1 {
+                                Divider().overlay(palette.hairlineSoft).padding(.leading, 120)
+                            }
+                        }
+                    }
+                    .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
+                    .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.xl).stroke(palette.hairlineSoft) }
+
+                    Button {
+                        addNode()
+                    } label: {
+                        Label("新增执行节点", systemImage: "plus")
+                    }
+                    .buttonStyle(CreamSecondaryButtonStyle())
+                    .disabled(binding.nodes.count >= 12)
                 }
-                .buttonStyle(CreamSecondaryButtonStyle())
             }
             .padding(28).frame(maxWidth: 820, alignment: .leading).frame(maxWidth: .infinity)
         }
@@ -368,16 +397,33 @@ private struct ScenarioEditorPage: View {
             HStack {
                 Button("返回 SOP") { selectedTab = .sop }.buttonStyle(CreamSecondaryButtonStyle())
                 Spacer()
-                Button("下一步：校验与启动") { selectedTab = .review }.buttonStyle(CreamPrimaryButtonStyle())
+                Button("下一步：校验与启动") { selectedTab = .review }
+                    .buttonStyle(CreamPrimaryButtonStyle())
+                    .disabled(!hasRunnableNodes(binding.wrappedValue))
             }
             .padding(.horizontal, 24).padding(.vertical, 12).background(palette.surfaceSoft)
         }
     }
 
+    private var proposalLoadingView: some View {
+        VStack(spacing: 14) {
+            ProgressView()
+                .controlSize(.regular)
+            Text("AI 正在根据 SOP 组织节点…")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(palette.ink)
+            Text("生成完成后会在这里展示节点草案。")
+                .font(.callout)
+                .foregroundStyle(palette.muted)
+        }
+        .frame(maxWidth: .infinity, minHeight: 280)
+        .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl))
+        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.xl).stroke(palette.hairlineSoft) }
+    }
+
     private func nodeEditor(
         _ node: Binding<ScenarioNode>,
-        proposal: Binding<ScenarioProposal>,
-        nodeCount: Int
+        proposal: Binding<ScenarioProposal>
     ) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
@@ -388,7 +434,7 @@ private struct ScenarioEditorPage: View {
                     .padding(.horizontal, 8).frame(height: 24)
                     .background(palette.primary.opacity(0.10), in: Capsule())
                 Spacer()
-                if node.wrappedValue.role != "finalization", nodeCount > 2 {
+                if node.wrappedValue.role != "finalization" {
                     Button {
                         removeNode(node.wrappedValue.nodeID)
                     } label: {
@@ -399,6 +445,7 @@ private struct ScenarioEditorPage: View {
                             .background(palette.error.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
                     }
                     .buttonStyle(.plain).help("删除节点")
+                    .accessibilityLabel("删除执行节点")
                 }
             }
             .frame(minHeight: 36)
@@ -566,7 +613,7 @@ private struct ScenarioEditorPage: View {
                         Task { if await store.save(source: source) { close() } }
                     }
                     .buttonStyle(CreamPrimaryButtonStyle())
-                    .disabled(store.isLoading || binding.title.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || binding.objective.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(store.isLoading || binding.title.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || binding.objective.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !hasRunnableNodes(binding.wrappedValue))
                 }
             }
             .padding(28).frame(maxWidth: 760, alignment: .leading)
@@ -580,34 +627,62 @@ private struct ScenarioEditorPage: View {
         }
         let title = draft.title
         let sop = draft.objective
+        selectedTab = .nodes
         Task {
-            await store.propose(objective: sop, key: key)
-            if store.draft != nil {
+            if await store.propose(objective: sop, key: key) {
                 store.draft?.title = title
                 store.draft?.objective = sop
                 source = "ai_proposal"
-                selectedTab = .nodes
             }
         }
     }
 
     private func addNode() {
         guard var draft = store.draft,
-              let finalIndex = draft.nodes.firstIndex(where: { $0.role == "finalization" }),
+              let employee = activeEmployees.first,
               draft.nodes.count < 12 else { return }
-        let template = draft.nodes[max(0, finalIndex - 1)]
-        var node = template
-        node.nodeID = "step-\(UUID().uuidString.lowercased().prefix(8))"
-        node.goal = "配置该节点目标"
-        node.role = "executor"
-        draft.nodes.insert(node, at: finalIndex)
+        let executor = makeNode(role: "executor", goal: "配置该节点目标", employeeID: employee.id)
+        if let finalIndex = draft.nodes.firstIndex(where: { $0.role == "finalization" }) {
+            draft.nodes.insert(executor, at: finalIndex)
+        } else {
+            draft.nodes.append(executor)
+            draft.nodes.append(
+                makeNode(role: "finalization", goal: "汇总并验证最终交付", employeeID: employee.id)
+            )
+        }
         store.draft = draft
     }
 
     private func removeNode(_ id: String) {
         guard var draft = store.draft else { return }
         draft.nodes.removeAll { $0.nodeID == id && $0.role != "finalization" }
+        draft.edges.removeAll { $0.predecessorNodeID == id || $0.successorNodeID == id }
+        if !draft.nodes.contains(where: { $0.role == "executor" }) {
+            draft.nodes.removeAll { $0.role == "finalization" }
+            draft.edges.removeAll()
+        }
         store.draft = draft
+    }
+
+    private func makeNode(role: String, goal: String, employeeID: String) -> ScenarioNode {
+        ScenarioNode(
+            nodeID: role == "finalization"
+                ? "finalize-\(UUID().uuidString.lowercased().prefix(8))"
+                : "step-\(UUID().uuidString.lowercased().prefix(8))",
+            role: role,
+            goal: goal,
+            suggestedAgentID: employeeID,
+            requiredCapabilities: ["local-file-operations"],
+            inputRefs: [],
+            acceptanceCriteria: ["产生 verified Deliverable"],
+            budget: ScenarioBudget(),
+            failurePolicy: "stop"
+        )
+    }
+
+    private func hasRunnableNodes(_ proposal: ScenarioProposal) -> Bool {
+        proposal.nodes.contains(where: { $0.role == "executor" })
+            && proposal.nodes.filter { $0.role == "finalization" }.count == 1
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }

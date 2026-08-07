@@ -64,7 +64,7 @@ def main() -> int:
         else:
             config = ProviderConfig()
             config.validate()
-            provider = DeepSeekProvider(config.deepseek_model, config.request_timeout_seconds)
+            provider = DeepSeekProvider(config.deepseek_model, config.scenario_request_timeout_seconds)
         response = provider.complete_json(_messages(request))
         proposal = json.loads(response.content)
         if not isinstance(proposal, dict):

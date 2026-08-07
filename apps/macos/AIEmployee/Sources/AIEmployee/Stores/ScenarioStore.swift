@@ -9,6 +9,7 @@ final class ScenarioStore: ObservableObject {
     @Published private(set) var flows: [BusinessFlowProjection] = []
     @Published private(set) var pendingRun: BusinessFlowRunState?
     @Published var isLoading = false
+    @Published private(set) var isProposing = false
     @Published var errorMessage: String?
 
     private let runtime = RuntimeService.live()
@@ -44,14 +45,16 @@ final class ScenarioStore: ObservableObject {
         )
     }
 
-    func propose(objective: String, key: String) async {
-        isLoading = true
-        defer { isLoading = false }
+    func propose(objective: String, key: String) async -> Bool {
+        isProposing = true
+        defer { isProposing = false }
         do {
             draft = try await runtime.scenarioPropose(objective, key).proposal
             errorMessage = nil
+            return true
         } catch {
             errorMessage = error.localizedDescription
+            return false
         }
     }
 
