@@ -5,6 +5,7 @@ struct ContentView: View {
     @ObservedObject var conversationStore: ConversationStore
     @ObservedObject var employeeStore: EmployeeStore
     @ObservedObject var capabilityStore: CapabilityStore
+    @StateObject private var knowledgeStore = KnowledgeLibraryStore()
     @AppStorage("appDestination") private var destinationRaw = AppDestination.office.rawValue
     @SceneStorage("workComposerPresented") private var workComposerPresented = false
     @State private var demoEditorEmployee: Employee?
@@ -92,6 +93,7 @@ struct ContentView: View {
             if let index = arguments.firstIndex(of: "--ui-demo"), arguments.indices.contains(index + 1) {
                 let scene = arguments[index + 1]
                 if scene.hasPrefix("skills") { destinationRaw = AppDestination.skills.rawValue }
+                if scene.hasPrefix("knowledge") { destinationRaw = AppDestination.knowledge.rawValue }
                 if scene.hasPrefix("tools") { destinationRaw = AppDestination.tools.rawValue }
                 if scene.hasPrefix("work") { destinationRaw = AppDestination.work.rawValue }
             }
@@ -107,7 +109,7 @@ struct ContentView: View {
     private var workspace: some View {
         switch destination.wrappedValue {
         case .office:
-            OfficeWorkspaceView(store: store, employeeStore: employeeStore, openChat: { destination.wrappedValue = .work })
+            OfficeWorkspaceView(store: store, employeeStore: employeeStore)
         case .contacts:
             EmployeeDirectoryView(
                 store: employeeStore,
@@ -126,6 +128,8 @@ struct ContentView: View {
             )
         case .skills:
             CapabilityLibraryWorkspaceView(scope: .skills, capabilityStore: capabilityStore)
+        case .knowledge:
+            KnowledgeLibraryWorkspaceView(store: knowledgeStore)
         case .tools:
             CapabilityLibraryWorkspaceView(scope: .tools, capabilityStore: capabilityStore)
         case .settings:

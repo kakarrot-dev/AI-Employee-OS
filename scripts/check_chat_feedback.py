@@ -6,11 +6,20 @@ store = Path(
 workspace = Path(
     "apps/macos/AIEmployee/Sources/AIEmployee/Views/EmployeeChat/EmployeeChatWorkspaceView.swift"
 ).read_text()
+selectable_markdown = Path(
+    "apps/macos/AIEmployee/Sources/AIEmployee/Views/EmployeeChat/SelectableMarkdownTextView.swift"
+).read_text()
 inspector = Path(
     "apps/macos/AIEmployee/Sources/AIEmployee/Views/EmployeeChat/TaskInspectorView.swift"
 ).read_text()
 task_store = Path(
     "apps/macos/AIEmployee/Sources/AIEmployee/Stores/TaskStore.swift"
+).read_text()
+command_palette = Path(
+    "apps/macos/AIEmployee/Sources/AIEmployee/Views/CommandPaletteView.swift"
+).read_text()
+settings = Path(
+    "apps/macos/AIEmployee/Sources/AIEmployee/Views/SettingsView.swift"
 ).read_text()
 
 sending_index = store.index("isSending = true; error = nil")
@@ -38,12 +47,73 @@ assert "ChatMarkdownBody(source: displayedContent)" in workspace and ".accessibi
 assert '"--stream-events"' in Path(
     "apps/macos/AIEmployee/Sources/AIEmployee/Services/RuntimeService.swift"
 ).read_text(), "chat requests must use the real Runtime streaming protocol"
+assert 'employee?.name ?? "Alex"' not in workspace and 'employee?.role ?? "AI 产品经理"' not in workspace, (
+    "missing employee data must not be disguised as the default seed employee"
+)
+assert "交给 Alex 新工作" not in command_palette and "交给员工新工作" in command_palette, (
+    "the command palette must remain generic in a multi-employee workspace"
+)
+assert "查看员工与工作状态" not in command_palette and "查看模型调用与 Token 用量" in command_palette, (
+    "the Office command description must match its usage-only responsibility"
+)
+assert "Alex 无法调用真实模型" not in settings and "AI 员工无法调用真实模型" in settings, (
+    "credential state must describe every employee rather than the old seed"
+)
 assert "streamingContent += delta" in store, "stream deltas must update the visible assistant response"
+assert "func stopSending()" in store and "sendTask?.cancel()" in store, (
+    "chat stop must cancel the owned request instead of only hiding pending UI"
+)
+assert '"chat-abort"' in Path(
+    "apps/macos/AIEmployee/Sources/AIEmployee/Services/RuntimeService.swift"
+).read_text(), "chat stop must converge the persisted model call"
+assert 'Image(systemName: conversationStore.isSending && !isCreatingWork ? "stop.fill" : "arrow.up")' in workspace, (
+    "the stable composer action slot must switch from send to stop while replying"
+)
+assert "TimelineView(.periodic(from: .now, by: 1))" in workspace and "TaskPresentation.elapsed(run.createdAt" in workspace, (
+    "a real running task must expose live elapsed time instead of a static progress claim"
+)
+runtime_main = Path("runtime/rust-core/src/main.rs").read_text()
+assert "This response is conversation-only" in runtime_main and "Never claim that work is currently running" in runtime_main, (
+    "conversation-only model output must not impersonate an active Runtime job"
+)
+assert "已停止本轮回复。你可以修改上一条消息后重新发送。" in runtime_main, (
+    "a user-stopped chat request must persist a visible terminal explanation"
+)
+assert ".onKeyPress(keys: [.return])" in workspace and "keyPress.modifiers.contains(.shift)" in workspace, (
+    "the composer must reserve Shift+Enter for an inline newline"
+)
+assert "#selector(NSText.insertNewline(_:))" in workspace, (
+    "Shift+Enter must insert at the active text selection instead of appending to the draft"
+)
 assert "展开完整消息" in workspace and "isLong" in workspace, (
     "long user and assistant messages must expose an explicit fold control"
 )
-assert "case .table(let headers, let rows)" in workspace and "MarkdownTableView" in workspace, (
-    "Markdown tables must render as a native grid"
+assert "case .table(let headers, let rows)" in selectable_markdown and 'joined(separator: "    ")' in selectable_markdown, (
+    "Markdown tables must remain readable and continuously selectable"
+)
+assert "SelectableMarkdownTextView(source: source" in workspace, (
+    "assistant Markdown must use one native text surface so selection can cross block boundaries"
+)
+assert "textView.isSelectable = true" in selectable_markdown and "textView.isEditable = false" in selectable_markdown, (
+    "the native message text surface must remain read-only and selectable"
+)
+assert "One NSTextView owns the complete message" in selectable_markdown, (
+    "the continuous-selection boundary must remain explicit"
+)
+assert "private final class MarkdownLayoutManager" in selectable_markdown and "NSBezierPath(roundedRect:" in selectable_markdown, (
+    "code blocks must use a rounded block surface without fragmenting native text selection"
+)
+assert "markdownBlockBorder" not in selectable_markdown, (
+    "Markdown block hierarchy must use surface contrast rather than full borders"
+)
+assert "private enum MarkdownTypography" in selectable_markdown and "bodyLineSpacing" in selectable_markdown, (
+    "Markdown reading hierarchy must use one shared typography scale"
+)
+assert "attributes[.backgroundColor]" not in selectable_markdown, (
+    "code block styling must not regress to a hard per-glyph background"
+)
+assert workspace.count(".selectableTextCursor()") >= 2 and "NSCursor.iBeam.set()" in workspace, (
+    "single-block user messages must expose the native text-selection cursor"
 )
 assert 'Label("复制", systemImage: "doc.on.doc")' not in workspace, (
     "assistant reply copy action must not render a text label"
@@ -60,7 +130,7 @@ assert "metadata: TaskPresentation.time(message.createdAt)" in workspace, (
 assert workspace.count("AgentTimelineBlock(") >= 3, (
     "assistant replies, streaming replies, and work events must share the same timeline block"
 )
-assert '.frame(width: 40, height: 2)' in workspace, (
+assert '"────────"' in selectable_markdown and "colors.divider" in selectable_markdown, (
     "Markdown dividers must remain visually distinct from full-width turn separators"
 )
 assert "message.id == conversationStore.latestUserMessageID" in workspace, (
@@ -125,11 +195,32 @@ assert 'Button("在 Finder 中显示")' not in workspace and "质量检查通过
 assert 'Text("整理结果并回复")' in inspector and "planStepCount(run)" in inspector, (
     "the visible plan must include final response synthesis after Tool actions"
 )
-assert "private var conversationRuns" in workspace and "return conversationRuns.first" in workspace, (
-    "the inspector must follow the current employee conversation instead of stale global task selection"
+assert "private var conversationRuns" in workspace and "private var selectedRun" in workspace, (
+    "the inspector must derive its run from the current employee conversation"
+)
+assert "return !conversationRuns.contains { run in" in workspace, (
+    "assistant-message deduplication must not inspect another employee's runs"
+)
+assert "entries.append(contentsOf: conversationRuns.filter" in workspace, (
+    "the chat timeline must not render runs from another employee conversation"
+)
+assert "entries.append(contentsOf: store.runs.filter" not in workspace, (
+    "the chat timeline must never append the global task history"
+)
+assert "@Environment(\\.appWindowWidth)" in workspace and "conversationListMinimumWindowWidth" in workspace, (
+    "compact windows must not swap the global sidebar for the conversation sidebar after toggling"
+)
+assert "private var selectedRun: TaskRun? {\n        activeRun\n    }" in workspace, (
+    "the current-work inspector must not present a terminal historical run as active work"
 )
 assert "let selected = store.runs.first(where:" not in workspace, (
     "the chat inspector must not reuse an unrelated historical task selection"
+)
+context_sidebar = Path(
+    "apps/macos/AIEmployee/Sources/AIEmployee/Views/AppShell/ContextSidebarView.swift"
+).read_text()
+assert "employeeRuns.first?.status == .failed" not in context_sidebar, (
+    "the conversation status dot must not remain failed because of a terminal historical run"
 )
 
 print("chat feedback checks: ok")

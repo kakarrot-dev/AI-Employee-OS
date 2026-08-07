@@ -118,7 +118,7 @@ struct SettingsView: View {
             }
 
             Label(
-                saved ? "已安全保存在 macOS Keychain" : "尚未配置，Alex 无法调用真实模型",
+                saved ? "已安全保存在 macOS Keychain" : "尚未配置，AI 员工无法调用真实模型",
                 systemImage: saved ? "checkmark.circle.fill" : "key"
             )
             .font(.caption)

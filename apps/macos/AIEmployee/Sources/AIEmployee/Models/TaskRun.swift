@@ -1,5 +1,36 @@
 import Foundation
 
+enum JSONValue: Codable, Sendable, Equatable {
+    case object([String: JSONValue])
+    case array([JSONValue])
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case null
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() { self = .null }
+        else if let value = try? container.decode([String: JSONValue].self) { self = .object(value) }
+        else if let value = try? container.decode([JSONValue].self) { self = .array(value) }
+        else if let value = try? container.decode(Bool.self) { self = .bool(value) }
+        else if let value = try? container.decode(Double.self) { self = .number(value) }
+        else { self = .string(try container.decode(String.self)) }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .object(let value): try container.encode(value)
+        case .array(let value): try container.encode(value)
+        case .string(let value): try container.encode(value)
+        case .number(let value): try container.encode(value)
+        case .bool(let value): try container.encode(value)
+        case .null: try container.encodeNil()
+        }
+    }
+}
+
 enum TaskRunStatus: String, Codable, Sendable {
     case pending, running, succeeded, failed, cancelled
 }
@@ -107,6 +138,7 @@ struct RuntimeEvent: Codable, Identifiable, Sendable {
     let taskID: String
     let type: String
     let occurredAt: String
+    let payload: [String: JSONValue]
 
     var id: String { eventID }
 
@@ -117,6 +149,7 @@ struct RuntimeEvent: Codable, Identifiable, Sendable {
         case taskID = "task_id"
         case type
         case occurredAt = "occurred_at"
+        case payload
     }
 }
 
@@ -173,7 +206,5 @@ struct TaskRun: Identifiable {
     var hasPersistentDeliverable: Bool {
         deliverableStatus == "verified"
             || verifiedArtifactPath != nil
-            || artifactPath != nil
-            || response?.artifactPath.isEmpty == false
     }
 }

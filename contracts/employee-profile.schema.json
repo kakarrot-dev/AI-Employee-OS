@@ -10,9 +10,6 @@
     "name": {"type": "string", "minLength": 1, "maxLength": 80},
     "role": {"type": "string", "minLength": 1, "maxLength": 120},
     "department": {"type": "string", "minLength": 1, "maxLength": 80},
-    "mission": {"type": "string", "maxLength": 500, "description": "Legacy DB mirror; not a user-facing prompt. Runtime may derive from base_prompt."},
-    "responsibilities": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 200}, "maxItems": 20, "description": "Legacy DB column; unused by Effective Prompt."},
-    "boundaries": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 200}, "maxItems": 20, "description": "Legacy DB column; unused by Effective Prompt."},
     "soul": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 8000}, "minItems": 1, "maxItems": 40},
     "persona": {
       "type": "object",

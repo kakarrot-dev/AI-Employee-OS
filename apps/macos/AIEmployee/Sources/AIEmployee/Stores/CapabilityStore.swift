@@ -8,7 +8,6 @@ final class CapabilityStore: ObservableObject {
     @Published private(set) var skills: [RuntimeSkillItem] = []
     @Published private(set) var tools: [RuntimeToolItem] = []
     @Published private(set) var boundSkillsByEmployee: [String: [RuntimeSkillItem]] = [:]
-    @Published private(set) var selectedToolIDsByEmployee: [String: Set<String>] = [:]
     @Published private(set) var loadError: String?
     @Published private(set) var isLoading = false
     @Published var actionError: String?
@@ -82,19 +81,13 @@ final class CapabilityStore: ObservableObject {
         }
     }
 
-    func setSelectedTools(for employeeID: String, ids: Set<String>) {
-        selectedToolIDsByEmployee[employeeID] = ids
-    }
-
     func capabilityProfile(for employeeID: String) -> EmployeeCapabilityProfile {
         let skillCatalog = skills.map(Self.skillItem)
         let toolCatalog = tools.map(Self.toolItem)
         let selectedSkills = (boundSkillsByEmployee[employeeID] ?? []).map(Self.skillItem)
-        let selectedToolIDs = selectedToolIDsByEmployee[employeeID] ?? Set(tools.map(\.id))
-        let selectedTools = toolCatalog.filter { selectedToolIDs.contains($0.id) }
         return EmployeeCapabilityProfile(
             selectedSkills: selectedSkills,
-            selectedTools: selectedTools,
+            selectedTools: toolCatalog,
             permissions: [],
             skillCatalog: skillCatalog,
             toolCatalog: toolCatalog

@@ -43,12 +43,6 @@ enum ArtifactService {
         NSWorkspace.shared.open(fileURL.deletingLastPathComponent())
     }
 
-    static func materializeDemoArtifact(at path: String, content: String) throws {
-        let url = URL(filePath: path).standardizedFileURL
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data(content.utf8).write(to: url, options: .atomic)
-    }
-
     private static func validatedOutputURL(_ path: String) throws -> URL {
         let candidate = URL(filePath: path).standardizedFileURL.resolvingSymlinksInPath()
         let outputDirectory = try RuntimeService.authorizedOutputDirectory()

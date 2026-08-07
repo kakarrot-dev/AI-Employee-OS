@@ -17,7 +17,7 @@ struct CommandPaletteView: View {
 
     private var commands: [PaletteCommand] {
         var all = [
-            PaletteCommand(id: "action-new-work", section: .actions, title: "交给 Alex 新工作", subtitle: "进入员工会话并开始工作", image: "plus", searchTerms: "新建 委派 工作", action: newTask)
+            PaletteCommand(id: "action-new-work", section: .actions, title: "交给员工新工作", subtitle: "进入员工会话并开始工作", image: "plus", searchTerms: "新建 委派 工作", action: newTask)
         ]
         all.append(contentsOf: employees.prefix(6).map { employee in
             PaletteCommand(
@@ -42,10 +42,11 @@ struct CommandPaletteView: View {
             )
         })
         all.append(contentsOf: [
-            destination("打开办公室", "查看员工与工作状态", "building.2", .office),
+            destination("打开办公室", "查看模型调用与 Token 用量", "building.2", .office),
             destination("打开通讯录", "按部门查找员工", "person.2", .contacts),
             destination("打开工作库", "查看所有员工的工作历史", "clock.arrow.circlepath", .work),
             destination("打开技能库", "查看已安装的 Skills", "sparkles", .skills),
+            destination("打开知识库", "浏览本地 Markdown 知识文档", "books.vertical", .knowledge),
             destination("打开工具库", "查看 Tools、权限与连接状态", "wrench.and.screwdriver", .tools),
             PaletteCommand(id: "settings", section: .navigation, title: "打开设置", subtitle: "配置模型、隐私与应用选项", image: "gearshape", searchTerms: "设置 模型 API Key 外观", action: settings)
         ])

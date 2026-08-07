@@ -44,7 +44,7 @@ struct ContextSidebarView: View {
             EmployeeDirectorySidebar(store: employeeStore)
         case .work:
             WorkConversationList(store: store, conversationStore: conversationStore, employeeStore: employeeStore)
-        case .office, .skills, .tools, .settings:
+        case .office, .knowledge, .skills, .tools, .settings:
             EmptyView()
         }
     }
@@ -206,7 +206,6 @@ struct WorkConversationList: View {
         if employeeRuns.contains(where: { $0.status == .running || $0.status == .pending }) {
             return .working
         }
-        if employeeRuns.first?.status == .failed { return .failed }
         return .idle
     }
 
@@ -227,7 +226,7 @@ struct WorkConversationList: View {
 }
 
 private struct WorkConversationRow: View {
-    enum State { case idle, working, waiting, failed, disabled }
+    enum State { case idle, working, waiting, disabled }
     let employee: Employee
     let preview: String
     let state: State
@@ -254,7 +253,6 @@ private struct WorkConversationRow: View {
         case .idle: palette.success
         case .working: palette.accentTeal
         case .waiting: palette.warning
-        case .failed: palette.error
         case .disabled: palette.mutedSoft
         }
     }

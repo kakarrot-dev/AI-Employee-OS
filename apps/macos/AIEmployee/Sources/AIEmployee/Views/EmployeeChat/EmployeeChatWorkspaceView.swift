@@ -15,6 +15,9 @@ struct EmployeeChatWorkspaceView: View {
     @State private var workspaceWidth: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appWindowWidth) private var appWindowWidth
+
+    private static let conversationListMinimumWindowWidth: CGFloat = 960
 
     private var activeRun: TaskRun? {
         guard supportsTasks else { return nil }
@@ -22,9 +25,7 @@ struct EmployeeChatWorkspaceView: View {
     }
 
     private var selectedRun: TaskRun? {
-        guard supportsTasks else { return nil }
-        if let activeRun { return activeRun }
-        return conversationRuns.first
+        activeRun
     }
 
     private var conversationRuns: [TaskRun] {
@@ -34,21 +35,43 @@ struct EmployeeChatWorkspaceView: View {
         }
     }
 
-    private var showsInspector: Bool {
-        supportsTasks && selectedRun != nil && inspectorVisible && workspaceWidth >= 1020
-    }
-
-    private var showsConversationList: Bool {
-        workspaceWidth >= 700
-    }
-
     private var supportsTasks: Bool {
         capabilityStore.tasksEnabled
     }
 
     var body: some View {
+        GeometryReader { proxy in
+            workspace(availableWidth: proxy.size.width)
+        }
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { workspaceWidth = $0 }
+        .onChange(of: conversationStore.pendingTaskRefresh) { _, pending in
+            guard pending else { return }
+            conversationStore.clearPendingTaskRefresh()
+            store.retryHistory()
+        }
+        .navigationTitle("")
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                EmployeeToolbarTitle(employee: employee, run: activeRun, reduceMotion: reduceMotion)
+            }
+            if supportsTasks, selectedRun != nil {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        inspectorVisible.toggle()
+                    } label: {
+                        Label(showsInspector(availableWidth: workspaceWidth) ? "隐藏任务面板" : "显示任务面板", systemImage: "sidebar.right")
+                    }
+                    .help(workspaceWidth < 1020 ? "扩大窗口后可显示工作检查器" : (showsInspector(availableWidth: workspaceWidth) ? "隐藏工作检查器" : "显示工作检查器"))
+                    .disabled(workspaceWidth < 1020)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func workspace(availableWidth: CGFloat) -> some View {
         HSplitView {
-            if showsConversationList {
+            if showsConversationList(availableWidth: availableWidth) {
                 WorkConversationList(store: store, conversationStore: conversationStore, employeeStore: employeeStore)
                     .frame(minWidth: 230, idealWidth: 250, maxWidth: 280)
             }
@@ -67,7 +90,7 @@ struct EmployeeChatWorkspaceView: View {
             .frame(minWidth: 460, maxWidth: .infinity, maxHeight: .infinity)
             .background(palette.canvas)
 
-            if showsInspector {
+            if showsInspector(availableWidth: availableWidth) {
                 TaskInspectorView(
                     run: selectedRun,
                     store: store,
@@ -79,29 +102,14 @@ struct EmployeeChatWorkspaceView: View {
                     }
             }
         }
-        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { workspaceWidth = $0 }
-        .onChange(of: conversationStore.pendingTaskRefresh) { _, pending in
-            guard pending else { return }
-            conversationStore.clearPendingTaskRefresh()
-            store.retryHistory()
-        }
-        .navigationTitle("")
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                EmployeeToolbarTitle(employee: employee, run: activeRun, reduceMotion: reduceMotion)
-            }
-            if supportsTasks, selectedRun != nil {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        inspectorVisible.toggle()
-                    } label: {
-                        Label(showsInspector ? "隐藏任务面板" : "显示任务面板", systemImage: "sidebar.right")
-                    }
-                    .help(workspaceWidth < 1020 ? "扩大窗口后可显示工作检查器" : (showsInspector ? "隐藏工作检查器" : "显示工作检查器"))
-                    .disabled(workspaceWidth < 1020)
-                }
-            }
-        }
+    }
+
+    private func showsInspector(availableWidth: CGFloat) -> Bool {
+        supportsTasks && selectedRun != nil && inspectorVisible && availableWidth >= 1020
+    }
+
+    private func showsConversationList(availableWidth: CGFloat) -> Bool {
+        appWindowWidth >= Self.conversationListMinimumWindowWidth && availableWidth >= 700
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
@@ -128,17 +136,23 @@ private struct EmployeeToolbarTitle: View {
                     Circle().fill(stateColor).frame(width: 7, height: 7)
                 }
                 HStack(spacing: 5) {
-                    Text(employee?.name ?? "Alex").fontWeight(.semibold)
-                    Text("· \(employee?.role ?? "AI 产品经理")").foregroundStyle(.secondary)
+                    Text(employee?.name ?? "员工不可用").fontWeight(.semibold)
+                    if let role = employee?.role {
+                        Text("· \(role)").foregroundStyle(.secondary)
+                    }
                 }
             }
         }
         .buttonStyle(.plain)
-        .help(run.map { "\(employee?.name ?? "Alex") 正在处理：\($0.input)" } ?? "查看员工详情")
+        .help(run.map { "\(employee?.name ?? "该员工") 正在处理：\($0.input)" } ?? "查看员工详情")
         .popover(isPresented: $detailsVisible, arrowEdge: .top) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                Text(employee?.name ?? "Alex").font(.headline)
-                Text("\(employee?.role ?? "AI 产品经理") · \(employee?.department ?? "产品部")").font(.callout).foregroundStyle(.secondary)
+                Text(employee?.name ?? "员工不可用").font(.headline)
+                if let employee {
+                    Text("\(employee.role) · \(employee.department)").font(.callout).foregroundStyle(.secondary)
+                } else {
+                    Text("员工资料不存在或已被删除").font(.callout).foregroundStyle(.secondary)
+                }
                 Divider()
                 Label(employee?.status == "active" ? "可用" : "已停用", systemImage: employee?.status == "active" ? "checkmark.circle" : "pause.circle")
                 Text("消息和工作会保留在这名员工的持续会话中。")
@@ -251,6 +265,14 @@ private struct EmployeeMessageStream: View {
         "\(timeline.last?.id ?? "empty"):\(conversationStore.isSending):\(conversationStore.streamingContent.count)"
     }
 
+    private var conversationRuns: [TaskRun] {
+        let employeeID = conversationStore.employeeID
+        let conversationID = "conversation_\(employeeID)_primary"
+        return store.runs.filter {
+            $0.agentID == employeeID && $0.conversationID == conversationID
+        }
+    }
+
     private func scrollToLatest(using proxy: ScrollViewProxy) {
         Task { @MainActor in
             await Task.yield()
@@ -271,7 +293,7 @@ private struct EmployeeMessageStream: View {
             return !showsTasks
         }.filter { message in
             guard showsTasks, message.role == "assistant" else { return true }
-            return !store.runs.contains { run in
+            return !conversationRuns.contains { run in
                 run.status == .succeeded
                     && !TaskPresentation.isChronologicallyBefore(message.createdAt, run.createdAt)
                     && run.conversationID == "conversation_\(conversationStore.employeeID)_primary"
@@ -280,7 +302,7 @@ private struct EmployeeMessageStream: View {
         }
         var entries = visibleMessages.map(WorkTimelineEntry.message)
         if showsTasks {
-            entries.append(contentsOf: store.runs.filter {
+            entries.append(contentsOf: conversationRuns.filter {
                 $0.hasPersistentDeliverable || !hasFinalReply(for: $0)
             }.map(WorkTimelineEntry.run))
         }
@@ -356,10 +378,10 @@ private struct AgentTimelineBlock<Content: View>: View {
     var body: some View {
         HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
             EmployeeAvatar(name: employeeName, avatarPath: employeeAvatarPath, size: 28)
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                 HStack(spacing: AppTheme.Spacing.xs) {
                     Text(employeeName)
-                        .font(.caption.weight(.semibold))
+                    .font(.system(size: 12.5, weight: .semibold))
                         .foregroundStyle(palette.ink)
                     if let statusSystemImage {
                         Image(systemName: statusSystemImage)
@@ -367,9 +389,9 @@ private struct AgentTimelineBlock<Content: View>: View {
                             .foregroundStyle(statusColor)
                     }
                     Text("· \(metadata)")
-                        .font(.caption.monospacedDigit().weight(.medium))
+                        .font(.system(size: 12, weight: .medium).monospacedDigit())
                         .foregroundStyle(palette.muted)
-                    Rectangle().fill(palette.hairlineSoft).frame(height: 1)
+                    Spacer(minLength: AppTheme.Spacing.sm)
                 }
                 content()
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -472,15 +494,17 @@ private struct ConversationMessageBlock: View {
                     }
                     .onExitCommand { isEditing = false }
                 } else {
-                    ContentSizedBubble(maxWidth: 680) {
+                    ContentSizedBubble(maxWidth: 620) {
                         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
                             if !attachments.isEmpty {
                                 ChatAttachmentStack(attachments: attachments)
                             }
                             Text(displayedContent)
-                                .font(.body)
+                                .font(.system(size: 15.5))
                                 .foregroundStyle(palette.body)
+                                .lineSpacing(4)
                                 .textSelection(.enabled)
+                                .selectableTextCursor()
                         }
                         .padding(.horizontal, AppTheme.Spacing.md)
                         .padding(.vertical, AppTheme.Spacing.sm)
@@ -516,19 +540,20 @@ private struct ConversationMessageBlock: View {
                             .accessibilityElement(children: .ignore)
                             .accessibilityLabel("\(employeeName)：\(message.content)")
                         if isLong { foldButton }
-                        Button {
-                            copy(message.content)
-                        } label: {
-                            Image(systemName: "doc.on.doc")
-                                .font(.caption.weight(.medium))
-                                .frame(width: 24, height: 24)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(palette.muted)
-                        .opacity(hovering ? 1 : 0)
-                        .help("复制完整回复")
-                        .accessibilityLabel("复制 \(employeeName) 的回复")
                 }
+            }
+            .overlay(alignment: .topTrailing) {
+                Button { copy(message.content) } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.caption.weight(.medium))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(palette.muted)
+                .background(palette.canvas.opacity(0.92), in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
+                .opacity(hovering ? 1 : 0)
+                .help("复制完整回复")
+                .accessibilityLabel("复制 \(employeeName) 的回复")
             }
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
@@ -653,7 +678,6 @@ private struct ChatAttachmentRow: View {
         .padding(.horizontal, AppTheme.Spacing.xs)
         .frame(minWidth: 230, minHeight: 40)
         .background(palette.surfaceCard.opacity(0.82), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.md).stroke(palette.hairlineSoft, lineWidth: 1) }
     }
 
     private var icon: String {
@@ -671,132 +695,9 @@ private struct ChatMarkdownBody: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(MarkdownBlock.parse(source).enumerated()), id: \.offset) { _, block in
-                blockView(block)
-            }
-        }.frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+        SelectableMarkdownTextView(source: source, colorScheme: colorScheme)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
-
-    @ViewBuilder private func blockView(_ block: MarkdownBlock) -> some View {
-        switch block {
-        case .heading(let level, let text): Text(text).font(level == 1 ? .title2.weight(.semibold) : level == 2 ? .title3.weight(.semibold) : .headline).foregroundStyle(palette.ink).padding(.top, level == 1 ? 0 : 8)
-        case .paragraph(let text):
-            if let link = MarkdownBlock.standaloneLink(in: text) {
-                ChatLinkCard(title: link.title, url: link.url)
-            } else {
-                Text(inline(text)).font(.body).foregroundStyle(palette.body).lineSpacing(4)
-            }
-        case .bullet(let text):
-            if let link = MarkdownBlock.standaloneLink(in: text) {
-                ChatLinkCard(title: link.title, url: link.url)
-            } else {
-                HStack(alignment: .firstTextBaseline, spacing: 9) { Circle().fill(palette.primaryActive).frame(width: 5, height: 5); Text(inline(text)).foregroundStyle(palette.body).lineSpacing(3) }
-            }
-        case .numbered(let text): Text(inline(text)).foregroundStyle(palette.body).lineSpacing(3)
-        case .quote(let text): Text(inline(text)).foregroundStyle(palette.muted).padding(.leading, 12).overlay(alignment: .leading) { Rectangle().fill(palette.primary.opacity(0.42)).frame(width: 2) }
-        case .code(let text): Text(text).font(.system(.caption, design: .monospaced)).foregroundStyle(palette.body).padding(12).frame(maxWidth: .infinity, alignment: .leading).background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
-        case .table(let headers, let rows): MarkdownTableView(headers: headers, rows: rows)
-        case .divider:
-            Rectangle()
-                .fill(palette.primaryActive.opacity(0.62))
-                .frame(width: 40, height: 2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 6)
-        case .spacing: Color.clear.frame(height: 3)
-        }
-    }
-
-    private func inline(_ text: String) -> AttributedString { (try? AttributedString(markdown: text)) ?? AttributedString(text) }
-    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
-}
-
-private struct ChatLinkCard: View {
-    let title: String
-    let url: URL
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        Link(destination: url) {
-            HStack(spacing: AppTheme.Spacing.sm) {
-                Image(systemName: "link")
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(palette.primaryActive)
-                    .frame(width: 28, height: 28)
-                    .background(palette.primaryActive.opacity(0.09), in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm))
-                VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                    Text(title)
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(palette.ink)
-                        .lineLimit(2)
-                    Text(displayHost)
-                        .font(.caption)
-                        .foregroundStyle(palette.muted)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: AppTheme.Spacing.sm)
-                Image(systemName: "arrow.up.right")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(palette.muted)
-            }
-            .padding(AppTheme.Spacing.sm)
-            .background(palette.surfaceSoft.opacity(0.72), in: RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
-            .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous).stroke(palette.hairlineSoft, lineWidth: 1) }
-        }
-        .buttonStyle(.plain)
-        .help(url.absoluteString)
-        .accessibilityLabel("打开链接：\(title)，\(displayHost)")
-    }
-
-    private var displayHost: String {
-        (url.host ?? url.absoluteString).replacingOccurrences(of: "www.", with: "")
-    }
-
-    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
-}
-
-private struct MarkdownTableView: View {
-    let headers: [String]
-    let rows: [[String]]
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        ScrollView(.horizontal) {
-            Grid(horizontalSpacing: 0, verticalSpacing: 0) {
-                tableRow(headers, isHeader: true)
-                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                    tableRow(row, isHeader: false, shaded: index.isMultiple(of: 2))
-                }
-            }
-            .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.md).stroke(palette.hairline, lineWidth: 1) }
-            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.md))
-        }
-        .scrollIndicators(.visible)
-        .accessibilityLabel("Markdown 表格，\(headers.count) 列，\(rows.count) 行")
-    }
-
-    private func tableRow(_ cells: [String], isHeader: Bool, shaded: Bool = false) -> some View {
-        GridRow {
-            ForEach(Array(cells.enumerated()), id: \.offset) { column, cell in
-                Text(inline(cell))
-                    .font(isHeader ? .callout.weight(.semibold) : .callout)
-                    .foregroundStyle(isHeader ? palette.ink : palette.body)
-                    .textSelection(.enabled)
-                    .frame(minWidth: 120, maxWidth: 280, minHeight: 38, alignment: .leading)
-                    .padding(.horizontal, AppTheme.Spacing.sm)
-                    .background(isHeader ? palette.surfaceSoft : (shaded ? palette.surfaceCard.opacity(0.55) : Color.clear))
-                    .overlay(alignment: .trailing) {
-                        if column < cells.count - 1 { Rectangle().fill(palette.hairlineSoft).frame(width: 1) }
-                    }
-            }
-        }
-    }
-
-    private func inline(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text)) ?? AttributedString(text)
-    }
-
-    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
 private struct TaskConversationBlock: View {
@@ -811,41 +712,67 @@ private struct TaskConversationBlock: View {
                 UserMessageBlock(text: run.input, createdAt: run.createdAt)
             }
 
-            AgentTimelineBlock(
-                employeeName: employee?.name ?? "AI 员工",
-                employeeAvatarPath: employee?.avatarPath,
-                metadata: statusText,
-                statusSystemImage: run.status.systemImage,
-                statusColor: statusColor
-            ) {
-                VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                if let error = run.error {
-                    InlineFailureMessage(error: error)
+            if run.status == .running || run.status == .pending {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    runBlock(at: context.date)
                 }
+            } else {
+                runBlock(at: .now)
+            }
+        }
+    }
 
+    private func runBlock(at date: Date) -> some View {
+        AgentTimelineBlock(
+            employeeName: employee?.name ?? "AI 员工",
+            employeeAvatarPath: employee?.avatarPath,
+            metadata: statusText(at: date),
+            statusSystemImage: run.status.systemImage,
+            statusColor: statusColor
+        ) {
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                if run.status == .running || run.status == .pending {
+                    HStack(spacing: AppTheme.Spacing.sm) {
+                        ProgressView().controlSize(.small).tint(palette.accentTeal)
+                        Text(currentActivity)
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(palette.body)
+                    }
+                }
+                if let error = run.error { InlineFailureMessage(error: error) }
                 if let message = deliveryMessage {
-                    ChatMarkdownBody(source: message)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    ChatMarkdownBody(source: message).frame(maxWidth: .infinity, alignment: .leading)
                 }
-
                 if let path = run.verifiedArtifactPath ?? run.response?.artifactPath ?? run.artifactPath {
                     ArtifactMessageBlock(run: run, path: path)
-                }
                 }
             }
         }
     }
 
-    private var statusText: String {
+    private func statusText(at date: Date) -> String {
         switch run.status {
-        case .pending: "工作已保存，等待 Runtime 开始"
-        case .running: run.isCancellationRequested ? "正在停止这项工作" : "正在处理这项工作"
+        case .pending: "等待 Runtime 开始 · (TaskPresentation.elapsed(run.createdAt, at: date))"
+        case .running where run.isCancellationRequested: "正在停止 · (TaskPresentation.elapsed(run.createdAt, at: date))"
+        case .running: "(runtimePhase) · 已运行 (TaskPresentation.elapsed(run.createdAt, at: date))"
         case .succeeded: "已完成这项工作"
         case .failed where run.artifactPath != nil || run.verifiedArtifactPath != nil:
             "文件已生成，但最终回复未完成"
         case .failed: "未能完成这项工作"
         case .cancelled: "这项工作已停止"
         }
+    }
+
+    private var runtimePhase: String {
+        guard let phase = run.runPhase else { return "正在处理" }
+        return TaskPresentation.runPhase(phase, waitingReason: run.waitingReason)
+    }
+
+    private var currentActivity: String {
+        if let running = run.actions.first(where: { $0.status == "running" }) {
+            return TaskPresentation.actionTitle(running.stepID)
+        }
+        return runtimePhase
     }
 
     private var deliveryMessage: String? {
@@ -885,6 +812,7 @@ private struct UserMessageBlock: View {
                     .font(.body)
                     .foregroundStyle(palette.body)
                     .textSelection(.enabled)
+                    .selectableTextCursor()
                     .padding(.horizontal, AppTheme.Spacing.md)
                     .padding(.vertical, AppTheme.Spacing.sm)
                     .background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
@@ -945,6 +873,17 @@ private struct MessageHoverActions: View {
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private extension View {
+    func selectableTextCursor() -> some View {
+        onContinuousHover { phase in
+            switch phase {
+            case .active: NSCursor.iBeam.set()
+            case .ended: NSCursor.arrow.set()
+            }
+        }
+    }
 }
 
 private struct InlineFailureMessage: View {
@@ -1039,7 +978,6 @@ private struct ArtifactMessageBlock: View {
         }
         .padding(AppTheme.Spacing.md)
         .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous).stroke(palette.hairlineSoft, lineWidth: 1) }
         .frame(maxWidth: 680, alignment: .leading)
         .alert("无法访问交付物", isPresented: Binding(
             get: { artifactError != nil },
@@ -1345,48 +1283,53 @@ private struct EmployeeUnifiedComposer: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-            if isCreatingWork {
-                HStack(spacing: 7) {
-                    Image(systemName: "briefcase.fill").foregroundStyle(palette.primaryActive)
-                    Text("工作").font(.caption.weight(.semibold)).foregroundStyle(palette.ink)
-                    Text("将创建可追踪的执行记录").font(.caption).foregroundStyle(palette.muted)
-                }
-            }
-
+        VStack(alignment: .leading, spacing: 0) {
             if let error = conversationStore.error, !isCreatingWork {
                 Text(error)
                     .font(.caption)
                     .foregroundStyle(palette.error)
                     .textSelection(.enabled)
+                    .padding(.horizontal, AppTheme.Spacing.md)
+                    .padding(.top, AppTheme.Spacing.sm)
             }
 
-            if !attachments.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: AppTheme.Spacing.xs) {
-                        ForEach(attachments) { attachment in
-                            ChatAttachmentRow(attachment: attachment) {
-                                attachments.removeAll { $0.id == attachment.id }
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
+                if !attachments.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: AppTheme.Spacing.xs) {
+                            ForEach(attachments) { attachment in
+                                ChatAttachmentRow(attachment: attachment) {
+                                    attachments.removeAll { $0.id == attachment.id }
+                                }
+                                .frame(width: 240)
                             }
-                            .frame(width: 260)
                         }
                     }
                 }
+
+                TextField(isCreatingWork ? "描述要交给 \(employeeName) 的工作…" : "给 \(employeeName) 发消息…", text: draft, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.body)
+                    .lineLimit(1...8)
+                    .frame(minHeight: attachments.isEmpty ? 38 : 28, alignment: .topLeading)
+                    .focused($focused)
+                    .onKeyPress(keys: [.return]) { keyPress in
+                        guard keyPress.modifiers.contains(.shift) else { return .ignored }
+                        NSApp.sendAction(#selector(NSText.insertNewline(_:)), to: nil, from: nil)
+                        return .handled
+                    }
+                    .onSubmit(submit)
             }
+            .padding(.horizontal, AppTheme.Spacing.md)
+            .padding(.top, AppTheme.Spacing.md)
+            .padding(.bottom, AppTheme.Spacing.xs)
 
-            TextField(isCreatingWork ? "描述要交给 \(employeeName) 的工作…" : "给 \(employeeName) 发消息…", text: draft, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.body)
-                .lineLimit(1...8)
-                .focused($focused)
-                .onSubmit(submit)
-
-            HStack(spacing: AppTheme.Spacing.sm) {
+            HStack(spacing: AppTheme.Spacing.xs) {
                 Button { choosingAttachments = true } label: {
                     Image(systemName: "plus")
                         .font(.body.weight(.medium))
                         .foregroundStyle(palette.muted)
-                        .frame(width: 30, height: 30)
+                        .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -1395,12 +1338,16 @@ private struct EmployeeUnifiedComposer: View {
 
                 if supportsTasks {
                     Button { isCreatingWork.toggle(); focused = true } label: {
-                        Label(isCreatingWork ? "返回闲聊" : "作为工作执行", systemImage: isCreatingWork ? "bubble.left" : "briefcase")
+                        Label(isCreatingWork ? "工作模式" : "交给员工工作", systemImage: "briefcase")
+                            .font(.caption.weight(isCreatingWork ? .semibold : .regular))
+                            .foregroundStyle(isCreatingWork ? palette.ink : palette.muted)
+                            .padding(.horizontal, AppTheme.Spacing.xs)
+                            .frame(height: 28)
+                            .background(isCreatingWork ? palette.primary.opacity(0.14) : Color.clear, in: Capsule())
                     }
                     .buttonStyle(.plain)
-                    .font(.caption)
-                    .foregroundStyle(palette.muted)
                     .disabled(conversationStore.isSending || taskStore.isSubmitting)
+                    .help(isCreatingWork ? "切回日常聊天" : "创建可追踪的工作记录")
                 } else {
                     Text("工作 · 尚未接通 Runtime")
                         .font(.caption.weight(.semibold))
@@ -1413,33 +1360,58 @@ private struct EmployeeUnifiedComposer: View {
                 Spacer()
 
                 if conversationStore.isSending && !isCreatingWork {
-                    HStack(spacing: 6) {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text(conversationStore.isStopping ? "正在停止…" : "\(employeeName) 正在回复…")
+                                .font(.caption)
+                                .foregroundStyle(palette.muted)
+                        }
                         ProgressView().controlSize(.small)
-                        Text("\(employeeName) 正在回复…")
-                            .font(.caption)
-                            .foregroundStyle(palette.muted)
+                    }
+                } else {
+                    ViewThatFits(in: .horizontal) {
+                        Text("Enter 发送 · Shift+Enter 换行")
+                            .font(.caption2)
+                            .foregroundStyle(palette.mutedSoft)
+                        EmptyView()
                     }
                 }
 
-                Button(action: submit) {
-                    Image(systemName: "arrow.up")
-                        .font(.body.weight(.bold))
-                        .foregroundStyle(canSubmit ? palette.ink : palette.mutedSoft)
+                Button(action: conversationStore.isSending && !isCreatingWork ? conversationStore.stopSending : submit) {
+                    Image(systemName: conversationStore.isSending && !isCreatingWork ? "stop.fill" : "arrow.up")
+                        .font(.callout.weight(.bold))
+                        .foregroundStyle(conversationStore.isSending && !isCreatingWork || canSubmit ? palette.surfaceCard : palette.mutedSoft)
                         .frame(width: 32, height: 32)
-                        .background((canSubmit ? palette.primary : palette.hairlineSoft), in: Circle())
+                        .background((conversationStore.isSending && !isCreatingWork || canSubmit ? palette.ink : palette.hairlineSoft), in: Circle())
                 }
                 .buttonStyle(.plain)
-                .disabled(!canSubmit)
-                .help(isCreatingWork ? "确认工作" : "发送消息")
+                .disabled(!canSubmit && !(conversationStore.isSending && !isCreatingWork))
+                .disabled(conversationStore.isStopping)
+                .help(conversationStore.isSending && !isCreatingWork ? "停止本轮回复" : (isCreatingWork ? "确认工作" : "发送消息"))
+                .accessibilityLabel(conversationStore.isSending && !isCreatingWork ? "停止本轮回复" : (isCreatingWork ? "确认工作" : "发送消息"))
             }
+            .padding(.leading, AppTheme.Spacing.sm)
+            .padding(.trailing, AppTheme.Spacing.xs)
+            .padding(.bottom, AppTheme.Spacing.xs)
         }
-        .padding(AppTheme.Spacing.sm)
-        .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AppTheme.Elevation.composerRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(focused ? palette.primary.opacity(0.72) : palette.hairlineSoft, lineWidth: focused ? 1.4 : 1)
+            RoundedRectangle(cornerRadius: AppTheme.Elevation.composerRadius, style: .continuous)
+                .stroke(
+                    focused ? palette.primary.opacity(0.20) : palette.hairlineSoft.opacity(0.72),
+                    lineWidth: 1
+                )
         }
-        .shadow(color: .black.opacity(0.09), radius: 12, y: 4)
+        .shadow(
+            color: focused ? palette.primary.opacity(0.10) : .clear,
+            radius: 8
+        )
+        .shadow(
+            color: palette.shadow,
+            radius: AppTheme.Elevation.composerRadius,
+            y: AppTheme.Elevation.composerY
+        )
         .frame(maxWidth: 820)
         .frame(maxWidth: .infinity)
         .fileImporter(isPresented: $choosingAttachments, allowedContentTypes: [.data], allowsMultipleSelection: true) { result in

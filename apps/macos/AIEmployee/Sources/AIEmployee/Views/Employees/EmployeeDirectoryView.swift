@@ -10,6 +10,7 @@ struct EmployeeDirectoryView: View {
     @State private var compactShowsProfile = false
     @State private var confirmingRemoval: Employee?
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appWindowWidth) private var appWindowWidth
 
     private var demo: ContactsDemoData? { ContactsDemoData.current }
     private var employees: [Employee] { demo?.employees ?? store.employees }
@@ -24,7 +25,7 @@ struct EmployeeDirectoryView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            if proxy.size.width >= 760 {
+            if appWindowWidth >= 1020, proxy.size.width >= 760 {
                 HStack(spacing: 0) {
                     directory
                         .frame(width: min(280, max(232, proxy.size.width * 0.28)))
@@ -439,8 +440,8 @@ private struct EmployeeProfileView: View {
             capabilitySection(
                 title: "工具",
                 description: capabilityProfile.selectedTools.isEmpty
-                    ? "尚未选择工具。打开编辑资料进行选择。"
-                    : "该员工可请求调用的 Tool Package。",
+                    ? "当前没有全局安装的 Tool Package。"
+                    : "全局已安装的 Tool Package；员工通过已绑定 Skill 的声明获得调用能力。",
                 items: capabilityProfile.selectedTools
             )
             permissionSection
@@ -484,7 +485,7 @@ private struct EmployeeProfileView: View {
     private var permissionSection: some View {
         profileSection("权限") {
             if capabilityProfile.permissions.isEmpty {
-                Label(isDemo ? "尚无可配置权限" : "当前无额外权限；普通对话不请求本地系统能力", systemImage: "lock.shield")
+                Label(isDemo ? "尚无可配置权限" : "客户端暂不展示 Runtime 权限明细", systemImage: "lock.shield")
                     .foregroundStyle(palette.body)
                     .padding(.vertical, 10)
             } else {
@@ -533,11 +534,11 @@ struct EmployeeAvatar: View {
 }
 
 enum CapabilityPickerKind: String, Identifiable {
-    case skill, tool
+    case skill
     var id: String { rawValue }
-    var title: String { self == .skill ? "添加技能" : "添加工具" }
-    var emptyTitle: String { self == .skill ? "技能库中还没有可用技能" : "工具库中还没有可用工具" }
-    var icon: String { self == .skill ? "sparkles" : "wrench.and.screwdriver" }
+    var title: String { "添加技能" }
+    var emptyTitle: String { "技能库中还没有可用技能" }
+    var icon: String { "sparkles" }
 }
 
 struct CapabilityPickerSheet: View {
@@ -570,7 +571,7 @@ struct CapabilityPickerSheet: View {
         VStack(spacing: 0) {
             HStack { VStack(alignment: .leading, spacing: 3) { Text(kind.title).font(.title2.weight(.semibold)); Text("为 \(employeeName) 选择，保存后显示在 Profile 中").font(.caption).foregroundStyle(palette.muted) }; Spacer() }.padding(20)
             Divider().overlay(palette.hairlineSoft)
-            HStack { Image(systemName: "magnifyingglass"); TextField(kind == .skill ? "搜索技能库" : "搜索工具库", text: $query).textFieldStyle(.plain) }.foregroundStyle(palette.muted).padding(.horizontal, 12).frame(height: 36).background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: 9)).padding(16)
+            HStack { Image(systemName: "magnifyingglass"); TextField("搜索技能库", text: $query).textFieldStyle(.plain) }.foregroundStyle(palette.muted).padding(.horizontal, 12).frame(height: 36).background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: 9)).padding(16)
             if filteredItems.isEmpty {
                 ContentUnavailableView(kind.emptyTitle, systemImage: kind.icon, description: Text("安装并启用后，目录内容会出现在这里。"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

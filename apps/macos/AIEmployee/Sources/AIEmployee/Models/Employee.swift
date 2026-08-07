@@ -22,7 +22,7 @@ struct EmployeePersona: Codable, Sendable {
     var habit = Habit()
 }
 
-struct Employee: Codable, Identifiable, Sendable {
+struct Employee: Identifiable, Sendable {
     let schemaVersion: String
     var id: String
     var name: String
@@ -38,14 +38,49 @@ struct Employee: Codable, Identifiable, Sendable {
     var status: String
     var configVersion: Int
 
+    static func draft() -> Employee {
+        Employee(schemaVersion: "1.0", id: "", name: "", role: "", department: "", mission: "", responsibilities: [], boundaries: [], soul: [], persona: .init(), basePrompt: "可靠、直接地协助用户完成工作。", avatarPath: nil, status: "active", configVersion: 1)
+    }
+}
+
+extension Employee: Codable {
     enum CodingKeys: String, CodingKey {
-        case schemaVersion = "schema_version", id, name, role, department, mission, responsibilities, boundaries, soul, persona
+        case schemaVersion = "schema_version", id, name, role, department, soul, persona
         case basePrompt = "base_prompt", avatarPath = "avatar_path", status
         case configVersion = "config_version"
     }
 
-    static func draft() -> Employee {
-        Employee(schemaVersion: "1.0", id: "", name: "", role: "", department: "", mission: "", responsibilities: [], boundaries: [], soul: [], persona: .init(), basePrompt: "可靠、直接地协助用户完成工作。", avatarPath: nil, status: "active", configVersion: 1)
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(String.self, forKey: .schemaVersion)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        role = try container.decode(String.self, forKey: .role)
+        department = try container.decode(String.self, forKey: .department)
+        mission = ""
+        responsibilities = []
+        boundaries = []
+        soul = try container.decode([String].self, forKey: .soul)
+        persona = try container.decode(EmployeePersona.self, forKey: .persona)
+        basePrompt = try container.decode(String.self, forKey: .basePrompt)
+        avatarPath = try container.decodeIfPresent(String.self, forKey: .avatarPath)
+        status = try container.decode(String.self, forKey: .status)
+        configVersion = try container.decode(Int.self, forKey: .configVersion)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(role, forKey: .role)
+        try container.encode(department, forKey: .department)
+        try container.encode(soul, forKey: .soul)
+        try container.encode(persona, forKey: .persona)
+        try container.encode(basePrompt, forKey: .basePrompt)
+        try container.encodeIfPresent(avatarPath, forKey: .avatarPath)
+        try container.encode(status, forKey: .status)
+        try container.encode(configVersion, forKey: .configVersion)
     }
 }
 

@@ -29,9 +29,10 @@ struct RuntimeService: Sendable {
     let cancel: @Sendable (String) async throws -> Void
     let continueRun: @Sendable (String, Bool, String?) async throws -> RunContinuationResponse
     let resolveUnknown: @Sendable (String, String) async throws -> RunContinuationResponse
-    let chatHistory: @Sendable (String) async throws -> ChatHistoryResponse
+    let chatHistory: @Sendable (String, String) async throws -> ChatHistoryResponse
     let chatSend: @Sendable (String, String, String, String, String?, @escaping @MainActor @Sendable (String) -> Void) async throws -> ChatSendResponse
-    let chatDelete: @Sendable (String) async throws -> ChatDeleteResponse
+    let chatAbort: @Sendable (String, String) async throws -> Void
+    let chatDelete: @Sendable (String, String) async throws -> ChatDeleteResponse
     let employeeList: @Sendable () async throws -> EmployeeListResponse
     let employeeSave: @Sendable (Employee) async throws -> EmployeeSaveResponse
     let employeeDelete: @Sendable (String) async throws -> EmployeeDeleteResponse
@@ -39,6 +40,7 @@ struct RuntimeService: Sendable {
     let capabilities: @Sendable () async throws -> RuntimeCapabilities
     let skillsList: @Sendable (String?) async throws -> SkillsListResponse
     let toolsList: @Sendable () async throws -> ToolsListResponse
+    let knowledgeList: @Sendable () async throws -> KnowledgeListResponse
     let bindSkill: @Sendable (String, String, String) async throws -> BindSkillResponse
     let unbindSkill: @Sendable (String, String) async throws -> UnbindSkillResponse
 
@@ -86,7 +88,9 @@ struct RuntimeService: Sendable {
                     modelCalls: 0,
                     points: [],
                     pricingModel: "deepseek-v4-flash",
-                    pricingBasis: "input_cache_miss"
+                    pricingBasis: "input_cache_miss",
+                    pricingVersion: "deepseek-v4-flash-cny-v1",
+                    pricingSource: "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/"
                 )
             }
             return try await decodeCommand(
@@ -112,8 +116,8 @@ struct RuntimeService: Sendable {
                 "--action-id", actionID, "--status", status,
                 "--evidence-json", "{\"verified_by\":\"user\"}"
             ], environment: KeychainService.load().map { ["DEEPSEEK_API_KEY": $0] } ?? [:], as: RunContinuationResponse.self)
-        }, chatHistory: { conversationID in
-            try await decodeCommand(["chat-history", "--database", try databaseURL().path, "--conversation-id", conversationID], as: ChatHistoryResponse.self)
+        }, chatHistory: { conversationID, employeeID in
+            try await decodeCommand(["chat-history", "--database", try databaseURL().path, "--conversation-id", conversationID, "--employee-id", employeeID], as: ChatHistoryResponse.self)
         }, chatSend: { conversationID, employeeID, input, key, replaceMessageID, onDelta in
             var arguments = ["chat-send", "--stream-events", "--repository-root", try runtimeLayout().resourceRoot.path, "--database", try databaseURL().path, "--conversation-id", conversationID, "--employee-id", employeeID, "--input", input]
             if let replaceMessageID { arguments.append(contentsOf: ["--replace-message-id", replaceMessageID]) }
@@ -122,8 +126,13 @@ struct RuntimeService: Sendable {
                 environment: ["DEEPSEEK_API_KEY": key],
                 onDelta: onDelta
             )
-        }, chatDelete: { conversationID in
-            try await decodeCommand(["chat-delete", "--database", try databaseURL().path, "--conversation-id", conversationID], as: ChatDeleteResponse.self)
+        }, chatAbort: { conversationID, employeeID in
+            let _: ChatAbortResponse = try await decodeCommand([
+                "chat-abort", "--database", try databaseURL().path,
+                "--conversation-id", conversationID, "--employee-id", employeeID
+            ], as: ChatAbortResponse.self)
+        }, chatDelete: { conversationID, employeeID in
+            try await decodeCommand(["chat-delete", "--database", try databaseURL().path, "--conversation-id", conversationID, "--employee-id", employeeID], as: ChatDeleteResponse.self)
         }, employeeList: {
             try await decodeCommand(["employees-list", "--repository-root", try runtimeLayout().resourceRoot.path, "--database", try databaseURL().path], as: EmployeeListResponse.self)
         }, employeeSave: { employee in
@@ -144,6 +153,8 @@ struct RuntimeService: Sendable {
             return try await decodeCommand(args, as: SkillsListResponse.self)
         }, toolsList: {
             try await decodeCommand(["tools-list", "--repository-root", try runtimeLayout().resourceRoot.path, "--database", try databaseURL().path], as: ToolsListResponse.self)
+        }, knowledgeList: {
+            try await decodeCommand(["knowledge-list", "--database", try databaseURL().path], as: KnowledgeListResponse.self)
         }, bindSkill: { agentID, skillID, skillVersion in
             try await decodeCommand([
                 "bind-skill",
@@ -163,6 +174,7 @@ struct RuntimeService: Sendable {
     }
 
     private struct CancelResponse: Codable, Sendable { let status: String }
+    private struct ChatAbortResponse: Codable, Sendable { let status: String }
     private struct RecoveryResponse: Codable, Sendable {
         let schemaVersion: String
         let safeFailures: Int
@@ -213,7 +225,7 @@ struct RuntimeService: Sendable {
         environment: [String: String],
         onDelta: @escaping @MainActor @Sendable (String) -> Void
     ) async throws -> ChatSendResponse {
-        try await Task.detached(priority: .userInitiated) {
+        let worker = Task.detached(priority: .userInitiated) {
             let process = Process()
             process.executableURL = try runtimeLayout().binary
             process.arguments = arguments
@@ -222,33 +234,44 @@ struct RuntimeService: Sendable {
             let stderr = Pipe()
             process.standardOutput = stdout
             process.standardError = stderr
-            do { try process.run() }
-            catch { throw RuntimeError.processUnavailable(error.localizedDescription) }
+            return try await withTaskCancellationHandler {
+                do { try process.run() }
+                catch { throw RuntimeError.processUnavailable(error.localizedDescription) }
 
-            var buffer = Data()
-            var response: ChatSendResponse?
-            let decoder = JSONDecoder()
-            while let data = try stdout.fileHandleForReading.read(upToCount: 4096), !data.isEmpty {
-                buffer.append(data)
-                while let newline = buffer.firstIndex(of: 0x0A) {
-                    let line = buffer.prefix(upTo: newline)
-                    buffer.removeSubrange(...newline)
-                    guard !line.isEmpty else { continue }
-                    if let event = try? decoder.decode(ChatStreamDelta.self, from: line), event.type == "delta" {
-                        await onDelta(event.delta)
-                    } else if let completed = try? decoder.decode(ChatSendResponse.self, from: line) {
-                        response = completed
+                var buffer = Data()
+                var response: ChatSendResponse?
+                let decoder = JSONDecoder()
+                while let data = try stdout.fileHandleForReading.read(upToCount: 4096), !data.isEmpty {
+                    try Task.checkCancellation()
+                    buffer.append(data)
+                    while let newline = buffer.firstIndex(of: 0x0A) {
+                        let line = buffer.prefix(upTo: newline)
+                        buffer.removeSubrange(...newline)
+                        guard !line.isEmpty else { continue }
+                        if let event = try? decoder.decode(ChatStreamDelta.self, from: line), event.type == "delta" {
+                            await onDelta(event.delta)
+                        } else if let completed = try? decoder.decode(ChatSendResponse.self, from: line) {
+                            response = completed
+                        }
                     }
                 }
+                process.waitUntilExit()
+                try Task.checkCancellation()
+                let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
+                guard process.terminationStatus == 0 else {
+                    throw RuntimeError.processFailed(String(decoding: errorData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+                }
+                guard let response else { throw RuntimeError.invalidResponse("流式响应缺少完成事件") }
+                return response
+            } onCancel: {
+                if process.isRunning { process.terminate() }
             }
-            process.waitUntilExit()
-            let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
-            guard process.terminationStatus == 0 else {
-                throw RuntimeError.processFailed(String(decoding: errorData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
-            }
-            guard let response else { throw RuntimeError.invalidResponse("流式响应缺少完成事件") }
-            return response
-        }.value
+        }
+        return try await withTaskCancellationHandler {
+            try await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
     }
 
     private static func repositoryRoot() throws -> URL {

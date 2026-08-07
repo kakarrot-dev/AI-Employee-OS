@@ -1,30 +1,5 @@
 import SwiftUI
 
-struct ContactsWorkspaceView: View {
-    let openChat: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        List {
-            Section("产品部") {
-                Button(action: openChat) {
-                    HStack(spacing: AppTheme.Spacing.sm) {
-                        Image(systemName: "person.crop.circle").foregroundStyle(palette.primary)
-                        VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                            Text("Alex").font(.body.weight(.medium))
-                            Text("AI 产品经理").font(.caption).foregroundStyle(palette.muted)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-                    }
-                }.buttonStyle(.plain)
-            }
-        }.moduleNavigationTitle(.contacts)
-    }
-
-    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
-}
-
 enum CapabilityLibraryScope: Equatable {
     case skills, tools
 
@@ -43,6 +18,7 @@ struct CapabilityLibraryWorkspaceView: View {
     @State private var tab: CapabilityDetailTab = .document
     @State private var compactShowsDetail = false
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appWindowWidth) private var appWindowWidth
 
     private var capabilities: [CapabilityLibraryItem] {
         capabilityStore.libraryItems(for: scope)
@@ -83,7 +59,7 @@ struct CapabilityLibraryWorkspaceView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if isDisconnected {
                 emptyState
-            } else if proxy.size.width >= 700 {
+            } else if appWindowWidth >= 960, proxy.size.width >= 700 {
                 HStack(spacing: 0) {
                     catalogList.frame(width: min(286, proxy.size.width * 0.36))
                     Divider().overlay(palette.hairlineSoft)
@@ -342,6 +318,7 @@ private struct SkillPackageBrowser: View {
     @State private var expandedFolders: Set<String> = []
     @State private var compactShowsDocument = false
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appWindowWidth) private var appWindowWidth
 
     private var selectedSource: String? {
         guard let selectedDocumentID else { return nil }
@@ -365,7 +342,7 @@ private struct SkillPackageBrowser: View {
 
     var body: some View {
         GeometryReader { proxy in
-            if proxy.size.width >= 620 {
+            if appWindowWidth >= 880, proxy.size.width >= 620 {
                 HStack(spacing: 0) {
                     directory.frame(width: min(230, proxy.size.width * 0.32))
                     Divider().overlay(palette.hairlineSoft)

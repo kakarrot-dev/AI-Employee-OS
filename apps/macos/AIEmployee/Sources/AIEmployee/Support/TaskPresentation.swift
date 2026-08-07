@@ -97,6 +97,13 @@ enum TaskPresentation {
         return lhsDate < rhsDate
     }
 
+    static func elapsed(_ startedAt: String, at date: Date = .now) -> String {
+        guard let start = parsedDate(startedAt) else { return "" }
+        let seconds = max(0, Int(date.timeIntervalSince(start)))
+        if seconds < 60 { return "(seconds) 秒" }
+        return "(seconds / 60) 分 (seconds % 60) 秒"
+    }
+
     private static func parsedDate(_ value: String) -> Date? {
         let fractionalISO8601 = ISO8601DateFormatter()
         fractionalISO8601.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

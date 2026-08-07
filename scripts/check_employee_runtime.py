@@ -28,8 +28,9 @@ with tempfile.TemporaryDirectory() as directory:
     alex = listed["employees"][0]
     assert "把模糊需求转化为可执行的产品方案" in alex["base_prompt"]
     assert alex["soul"]
-    assert alex["responsibilities"] == []
-    assert alex["boundaries"] == []
+    assert "mission" not in alex
+    assert "responsibilities" not in alex
+    assert "boundaries" not in alex
 
     alex_prompt = run(database, "effective-prompt", "--employee-id", "ai-product-manager")
     assert "把模糊需求转化为可执行的产品方案" in alex_prompt["prompt"]
@@ -117,6 +118,10 @@ with tempfile.TemporaryDirectory() as directory:
     )
     assert imported["imported"] is True
     assert imported["embedding_ref"] is None
+    sources = run(database, "knowledge-list")["sources"]
+    assert sources[0]["id"] == "src-prd"
+    assert sources[0]["index_status"] == "indexed"
+    assert "验收标准" in sources[0]["content"]
     hits = run(database, "knowledge-search", "--query", "验收标准", "--limit", "3")
     assert hits["query_mode"] == "keyword"
     assert hits["hits"]
@@ -149,9 +154,9 @@ with tempfile.TemporaryDirectory() as directory:
     luna_row = next(item for item in listed["employees"] if item["id"] == "content-operator")
     assert luna_row["base_prompt"] == long_identity
     assert luna_row["soul"] == ["准确优先", "不虚构来源"]
-    assert luna_row["responsibilities"] == []
-    assert luna_row["boundaries"] == []
-    assert len(luna_row["mission"]) <= 500
+    assert "mission" not in luna_row
+    assert "responsibilities" not in luna_row
+    assert "boundaries" not in luna_row
     assert luna_row["config_version"] == 1
 
     prompt = run(database, "effective-prompt", "--employee-id", "content-operator")

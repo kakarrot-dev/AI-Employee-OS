@@ -45,9 +45,8 @@ enum AppTheme {
     }
 
     enum Elevation {
-        static let composerRadius: CGFloat = 10
-        static let composerY: CGFloat = 3
-        static let composerOpacity = 0.08
+        static let composerRadius: CGFloat = 18
+        static let composerY: CGFloat = 6
     }
 
     static func palette(for scheme: ColorScheme) -> Palette {

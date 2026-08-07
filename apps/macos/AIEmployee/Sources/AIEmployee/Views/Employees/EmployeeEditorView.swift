@@ -14,7 +14,6 @@ struct EmployeeEditorView: View {
     @State private var isChoosingAvatar = false
     @State private var avatarError: String?
     @State private var selectedSkillIDs: Set<String> = []
-    @State private var selectedToolIDs: Set<String> = []
     @State private var capabilityPicker: CapabilityPickerKind?
     @State private var saveError: String?
     @State private var attemptedSave = false
@@ -36,21 +35,8 @@ struct EmployeeEditorView: View {
         return capabilityStore.capabilityProfile(for: employee.id).skillCatalog
     }
 
-    private var toolCatalog: [EmployeeCapabilityItem] {
-        if isDemo {
-            return ContactsDemoData.current?.capabilities[employee.id]?.toolCatalog
-                ?? ContactsDemoData.current?.capabilities.values.first?.toolCatalog
-                ?? []
-        }
-        return capabilityStore.capabilityProfile(for: employee.id).toolCatalog
-    }
-
     private var selectedSkills: [EmployeeCapabilityItem] {
         skillCatalog.filter { selectedSkillIDs.contains($0.id) }
-    }
-
-    private var selectedTools: [EmployeeCapabilityItem] {
-        toolCatalog.filter { selectedToolIDs.contains($0.id) }
     }
 
     var body: some View {
@@ -115,12 +101,12 @@ struct EmployeeEditorView: View {
                     CapabilityPickerSheet(
                         kind: kind,
                         employeeName: employee.name.isEmpty ? "新员工" : employee.name,
-                        items: kind == .skill ? skillCatalog : toolCatalog,
-                        initiallySelected: kind == .skill ? selectedSkillIDs : selectedToolIDs,
+                        items: skillCatalog,
+                        initiallySelected: selectedSkillIDs,
                         isDemo: isDemo,
                         close: { capabilityPicker = nil },
                         apply: { ids in
-                            if kind == .skill { selectedSkillIDs = ids } else { selectedToolIDs = ids }
+                            selectedSkillIDs = ids
                             capabilityPicker = nil
                         }
                     )
@@ -217,7 +203,7 @@ struct EmployeeEditorView: View {
         VStack(alignment: .leading, spacing: 26) {
             formHeading("能力配置", isDemo
                         ? "演示模式下可选择技能与工具，仅影响本页展示。"
-                        : "从已安装 Package 中为该员工选择 Skill 与 Tool；客户端不提供创建入口。")
+                        : "从已安装 Package 中为该员工绑定 Skill；Tool 全局安装，并由 Skill 声明调用依赖。")
             if !isDemo {
                 Text(capabilityStore.tasksEnabled ? "Runtime 已接通" : "尚未接通 Runtime 时，可先选择，保存时再写入绑定。")
                     .font(.caption)
@@ -229,13 +215,6 @@ struct EmployeeEditorView: View {
                 items: selectedSkills,
                 add: { capabilityPicker = .skill },
                 remove: { selectedSkillIDs.remove($0.id) }
-            )
-            capabilityEditorSection(
-                title: "工具",
-                empty: "尚未选择工具",
-                items: selectedTools,
-                add: { capabilityPicker = .tool },
-                remove: { selectedToolIDs.remove($0.id) }
             )
         }
     }
@@ -378,13 +357,11 @@ struct EmployeeEditorView: View {
         if isDemo {
             if let profile = ContactsDemoData.current?.capabilities[employee.id] {
                 selectedSkillIDs = Set(profile.selectedSkills.map(\.id))
-                selectedToolIDs = Set(profile.selectedTools.map(\.id))
             }
             return
         }
         let profile = capabilityStore.capabilityProfile(for: employee.id)
         selectedSkillIDs = Set(profile.selectedSkills.map(\.id))
-        selectedToolIDs = Set(profile.selectedTools.map(\.id))
     }
 
     private func save() {
@@ -413,7 +390,6 @@ struct EmployeeEditorView: View {
             let saved = await store.save(employee)
             if saved {
                 await capabilityStore.syncSkills(for: employee.id, selectedIDs: selectedSkillIDs)
-                capabilityStore.setSelectedTools(for: employee.id, ids: selectedToolIDs)
                 if let error = capabilityStore.actionError {
                     saveError = error
                     isSaving = false

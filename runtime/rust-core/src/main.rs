@@ -46,6 +46,7 @@ fn command() -> Result<serde_json::Value, String> {
     match arguments.next().as_deref() {
         Some("chat-history") => chat_history(arguments),
         Some("chat-send") => chat_send(arguments),
+        Some("chat-abort") => chat_abort(arguments),
         Some("chat-delete") => chat_delete(arguments),
         Some("employees-list") => employees_list(arguments),
         Some("employee-save") => employee_save(arguments),
@@ -59,6 +60,7 @@ fn command() -> Result<serde_json::Value, String> {
         Some("bind-skill") => bind_skill_command(arguments),
         Some("unbind-skill") => unbind_skill_command(arguments),
         Some("knowledge-import") => knowledge_import_command(arguments),
+        Some("knowledge-list") => knowledge_list_command(arguments),
         Some("knowledge-search") => knowledge_search_command(arguments),
         Some("run-task") => run_task(arguments),
         Some("run-skill") => run_skill(arguments),
@@ -80,6 +82,8 @@ fn command() -> Result<serde_json::Value, String> {
 /// Source: https://api-docs.deepseek.com/zh-cn/quick_start/pricing/
 const USAGE_INPUT_CACHE_MISS_CNY_PER_MTOK: f64 = 1.0;
 const USAGE_OUTPUT_CNY_PER_MTOK: f64 = 2.0;
+const USAGE_PRICING_VERSION: &str = "deepseek-v4-flash-cny-v1";
+const USAGE_PRICING_SOURCE: &str = "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/";
 
 fn employee_arguments(
     mut arguments: impl Iterator<Item = String>,
@@ -145,7 +149,7 @@ fn ensure_default_agent(connection: &mut Connection, root: &std::path::Path) -> 
         .query_row(
             "SELECT status FROM agents WHERE id=?1",
             [DEFAULT_AGENT_ID],
-            |row| row.get(0),
+            |row| row.get::<_, String>(0),
         )
         .optional()
         .map_err(|error| error.to_string())?;
@@ -706,7 +710,7 @@ fn employees_list(
         ensure_default_agent(&mut connection, &root)?;
     }
     let mut statement = connection.prepare(
-        "SELECT a.id,a.name,a.role,p.department,p.mission,p.responsibilities_json,p.boundaries_json,p.soul_json,
+        "SELECT a.id,a.name,a.role,p.department,p.soul_json,
                 pe.communication_json,pe.thinking_json,pe.decision_json,pe.habit_json,p.base_prompt,a.status,p.config_version,p.avatar_path
          FROM agents a JOIN employee_profiles p ON p.agent_id=a.id JOIN personas pe ON pe.agent_id=a.id
          ORDER BY CASE a.status WHEN 'active' THEN 0 ELSE 1 END, lower(a.name)"
@@ -727,11 +731,10 @@ fn employee_json(row: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value>
     };
     Ok(json!({
         "schema_version":"1.0", "id":row.get::<_,String>(0)?, "name":row.get::<_,String>(1)?,
-        "role":row.get::<_,String>(2)?, "department":row.get::<_,String>(3)?, "mission":row.get::<_,String>(4)?,
-        "responsibilities":parse(5)?, "boundaries":parse(6)?, "soul":parse(7)?,
-        "persona":{"communication":parse(8)?,"thinking":parse(9)?,"decision":parse(10)?,"habit":parse(11)?},
-        "base_prompt":row.get::<_,String>(12)?, "status":row.get::<_,String>(13)?, "config_version":row.get::<_,i64>(14)?,
-        "avatar_path":row.get::<_,Option<String>>(15)?
+        "role":row.get::<_,String>(2)?, "department":row.get::<_,String>(3)?, "soul":parse(4)?,
+        "persona":{"communication":parse(5)?,"thinking":parse(6)?,"decision":parse(7)?,"habit":parse(8)?},
+        "base_prompt":row.get::<_,String>(9)?, "status":row.get::<_,String>(10)?, "config_version":row.get::<_,i64>(11)?,
+        "avatar_path":row.get::<_,Option<String>>(12)?
     }))
 }
 
@@ -866,13 +869,34 @@ fn effective_prompt_command(
     Ok(json!({"schema_version":"1.0","employee_id":id,"config_version":version,"prompt":prompt}))
 }
 
+fn assert_conversation_owner(
+    connection: &Connection,
+    conversation_id: &str,
+    agent_id: &str,
+) -> Result<(), String> {
+    let owner: Option<String> = connection
+        .query_row(
+            "SELECT agent_id FROM conversations WHERE id=?1",
+            [conversation_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    if owner.as_deref().is_some_and(|owner| owner != agent_id) {
+        return Err("conversation_employee_mismatch".to_owned());
+    }
+    Ok(())
+}
+
 fn chat_delete(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {
     let mut database = None;
     let mut conversation_id = None;
+    let mut agent_id = None;
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
             "--database" => database = arguments.next().map(PathBuf::from),
             "--conversation-id" => conversation_id = arguments.next(),
+            "--employee-id" => agent_id = arguments.next(),
             _ => return Err(usage()),
         }
     }
@@ -880,6 +904,8 @@ fn chat_delete(mut arguments: impl Iterator<Item = String>) -> Result<serde_json
         Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
     migrate(&mut connection).map_err(|e| e.to_string())?;
     let conversation_id = conversation_id.ok_or_else(usage)?;
+    let agent_id = agent_id.ok_or_else(usage)?;
+    assert_conversation_owner(&connection, &conversation_id, &agent_id)?;
     let deleted = connection
         .execute("DELETE FROM conversations WHERE id=?1", [&conversation_id])
         .map_err(|e| e.to_string())?;
@@ -889,10 +915,12 @@ fn chat_delete(mut arguments: impl Iterator<Item = String>) -> Result<serde_json
 fn chat_history(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {
     let mut database = None;
     let mut conversation_id = None;
+    let mut agent_id = None;
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
             "--database" => database = arguments.next().map(PathBuf::from),
             "--conversation-id" => conversation_id = arguments.next(),
+            "--employee-id" => agent_id = arguments.next(),
             _ => return Err(usage()),
         }
     }
@@ -900,6 +928,8 @@ fn chat_history(mut arguments: impl Iterator<Item = String>) -> Result<serde_jso
         Connection::open(database.ok_or_else(usage)?).map_err(|error| error.to_string())?;
     migrate(&mut connection).map_err(|error| error.to_string())?;
     let conversation_id = conversation_id.ok_or_else(usage)?;
+    let agent_id = agent_id.ok_or_else(usage)?;
+    assert_conversation_owner(&connection, &conversation_id, &agent_id)?;
     let mut statement = connection.prepare(
         "SELECT id,role,content,created_at FROM messages WHERE conversation_id=?1 ORDER BY sequence"
     ).map_err(|error| error.to_string())?;
@@ -947,6 +977,7 @@ fn chat_send(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
     if input.is_empty() {
         return Err("message must not be empty".to_owned());
     }
+    assert_conversation_owner(&connection, &conversation_id, &agent_id)?;
     let message_count: i64 = connection
         .query_row(
             "SELECT count(*) FROM messages WHERE conversation_id=?1",
@@ -1060,7 +1091,10 @@ fn chat_send(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
     }
 
     let history = chat_messages(&connection, &conversation_id)?;
-    let request = json!({"schema_version":"1.0","system_prompt":system_prompt,"messages":history,"stream":stream_events});
+    let conversation_system_prompt = format!(
+        "{system_prompt}\n\n[Runtime boundary]\nThis response is conversation-only. You have no Tool access and cannot create, edit, search, or save files in this turn. Never claim that work is currently running, being written, or will finish later. If the user requests an unavailable side effect, explain the limitation and provide the result directly in the reply when possible."
+    );
+    let request = json!({"schema_version":"1.0","system_prompt":conversation_system_prompt,"messages":history,"stream":stream_events});
     let worker_root = root.join("runtime/python-agent");
     let mut child = Command::new("python3")
         .args(["-m", "app.chat_worker"])
@@ -1150,6 +1184,67 @@ fn chat_send(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
         "routed_to": "conversation",
         "message":{"id":assistant_id,"role":"assistant","content":note,"created_at":completed}
     }))
+}
+
+fn chat_abort(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {
+    let mut database = None;
+    let mut conversation_id = None;
+    let mut agent_id = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--conversation-id" => conversation_id = arguments.next(),
+            "--employee-id" => agent_id = arguments.next(),
+            _ => return Err(usage()),
+        }
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|error| error.to_string())?;
+    migrate(&mut connection).map_err(|error| error.to_string())?;
+    let conversation_id = conversation_id.ok_or_else(usage)?;
+    let agent_id = agent_id.ok_or_else(usage)?;
+    assert_conversation_owner(&connection, &conversation_id, &agent_id)?;
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    let active_call: Option<(String, i64)> = transaction
+        .query_row(
+            "SELECT mc.id,m.sequence FROM model_calls mc
+             JOIN messages m ON m.id=mc.user_message_id
+             WHERE mc.conversation_id=?1 AND mc.status='running'
+             ORDER BY mc.created_at DESC LIMIT 1",
+            [&conversation_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let changed = if let Some((call_id, user_sequence)) = active_call {
+        let completed = now();
+        transaction
+            .execute(
+                "UPDATE model_calls SET status='failed',error_code='user_cancelled',completed_at=?2 WHERE id=?1",
+                rusqlite::params![call_id, completed],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO messages(id,conversation_id,sequence,role,content,created_at)
+                 VALUES (?1,?2,?3,'assistant','已停止本轮回复。你可以修改上一条消息后重新发送。',?4)",
+                rusqlite::params![format!("msg_cancelled_{call_id}"), conversation_id, user_sequence + 1, completed],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "UPDATE conversations SET updated_at=?2 WHERE id=?1",
+                rusqlite::params![conversation_id, completed],
+            )
+            .map_err(|error| error.to_string())?;
+        true
+    } else {
+        false
+    };
+    transaction.commit().map_err(|error| error.to_string())?;
+    Ok(json!({"schema_version":"1.0","status":if changed { "stopped" } else { "already_stopped" }}))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1555,31 +1650,49 @@ fn list_tasks(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
     let mut statement = connection
         .prepare(
             "SELECT t.id,t.agent_id,t.input,t.status,t.created_at,t.updated_at,
-                    COALESCE(json_group_array(json_object(
+                    COALESCE((SELECT json_group_array(json(action_json)) FROM (
+                      SELECT json_object(
                       'step_id', COALESCE(json_extract(a.input_json,'$.step_id'), json_extract(a.input_json,'$.action'), substr(a.id, instr(a.id, ':') + 1)),
                       'action_id', a.id,
                       'status', a.status,
                       'output_as', COALESCE(json_extract(a.input_json,'$.output_as'), '')
-                    )) FILTER (WHERE a.id IS NOT NULL), '[]'),
-                    (SELECT json_extract(output_json,'$.path') FROM actions
-                     WHERE task_id=t.id AND json_type(output_json,'$.path')='text'
-                     ORDER BY created_at DESC LIMIT 1),
+                      ) AS action_json
+                      FROM actions a WHERE a.task_id=t.id
+                      ORDER BY a.created_at,a.id
+                    )), '[]'),
+                    (SELECT ar.uri FROM deliverables d
+                     JOIN deliverable_evidence de ON de.deliverable_id=d.id AND de.evidence_type='artifact'
+                     JOIN artifacts ar ON ar.id=de.evidence_ref
+                     WHERE d.id=(SELECT id FROM deliverables WHERE task_id=t.id AND status='verified'
+                                 ORDER BY created_at DESC,id DESC LIMIT 1)
+                       AND ar.task_id=t.id AND ar.run_id=d.run_id AND ar.verification_status='verified'
+                     ORDER BY ar.created_at DESC,ar.id DESC LIMIT 1),
                     (SELECT score FROM evaluations WHERE task_id=t.id ORDER BY created_at DESC LIMIT 1),
                     (SELECT json_extract(metrics_json,'$.delivery_allowed') FROM evaluations
                      WHERE task_id=t.id ORDER BY created_at DESC LIMIT 1),
-                    COALESCE((SELECT json_group_array(json_object(
+                    COALESCE((SELECT json_group_array(json(event_json)) FROM (
+                      SELECT json_object(
                       'schema_version','1.0', 'event_id',event_id, 'sequence',sequence,
-                      'task_id',task_id, 'type',event_type, 'occurred_at',occurred_at
-                    )) FROM runtime_events WHERE task_id=t.id ORDER BY sequence), '[]'),
+                      'task_id',task_id, 'type',event_type, 'occurred_at',occurred_at,
+                      'payload',json(payload_json)
+                      ) AS event_json
+                      FROM runtime_events WHERE task_id=t.id ORDER BY sequence
+                    )), '[]'),
                     EXISTS(SELECT 1 FROM task_cancellation_requests c
                            WHERE c.task_id=t.id AND c.acknowledged_at IS NULL)
                     ,(SELECT id FROM agent_runs WHERE task_id=t.id ORDER BY created_at DESC LIMIT 1)
                     ,(SELECT phase FROM agent_runs WHERE task_id=t.id ORDER BY created_at DESC LIMIT 1)
                     ,(SELECT waiting_reason FROM agent_runs WHERE task_id=t.id ORDER BY created_at DESC LIMIT 1)
                     ,(SELECT stop_reason FROM agent_runs WHERE task_id=t.id ORDER BY created_at DESC LIMIT 1)
-                    ,(SELECT title FROM deliverables WHERE task_id=t.id AND status='verified' ORDER BY created_at DESC LIMIT 1)
-                    ,(SELECT status FROM deliverables WHERE task_id=t.id ORDER BY created_at DESC LIMIT 1)
-                    ,(SELECT uri FROM artifacts WHERE task_id=t.id AND verification_status='verified' ORDER BY created_at DESC LIMIT 1)
+                    ,(SELECT title FROM deliverables WHERE task_id=t.id AND status='verified' ORDER BY created_at DESC,id DESC LIMIT 1)
+                    ,(SELECT status FROM deliverables WHERE task_id=t.id AND status='verified' ORDER BY created_at DESC,id DESC LIMIT 1)
+                    ,(SELECT ar.uri FROM deliverables d
+                       JOIN deliverable_evidence de ON de.deliverable_id=d.id AND de.evidence_type='artifact'
+                       JOIN artifacts ar ON ar.id=de.evidence_ref
+                       WHERE d.id=(SELECT id FROM deliverables WHERE task_id=t.id AND status='verified'
+                                   ORDER BY created_at DESC,id DESC LIMIT 1)
+                         AND ar.task_id=t.id AND ar.run_id=d.run_id AND ar.verification_status='verified'
+                       ORDER BY ar.created_at DESC,ar.id DESC LIMIT 1)
                     ,(SELECT json_extract(snapshot_json,'$.conversation_id') FROM run_snapshots
                       WHERE run_id=(SELECT id FROM agent_runs WHERE task_id=t.id ORDER BY created_at DESC LIMIT 1)
                         AND snapshot_type='context' LIMIT 1)
@@ -1597,8 +1710,7 @@ fn list_tasks(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
                         json_extract(output_json,'$.content'))
                       FROM deliverables WHERE task_id=t.id AND status='verified'
                       ORDER BY created_at DESC LIMIT 1)
-             FROM tasks t LEFT JOIN actions a ON a.task_id=t.id
-             GROUP BY t.id ORDER BY t.created_at DESC, t.id DESC",
+             FROM tasks t ORDER BY t.created_at DESC, t.id DESC",
         )
         .map_err(|error| error.to_string())?;
     let rows = statement
@@ -1802,7 +1914,7 @@ fn task_command_arguments(
 }
 
 fn usage() -> String {
-    "usage: ai-employee-runtime employees-list|employee-save|employee-delete|effective-prompt|capabilities|capability-readiness|skills-list|tools-list|install-tool|install-skill|bind-skill|unbind-skill|knowledge-import|knowledge-search|chat-history|chat-send|chat-delete|run-task|run-skill|run-status|continue-run|resolve-action-result|list-tasks|usage-summary|cancel-task|events".to_owned()
+    "usage: ai-employee-runtime employees-list|employee-save|employee-delete|effective-prompt|capabilities|capability-readiness|skills-list|tools-list|install-tool|install-skill|bind-skill|unbind-skill|knowledge-import|knowledge-list|knowledge-search|chat-history|chat-send|chat-abort|chat-delete|run-task|run-skill|run-status|continue-run|resolve-action-result|list-tasks|usage-summary|cancel-task|events".to_owned()
 }
 
 fn usage_summary(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {
@@ -1836,6 +1948,21 @@ fn usage_day_label(iso_date: &str, is_today: bool) -> String {
 }
 
 fn usage_summary_from_connection(connection: &Connection) -> Result<serde_json::Value, String> {
+    let unsupported_model: Option<String> = connection
+        .query_row(
+            "SELECT provider || '/' || model FROM model_calls
+             WHERE status='succeeded'
+               AND date(CAST(created_at AS INTEGER) / 1000, 'unixepoch', 'localtime') >= date('now', 'localtime', '-6 days')
+               AND NOT (provider='deepseek' AND model='deepseek-v4-flash')
+             ORDER BY created_at DESC LIMIT 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    if let Some(model) = unsupported_model {
+        return Err(format!("unsupported_usage_pricing_model:{model}"));
+    }
     let mut day_totals: std::collections::HashMap<String, (i64, i64, i64)> =
         std::collections::HashMap::new();
     let mut statement = connection
@@ -1901,7 +2028,8 @@ fn usage_summary_from_connection(connection: &Connection) -> Result<serde_json::
         "estimated_cost_cny": estimated_cost_cny,
         "pricing_model": "deepseek-v4-flash",
         "pricing_basis": "input_cache_miss",
-        "pricing_source": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/",
+        "pricing_version": USAGE_PRICING_VERSION,
+        "pricing_source": USAGE_PRICING_SOURCE,
         "model_calls": model_calls,
         "points": points
     }))
@@ -2429,6 +2557,47 @@ fn knowledge_import_command(
     }))
 }
 
+fn knowledge_list_command(
+    mut arguments: impl Iterator<Item = String>,
+) -> Result<serde_json::Value, String> {
+    let mut database = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            _ => return Err(usage()),
+        }
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|error| error.to_string())?;
+    migrate(&mut connection).map_err(|error| error.to_string())?;
+    let mut statement = connection
+        .prepare(
+            "SELECT s.id,s.uri,s.source_type,s.title,s.content_hash,s.index_status,s.updated_at,
+                    COALESCE((SELECT group_concat(content, char(10) || char(10)) FROM (
+                      SELECT content FROM knowledge_chunks WHERE source_id=s.id ORDER BY chunk_index
+                    )), '')
+             FROM knowledge_sources s ORDER BY lower(s.title),s.id",
+        )
+        .map_err(|error| error.to_string())?;
+    let sources = statement
+        .query_map([], |row| {
+            Ok(json!({
+                "id": row.get::<_, String>(0)?,
+                "uri": row.get::<_, String>(1)?,
+                "source_type": row.get::<_, String>(2)?,
+                "title": row.get::<_, String>(3)?,
+                "content_hash": row.get::<_, String>(4)?,
+                "index_status": row.get::<_, String>(5)?,
+                "updated_at": row.get::<_, String>(6)?,
+                "content": row.get::<_, String>(7)?,
+            }))
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    Ok(json!({"schema_version":"1.0","sources":sources}))
+}
+
 fn knowledge_search_command(
     mut arguments: impl Iterator<Item = String>,
 ) -> Result<serde_json::Value, String> {
@@ -2472,6 +2641,39 @@ fn knowledge_search_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn conversation_access_rejects_a_different_employee() {
+        let database = env::temp_dir().join(format!("ai-employee-conversation-owner-{}.db", now()));
+        let mut connection = Connection::open(&database).unwrap();
+        migrate(&mut connection).unwrap();
+        connection
+            .execute_batch(
+                "INSERT INTO agents VALUES ('alex','Alex','ai_product_manager','user','active','t','t');
+                 INSERT INTO agents VALUES ('writer','Writer','writer','user','active','t','t');
+                 INSERT INTO conversations VALUES ('conversation_alex_primary','alex','chat','active','t','t');",
+            )
+            .unwrap();
+        drop(connection);
+
+        let arguments = |employee_id: &str| {
+            vec![
+                "--database".to_owned(),
+                database.display().to_string(),
+                "--conversation-id".to_owned(),
+                "conversation_alex_primary".to_owned(),
+                "--employee-id".to_owned(),
+                employee_id.to_owned(),
+            ]
+            .into_iter()
+        };
+        assert!(chat_history(arguments("alex")).is_ok());
+        assert_eq!(
+            chat_history(arguments("writer")).unwrap_err(),
+            "conversation_employee_mismatch"
+        );
+        fs::remove_file(database).unwrap();
+    }
 
     #[test]
     fn task_input_text_extracts_user_text_without_leaking_transport_json() {
@@ -2639,6 +2841,88 @@ mod tests {
         fs::remove_file(database).unwrap();
     }
 
+    #[test]
+    fn task_history_uses_one_verified_deliverable_and_stable_event_action_order() {
+        let database = env::temp_dir().join(format!("ai-employee-task-view-{}.db", now()));
+        let mut connection = Connection::open(&database).unwrap();
+        migrate(&mut connection).unwrap();
+        connection
+            .execute(
+                "INSERT INTO agents VALUES ('alex','Alex','role','package','active','t','t')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO tasks VALUES ('task','alex','input','succeeded','1','9')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO tools VALUES ('tool','Tool','native','1.0.0','{}','active','t','t')",
+                [],
+            )
+            .unwrap();
+        connection.execute("INSERT INTO actions VALUES ('action-b','task','tool','{}','{\"path\":\"/tmp/unverified\"}','succeeded','2','2')", []).unwrap();
+        connection.execute("INSERT INTO actions VALUES ('action-a','task','tool','{}','{}','succeeded','1','1')", []).unwrap();
+        connection.execute("INSERT INTO agent_runs(id,task_id,schema_version,phase,revision,model_turns_used,tool_calls_used,max_model_turns,max_tool_calls,deadline,waiting_reason,stop_reason,created_at,updated_at) VALUES ('run','task','1.0.0','terminal',1,1,1,4,4,'later',NULL,'complete','1','9')", []).unwrap();
+        connection.execute("INSERT INTO deliverables VALUES ('verified','task','run','structured_result','Verified title','summary','verified','{\"answer\":\"verified body\"}','2','2')", []).unwrap();
+        connection.execute("INSERT INTO deliverables VALUES ('candidate','task','run','structured_result','Candidate title','summary','candidate','{\"answer\":\"candidate body\"}','3',NULL)", []).unwrap();
+        connection.execute("INSERT INTO artifacts VALUES ('linked','task','run','file','/tmp/linked','text/plain',1,?1,NULL,'internal','verified','2')", ["a".repeat(64)]).unwrap();
+        connection.execute("INSERT INTO artifacts VALUES ('unrelated','task','run','file','/tmp/unrelated','text/plain',1,?1,NULL,'internal','verified','4')", ["b".repeat(64)]).unwrap();
+        connection
+            .execute(
+                "INSERT INTO deliverable_evidence VALUES ('verified','artifact','linked','2')",
+                [],
+            )
+            .unwrap();
+
+        let result =
+            list_tasks(vec!["--database".to_owned(), database.display().to_string()].into_iter())
+                .unwrap();
+        let task = &result["tasks"][0];
+        assert_eq!(task["deliverable_title"], "Verified title");
+        assert_eq!(task["deliverable_status"], "verified");
+        assert_eq!(task["deliverable_message"], "verified body");
+        assert_eq!(task["artifact_path"], "/tmp/linked");
+        assert_eq!(task["verified_artifact_path"], "/tmp/linked");
+        assert_eq!(task["actions"][0]["action_id"], "action-a");
+        assert_eq!(task["actions"][1]["action_id"], "action-b");
+        assert_eq!(task["events"][0]["payload"]["agent_id"], "alex");
+        fs::remove_file(database).unwrap();
+    }
+
+    #[test]
+    fn knowledge_list_reads_canonical_sources_and_chunk_order() {
+        let database = env::temp_dir().join(format!("ai-employee-knowledge-list-{}.db", now()));
+        let mut connection = Connection::open(&database).unwrap();
+        migrate(&mut connection).unwrap();
+        import_source(
+            &mut connection,
+            "source",
+            "file:///notes/a.md",
+            "local_file",
+            "A",
+            "first\n\nsecond",
+            "t",
+        )
+        .unwrap();
+        let result = knowledge_list_command(
+            vec!["--database".to_owned(), database.display().to_string()].into_iter(),
+        )
+        .unwrap();
+        assert_eq!(result["sources"][0]["id"], "source");
+        assert_eq!(result["sources"][0]["index_status"], "indexed");
+        assert!(
+            result["sources"][0]["content"]
+                .as_str()
+                .unwrap()
+                .contains("first")
+        );
+        fs::remove_file(database).unwrap();
+    }
+
     fn millis_for_local_day_offset(connection: &Connection, offset: i64) -> String {
         let day_modifier = if offset == 0 {
             "0 days".to_owned()
@@ -2700,6 +2984,7 @@ mod tests {
         assert_eq!(summary["estimated_cost_cny"], 0.0);
         assert_eq!(summary["pricing_model"], "deepseek-v4-flash");
         assert_eq!(summary["pricing_basis"], "input_cache_miss");
+        assert_eq!(summary["pricing_version"], "deepseek-v4-flash-cny-v1");
         assert_eq!(
             summary["pricing_source"],
             "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/"
@@ -2796,6 +3081,41 @@ mod tests {
         assert_eq!(points[6]["output_tokens"], 500_000);
         assert_eq!(points[5]["input_tokens"], 1_000_000);
         assert_eq!(points[5]["output_tokens"], 0);
+        fs::remove_file(database).unwrap();
+    }
+
+    #[test]
+    fn usage_summary_fails_closed_for_an_unpriced_model() {
+        let database = env::temp_dir().join(format!("ai-employee-usage-model-{}.db", now()));
+        let mut connection = Connection::open(&database).unwrap();
+        migrate(&mut connection).unwrap();
+        connection
+            .execute(
+                "INSERT INTO agents VALUES ('alex','Alex','role','package','active','t','t')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO conversations VALUES ('c1','alex','chat','active','t','t')",
+                [],
+            )
+            .unwrap();
+        let today = millis_for_local_day_offset(&connection, 0);
+        connection
+            .execute(
+                "INSERT INTO messages VALUES ('u1','c1',1,'user','hello',?1)",
+                [&today],
+            )
+            .unwrap();
+        connection.execute("INSERT INTO model_calls VALUES ('call','c1','u1',NULL,'other','model-x','succeeded',100,100,NULL,?1,?1)", [&today]).unwrap();
+        drop(connection);
+
+        let error = usage_summary(
+            vec!["--database".to_owned(), database.display().to_string()].into_iter(),
+        )
+        .unwrap_err();
+        assert_eq!(error, "unsupported_usage_pricing_model:other/model-x");
         fs::remove_file(database).unwrap();
     }
 }

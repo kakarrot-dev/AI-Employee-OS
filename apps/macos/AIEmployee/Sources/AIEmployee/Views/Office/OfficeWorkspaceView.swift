@@ -4,7 +4,6 @@ import SwiftUI
 struct OfficeWorkspaceView: View {
     @ObservedObject var store: TaskStore
     @ObservedObject var employeeStore: EmployeeStore
-    let openChat: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -33,12 +32,9 @@ struct OfficeWorkspaceView: View {
                     if let message = snapshot.runtimeMessage { runtimeBanner(message) }
                     if snapshot.isLoading { loadingState }
                     else {
-                        currentWorkSection(compact: compact)
-                            .opacity(contentVisible ? 1 : 0)
-                            .offset(y: contentVisible || reduceMotion ? 0 : 10)
                         usageSection(compact: compact)
                             .opacity(contentVisible ? 1 : 0)
-                            .offset(y: contentVisible || reduceMotion ? 0 : 12)
+                            .offset(y: contentVisible || reduceMotion ? 0 : 10)
                     }
                 }
                 .frame(maxWidth: 1180, alignment: .leading)
@@ -77,7 +73,7 @@ struct OfficeWorkspaceView: View {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 7) {
                     HStack(spacing: 10) {
-                        Text("今天的办公室")
+                        Text("办公室")
                             .font(.system(size: compact ? 27 : 34, weight: .semibold, design: .rounded))
                             .foregroundStyle(palette.ink)
                         if snapshot.isDemo {
@@ -88,7 +84,7 @@ struct OfficeWorkspaceView: View {
                                 .background(palette.primary.opacity(0.10), in: Capsule())
                         }
                     }
-                    Text(todaySummary)
+                    Text("查看最近 7 天的模型调用、Token 消耗与预估成本。")
                         .font(.body)
                         .foregroundStyle(palette.muted)
                         .lineSpacing(3)
@@ -99,110 +95,6 @@ struct OfficeWorkspaceView: View {
                         .font(.callout)
                         .foregroundStyle(palette.mutedSoft)
                         .padding(.top, 7)
-                }
-            }
-            officePulse()
-        }
-    }
-
-    private func officePulse() -> some View {
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 2)
-        return LazyVGrid(columns: columns, spacing: 0) {
-            pulseItem(value: snapshot.currentWork.count, label: "进行中的工作", color: snapshot.currentWork.isEmpty ? palette.mutedSoft : palette.accentTeal)
-            pulseItem(value: attentionCount, label: "需要你处理", color: attentionCount == 0 ? palette.mutedSoft : palette.warning)
-        }
-        .padding(.vertical, 16)
-        .background(palette.surfaceSoft.opacity(0.72), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg).stroke(palette.hairlineSoft) }
-    }
-
-    private func pulseItem(value: Int, label: String, color: Color) -> some View {
-        HStack(spacing: 11) {
-            Circle().fill(color).frame(width: 7, height: 7)
-            VStack(alignment: .leading, spacing: 2) {
-                CountingMetricText(value: Double(value) * dataAnimationProgress) { "\(Int($0.rounded()))" }
-                    .font(.system(size: 19, weight: .semibold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(palette.ink)
-                Text(label).font(.caption).foregroundStyle(palette.muted)
-            }
-            Spacer(minLength: 4)
-        }
-        .padding(.horizontal, 18)
-    }
-
-    private var attentionCount: Int {
-        snapshot.currentWork.filter { item in
-            switch item.state { case .blocked, .resultUnknown, .failed: true; case .pending, .running: false }
-        }.count
-    }
-
-    private var todaySummary: String {
-        if snapshot.employees.isEmpty { return "还没有 AI 员工。先在通讯录创建员工，再把工作交给他们。" }
-        let active = snapshot.currentWork.count
-        let names = snapshot.currentWork.prefix(2).map(\.employeeName).joined(separator: "、")
-        if active == 0 { return "\(snapshot.employees.count) 位 AI 员工已就绪，今天还没有进行中的工作。" }
-        return "\(names) 正在推进 \(active) 项工作。"
-    }
-
-    private func currentWorkSection(compact: Bool) -> some View {
-        section(title: "当前工作", subtitle: "正在执行、等待确认或需要处理的工作") {
-            if snapshot.currentWork.isEmpty {
-                Text("当前没有进行中的工作。新工作会从员工对话进入这里。")
-                    .font(.callout)
-                    .foregroundStyle(palette.muted)
-                    .padding(.vertical, 8)
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(snapshot.currentWork.enumerated()), id: \.element.id) { index, item in
-                        Button {
-                            guard !snapshot.isDemo else { return }
-                            store.selection = item.id
-                            openChat()
-                        } label: {
-                            HStack(alignment: .top, spacing: 14) {
-                                Image(systemName: workIcon(item.state))
-                                    .font(.callout)
-                                    .foregroundStyle(workColor(item.state))
-                                    .frame(width: 34, height: 34)
-                                    .background(workColor(item.state).opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
-                                    .contentTransition(.symbolEffect(.replace))
-                                VStack(alignment: .leading, spacing: 5) {
-                                    HStack(spacing: 8) {
-                                        Text(item.employeeName)
-                                            .font(.caption.weight(.semibold))
-                                            .foregroundStyle(workColor(item.state))
-                                        Text(workLabel(item.state))
-                                            .font(.caption2)
-                                            .foregroundStyle(palette.muted)
-                                    }
-                                    Text(item.goal)
-                                        .font(.callout.weight(.medium))
-                                        .foregroundStyle(palette.ink)
-                                        .lineLimit(compact ? 3 : 2)
-                                    Text(item.detail)
-                                        .font(.caption)
-                                        .foregroundStyle(palette.muted)
-                                        .lineLimit(2)
-                                    if let progress = item.progress {
-                                        ProgressView(value: progress)
-                                            .tint(workColor(item.state))
-                                            .frame(maxWidth: compact ? .infinity : 320)
-                                    }
-                                }
-                                Spacer(minLength: 8)
-                                Image(systemName: "chevron.right")
-                                    .font(.caption2)
-                                    .foregroundStyle(palette.mutedSoft)
-                                    .padding(.top, 9)
-                            }
-                            .padding(.vertical, 12)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        if index < snapshot.currentWork.count - 1 {
-                            Divider().overlay(palette.hairlineSoft)
-                        }
-                    }
                 }
             }
         }
@@ -221,7 +113,7 @@ struct OfficeWorkspaceView: View {
                     usageMetric("总 Token", value: Double(usage.totalTokens), note: "输入 + 输出") { abbreviated(Int($0.rounded())) }
                     usageMetric("输入", value: Double(usage.inputTokens), note: "上下文与提示词") { abbreviated(Int($0.rounded())) }
                     usageMetric("输出", value: Double(usage.outputTokens), note: "模型生成内容") { abbreviated(Int($0.rounded())) }
-                    usageMetric("预估成本", value: usage.estimatedCostCNY, note: "按输入缓存未命中价") { currencyCNY($0) }
+                    usageMetric("预估成本", value: usage.estimatedCostCNY, note: pricingNote(for: usage)) { currencyCNY($0) }
                 }
 
                 Divider().overlay(palette.hairlineSoft)
@@ -367,6 +259,15 @@ struct OfficeWorkspaceView: View {
         return String(format: "¥%.2f", value)
     }
 
+    private func pricingNote(for usage: OfficeSnapshot.UsageSummary) -> String {
+        guard let model = usage.pricingModel, let version = usage.pricingVersion else { return "暂无定价口径" }
+        let modelName = model
+            .replacingOccurrences(of: "deepseek", with: "DeepSeek")
+            .replacingOccurrences(of: "-", with: " ")
+        let versionName = version.split(separator: "-").last.map(String.init) ?? version
+        return "\(modelName) · 价格口径 \(versionName)"
+    }
+
     private func replayDataAnimation() {
         guard !reduceMotion else {
             dataAnimationProgress = 1
@@ -403,35 +304,6 @@ struct OfficeWorkspaceView: View {
         }.foregroundStyle(palette.surfaceSoft).redacted(reason: .placeholder)
     }
 
-    private func workLabel(_ state: OfficeSnapshot.WorkItem.State) -> String {
-        switch state {
-        case .pending: "等待开始"
-        case .running: "进行中"
-        case .blocked: "等待确认"
-        case .resultUnknown: "结果待核验"
-        case .failed: "执行失败"
-        }
-    }
-
-    private func workIcon(_ state: OfficeSnapshot.WorkItem.State) -> String {
-        switch state {
-        case .pending: "clock"
-        case .running: "arrow.trianglehead.2.clockwise.rotate.90"
-        case .blocked: "hand.raised"
-        case .resultUnknown: "questionmark.circle"
-        case .failed: "exclamationmark.triangle"
-        }
-    }
-
-    private func workColor(_ state: OfficeSnapshot.WorkItem.State) -> Color {
-        switch state {
-        case .pending: palette.muted
-        case .running: palette.accentTeal
-        case .blocked, .resultUnknown: palette.warning
-        case .failed: palette.error
-        }
-    }
-
     private static let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
@@ -440,9 +312,8 @@ struct OfficeWorkspaceView: View {
     }()
 
     private var snapshotRevision: String {
-        let work = snapshot.currentWork.map { "\($0.id):\(workLabel($0.state)):\($0.progress ?? -1)" }.joined(separator: "|")
         let usage = snapshot.usage.map { "\($0.inputTokens):\($0.outputTokens):\($0.modelCalls)" } ?? "empty"
-        return "\(work)#\(usage)#\(snapshot.isLoading)#\(snapshot.runtimeMessage ?? "")"
+        return "\(usage)#\(snapshot.isLoading)#\(snapshot.runtimeMessage ?? "")"
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
@@ -459,16 +330,5 @@ private struct CountingMetricText: View, Animatable {
 
     var body: some View {
         Text(formatter(value))
-    }
-}
-
-struct AlexMark: View {
-    let size: CGFloat
-    @Environment(\.colorScheme) private var colorScheme
-    var body: some View {
-        RoundedRectangle(cornerRadius: size * 0.30, style: .continuous)
-            .fill(AppTheme.palette(for: colorScheme).primary.opacity(0.13))
-            .frame(width: size, height: size)
-            .overlay { Text("A").font(.system(size: size * 0.38, weight: .semibold)).foregroundStyle(AppTheme.palette(for: colorScheme).primaryActive) }
     }
 }

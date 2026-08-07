@@ -15,6 +15,7 @@ final class ConversationStore: ObservableObject {
     @Published var messages: [ChatMessage] = []
     @Published var draft = ""
     @Published var isSending = false
+    @Published private(set) var isStopping = false
     @Published private(set) var streamingContent = ""
     @Published private(set) var streamingStartedAt: Date?
     @Published var error: String?
@@ -22,6 +23,7 @@ final class ConversationStore: ObservableObject {
     @Published private(set) var latestPreviewByEmployee: [String: String] = [:]
     @Published private(set) var pendingTaskRefresh = false
     private var selectionGeneration = 0
+    private var sendTask: Task<Void, Never>?
     private var cancellables: Set<AnyCancellable> = []
 
     init(service: RuntimeService) {
@@ -58,6 +60,7 @@ final class ConversationStore: ObservableObject {
         messages = []
         draft = ""
         isSending = false
+        isStopping = false
         streamingContent = ""
         streamingStartedAt = nil
         error = nil
@@ -78,7 +81,7 @@ final class ConversationStore: ObservableObject {
         guard WorkLibraryDemoData.current == nil else { return }
         for employee in employees where lastActivityByEmployee[employee.id] == nil {
             do {
-                let history = try await service.chatHistory("conversation_\(employee.id)_primary").messages
+                let history = try await service.chatHistory("conversation_\(employee.id)_primary", employee.id).messages
                 if let latest = history.max(by: { $0.createdAt < $1.createdAt }) {
                     lastActivityByEmployee[employee.id] = latest.createdAt
                     latestPreviewByEmployee[employee.id] = latest.content
@@ -117,7 +120,7 @@ final class ConversationStore: ObservableObject {
             messages.append(optimistic)
         }
         logger.info("User message queued locally for employee \(targetEmployeeID, privacy: .public)")
-        Task {
+        sendTask = Task {
             do {
                 let response = try await service.chatSend(targetConversationID, targetEmployeeID, content, key, messageID) { [weak self] delta in
                     guard let self,
@@ -132,19 +135,43 @@ final class ConversationStore: ObservableObject {
                     pendingTaskRefresh = true
                 }
             } catch {
-                logger.error("Assistant response failed for employee \(targetEmployeeID, privacy: .public)")
-                if generation == selectionGeneration, targetConversationID == conversationID {
+                if Task.isCancelled {
+                    logger.info("Assistant response stopped for employee \(targetEmployeeID, privacy: .public)")
+                } else {
+                    logger.error("Assistant response failed for employee \(targetEmployeeID, privacy: .public)")
+                }
+                if !Task.isCancelled, generation == selectionGeneration, targetConversationID == conversationID {
                     self.error = error.localizedDescription
                 }
                 await reload(generation: generation, conversationID: targetConversationID)
             }
-            if generation == selectionGeneration, targetConversationID == conversationID {
-                isSending = false
-                streamingContent = ""
-                streamingStartedAt = nil
+                if generation == selectionGeneration, targetConversationID == conversationID, !isStopping {
+                    isSending = false
+                    streamingContent = ""
+                    streamingStartedAt = nil
+                sendTask = nil
             }
         }
         return true
+    }
+
+    func stopSending() {
+        guard isSending else { return }
+        let targetConversationID = conversationID
+        let targetEmployeeID = employeeID
+        isStopping = true
+        sendTask?.cancel()
+        streamingContent = ""
+        streamingStartedAt = nil
+        Task {
+            try? await service.chatAbort(targetConversationID, targetEmployeeID)
+            await reload()
+            if targetConversationID == conversationID {
+                isSending = false
+                isStopping = false
+                sendTask = nil
+            }
+        }
     }
 
     func clearPendingTaskRefresh() { pendingTaskRefresh = false }
@@ -153,8 +180,9 @@ final class ConversationStore: ObservableObject {
         guard !isSending else { return }
         let generation = selectionGeneration
         let targetConversationID = conversationID
+        let targetEmployeeID = employeeID
         do {
-            _ = try await service.chatDelete(targetConversationID)
+            _ = try await service.chatDelete(targetConversationID, targetEmployeeID)
             if generation == selectionGeneration, targetConversationID == conversationID {
                 messages = []
                 error = nil
@@ -172,7 +200,8 @@ final class ConversationStore: ObservableObject {
             return
         }
         do {
-            let loaded = try await service.chatHistory(targetConversationID).messages
+            let targetEmployeeID = employeeID
+            let loaded = try await service.chatHistory(targetConversationID, targetEmployeeID).messages
             guard generation == selectionGeneration, targetConversationID == conversationID else { return }
             messages = loaded
             if let latest = loaded.max(by: { $0.createdAt < $1.createdAt }) {

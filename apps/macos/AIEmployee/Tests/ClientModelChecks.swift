@@ -95,8 +95,8 @@ enum ClientModelChecks {
             "mixed Runtime and ISO timestamps sort chronologically"
         )
         expect(
-            AppDestination.allCases == [.office, .contacts, .work, .skills, .tools, .settings],
-            "main shell exposes the approved six destinations"
+            AppDestination.allCases == [.office, .contacts, .work, .knowledge, .skills, .tools, .settings],
+            "main shell exposes the approved seven destinations"
         )
         let toolsPayload = """
         {"schema_version":"1.0","tools":[{"id":"file-tool","name":"File Tool","type":"native","version":"1.0.0","status":"active","summary":"Read files","category":"rust-native-v1","available":true,"documentation":"# 本地文件","actions":[{"name":"read_file","description":"Read","required_permissions":["filesystem.read"],"risk_level":0,"side_effect":"none","confirmation":"never","timeout_ms":10000,"idempotency":"safe","concurrency_safe":true,"sensitive_fields":["arguments.path"]}],"data_sources":null}]}
@@ -176,7 +176,9 @@ enum ClientModelChecks {
                 modelCalls: 2,
                 points: [
                     OfficeSnapshot.UsagePoint(id: "2026-08-05", label: "今天", inputTokens: 100, outputTokens: 40)
-                ]
+                ],
+                pricingModel: "deepseek-v4-flash",
+                pricingVersion: "deepseek-v4-flash-cny-v1"
             )
         )
         expect(office.deliveries.count == 2, "live office keeps title-only and path deliveries")
