@@ -1,5 +1,7 @@
 # Phase 1 Multi-Employee Business Flow
 
+> 产品状态更新（2026-08-12）：已按本文回滚约定隐藏客户端「场景库」新建、AI 提案和 `business-flow-start` 入口。Runtime 契约、历史 Flow、只读/恢复能力、Migration、Audit 与 Artifact 保留。本文件继续记录 Phase 1 历史发布事实，不再代表当前客户端导航。
+
 > 状态：Release Candidate；本地确定性门禁与真实 macOS 界面已验证，真实 DeepSeek / Exa 多员工端到端尚未验证。
 
 ## 用户能力

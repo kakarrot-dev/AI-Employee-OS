@@ -10,7 +10,7 @@
 2. 在客户端编辑员工 Identity / Soul / Persona；Effective Prompt 由 Rust Runtime 单向编译。
 3. 与员工完成可跨重启恢复的多轮对话（新装默认种子为 Alex / `ai-product-manager`，用户可彻底删除且不会被自动恢复）。
 4. Skill / Tool 由仓库 Package 安装（客户端不创建）；Runtime bootstrap 安装内置 Package 后，技能库与工具库可浏览。
-5. 对话经意图识别区分闲聊与工作：闲聊走 Python chat worker；工作意图仅在存在 readiness=`ready` 的 Skill 时，由 Rust 锁定员工 Capability Set，Agent 在同一 Generic Run 中逐轮选择 Skill 与其声明的 Tool/Action。Golden Path 已移除。
+5. 办公室提供唯一默认任务输入框；Rust Runtime 通过模型生成并校验单员工或多员工 Task Proposal，用户确认后进入 Task Thread 执行。闲聊仍走员工私聊，工作执行复用 Generic Run Kernel，Golden Path 已移除。
 
 可执行 Skill 必须是 Manifest `schema_version: 2.0.0`。默认员工 bootstrap 绑定 `local-file-operations` 与 `web-search`。当前主验证可执行路径为 `local-file-operations`（授权目录内读 / 创建 / 精确编辑 UTF-8 文件，经审批后由 `file-tool` 执行）。`web-search` 已合入并绑定；真实搜索依赖本机 `mcporter` + Exa，尚未作为无外部依赖的默认门禁。仓库中 `prd-generation` / `requirement-analysis` 等 Manifest 1.0 Skill 若仍存在，readiness 为 `incompatible`，不作为工作执行主路径。
 
@@ -32,13 +32,14 @@
 
 ### 产品可见（当前主路径）
 
-- Swift macOS Client：办公室、通讯录、工作库、技能库、工具库、设置
+- Swift macOS Client：办公室、通讯录、工作库、归档、知识库、技能库、工具库、设置
 - DeepSeek 驱动的多轮对话与意图路由
 - 员工 Profile：Identity / Soul / Persona；默认种子可彻底删除且不自动恢复
 - 仓库内置 Agent / Skill / Tool Package 的安装、列表与 Skill 绑定
 - 已合入内置 Tool：`file-tool`（读 / 创建 / 编辑授权本地文件）、`agent-reach-tool`（`search_web`）
 - 已合入可执行 Skill：`local-file-operations`、`web-search`（Manifest 2.0）
-- Task Inspector（在 `tasks_enabled` 时展示执行步骤与交付）
+- Task Thread 任务协作群、Task Inspector、参与员工、审批、交接、进度与交付投影
+- 私聊与工作记录统一归档；私聊删除会删除 Conversation，工作记录删除保留底层执行与审计证据
 
 ### 进行中（未成默认门禁 / 未成主验证路径）
 
@@ -51,15 +52,16 @@
 - Memory、Knowledge、Evaluation 基础设施
 - Generic Run Snapshot、Checkpoint、Deliverable、基础恢复与 Evaluation
 
-### Phase 1 Release Candidate
+### 多员工 Business Flow 内核
 
-- 场景库支持手工或 AI 草案创建串行多员工 Business Flow。
-- Root/Child Task、WorkOrder、Handoff、Root 输出绑定均由 Rust Runtime 管理；Child 复用 Generic Run Kernel。
-- 当前并发固定 1；私人 Conversation/Memory 不跨员工共享。
+- 办公室统一任务入口、模型驱动的结构化 Task Proposal、确认闸与 Task Thread 已实施。
+- Rust Runtime 按 Capability Set 选择单员工或多员工方案，并继续管理 Root/Child Task、WorkOrder、Handoff、Root 输出绑定、权限与审计。
+- Task Thread 是任务协作投影，不共享员工私人 Conversation/Memory；当前 WorkOrder 并发固定为 1。
+- 场景库降为高级 Runbook / 自动化管理，不是默认任务入口。
 
 ### 暂不包含
 
-并行 Multi-Agent 调度、员工群聊、Computer Use、任意站点网页抓取、Cloud Sync、Marketplace、企业 RBAC、公证发行与自动更新。
+并行 Multi-Agent 调度、脱离 Task Thread 的员工群聊、Computer Use、任意站点网页抓取、Cloud Sync、Marketplace、企业 RBAC、公证发行与自动更新。
 
 ## 架构边界
 
@@ -82,6 +84,8 @@ Python Agent Worker         意图分类、闲聊、Context/规划推理；不�
 - Python Task Worker 只返回 `ask_user | tool_call | complete`；安全字段和所有 Tool 调用由 Rust 生成与执行。
 - 聊天 Task 不在启动前锁死单一 Skill；每个 `tool_call` 必须声明锁定 Capability Set 内的 `skill_id`，Rust 校验 Skill → Tool → Action 授权链。显式 `run-skill` 仍为单 Skill 集合。
 - 工作执行只走 Generic Run Kernel；禁止恢复 Golden Path。
+- Task Proposal Worker 只能提出结构化编排方案；员工选择、Capability Set、权限、Task/Action、Tool 调用和副作用继续由 Rust Runtime 裁决。
+- 统一归档页只聚合 Runtime 权威投影：Conversation 使用 `status`，Task Thread 使用 `archived_at/deleted_at`；客户端不得建立第二套归档状态。
 
 ## 状态与安全不变量
 

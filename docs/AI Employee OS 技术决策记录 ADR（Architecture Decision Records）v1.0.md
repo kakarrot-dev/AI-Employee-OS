@@ -1,6 +1,70 @@
 # AI Employee OS 技术决策记录 ADR（Architecture Decision Records）v1.0
 
-> 阅读顺序：先读文首 ADR-035、ADR-034、ADR-033、ADR-032，再读 ADR-027～031 和 ADR-001 起的历史记录。ADR-031 已被 ADR-032 取代；ADR-017 已被 ADR-034 取代，只保留历史意义。
+> 阅读顺序：先读文首 ADR-037、ADR-036、ADR-035、ADR-034、ADR-033、ADR-032，再读 ADR-027～031 和 ADR-001 起的历史记录。ADR-031 已被 ADR-032 取代；ADR-017 已被 ADR-034 取代，只保留历史意义。
+
+## ADR-037：Task Thread 采用任务协作群表现层，执行事实仍由 Runtime 投影
+
+### 状态
+
+Accepted（2026-08-12）
+
+### 背景
+
+办公室统一入口已经能把自然语言目标物化为单员工或多员工 Task，但当前工作库只展示消息文本和 WorkOrder 状态列表。用户无法在同一任务中自然看到每位员工的回复、当前活动、审批、Handoff 和交付接力；要求用户分别进入员工私聊又会把一个 Task 拆成多个 Conversation，破坏工作连续性。
+
+Bloome 等产品验证了“人和多个 Agent 同处一个群聊表面、委派任务在卡片和详情中追踪”的低学习成本交互。但本项目是 Local-first 工作 Runtime，不能把社交群聊或模型自由发言变成执行事实源。
+
+### 决策
+
+1. 每个 `TaskThread` 在客户端表现为一个“任务协作群（Task Room）”。方案确认后，参与员工从已物化的 Task/WorkOrder 绑定自动召集；用户不手工建群，也不逐个邀请。
+2. Task Room 只有一个 Composer 和一条统一时间线。用户、员工和 Runtime 系统事件使用明确身份展示；员工头像/姓名来自 canonical Agent，执行状态来自 canonical Task/Run/Action。
+3. Task Room 不是 `Conversation`。不新增群聊 Conversation，不复制员工私人 Message/Memory，不让员工监听全部消息或自由决定是否执行。
+4. 员工可见回复只能由其当前 Child Task/Run 输出或经验证的 Deliverable/Handoff 派生。模型声明的“已搜索、已写入、已完成”不能覆盖 Runtime 状态。
+5. Approval、Tool activity、Delegation/Handoff、失败恢复和 Deliverable 以时间线卡片展示；高级字段、Evidence、预算、权限和完整 WorkOrder 图放在同一 Task 的 Inspector，不建立独立场景工作区。
+6. 用户普通补充进入 Task Thread；`@员工` 只是目标路由提示。Rust 根据当前 WorkOrder、Capability Set、状态和权限决定接收者，不能因 Mention 绕过调度或授权。
+7. Phase 1 仍为串行协作。未轮到的员工显示 `等待依赖`，不得为了营造群聊感生成占位回复。跨员工数据仍只通过 verified Handoff/SharedContextRef。
+8. 私人员工聊天保留为通讯录次级入口，与 Task Room 隔离。
+
+### 取代关系
+
+本 ADR 取代统一任务 Spec 中“员工群聊不属于目标”的产品表现层结论，并取代 ADR-034 中“独立 Business Flow 工作区”作为唯一可见协作表面的部分。它不取代 ADR-034/035 的 Root/Child Task、WorkOrder、Handoff、Evidence、权限和 Rust 单一事实源。
+
+### 禁止方案
+
+- 把 Task Room 存成多人私人 Conversation，或复制各员工私人消息进入 Task；
+- 让 Agent 根据群内全部消息自行抢任务、递归委派或直接调用其他 Worker；
+- 用模型生成的自然语言冒充 Tool、Approval、Handoff、Evidence 或完成状态；
+- 为群聊 UI 新建第二套 Task、Action、Approval、Event 或 Deliverable 状态；
+- 未经 Runtime 授权，仅凭 `@员工` 扩大 Capability、文件根目录、Secret 或外部访问。
+
+## ADR-036：场景编排退出客户端一级入口
+
+### 状态
+
+Accepted（2026-08-12）
+
+### 背景
+
+Phase 1 将 Scenario Definition、SOP、节点、依赖、预算和 Finalization 暴露为客户端一级「场景库」。真实用户目标是提交工作并获得交付，而不是在每次工作前理解或维护 Runtime 编排对象。要求普通用户先配置场景再启动，把内部 Builder 责任转嫁给任务发起者，也阻断后续统一自然语言输入与模型驱动意图理解。
+
+### 决策
+
+1. 客户端移除「场景库」一级导航，以及 Scenario 创建、编辑、AI 提案和 `business-flow-start` 产品入口。
+2. 不删除 Scenario/Business Flow 机器契约、Runtime 命令、Migration、历史数据、Audit、Artifact、Handoff 或恢复能力；既有运行投影继续在工作库展示。
+3. Scenario Definition 降为内部兼容与潜在高级 Runbook，不再是普通用户启动多员工工作的必经对象。
+4. 后续统一任务入口使用自然语言目标，模型只提出单员工或多员工 Run Plan；Rust 继续验证 Agent、Capability、权限、预算、依赖、Handoff 与幂等事实。该入口按 `AI Employee OS Unified Task Entry & Orchestration Specification v1.0.md` 与对应 Implementation Plan 实施，不能复用隐藏场景编辑器伪装完成。
+5. 历史 `appDestination=scenes` 在新版客户端按未知值回退到办公室，不建立迁移或别名入口。
+
+### 取代关系
+
+本 ADR 只取代 ADR-034 中“独立 Business Flow 工作区”作为产品可见入口的部分，不改变 Root/Child Task、WorkOrder、结构化 Handoff、Rust 单一事实源和安全成本约束。
+
+### 禁止方案
+
+- 删除已发布 Migration 或历史 Scenario/Flow 数据；
+- 从工作库移除既有 Flow 的状态、恢复、审批或人工核验入口；
+- 把隐藏的 Scenario 表单换名后继续要求普通用户配置 DAG；
+- 在统一输入入口 Spec 未确认前，让客户端或 Python 直接创建 Task、扩大权限或执行 Tool。
 
 ## ADR-035：可信 Agent 执行闭环采用候选完成、确定性验证与原子收敛
 
@@ -1321,6 +1385,12 @@ Evaluation Loop
 ---
 
 # 当前项目架构冻结版本
+
+## ADR-039：统一归档是跨投影页面，不是新领域模型
+
+状态：Accepted（2026-08-12）
+
+私聊与工作记录共用一个「归档」入口，但继续由各自 Runtime 状态负责：Conversation 使用 `status`，Task Thread 使用 `archived_at/deleted_at`。客户端不得创建统一归档表或自行推导持久化状态。工作库删除「当前/已归档」双页签，只展示当前记录；删除仅从归档页发起，并复用既有确认、Row 状态和过渡动效。该决策避免第三套状态源，同时保留私聊硬删除与工作证据软删除的不同安全语义。
 
 ## Version
 

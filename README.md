@@ -30,8 +30,11 @@ Fresh installs seed Alex, an AI product manager (`ai-product-manager`). Users ca
 
 ## Current capabilities
 
-- Native SwiftUI workspace with Office, Contacts, Work, Skills, Tools, and Settings.
+- Native SwiftUI workspace with Office, Contacts, Work, Archive, Knowledge, Skills, Tools, and Settings.
 - Persistent multi-turn conversations backed by SQLite.
+- A single Office task composer that produces a validated single- or multi-employee proposal before execution.
+- Persistent Task Threads rendered as task collaboration rooms with employee replies, approvals, handoffs, progress, and deliverables.
+- A unified Archive for private conversations and Task Threads, while preserving their distinct Runtime deletion semantics.
 - Employee Identity, Soul, and Persona editing, with the effective prompt compiled by the Rust runtime.
 - Intent routing between conversation and governed task execution via Resolver and the Generic Run Kernel (Golden Path removed).
 - Repository-installed Agent, Skill, and Tool packages. Built-in tools on mainline: `file-tool` (read / create / edit) and `agent-reach-tool` (`search_web`).
@@ -150,12 +153,12 @@ script/                    App packaging and distribution checks
 
 ## MVP boundaries
 
-The current MVP includes real conversations, employee profile editing, repository package installation, governed task execution, and task inspection.
+The current MVP includes real conversations, employee profile editing, repository package installation, a unified natural-language task entry, validated single- or multi-employee proposals, governed Task Thread execution, task inspection, and unified archive navigation.
 
 The following capabilities are intentionally out of scope for the current MVP:
 
 - Computer Use and arbitrary website scraping
-- Multi-Agent collaboration
+- Parallel Multi-Agent scheduling and free-form employee group chat outside Task Threads
 - Cloud Sync
 - Marketplace distribution
 - Enterprise RBAC

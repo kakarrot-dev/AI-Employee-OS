@@ -4,6 +4,8 @@
 
 本文档是 AI Employee OS macOS 主界面的页面级事实源，定义窗口结构、导航、通讯录、连续工作区、交付物、设置、Light/Dark Mode 和视觉验收要求。
 
+统一自然语言任务入口、Task Thread、单/多员工 Proposal 与确认语义由 `AI Employee OS Unified Task Entry & Orchestration Specification v1.0.md` 定义；在该 Implementation Plan 获批并实施前，本文现有员工会话界面仅代表当前基线，不得被解释为目标架构已经完成。
+
 界面以现有 Runtime、Task、Action、Employee、Conversation、Approval 和 Artifact 契约为边界。设计不能创建第二套业务状态，也不能用静态内容伪装尚未实现的能力。
 
 参考产品分工如下：
@@ -20,7 +22,7 @@
 ### 2.1 包含
 
 - 主窗口与双层导航。
-- 办公室、通讯录、工作库、场景库（暂定）、知识库、技能库、工具库和设置八个一级页面。
+- 办公室、通讯录、工作库、知识库、技能库、工具库和设置七个一级页面。
 - AI 员工目录、员工详情和员工编辑入口。
 - 连续消息流、执行活动、审批、异常和交付物。
 - 可折叠 Inspector 和固定底部 Composer。
@@ -70,9 +72,8 @@
 ```
 
 - 全局 Sidebar 默认 `232pt`，允许在 `200...260pt` 之间调整。
-- 一级入口固定为办公室、通讯录、工作库、场景库（暂定）、知识库、技能库、工具库；设置固定在 Sidebar 底部。场景库保存可复用定义，启动后的 Business Flow 实例只在工作库展示。
-- 场景创建与配置在场景库主区域内完成，不使用 Sheet。编辑页固定分为「业务 SOP」「节点配置」「校验与启动」三个页签。
-- 业务目标使用完整 Markdown SOP，至少承载背景与目标、输入、执行步骤、约束和验收标准。AI 只能基于 SOP 提议节点，不能替换或压缩用户确认的 SOP。
+- 一级入口固定为办公室、通讯录、工作库、知识库、技能库、工具库；设置固定在 Sidebar 底部。客户端不暴露 Scenario 创建、编辑或启动入口，多员工 Business Flow 的历史投影与恢复入口只在工作库展示。
+- Scenario Definition、不可变版本和 Business Flow 命令保留为 Runtime 内部兼容与历史恢复能力，不作为普通用户必须理解的产品对象。
 - 知识库只读展示 Runtime SQLite `knowledge_sources` / `knowledge_chunks` 的 canonical 来源、内容与索引状态；本地目录只能作为待导入来源，文件存在不等于已进入 Runtime Knowledge，也不会自动注入员工 Context。
 - 页面确实需要对象列表时，在 Workspace 内使用页面级第二列或 Inspector，不在全局 Shell 叠加永久模块轨。
 - Workspace 使用剩余空间。
@@ -136,12 +137,24 @@ Section
 ### 6.3 工作上下文
 
 - 顶部主要操作为“新建工作”。
-- 会话 Row 显示标题、一行摘要和时间或状态。
+- 工作库 Row 显示 Task 标题、一行最近事件和时间或状态，不按员工私人 Conversation 分组。
 - 时间和状态不同时堆叠。
 - 未读标记必须有真实状态来源。
-- 点击会话恢复员工、Conversation 和关联 Task 上下文。
+- 点击 Row 恢复 Task Room、参与员工、Timeline、Inspector 和待处理 Approval。
 
-### 6.4 技能库与工具库
+### 6.4 Task Room 群聊工作区
+
+- 标题区显示 Task 标题、整体状态和参与员工头像；成员来自 Root/Child Task 绑定，不允许客户端临时伪造。
+- 主区使用单列群聊式 Timeline：用户消息右对齐，员工消息左对齐，Runtime 事件使用居中状态行或全宽任务卡。
+- 每个员工消息必须显示头像、姓名和岗位；同一员工连续短消息可压缩重复身份，但不得合并不同 Run 的事实。
+- `activity` 使用短暂状态，如“正在搜索网页”；完成后收敛为 Tool Result 或进度事件，不保留虚假无限动画。
+- Approval、Handoff 和 Deliverable 使用内嵌卡片。主操作最多一个；拒绝、详情、复制等为次级操作。
+- 底部只有一个 Composer。`@员工` 提供定向意图，但 UI 必须说明最终路由和权限由 Runtime 决定。
+- Inspector 使用 `DisclosureGroup` 或连续 Section 展示 WorkOrder、依赖、Evidence、预算和权限；默认不把内部 ID、Hash 或完整 JSON 推入聊天正文。
+- Workspace 只列 verified Artifact/Deliverable；没有产物时使用明确空状态。
+- 任务群不显示社交型 Listen Mode。Phase 1 员工能否回复完全由 WorkOrder/Run 状态决定。
+
+### 6.5 技能库与工具库
 
 - 技能库和工具库是两个独立一级页面，不使用分段控件在同一页切换。
 - 技能库展示 Skill 的名称、版本、状态和适用员工。
@@ -294,6 +307,7 @@ AI Employee 主界面设计规格
 ## 10. Composer
 
 - Composer 固定在 Message Stream 底部，不横跨 Inspector。
+- Task Room 与员工聊天复用同一个 Claude Cream 悬浮 Composer Surface（Material、圆角、描边、聚焦反馈和 elevation）；业务输入与发送行为仍由各自 Store 管理。
 - 内容最大宽度为 `780...820pt`。
 - 空输入高度为 `64pt`，多行最大高度约 `180pt`。
 - 默认水平边距为 `24pt`，最小窗口下降为 `16pt`。

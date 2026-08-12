@@ -413,6 +413,7 @@ CREATE INDEX idx_metrics_name_recorded ON metrics(name, recorded_at);
 | `agent_skills` | Agent 的 Skill 启用状态 | 连接 Agent 与 Skill | Agent 删除时级联，Skill 删除时限制 |
 | `tools` | 可调用 Tool 清单 | 被 Action 引用 | 已产生 Action 时限制删除 |
 | `tasks` | 一次用户任务及其状态 | 属于 Agent，包含 Action | 有审计或审批记录时限制删除 |
+| `task_threads` | 工作库中的持续任务交互容器 | 通过 Binding 投影一个或多个 Task | `archived_at` 可恢复归档；`deleted_at` 仅从工作库软删除，不删除 Task/Action/Audit 证据 |
 | `actions` | Agent Loop 中的单步执行 | 属于 Task，可引用 Tool | Task 删除时级联 |
 | `runtime_events` | Swift 可按 Task 与 cursor 续读的 canonical 运行事件 | 属于 Task，`sequence` 在 Task 内单调递增 | Task 删除时级联 |
 | `task_cancellation_requests` | 用户取消意图及 Runtime 确认 | 与 Task 一对一 | Task 删除时级联 |

@@ -1,5 +1,12 @@
 # AI Employee OS MVP API & Interface Specification v1.0
 
+## 归档接口补充
+
+- `chat-retention --conversation-id --employee-id --operation archive|restore`：校验会话归属后变更 Conversation 状态。
+- `archive-list --database`：只返回已归档私聊投影及最近消息摘要，不复制消息或 Task 数据。
+- `chat-delete`：归档页确认后永久删除私聊 Conversation；仍须校验员工所有权。
+- Task Thread 继续使用 `task-thread-list --archived` 与 `task-thread-retention restore|delete`。客户端统一展示不改变两类对象的删除语义。
+
 > 实现状态（对齐 ADR-032）：进程间传输为 **CLI / 子进程 JSON**，不是 gRPC。新工作执行使用 Rust Generic Run Kernel + Python `task_worker`；Golden Path 仅为迁移期兼容入口。Deep Agents / LangGraph 不是状态源；以 Runtime CLI 与 `contracts/` 为准。
 >
 > 2026-08-06 扩展：新增 `run-skill`、`run-status`、`continue-run` 与 `capability-readiness`。Python 只返回 `ask_user | tool_call | complete`，安全字段由 Rust 生成；授权后仍只经 Rust ToolExecutor 执行。普通对话仍不创建 Task；工作聊天将在迁移阶段切换到 Generic Run Kernel。
@@ -985,7 +992,7 @@ poe.py
 
 MVP 路由决策：
 
-- 主模型源：DeepSeek 官方 API。
+- 模型源：客户端从项目根目录 `.env` 的 `AI_EMPLOYEE_MODELS` 枚举可选 Provider/Model；API Key 不进入客户端界面，仅在模型调用执行边界读取对应的 `POE_API_KEY` 或 `DEEPSEEK_API_KEY` 并注入受控进程。
 - 兜底模型源：Poe API。
 - 只有网络不可达、限流、服务端临时错误或依赖不可用允许按有界策略切换。
 - 认证失败、余额或配额问题、非法请求、内容策略拒绝、响应 Schema 错误不得静默切换。
@@ -1353,3 +1360,16 @@ Swift：
 Runtime 新增 `scenario-list|get|propose|validate|save|disable` 与 `business-flow-plan|start|list|status|continue`。`scenario-propose` 只返回未持久化草案；`scenario-save` 必须显式 `--confirmed`。Plan 无写入，Start 必须携带不可变版本 Hash；同 Flow ID/Hash 幂等，不同 Hash 返回 `flow_revision_conflict`。
 
 Root 取消继续使用 `cancel-task`；Child 审批、用户输入和 `result_unknown` 继续使用现有 `continue-run`、`resolve-action-result`。所有 stdout 响应为 JSON，诊断写 stderr。
+
+# Unified Task Entry CLI
+
+办公室统一入口使用以下窄命令，Swift 不创建 Task、Run、Action、WorkOrder 或权限事实：
+
+- `task-thread-create --title --objective`
+- `task-thread-list`
+- `task-thread-get --thread-id`
+- `task-thread-message --thread-id --input`
+- `task-proposal-generate --thread-id [--preferred-agent-id]`
+- `task-proposal-confirm --proposal-id --proposal-hash`
+
+`task-proposal-generate` 调用 Python 提案 Worker，但由 Rust 校验 Schema、员工状态、Skill readiness、预算与分工；返回值永远需要用户确认。`task-proposal-confirm` 重新校验 Hash、15 分钟有效期与实时 readiness：单员工进入 Generic Run Kernel；多员工生成 Root/Child Task、WorkOrder 与依赖，并复用 Business Flow Kernel。重复确认同一已物化 Proposal 返回同一 Task Thread 投影。
