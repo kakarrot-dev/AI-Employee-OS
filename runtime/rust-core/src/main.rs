@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     env, fs,
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
@@ -9,7 +10,10 @@ use std::{
 const WAITING_APPROVAL_MESSAGE: &str = "执行已暂停，等待你批准所需权限。";
 
 use ai_employee_runtime::agent::install_agent_package;
-use ai_employee_runtime::business_flow::ScenarioProposal;
+use ai_employee_runtime::business_flow::{
+    AcceptanceCriterion, FailurePolicy, ScenarioEdgeSpec, ScenarioNodeRole, ScenarioNodeSpec,
+    ScenarioProposal, WorkBudget,
+};
 use ai_employee_runtime::business_flow_service::{
     advance_after_child_success, disable_scenario, get_scenario, list_business_flows,
     list_scenarios, next_ready_work_order, project_business_flow, record_work_order_started,
@@ -54,6 +58,8 @@ fn command() -> Result<serde_json::Value, String> {
         Some("chat-send") => chat_send(arguments),
         Some("chat-abort") => chat_abort(arguments),
         Some("chat-delete") => chat_delete(arguments),
+        Some("chat-retention") => chat_retention(arguments),
+        Some("archive-list") => archive_list(arguments),
         Some("employees-list") => employees_list(arguments),
         Some("employee-save") => employee_save(arguments),
         Some("employee-delete") => employee_delete(arguments),
@@ -79,6 +85,14 @@ fn command() -> Result<serde_json::Value, String> {
         Some("usage-summary") => usage_summary(arguments),
         Some("cancel-task") => cancel_task(arguments),
         Some("events") => list_events(arguments),
+        Some("task-thread-create") => task_thread_create(arguments),
+        Some("task-thread-list") => task_thread_list(arguments),
+        Some("task-thread-get") => task_thread_get(arguments),
+        Some("task-thread-message") => task_thread_message(arguments),
+        Some("task-thread-timeline") => task_thread_timeline(arguments),
+        Some("task-thread-retention") => task_thread_retention(arguments),
+        Some("task-proposal-generate") => task_proposal_generate(arguments),
+        Some("task-proposal-confirm") => task_proposal_confirm(arguments),
         Some("scenario-list") => scenario_list(arguments),
         Some("scenario-propose") => scenario_propose(arguments),
         Some("scenario-get") => scenario_get(arguments),
@@ -92,6 +106,1229 @@ fn command() -> Result<serde_json::Value, String> {
         Some("business-flow-continue") => business_flow_continue(arguments),
         _ => Err(usage()),
     }
+}
+
+fn task_thread_create(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    let mut title = None;
+    let mut objective = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--title" => title = arguments.next(),
+            "--objective" => objective = arguments.next(),
+            _ => return Err(usage()),
+        }
+    }
+    let title = title.ok_or_else(usage)?;
+    let objective = objective.ok_or_else(usage)?;
+    if title.trim().is_empty() || objective.trim().is_empty() {
+        return Err("task_thread_input_required".into());
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    let stamp = now();
+    let thread_id = format!("thread_{}", unique_suffix());
+    let message_id = format!("message_{}", unique_suffix());
+    let tx = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
+    tx.execute("INSERT INTO task_threads(id,title,status,current_revision,created_at,updated_at) VALUES (?1,?2,'drafting',1,?3,?3)", rusqlite::params![thread_id,title,stamp]).map_err(|e| e.to_string())?;
+    tx.execute("INSERT INTO task_thread_messages(id,thread_id,sequence,role,kind,content,created_at) VALUES (?1,?2,1,'user','goal',?3,?4)", rusqlite::params![message_id,thread_id,objective,stamp]).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    task_thread_projection(&connection, &thread_id)
+}
+
+fn task_thread_list(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    let mut archived = false;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--archived" => archived = true,
+            _ => return Err(usage()),
+        }
+    }
+    let database = database.ok_or_else(usage)?;
+    let mut connection = Connection::open(database).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    let mut statement = connection
+        .prepare(if archived {
+            "SELECT id FROM task_threads WHERE deleted_at IS NULL AND archived_at IS NOT NULL ORDER BY updated_at DESC,id"
+        } else {
+            "SELECT id FROM task_threads WHERE deleted_at IS NULL AND archived_at IS NULL ORDER BY updated_at DESC,id"
+        })
+        .map_err(|e| e.to_string())?;
+    let ids = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    drop(statement);
+    Ok(Value::Array(
+        ids.iter()
+            .map(|id| task_thread_projection(&connection, id))
+            .collect::<Result<Vec<_>, _>>()?,
+    ))
+}
+
+fn task_thread_retention(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    let mut thread_id = None;
+    let mut operation = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--thread-id" => thread_id = arguments.next(),
+            "--operation" => operation = arguments.next(),
+            _ => return Err(usage()),
+        }
+    }
+    let thread_id = thread_id.ok_or_else(usage)?;
+    let operation = operation.ok_or_else(usage)?;
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    let stamp = now();
+    let changed = match operation.as_str() {
+        "archive" => connection.execute("UPDATE task_threads SET archived_at=?2,updated_at=?2 WHERE id=?1 AND deleted_at IS NULL", rusqlite::params![thread_id,stamp]),
+        "restore" => connection.execute("UPDATE task_threads SET archived_at=NULL,updated_at=?2 WHERE id=?1 AND deleted_at IS NULL", rusqlite::params![thread_id,stamp]),
+        "delete" => connection.execute("UPDATE task_threads SET deleted_at=?2,updated_at=?2 WHERE id=?1 AND deleted_at IS NULL", rusqlite::params![thread_id,stamp]),
+        _ => return Err("task_thread_retention_operation_invalid".into()),
+    }.map_err(|e| e.to_string())?;
+    if changed != 1 {
+        return Err("task_thread_not_found".into());
+    }
+    Ok(
+        json!({"schema_version":"1.0.0","thread_id":thread_id,"operation":operation,"updated_at":stamp}),
+    )
+}
+
+fn task_thread_get(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    let mut thread_id = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--thread-id" => thread_id = arguments.next(),
+            _ => return Err(usage()),
+        }
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    task_thread_projection(&connection, &thread_id.ok_or_else(usage)?)
+}
+
+fn task_thread_timeline(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    let mut thread_id = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--thread-id" => thread_id = arguments.next(),
+            _ => return Err(usage()),
+        }
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    task_room_timeline_projection(&connection, &thread_id.ok_or_else(usage)?)
+}
+
+fn task_thread_message(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    let mut thread_id = None;
+    let mut input = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--thread-id" => thread_id = arguments.next(),
+            "--input" => input = arguments.next(),
+            _ => return Err(usage()),
+        }
+    }
+    let thread_id = thread_id.ok_or_else(usage)?;
+    let input = input.ok_or_else(usage)?.trim().to_owned();
+    if input.is_empty() {
+        return Err("task_thread_message_required".into());
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    let stamp = now();
+    let tx = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
+    let status: String = tx
+        .query_row(
+            "SELECT status FROM task_threads WHERE id=?1",
+            [&thread_id],
+            |r| r.get(0),
+        )
+        .map_err(|_| "task_thread_not_found".to_owned())?;
+    if matches!(
+        status.as_str(),
+        "materialized" | "running" | "succeeded" | "failed" | "cancelled"
+    ) {
+        return Err("task_thread_already_materialized".into());
+    }
+    let sequence: i64 = tx
+        .query_row(
+            "SELECT COALESCE(MAX(sequence),0)+1 FROM task_thread_messages WHERE thread_id=?1",
+            [&thread_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    tx.execute("INSERT INTO task_thread_messages(id,thread_id,sequence,role,kind,content,created_at) VALUES (?1,?2,?3,'user','clarification',?4,?5)",rusqlite::params![format!("message_{}",unique_suffix()),thread_id,sequence,input,stamp]).map_err(|e|e.to_string())?;
+    tx.execute("UPDATE task_proposals SET status='rejected',updated_at=?2 WHERE thread_id=?1 AND status IN ('awaiting_input','validated')",rusqlite::params![thread_id,stamp]).map_err(|e|e.to_string())?;
+    tx.execute("UPDATE task_threads SET status='drafting',current_revision=current_revision+1,updated_at=?2 WHERE id=?1",rusqlite::params![thread_id,stamp]).map_err(|e|e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    task_thread_projection(&connection, &thread_id)
+}
+
+fn task_thread_projection(connection: &Connection, thread_id: &str) -> Result<Value, String> {
+    let thread: (String,String,i64,String,String,Option<String>)=connection.query_row("SELECT title,status,current_revision,created_at,updated_at,archived_at FROM task_threads WHERE id=?1 AND deleted_at IS NULL",[thread_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?))).map_err(|_|"task_thread_not_found".to_owned())?;
+    let root_task:Option<(String,String)>=connection.query_row("SELECT binding.task_id,task.status FROM task_thread_task_bindings binding JOIN tasks task ON task.id=binding.task_id WHERE binding.thread_id=?1 AND binding.binding_role IN ('single','root') ORDER BY binding.created_at DESC LIMIT 1",[thread_id],|r|Ok((r.get(0)?,r.get(1)?))).optional().map_err(|e|e.to_string())?;
+    let root_task_id = root_task.as_ref().map(|item| item.0.clone());
+    let projected_status = root_task
+        .as_ref()
+        .map_or(thread.1.as_str(), |item| item.1.as_str());
+    let execution = if let Some(task_id) = &root_task_id {
+        let flow_id: Option<String> = connection
+            .query_row(
+                "SELECT id FROM business_flows WHERE root_task_id=?1",
+                [task_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        flow_id
+            .map(|id| project_business_flow(connection, &id))
+            .transpose()?
+            .map(|flow| serde_json::to_value(flow).map_err(|e| e.to_string()))
+            .transpose()?
+    } else {
+        None
+    };
+    let mut statement=connection.prepare("SELECT id,sequence,role,kind,content,proposal_id,task_id,created_at FROM task_thread_messages WHERE thread_id=?1 ORDER BY sequence").map_err(|e|e.to_string())?;
+    let messages=statement.query_map([thread_id],|r|Ok(json!({"id":r.get::<_,String>(0)?,"sequence":r.get::<_,i64>(1)?,"role":r.get::<_,String>(2)?,"kind":r.get::<_,String>(3)?,"content":r.get::<_,String>(4)?,"proposal_id":r.get::<_,Option<String>>(5)?,"task_id":r.get::<_,Option<String>>(6)?,"created_at":r.get::<_,String>(7)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
+    let room = task_room_timeline_projection(connection, thread_id)?;
+    Ok(
+        json!({"schema_version":"1.0.0","id":thread_id,"title":thread.0,"status":projected_status,"current_revision":thread.2,"root_task_id":root_task_id,"execution":execution,"created_at":thread.3,"updated_at":thread.4,"archived_at":thread.5,"messages":messages,"room":room}),
+    )
+}
+
+fn task_room_timeline_projection(
+    connection: &Connection,
+    thread_id: &str,
+) -> Result<Value, String> {
+    let exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM task_threads WHERE id=?1)",
+            [thread_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if !exists {
+        return Err("task_thread_not_found".into());
+    }
+
+    let mut participants = Vec::new();
+    let mut participant_ids = BTreeSet::new();
+    let mut participant_statement = connection
+        .prepare(
+            "SELECT agent.id,agent.name,agent.role,profile.avatar_path,task.status
+             FROM task_thread_task_bindings binding
+             JOIN tasks task ON task.id=binding.task_id
+             JOIN agents agent ON agent.id=task.agent_id
+             LEFT JOIN employee_profiles profile ON profile.agent_id=agent.id
+             WHERE binding.thread_id=?1 AND binding.binding_role IN ('single','child')
+             ORDER BY binding.created_at,binding.task_id",
+        )
+        .map_err(|error| error.to_string())?;
+    let participant_rows = participant_statement
+        .query_map([thread_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    for (agent_id, name, role, avatar_path, status) in participant_rows {
+        if participant_ids.insert(agent_id.clone()) {
+            participants.push(json!({
+                "agent_id":agent_id,"name":name,"role":role,
+                "avatar_path":avatar_path,"status":status
+            }));
+        }
+    }
+
+    let mut candidates: Vec<(i128, String, Value)> = Vec::new();
+    let mut message_statement = connection
+        .prepare(
+            "SELECT id,role,kind,content,task_id,created_at
+             FROM task_thread_messages WHERE thread_id=?1 ORDER BY sequence",
+        )
+        .map_err(|error| error.to_string())?;
+    let messages = message_statement
+        .query_map([thread_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, String>(5)?,
+            ))
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    for (id, role, kind, content, task_id, created_at) in messages {
+        candidates.push((
+            timeline_sort_time(&created_at),
+            format!("0:{id}"),
+            timeline_item(
+                &id,
+                &role,
+                &kind,
+                &content,
+                &created_at,
+                None,
+                None,
+                None,
+                None,
+                task_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
+        ));
+    }
+
+    let mut run_statement = connection
+        .prepare(
+            "SELECT run.id,task.id,agent.id,agent.name,agent.role,profile.avatar_path,
+                    COALESCE(work.goal,json_extract(task.input,'$.goal'),task.input),run.phase,run.created_at,run.updated_at,
+                    (SELECT json_extract(observation.summary_json,'$.question') FROM run_observations observation
+                     WHERE observation.run_id=run.id AND observation.kind='model_decision'
+                     ORDER BY observation.sequence DESC LIMIT 1)
+             FROM task_thread_task_bindings binding
+             JOIN tasks task ON task.id=binding.task_id
+             JOIN agents agent ON agent.id=task.agent_id
+             LEFT JOIN employee_profiles profile ON profile.agent_id=agent.id
+             JOIN agent_runs run ON run.task_id=task.id
+             LEFT JOIN work_orders work ON work.child_task_id=task.id
+             WHERE binding.thread_id=?1 AND binding.binding_role IN ('single','child')",
+        )
+        .map_err(|error| error.to_string())?;
+    let runs = run_statement
+        .query_map([thread_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, String>(8)?,
+                row.get::<_, String>(9)?,
+                row.get::<_, Option<String>>(10)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    for (
+        run_id,
+        task_id,
+        agent_id,
+        name,
+        role,
+        avatar,
+        goal,
+        phase,
+        created_at,
+        updated_at,
+        question,
+    ) in runs
+    {
+        let id = format!("timeline:run:{run_id}:started");
+        candidates.push((
+            timeline_sort_time(&created_at),
+            format!("1:{id}"),
+            timeline_item(
+                &id,
+                "agent",
+                "agent_update",
+                &format!("开始执行：{goal}"),
+                &created_at,
+                Some(agent_id.clone()),
+                Some(name.clone()),
+                Some(role.clone()),
+                avatar.clone(),
+                Some(task_id.clone()),
+                Some(run_id.clone()),
+                None,
+                None,
+                None,
+                None,
+                Some("started".into()),
+                None,
+                None,
+                None,
+            ),
+        ));
+        if phase == "waiting_user" {
+            if let Some(question) = question {
+                let question_id = format!("timeline:run:{run_id}:question");
+                candidates.push((
+                    timeline_sort_time(&updated_at),
+                    format!("6:{question_id}"),
+                    timeline_item(
+                        &question_id,
+                        "agent",
+                        "clarification",
+                        &question,
+                        &updated_at,
+                        Some(agent_id),
+                        Some(name),
+                        Some(role),
+                        avatar,
+                        Some(task_id),
+                        Some(run_id),
+                        None,
+                        None,
+                        None,
+                        None,
+                        Some("waiting_user".into()),
+                        None,
+                        None,
+                        None,
+                    ),
+                ));
+            }
+        }
+    }
+
+    let mut action_statement = connection.prepare(
+        "SELECT action.id,task.id,agent.id,agent.name,agent.role,profile.avatar_path,
+                action.tool_id,COALESCE(json_extract(action.input_json,'$.action'),''),
+                action.status,approval.id,approval.status,action.updated_at
+         FROM task_thread_task_bindings binding
+         JOIN tasks task ON task.id=binding.task_id JOIN agents agent ON agent.id=task.agent_id
+         LEFT JOIN employee_profiles profile ON profile.agent_id=agent.id
+         JOIN actions action ON action.task_id=task.id
+         LEFT JOIN approvals approval ON approval.id=(
+             SELECT candidate.id FROM approvals candidate
+             WHERE candidate.task_id=task.id AND candidate.action=json_extract(action.input_json,'$.action')
+             ORDER BY candidate.created_at DESC LIMIT 1)
+         WHERE binding.thread_id=?1 AND binding.binding_role IN ('single','child')"
+    ).map_err(|e|e.to_string())?;
+    let actions = action_statement
+        .query_map([thread_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, Option<String>>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, String>(8)?,
+                row.get::<_, Option<String>>(9)?,
+                row.get::<_, Option<String>>(10)?,
+                row.get::<_, String>(11)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    for (
+        action_id,
+        task_id,
+        agent_id,
+        name,
+        role,
+        avatar,
+        tool_id,
+        action,
+        status,
+        approval_id,
+        approval_status,
+        created_at,
+    ) in actions
+    {
+        let kind = if approval_id.is_some() {
+            "approval"
+        } else {
+            "activity"
+        };
+        let shown_status = approval_status.clone().unwrap_or_else(|| status.clone());
+        let content = if approval_status.as_deref() == Some("pending") {
+            format!("请求批准执行 {action}")
+        } else {
+            format!("{action} · {shown_status}")
+        };
+        let id = format!("timeline:action:{action_id}");
+        candidates.push((
+            timeline_sort_time(&created_at),
+            format!("2:{id}"),
+            timeline_item(
+                &id,
+                "system",
+                kind,
+                &content,
+                &created_at,
+                Some(agent_id),
+                Some(name),
+                Some(role),
+                avatar,
+                Some(task_id),
+                None,
+                Some(action_id),
+                approval_id,
+                None,
+                None,
+                Some(shown_status),
+                tool_id,
+                Some(action),
+                None,
+            ),
+        ));
+    }
+
+    let mut deliverable_statement=connection.prepare(
+        "SELECT deliverable.id,deliverable.task_id,agent.id,agent.name,agent.role,profile.avatar_path,
+                deliverable.summary,deliverable.output_json,deliverable.status,deliverable.created_at,
+                (SELECT artifact.uri FROM deliverable_evidence evidence JOIN artifacts artifact ON artifact.id=evidence.evidence_ref
+                 WHERE evidence.deliverable_id=deliverable.id AND evidence.evidence_type='artifact'
+                 ORDER BY artifact.created_at DESC LIMIT 1),
+                EXISTS(SELECT 1 FROM business_flow_outputs output WHERE output.deliverable_id=deliverable.id)
+         FROM task_thread_task_bindings binding JOIN deliverables deliverable ON deliverable.task_id=binding.task_id
+         JOIN tasks task ON task.id=deliverable.task_id JOIN agents agent ON agent.id=task.agent_id
+         LEFT JOIN employee_profiles profile ON profile.agent_id=agent.id
+         WHERE binding.thread_id=?1 AND binding.binding_role IN ('single','child') AND deliverable.status='verified'"
+    ).map_err(|e|e.to_string())?;
+    let deliverables = deliverable_statement
+        .query_map([thread_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, String>(8)?,
+                row.get::<_, String>(9)?,
+                row.get::<_, Option<String>>(10)?,
+                row.get::<_, bool>(11)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    for (
+        deliverable_id,
+        task_id,
+        agent_id,
+        name,
+        role,
+        avatar,
+        summary,
+        output_raw,
+        status,
+        created_at,
+        artifact_uri,
+        is_root,
+    ) in deliverables
+    {
+        let content = readable_deliverable_content(&output_raw, &summary);
+        let id = format!("timeline:deliverable:{deliverable_id}:agent");
+        candidates.push((
+            timeline_sort_time(&created_at),
+            format!("3:{id}"),
+            timeline_item(
+                &id,
+                "agent",
+                "agent_update",
+                &content,
+                &created_at,
+                Some(agent_id.clone()),
+                Some(name.clone()),
+                Some(role.clone()),
+                avatar.clone(),
+                Some(task_id.clone()),
+                None,
+                None,
+                None,
+                None,
+                Some(deliverable_id.clone()),
+                Some(status.clone()),
+                None,
+                None,
+                artifact_uri.clone(),
+            ),
+        ));
+        if is_root || artifact_uri.is_some() {
+            let card_id = format!("timeline:deliverable:{deliverable_id}:card");
+            candidates.push((
+                timeline_sort_time(&created_at),
+                format!("5:{card_id}"),
+                timeline_item(
+                    &card_id,
+                    "system",
+                    "deliverable",
+                    &artifact_uri.as_ref().map_or_else(
+                        || "最终交付物已通过 Runtime 验证。".to_owned(),
+                        |uri| format!("最终交付物已通过 Runtime 验证：{uri}"),
+                    ),
+                    &created_at,
+                    Some(agent_id),
+                    Some(name),
+                    Some(role),
+                    avatar,
+                    Some(task_id),
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(deliverable_id),
+                    Some(status),
+                    None,
+                    None,
+                    artifact_uri,
+                ),
+            ));
+        }
+    }
+
+    let mut handoff_statement = connection
+        .prepare(
+            "SELECT handoff.id,handoff.summary,handoff.acceptance,handoff.created_at,
+                source_agent.name,target_agent.name,handoff.deliverable_id
+         FROM handoffs handoff
+         JOIN work_orders source ON source.id=handoff.source_work_order_id
+         JOIN work_orders target ON target.id=handoff.target_work_order_id
+         JOIN agents source_agent ON source_agent.id=source.assignee_agent_id
+         JOIN agents target_agent ON target_agent.id=target.assignee_agent_id
+         JOIN business_flows flow ON flow.id=handoff.business_flow_id
+         JOIN task_thread_task_bindings binding ON binding.task_id=flow.root_task_id
+         WHERE binding.thread_id=?1",
+        )
+        .map_err(|e| e.to_string())?;
+    let handoffs = handoff_statement
+        .query_map([thread_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    for (handoff_id, summary, status, created_at, source, target, deliverable_id) in handoffs {
+        let id = format!("timeline:handoff:{handoff_id}");
+        candidates.push((
+            timeline_sort_time(&created_at),
+            format!("4:{id}"),
+            timeline_item(
+                &id,
+                "system",
+                "handoff",
+                &format!("{source} 已将结果交接给 {target}：{summary}"),
+                &created_at,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(handoff_id),
+                Some(deliverable_id),
+                Some(status),
+                None,
+                None,
+                None,
+            ),
+        ));
+    }
+
+    candidates.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
+    let items = candidates
+        .into_iter()
+        .enumerate()
+        .map(|(index, (_, _, mut item))| {
+            item["sequence"] = json!((index + 1) as i64);
+            item
+        })
+        .collect::<Vec<_>>();
+    Ok(
+        json!({"schema_version":"1.0.0","thread_id":thread_id,"participants":participants,"items":items}),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn timeline_item(
+    id: &str,
+    role: &str,
+    kind: &str,
+    content: &str,
+    created_at: &str,
+    agent_id: Option<String>,
+    agent_name: Option<String>,
+    agent_role: Option<String>,
+    avatar_path: Option<String>,
+    task_id: Option<String>,
+    run_id: Option<String>,
+    action_id: Option<String>,
+    approval_id: Option<String>,
+    handoff_id: Option<String>,
+    deliverable_id: Option<String>,
+    status: Option<String>,
+    tool_id: Option<String>,
+    action: Option<String>,
+    artifact_uri: Option<String>,
+) -> Value {
+    json!({"id":id,"sequence":0,"role":role,"kind":kind,"content":content,"created_at":created_at,
+        "agent_id":agent_id,"agent_name":agent_name,"agent_role":agent_role,"avatar_path":avatar_path,
+        "task_id":task_id,"run_id":run_id,"action_id":action_id,"approval_id":approval_id,
+        "handoff_id":handoff_id,"deliverable_id":deliverable_id,"status":status,"tool_id":tool_id,
+        "action":action,"artifact_uri":artifact_uri})
+}
+
+fn readable_deliverable_content(output_raw: &str, summary: &str) -> String {
+    serde_json::from_str::<Value>(output_raw)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("answer")
+                .or_else(|| value.get("summary"))
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| summary.to_owned())
+}
+
+fn timeline_sort_time(value: &str) -> i128 {
+    let parsed = value.parse::<i128>().unwrap_or(0);
+    if parsed > 0 && parsed < 1_000_000_000_000 {
+        parsed * 1_000
+    } else {
+        parsed
+    }
+}
+
+fn task_proposal_generate(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    let mut repository_root = None;
+    let mut thread_id = None;
+    let mut preferred_agent_id = None;
+    let mut python = PathBuf::from("python3");
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--repository-root" => repository_root = arguments.next().map(PathBuf::from),
+            "--thread-id" => thread_id = arguments.next(),
+            "--preferred-agent-id" => preferred_agent_id = arguments.next(),
+            "--python" => python = PathBuf::from(arguments.next().ok_or_else(usage)?),
+            _ => return Err(usage()),
+        }
+    }
+    let thread_id = thread_id.ok_or_else(usage)?;
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    let objective:String=connection.query_row("SELECT content FROM task_thread_messages WHERE thread_id=?1 AND kind='goal' ORDER BY sequence LIMIT 1",[&thread_id],|r|r.get(0)).map_err(|_|"task_thread_not_found".to_owned())?;
+    let mut statement=connection.prepare("SELECT a.id,a.name FROM agents a JOIN employee_profiles p ON p.agent_id=a.id WHERE a.status='active' ORDER BY a.id").map_err(|e|e.to_string())?;
+    let employees = statement
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    drop(statement);
+    let catalog = employees
+        .into_iter()
+        .filter_map(|(id, name)| {
+            let caps =
+                ai_employee_runtime::skill_resolver::ready_skill_ids(&connection, &id).ok()?;
+            (!caps.is_empty())
+                .then(|| json!({"agent_id":id,"display_name":name,"ready_capabilities":caps}))
+        })
+        .collect::<Vec<_>>();
+    if catalog.is_empty() {
+        return Err("task_proposal_employee_catalog_empty".into());
+    }
+    let mut context_statement=connection.prepare("SELECT role,kind,content FROM task_thread_messages WHERE thread_id=?1 AND kind!='goal' ORDER BY sequence").map_err(|e|e.to_string())?;
+    let thread_context=context_statement.query_map([&thread_id],|r|Ok(json!({"role":r.get::<_,String>(0)?,"kind":r.get::<_,String>(1)?,"content":r.get::<_,String>(2)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
+    drop(context_statement);
+    let request = json!({"schema_version":"1.0.0","objective":objective,"thread_context":thread_context,"employee_catalog":catalog.clone(),"preferred_agent_id":preferred_agent_id});
+    let root = repository_root.ok_or_else(usage)?;
+    let worker_root = root.join("runtime/python-agent");
+    let mut child = Command::new(python)
+        .args(["-m", "app.task_proposal_worker"])
+        .env("PYTHONPATH", &worker_root)
+        .current_dir(&worker_root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("task_proposal_worker_disconnect:{e}"))?;
+    child
+        .stdin
+        .take()
+        .ok_or("task_proposal_worker_disconnect")?
+        .write_all(request.to_string().as_bytes())
+        .map_err(|e| e.to_string())?;
+    let output = child.wait_with_output().map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let error_code = serde_json::from_str::<Value>(stderr.trim())
+            .ok()
+            .and_then(|value| value["error_code"].as_str().map(str::to_owned))
+            .unwrap_or_else(|| "invalid_response".to_owned());
+        return Err(format!("task_proposal_provider_{error_code}"));
+    }
+    let proposal: Value = serde_json::from_slice(&output.stdout)
+        .map_err(|e| format!("task_proposal_schema_invalid:{e}"))?;
+    let schema: Value =
+        serde_json::from_str(include_str!("../../../contracts/task-proposal.schema.json"))
+            .map_err(|e| e.to_string())?;
+    ai_employee_runtime::json_schema::validate(&schema, &proposal)
+        .map_err(|e| format!("task_proposal_schema_invalid:{e}"))?;
+    let assignments = proposal["assignments"]
+        .as_array()
+        .ok_or("task_proposal_assignments_invalid")?;
+    if proposal["intent"] == "chat" {
+        return Err("task_proposal_chat_not_executable".into());
+    }
+    if assignments.is_empty() {
+        return Err("task_proposal_assignments_empty".into());
+    }
+    for assignment in assignments {
+        let preferred = assignment["employee_selector"]["preferred_id"].as_str();
+        if let Some(id) = preferred {
+            if !catalog.iter().any(|e| e["agent_id"] == id) {
+                return Err(format!("task_proposal_agent_unavailable:{id}"));
+            }
+        }
+    }
+    let resolved_assignments = assignments
+        .iter()
+        .map(|assignment| {
+            let (agent_id, skill_ids) = resolve_task_assignment(&connection, assignment)?;
+            Ok(json!({"node_id":assignment["node_id"],"agent_id":agent_id,"skill_ids":skill_ids}))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let canonical = serde_json::to_string(&proposal).map_err(|e| e.to_string())?;
+    let hash = format!("{:x}", Sha256::digest(canonical.as_bytes()));
+    let proposal_id = format!("proposal_{}", unique_suffix());
+    let stamp = now();
+    let expires_at = (SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        + 900)
+        .to_string();
+    let revision: i64 = connection
+        .query_row(
+            "SELECT current_revision FROM task_threads WHERE id=?1",
+            [&thread_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let status = if proposal["missing_inputs"]
+        .as_array()
+        .is_some_and(|items| items.iter().any(|item| item["required"] == true))
+    {
+        "awaiting_input"
+    } else {
+        "awaiting_confirmation"
+    };
+    let tx = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
+    tx.execute("INSERT INTO task_proposals(id,thread_id,revision,status,proposal_json,proposal_sha256,expires_at,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?8)",rusqlite::params![proposal_id,thread_id,revision,if status=="awaiting_input"{"awaiting_input"}else{"validated"},canonical,hash,expires_at,stamp]).map_err(|e|e.to_string())?;
+    tx.execute(
+        "UPDATE task_threads SET status=?2,updated_at=?3 WHERE id=?1",
+        rusqlite::params![thread_id, status, stamp],
+    )
+    .map_err(|e| e.to_string())?;
+    let sequence: i64 = tx
+        .query_row(
+            "SELECT COALESCE(MAX(sequence),0)+1 FROM task_thread_messages WHERE thread_id=?1",
+            [&thread_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    tx.execute("INSERT INTO task_thread_messages(id,thread_id,sequence,role,kind,content,proposal_id,created_at) VALUES (?1,?2,?3,'system','proposal',?4,?5,?6)",rusqlite::params![format!("message_{}",unique_suffix()),thread_id,sequence,proposal["title"].as_str().unwrap_or("执行方案"),proposal_id,stamp]).map_err(|e|e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(
+        json!({"schema_version":"1.0.0","proposal_id":proposal_id,"thread_id":thread_id,"revision":revision,"proposal_hash":hash,"expires_at":expires_at,"requires_confirmation":true,"resolved_assignments":resolved_assignments,"proposal":proposal}),
+    )
+}
+
+fn task_proposal_confirm(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    let mut repository_root = None;
+    let mut proposal_id = None;
+    let mut proposal_hash = None;
+    let mut python = PathBuf::from("python3");
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--repository-root" => repository_root = arguments.next().map(PathBuf::from),
+            "--proposal-id" => proposal_id = arguments.next(),
+            "--proposal-hash" => proposal_hash = arguments.next(),
+            "--python" => python = PathBuf::from(arguments.next().ok_or_else(usage)?),
+            _ => return Err(usage()),
+        }
+    }
+    let proposal_id = proposal_id.ok_or_else(usage)?;
+    let expected_hash = proposal_hash.ok_or_else(usage)?;
+    let root = repository_root.ok_or_else(usage)?;
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    bootstrap_packages(&mut connection, &root, &now())?;
+    let (thread_id, status, raw, stored_hash): (String, String, String, String) = connection
+        .query_row(
+            "SELECT thread_id,status,proposal_json,proposal_sha256 FROM task_proposals WHERE id=?1",
+            [&proposal_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .map_err(|_| "task_proposal_not_found".to_owned())?;
+    if status == "materialized" {
+        return Ok(
+            json!({"schema_version":"1.0.0","thread":task_thread_projection(&connection,&thread_id)?}),
+        );
+    }
+    if status != "validated" || stored_hash != expected_hash {
+        return Err("task_proposal_revision_conflict".into());
+    }
+    let expires_at: u64 = connection
+        .query_row(
+            "SELECT expires_at FROM task_proposals WHERE id=?1",
+            [&proposal_id],
+            |r| r.get::<_, String>(0),
+        )
+        .map_err(|e| e.to_string())?
+        .parse()
+        .map_err(|_| "task_proposal_expiry_invalid")?;
+    let current = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    if current > expires_at {
+        connection.execute("UPDATE task_proposals SET status='expired',updated_at=?2 WHERE id=?1 AND status='validated'",rusqlite::params![proposal_id,now()]).map_err(|e|e.to_string())?;
+        return Err("task_proposal_expired".into());
+    }
+    let proposal: Value = serde_json::from_str(&raw).map_err(|_| "task_proposal_invalid")?;
+    if proposal["missing_inputs"]
+        .as_array()
+        .is_some_and(|items| items.iter().any(|item| item["required"] == true))
+    {
+        return Err("task_proposal_requires_input".into());
+    }
+    let assignments = proposal["assignments"]
+        .as_array()
+        .ok_or("task_proposal_assignments_invalid")?;
+    if assignments.is_empty() {
+        return Err("task_proposal_assignments_empty".into());
+    }
+    let resolved = assignments
+        .iter()
+        .map(|assignment| resolve_task_assignment(&connection, assignment))
+        .collect::<Result<Vec<_>, _>>()?;
+    let stamp = now();
+    if proposal["intent"] == "single_agent_task" && resolved.len() == 1 {
+        let result = execute_agent(
+            &mut connection,
+            &root,
+            &python,
+            &resolved[0].0,
+            json!({"objective": proposal["objective"], "acceptance_criteria": proposal["acceptance_criteria"], "requested_resources": proposal["requested_resources"]}),
+            None,
+        )?;
+        let task_id = result["task_id"]
+            .as_str()
+            .ok_or("task_materialization_failed")?;
+        bind_materialized_task(
+            &mut connection,
+            &thread_id,
+            &proposal_id,
+            task_id,
+            "single",
+            &stamp,
+        )?;
+        return Ok(
+            json!({"schema_version":"1.0.0","thread":task_thread_projection(&connection,&thread_id)?,"execution":result}),
+        );
+    }
+
+    if proposal["intent"] != "multi_agent_task" || resolved.len() < 2 {
+        return Err("task_proposal_intent_assignment_mismatch".into());
+    }
+    let scenario = task_proposal_to_scenario(&proposal_id, &proposal, &resolved)?;
+    let scenario_id = format!("internal:{proposal_id}");
+    let saved = save_scenario(
+        &mut connection,
+        &scenario_id,
+        "ai_proposal",
+        scenario,
+        &stamp,
+    )?;
+    let flow_id = format!("flow_{}", unique_suffix());
+    let flow = start_business_flow(
+        &mut connection,
+        &flow_id,
+        &scenario_id,
+        &saved.sha256,
+        &stamp,
+    )?;
+    bind_materialized_task(
+        &mut connection,
+        &thread_id,
+        &proposal_id,
+        &flow.root_task_id,
+        "root",
+        &stamp,
+    )?;
+    for work in &flow.work_orders {
+        bind_materialized_task(
+            &mut connection,
+            &thread_id,
+            &proposal_id,
+            &work.child_task_id,
+            "child",
+            &stamp,
+        )?;
+    }
+    for _ in 0..resolved.len() {
+        if next_ready_work_order(&connection, &flow_id)?.is_none() {
+            break;
+        }
+        let _ = drive_business_flow_once(&mut connection, &root, &python, &flow_id)?;
+    }
+    let flow = project_business_flow(&connection, &flow_id)?;
+    Ok(
+        json!({"schema_version":"1.0.0","thread":task_thread_projection(&connection,&thread_id)?,"execution":flow}),
+    )
+}
+
+fn resolve_task_assignment(
+    connection: &Connection,
+    assignment: &Value,
+) -> Result<(String, Vec<String>), String> {
+    let requested = assignment["employee_selector"]["capabilities"]
+        .as_array()
+        .ok_or("task_proposal_capabilities_invalid")?
+        .iter()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if requested.is_empty() {
+        return Err("task_proposal_capabilities_empty".into());
+    }
+    let preferred = assignment["employee_selector"]["preferred_id"].as_str();
+    let mut statement = connection
+        .prepare("SELECT id FROM agents WHERE status='active' ORDER BY id")
+        .map_err(|e| e.to_string())?;
+    let candidates = statement
+        .query_map([], |r| r.get::<_, String>(0))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    for id in candidates {
+        if preferred.is_some_and(|value| value != id) {
+            continue;
+        }
+        let ready = ai_employee_runtime::skill_resolver::ready_skill_ids(connection, &id)?;
+        if requested
+            .iter()
+            .all(|capability| ready.contains(capability))
+        {
+            return Ok((id, requested));
+        }
+    }
+    Err("task_proposal_assignee_not_ready".into())
+}
+
+fn task_proposal_to_scenario(
+    proposal_id: &str,
+    proposal: &Value,
+    resolved: &[(String, Vec<String>)],
+) -> Result<ScenarioProposal, String> {
+    let assignments = proposal["assignments"]
+        .as_array()
+        .ok_or("task_proposal_assignments_invalid")?;
+    let finalizers = assignments
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| item["role"] == "finalizer")
+        .collect::<Vec<_>>();
+    if finalizers.len() != 1 {
+        return Err("task_proposal_finalizer_required".into());
+    }
+    let coordinator = resolved[finalizers[0].0].0.clone();
+    let criteria: Vec<AcceptanceCriterion> =
+        serde_json::from_value(proposal["acceptance_criteria"].clone())
+            .map_err(|_| "task_proposal_acceptance_invalid")?;
+    if criteria.is_empty() {
+        return Err("task_proposal_acceptance_required".into());
+    }
+    let budget = &proposal["budget_hint"];
+    let make_budget = || WorkBudget {
+        max_input_tokens: budget["input_tokens"]
+            .as_u64()
+            .unwrap_or(1)
+            .clamp(1, 200_000),
+        max_output_tokens: budget["output_tokens"]
+            .as_u64()
+            .unwrap_or(1)
+            .clamp(1, 64_000),
+        max_tool_rounds: budget["tool_rounds"].as_u64().unwrap_or(0).min(32) as u32,
+        max_elapsed_ms: budget["wall_clock_ms"]
+            .as_u64()
+            .unwrap_or(1)
+            .clamp(1, 3_600_000),
+    };
+    let nodes = assignments
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            Ok(ScenarioNodeSpec {
+                node_id: item["node_id"]
+                    .as_str()
+                    .ok_or("task_proposal_node_id_invalid")?
+                    .to_owned(),
+                role: if item["role"] == "finalizer" {
+                    ScenarioNodeRole::Finalization
+                } else {
+                    ScenarioNodeRole::Executor
+                },
+                goal: item["goal"]
+                    .as_str()
+                    .ok_or("task_proposal_goal_invalid")?
+                    .to_owned(),
+                suggested_agent_id: resolved[index].0.clone(),
+                required_capabilities: resolved[index].1.clone(),
+                input_refs: vec![],
+                acceptance_criteria: serde_json::from_value(item["acceptance_criteria"].clone())
+                    .map_err(|_| "task_proposal_assignment_acceptance_invalid")?,
+                budget: make_budget(),
+                failure_policy: FailurePolicy::Stop,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let edges = assignments
+        .iter()
+        .flat_map(|item| {
+            let successor = item["node_id"].as_str().unwrap_or_default().to_owned();
+            item["depends_on"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(move |dependency| {
+                    dependency.as_str().map(|predecessor| ScenarioEdgeSpec {
+                        predecessor_node_id: predecessor.to_owned(),
+                        successor_node_id: successor.clone(),
+                        required: true,
+                    })
+                })
+        })
+        .collect();
+    Ok(ScenarioProposal {
+        schema_version: "1.0.0".into(),
+        proposal_id: proposal_id.into(),
+        title: proposal["title"].as_str().unwrap_or("任务").into(),
+        objective: proposal["objective"].as_str().unwrap_or_default().into(),
+        overall_acceptance_criteria: criteria,
+        coordinator_agent_id: coordinator,
+        nodes,
+        edges,
+        assumptions: vec![],
+        risks: vec![],
+        questions_for_user: vec![],
+    })
+}
+
+fn bind_materialized_task(
+    connection: &mut Connection,
+    thread_id: &str,
+    proposal_id: &str,
+    task_id: &str,
+    role: &str,
+    stamp: &str,
+) -> Result<(), String> {
+    let task_status: String = connection
+        .query_row("SELECT status FROM tasks WHERE id=?1", [task_id], |r| {
+            r.get(0)
+        })
+        .map_err(|e| e.to_string())?;
+    let thread_status = match task_status.as_str() {
+        "succeeded" => "succeeded",
+        "failed" => "failed",
+        "cancelled" => "cancelled",
+        _ => "running",
+    };
+    let tx = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
+    tx.execute("INSERT OR IGNORE INTO task_thread_task_bindings(thread_id,task_id,proposal_id,binding_role,created_at) VALUES (?1,?2,?3,?4,?5)",rusqlite::params![thread_id,task_id,proposal_id,role,stamp]).map_err(|e|e.to_string())?;
+    tx.execute(
+        "UPDATE task_proposals SET status='materialized',confirmed_at=?2,updated_at=?2 WHERE id=?1 AND status='validated'",
+        rusqlite::params![proposal_id, stamp],
+    )
+    .map_err(|e| e.to_string())?;
+    if role != "child" {
+        tx.execute(
+            "UPDATE task_threads SET status=?2,updated_at=?3 WHERE id=?1",
+            rusqlite::params![thread_id, thread_status, stamp],
+        )
+        .map_err(|e| e.to_string())?;
+        let sequence: i64 = tx
+            .query_row(
+                "SELECT COALESCE(MAX(sequence),0)+1 FROM task_thread_messages WHERE thread_id=?1",
+                [thread_id],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        tx.execute("INSERT INTO task_thread_messages(id,thread_id,sequence,role,kind,content,proposal_id,task_id,created_at) VALUES (?1,?2,?3,'user','confirmation','确认执行',?4,?5,?6)",rusqlite::params![format!("message_{}",unique_suffix()),thread_id,sequence,proposal_id,task_id,stamp]).map_err(|e|e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())
+}
+
+fn unique_suffix() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
 }
 
 fn business_flow_list(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
@@ -128,16 +1365,25 @@ fn business_flow_continue(mut arguments: impl Iterator<Item = String>) -> Result
         Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
     migrate(&mut connection).map_err(|e| e.to_string())?;
     bootstrap_packages(&mut connection, &repository_root, &now())?;
+    drive_business_flow_once(&mut connection, &repository_root, &python, &flow_id)
+}
+
+fn drive_business_flow_once(
+    connection: &mut Connection,
+    repository_root: &Path,
+    python: &Path,
+    flow_id: &str,
+) -> Result<Value, String> {
     let ready = next_ready_work_order(&connection, &flow_id)?;
     let Some(work_order) = ready else {
-        return serde_json::to_value(project_business_flow(&connection, &flow_id)?)
+        return serde_json::to_value(project_business_flow(connection, flow_id)?)
             .map_err(|e| e.to_string());
     };
-    record_work_order_started(&connection, &flow_id, &work_order.id, &now())?;
+    record_work_order_started(connection, flow_id, &work_order.id, &now())?;
     let result = run_existing_agent_task(
-        &mut connection,
-        &repository_root,
-        &python,
+        connection,
+        repository_root,
+        python,
         &work_order.child_task_id,
     )?;
     if result["status"] == "succeeded" {
@@ -145,8 +1391,8 @@ fn business_flow_continue(mut arguments: impl Iterator<Item = String>) -> Result
             .as_str()
             .ok_or("deliverable_missing")?;
         return serde_json::to_value(advance_after_child_success(
-            &mut connection,
-            &flow_id,
+            connection,
+            flow_id,
             &work_order.id,
             deliverable_id,
             &now(),
@@ -155,8 +1401,8 @@ fn business_flow_continue(mut arguments: impl Iterator<Item = String>) -> Result
     }
     if result["status"] == "failed" {
         let projection = settle_failed_work_order(
-            &connection,
-            &flow_id,
+            connection,
+            flow_id,
             &work_order.id,
             result["reason"].as_str().unwrap_or("child_run_failed"),
             &now(),
@@ -164,11 +1410,11 @@ fn business_flow_continue(mut arguments: impl Iterator<Item = String>) -> Result
         return Ok(json!({"flow":projection,"run":result}));
     }
     if result["reason"] == "result_unknown" {
-        let root_task_id = project_business_flow(&connection, &flow_id)?.root_task_id;
+        let root_task_id = project_business_flow(connection, flow_id)?.root_task_id;
         let mut event_log = ai_employee_runtime::event::EventLog::default();
         event_log
             .append_persisted(
-                &connection,
+                connection,
                 &root_task_id,
                 ai_employee_runtime::event::EventType::BusinessFlowVerificationRequired,
                 &now(),
@@ -176,7 +1422,7 @@ fn business_flow_continue(mut arguments: impl Iterator<Item = String>) -> Result
             )
             .map_err(|error| error.to_string())?;
     }
-    Ok(json!({"flow":project_business_flow(&connection,&flow_id)?,"run":result}))
+    Ok(json!({"flow":project_business_flow(connection,flow_id)?,"run":result}))
 }
 
 fn scenario_propose(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
@@ -1326,6 +2572,72 @@ fn chat_delete(mut arguments: impl Iterator<Item = String>) -> Result<serde_json
     Ok(json!({"schema_version":"1.0","conversation_id":conversation_id,"deleted":deleted > 0}))
 }
 
+fn chat_retention(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    let mut conversation_id = None;
+    let mut agent_id = None;
+    let mut operation = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--conversation-id" => conversation_id = arguments.next(),
+            "--employee-id" => agent_id = arguments.next(),
+            "--operation" => operation = arguments.next(),
+            _ => return Err(usage()),
+        }
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    let conversation_id = conversation_id.ok_or_else(usage)?;
+    let agent_id = agent_id.ok_or_else(usage)?;
+    assert_conversation_owner(&connection, &conversation_id, &agent_id)?;
+    let status = match operation.as_deref() {
+        Some("archive") => "archived",
+        Some("restore") => "active",
+        _ => return Err("conversation_retention_operation_invalid".into()),
+    };
+    let changed = connection
+        .execute(
+            "UPDATE conversations SET status=?2,updated_at=?3 WHERE id=?1",
+            rusqlite::params![conversation_id, status, now()],
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(
+        json!({"schema_version":"1.0","conversation_id":conversation_id,"operation":operation,"updated":changed>0}),
+    )
+}
+
+fn conversation_status(
+    connection: &Connection,
+    conversation_id: &str,
+) -> Result<Option<String>, String> {
+    connection
+        .query_row(
+            "SELECT status FROM conversations WHERE id=?1",
+            [conversation_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())
+}
+
+fn archive_list(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            _ => return Err(usage()),
+        }
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
+    migrate(&mut connection).map_err(|e| e.to_string())?;
+    let mut statement=connection.prepare("SELECT c.id,c.agent_id,a.name,a.role,c.updated_at,(SELECT content FROM messages WHERE conversation_id=c.id ORDER BY sequence DESC LIMIT 1) FROM conversations c JOIN agents a ON a.id=c.agent_id WHERE c.status='archived' ORDER BY c.updated_at DESC,c.id").map_err(|e|e.to_string())?;
+    let conversations=statement.query_map([],|r|Ok(json!({"conversation_id":r.get::<_,String>(0)?,"employee_id":r.get::<_,String>(1)?,"employee_name":r.get::<_,String>(2)?,"employee_role":r.get::<_,String>(3)?,"updated_at":r.get::<_,String>(4)?,"preview":r.get::<_,Option<String>>(5)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
+    Ok(json!({"schema_version":"1.0","conversations":conversations}))
+}
+
 fn chat_history(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {
     let mut database = None;
     let mut conversation_id = None;
@@ -1344,6 +2656,9 @@ fn chat_history(mut arguments: impl Iterator<Item = String>) -> Result<serde_jso
     let conversation_id = conversation_id.ok_or_else(usage)?;
     let agent_id = agent_id.ok_or_else(usage)?;
     assert_conversation_owner(&connection, &conversation_id, &agent_id)?;
+    if conversation_status(&connection, &conversation_id)?.as_deref() == Some("archived") {
+        return Ok(json!({"schema_version":"1.0","conversation_id":conversation_id,"messages":[]}));
+    }
     let mut statement = connection.prepare(
         "SELECT id,role,content,created_at FROM messages WHERE conversation_id=?1 ORDER BY sequence"
     ).map_err(|error| error.to_string())?;
@@ -1392,6 +2707,9 @@ fn chat_send(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
         return Err("message must not be empty".to_owned());
     }
     assert_conversation_owner(&connection, &conversation_id, &agent_id)?;
+    if conversation_status(&connection, &conversation_id)?.as_deref() == Some("archived") {
+        return Err("conversation_archived".to_owned());
+    }
     let message_count: i64 = connection
         .query_row(
             "SELECT count(*) FROM messages WHERE conversation_id=?1",
@@ -1414,6 +2732,14 @@ fn chat_send(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
         .as_nanos();
     let user_id = format!("msg_user_{nonce}");
     let call_id = format!("model_call_{nonce}");
+    let selected_provider =
+        env::var("AI_EMPLOYEE_MODEL_PROVIDER").unwrap_or_else(|_| "deepseek".to_owned());
+    let selected_model =
+        env::var("AI_EMPLOYEE_MODEL").unwrap_or_else(|_| "deepseek-v4-flash".to_owned());
+    if !matches!(selected_provider.as_str(), "deepseek" | "poe") || selected_model.trim().is_empty()
+    {
+        return Err("invalid model configuration".to_owned());
+    }
     let tx = connection
         .transaction()
         .map_err(|error| error.to_string())?;
@@ -1437,7 +2763,18 @@ fn chat_send(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
         rusqlite::params![user_id, conversation_id, user_sequence, input, stamp],
     )
     .map_err(|e| e.to_string())?;
-    tx.execute("INSERT INTO model_calls VALUES (?1,?2,?3,NULL,'deepseek','deepseek-v4-flash','running',NULL,NULL,NULL,?4,NULL)", rusqlite::params![call_id, conversation_id, user_id, stamp]).map_err(|e| e.to_string())?;
+    tx.execute(
+        "INSERT INTO model_calls VALUES (?1,?2,?3,NULL,?4,?5,'running',NULL,NULL,NULL,?6,NULL)",
+        rusqlite::params![
+            call_id,
+            conversation_id,
+            user_id,
+            selected_provider,
+            selected_model,
+            stamp
+        ],
+    )
+    .map_err(|e| e.to_string())?;
     tx.execute(
         "INSERT INTO model_call_configs VALUES (?1,?2,?3,?4,?5)",
         rusqlite::params![call_id, agent_id, config_version, prompt_sha256, stamp],
@@ -1533,7 +2870,7 @@ fn chat_send(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
     for line in BufReader::new(stdout).lines() {
         let line = line.map_err(|error| error.to_string())?;
         let event: serde_json::Value = serde_json::from_str(&line)
-            .map_err(|_| "DeepSeek returned an invalid response".to_owned())?;
+            .map_err(|_| "model provider returned an invalid response".to_owned())?;
         if event.get("type").and_then(|value| value.as_str()) == Some("delta") {
             if stream_events {
                 println!("{event}");
@@ -1557,13 +2894,13 @@ fn chat_send(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
                 rusqlite::params![call_id, code, now()],
             )
             .map_err(|e| e.to_string())?;
-        return Err(format!("DeepSeek request failed: {code}"));
+        return Err(format!("model provider request failed: {code}"));
     }
     let content = payload
         .get("content")
         .and_then(|v| v.as_str())
         .filter(|s| !s.trim().is_empty())
-        .ok_or("DeepSeek returned empty content")?;
+        .ok_or("model provider returned empty content")?;
     let note = if intent.intent == "task" && !tasks_enabled {
         format!(
             "{content}\n\n——\n本次识别为工作意图，但 Skill/Tool 尚未接通，已按闲聊回复。安装并绑定仓库 Package 后可自动执行工作。"
@@ -2387,7 +3724,7 @@ fn task_command_arguments(
 }
 
 fn usage() -> String {
-    "usage: ai-employee-runtime employees-list|employee-save|employee-delete|effective-prompt|capabilities|capability-readiness|skills-list|tools-list|install-tool|install-skill|bind-skill|unbind-skill|knowledge-import|knowledge-list|knowledge-search|chat-history|chat-send|chat-abort|chat-delete|run-task|run-skill|run-status|continue-run|resolve-action-result|list-tasks|usage-summary|cancel-task|events|scenario-list|scenario-propose|scenario-get|scenario-validate|scenario-save|scenario-disable|business-flow-plan|business-flow-start|business-flow-list|business-flow-status|business-flow-continue".to_owned()
+    "usage: ai-employee-runtime employees-list|employee-save|employee-delete|effective-prompt|capabilities|capability-readiness|skills-list|tools-list|install-tool|install-skill|bind-skill|unbind-skill|knowledge-import|knowledge-list|knowledge-search|chat-history|chat-send|chat-abort|chat-delete|chat-retention|archive-list|run-task|run-skill|run-status|continue-run|resolve-action-result|list-tasks|usage-summary|cancel-task|events|task-thread-create|task-thread-list|task-thread-get|task-thread-message|task-thread-timeline|task-thread-retention|task-proposal-generate|task-proposal-confirm|scenario-list|scenario-propose|scenario-get|scenario-validate|scenario-save|scenario-disable|business-flow-plan|business-flow-start|business-flow-list|business-flow-status|business-flow-continue".to_owned()
 }
 
 fn usage_summary(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {
@@ -3142,6 +4479,12 @@ mod tests {
     use super::*;
 
     #[test]
+    fn task_room_normalizes_second_and_millisecond_timestamps() {
+        assert_eq!(timeline_sort_time("1786521339"), 1_786_521_339_000);
+        assert_eq!(timeline_sort_time("1786521339000"), 1_786_521_339_000);
+    }
+
+    #[test]
     fn conversation_access_rejects_a_different_employee() {
         let database = env::temp_dir().join(format!("ai-employee-conversation-owner-{}.db", now()));
         let mut connection = Connection::open(&database).unwrap();
@@ -3170,6 +4513,65 @@ mod tests {
         assert_eq!(
             chat_history(arguments("writer")).unwrap_err(),
             "conversation_employee_mismatch"
+        );
+        fs::remove_file(database).unwrap();
+    }
+
+    #[test]
+    fn conversation_archive_hides_history_and_can_restore() {
+        let database =
+            env::temp_dir().join(format!("ai-employee-conversation-archive-{}.db", now()));
+        let mut connection = Connection::open(&database).unwrap();
+        migrate(&mut connection).unwrap();
+        connection.execute_batch(
+            "INSERT INTO agents VALUES ('alex','Alex','ai_product_manager','user','active','t','t');
+             INSERT INTO conversations VALUES ('conversation_alex_primary','alex','chat','active','t','t');
+             INSERT INTO messages (id,conversation_id,sequence,role,content,created_at) VALUES ('m1','conversation_alex_primary',1,'user','hello','t');"
+        ).unwrap();
+        drop(connection);
+        let retention = |operation: &str| {
+            vec![
+                "--database".to_owned(),
+                database.display().to_string(),
+                "--conversation-id".to_owned(),
+                "conversation_alex_primary".to_owned(),
+                "--employee-id".to_owned(),
+                "alex".to_owned(),
+                "--operation".to_owned(),
+                operation.to_owned(),
+            ]
+            .into_iter()
+        };
+        let history = || {
+            vec![
+                "--database".to_owned(),
+                database.display().to_string(),
+                "--conversation-id".to_owned(),
+                "conversation_alex_primary".to_owned(),
+                "--employee-id".to_owned(),
+                "alex".to_owned(),
+            ]
+            .into_iter()
+        };
+        chat_retention(retention("archive")).unwrap();
+        assert_eq!(
+            chat_history(history()).unwrap()["messages"]
+                .as_array()
+                .unwrap()
+                .len(),
+            0
+        );
+        let listed =
+            archive_list(vec!["--database".to_owned(), database.display().to_string()].into_iter())
+                .unwrap();
+        assert_eq!(listed["conversations"].as_array().unwrap().len(), 1);
+        chat_retention(retention("restore")).unwrap();
+        assert_eq!(
+            chat_history(history()).unwrap()["messages"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
         );
         fs::remove_file(database).unwrap();
     }
@@ -3615,6 +5017,107 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error, "unsupported_usage_pricing_model:other/model-x");
+        fs::remove_file(database).unwrap();
+    }
+
+    #[test]
+    fn task_thread_retention_archives_restores_and_soft_deletes() {
+        let database = env::temp_dir().join(format!("ai-employee-thread-retention-{}.db", now()));
+        let database_path = database.display().to_string();
+        let created = task_thread_create(
+            vec![
+                "--database".to_owned(),
+                database_path.clone(),
+                "--title".to_owned(),
+                "研究任务".to_owned(),
+                "--objective".to_owned(),
+                "整理资料".to_owned(),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
+        let thread_id = created["id"].as_str().unwrap().to_owned();
+
+        task_thread_retention(
+            vec![
+                "--database".to_owned(),
+                database_path.clone(),
+                "--thread-id".to_owned(),
+                thread_id.clone(),
+                "--operation".to_owned(),
+                "archive".to_owned(),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
+        assert!(
+            task_thread_list(vec!["--database".to_owned(), database_path.clone()].into_iter())
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            task_thread_list(
+                vec![
+                    "--database".to_owned(),
+                    database_path.clone(),
+                    "--archived".to_owned()
+                ]
+                .into_iter()
+            )
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+            1
+        );
+
+        task_thread_retention(
+            vec![
+                "--database".to_owned(),
+                database_path.clone(),
+                "--thread-id".to_owned(),
+                thread_id.clone(),
+                "--operation".to_owned(),
+                "restore".to_owned(),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
+        assert_eq!(
+            task_thread_list(vec!["--database".to_owned(), database_path.clone()].into_iter())
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+
+        task_thread_retention(
+            vec![
+                "--database".to_owned(),
+                database_path.clone(),
+                "--thread-id".to_owned(),
+                thread_id.clone(),
+                "--operation".to_owned(),
+                "delete".to_owned(),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
+        assert!(
+            task_thread_get(
+                vec![
+                    "--database".to_owned(),
+                    database_path.clone(),
+                    "--thread-id".to_owned(),
+                    thread_id
+                ]
+                .into_iter()
+            )
+            .is_err()
+        );
         fs::remove_file(database).unwrap();
     }
 }

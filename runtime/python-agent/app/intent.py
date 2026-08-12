@@ -6,7 +6,7 @@ import json
 import os
 from dataclasses import dataclass
 
-from .provider import DeepSeekProvider, ProviderFailure
+from .provider import DeepSeekProvider, PoeProvider, ProviderFailure
 from .provider_config import ProviderConfig
 
 INTENT_PROMPT = """你是 AI 员工的通用意图与能力路由器。根据用户最新一条消息和当前员工真实可用的 Skill，判断应直接聊天还是启动工作。
@@ -58,7 +58,7 @@ def classify_intent(
             return IntentDecision(
                 decision.intent, decision.confidence, "deterministic_fake", decision.skill_id
             )
-        config = ProviderConfig()
+        config = ProviderConfig.from_environment()
         config.validate()
         messages = [
             {
@@ -77,9 +77,12 @@ def classify_intent(
             },
             {"role": "user", "content": text},
         ]
-        response = DeepSeekProvider(config.deepseek_model, config.request_timeout_seconds).complete(
-            messages
+        provider = (
+            PoeProvider(config.model, config.request_timeout_seconds)
+            if config.provider == "poe"
+            else DeepSeekProvider(config.model, config.request_timeout_seconds)
         )
+        response = provider.complete(messages)
         return _parse_llm_intent(response.content, available_skills or [])
     except (ProviderFailure, ValueError, KeyError, json.JSONDecodeError):
         return IntentDecision("chat", 0.45, "fallback_chat", None)

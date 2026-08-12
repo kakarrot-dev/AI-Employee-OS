@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from http.client import IncompleteRead, RemoteDisconnected
 import json
 import os
 from typing import Callable, Iterator, Protocol
@@ -63,13 +64,22 @@ class Transport(Protocol):
 class UrllibTransport:
     def post(self, url: str, headers: dict[str, str], payload: dict, timeout: float) -> HttpResponse:
         req = request.Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")
-        try:
-            with request.urlopen(req, timeout=timeout) as response:
-                return HttpResponse(response.status, response.read())
-        except error.HTTPError as exc:
-            return HttpResponse(exc.code, exc.read())
-        except (error.URLError, TimeoutError) as exc:
-            raise ProviderFailure(ProviderErrorKind.NETWORK, str(exc)) from exc
+        for attempt in range(2):
+            try:
+                with request.urlopen(req, timeout=timeout) as response:
+                    return HttpResponse(response.status, response.read())
+            except error.HTTPError as exc:
+                try:
+                    return HttpResponse(exc.code, exc.read())
+                except IncompleteRead as read_error:
+                    if attempt == 0:
+                        continue
+                    raise ProviderFailure(ProviderErrorKind.NETWORK, "provider_response_interrupted") from read_error
+            except (error.URLError, TimeoutError, IncompleteRead, RemoteDisconnected, ConnectionError) as exc:
+                if attempt == 0:
+                    continue
+                raise ProviderFailure(ProviderErrorKind.NETWORK, "provider_response_interrupted") from exc
+        raise ProviderFailure(ProviderErrorKind.NETWORK, "provider_response_interrupted")
 
     def stream(self, url: str, headers: dict[str, str], payload: dict, timeout: float) -> Iterator[bytes]:
         req = request.Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")
@@ -79,8 +89,8 @@ class UrllibTransport:
                     yield line
         except error.HTTPError as exc:
             _raise_http_error(HttpResponse(exc.code, exc.read()))
-        except (error.URLError, TimeoutError) as exc:
-            raise ProviderFailure(ProviderErrorKind.NETWORK, str(exc)) from exc
+        except (error.URLError, TimeoutError, IncompleteRead, RemoteDisconnected, ConnectionError) as exc:
+            raise ProviderFailure(ProviderErrorKind.NETWORK, "provider_response_interrupted") from exc
 
 
 class DeepSeekProvider:
@@ -93,7 +103,7 @@ class DeepSeekProvider:
     def complete(self, messages: list[dict[str, str]]) -> ProviderResponse:
         return self._complete(messages, json_object=False)
 
-    def complete_json(self, messages: list[dict[str, str]]) -> ProviderResponse:
+    def complete_json(self, messages: list[dict[str, str]], schema: dict | None = None, name: str = "response") -> ProviderResponse:
         return self._complete(messages, json_object=True)
 
     def _complete(self, messages: list[dict[str, str]], json_object: bool) -> ProviderResponse:
@@ -186,13 +196,22 @@ class PoeProvider:
         self.transport = transport or UrllibTransport()
 
     def complete(self, messages: list[dict[str, str]]) -> ProviderResponse:
+        return self._complete(messages)
+
+    def complete_json(self, messages: list[dict[str, str]], schema: dict | None = None, name: str = "response") -> ProviderResponse:
+        return self._complete(messages, schema, name)
+
+    def _complete(self, messages: list[dict[str, str]], schema: dict | None = None, name: str = "response") -> ProviderResponse:
         key = os.getenv("POE_API_KEY")
         if not key:
             raise ProviderFailure(ProviderErrorKind.AUTHENTICATION, "POE_API_KEY is not configured")
+        payload = {"model": self.model, "input": messages}
+        if schema is not None:
+            payload["text"] = {"format": {"type": "json_schema", "name": name, "schema": schema, "strict": True}}
         response = self.transport.post(
             "https://api.poe.com/v1/responses",
             _headers(key),
-            {"model": self.model, "input": messages},
+            payload,
             self.timeout,
         )
         _raise_http_error(response)
@@ -210,6 +229,29 @@ class PoeProvider:
             _token_count(usage, "input_tokens", "prompt_tokens"),
             _token_count(usage, "output_tokens", "completion_tokens"),
         )
+
+    def stream_complete(
+        self,
+        messages: list[dict[str, str]],
+        on_delta: Callable[[str], None],
+    ) -> ProviderResponse:
+        # Poe's Responses endpoint is used consistently for all calls. Until its
+        # event stream is part of our contract, publish the verified final text
+        # as one ordered delta instead of parsing undocumented event shapes.
+        response = self._complete(messages)
+        on_delta(response.content)
+        return response
+
+
+def configured_provider(config: object) -> DeepSeekProvider | PoeProvider:
+    provider = getattr(config, "provider")
+    model = getattr(config, "model")
+    timeout = getattr(config, "request_timeout_seconds")
+    if provider == "deepseek":
+        return DeepSeekProvider(model, timeout)
+    if provider == "poe":
+        return PoeProvider(model, timeout)
+    raise ValueError("unsupported provider")
 
 
 def _headers(key: str) -> dict[str, str]:
@@ -281,5 +323,5 @@ class DeterministicFakeProvider:
             raise ProviderFailure(ProviderErrorKind.INVALID_RESPONSE, "no scripted response")
         return ProviderResponse(self.responses.pop(0), self.name)
 
-    def complete_json(self, messages: list[dict[str, str]]) -> ProviderResponse:
+    def complete_json(self, messages: list[dict[str, str]], schema: dict | None = None, name: str = "response") -> ProviderResponse:
         return self.complete(messages)

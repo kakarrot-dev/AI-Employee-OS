@@ -63,7 +63,8 @@ class ScenarioCoordinatorTests(unittest.TestCase):
     @patch("app.scenario_coordinator.DeepSeekProvider")
     @patch("app.scenario_coordinator.ProviderConfig")
     def test_live_provider_uses_scenario_timeout(self, config_type, provider_type):
-        config = config_type.return_value
+        config = config_type.from_environment.return_value
+        config.provider = "deepseek"
         config.deepseek_model = "deepseek-v4-flash"
         config.scenario_request_timeout_seconds = 180.0
         provider_type.return_value.complete_json.return_value = ProviderResponse(

@@ -26,7 +26,11 @@ pub const MIGRATION_014: &str =
     include_str!("../../../storage/migrations/014_multi_employee_business_flows.sql");
 pub const MIGRATION_015: &str =
     include_str!("../../../storage/migrations/015_business_flow_outputs.sql");
-const LATEST_SCHEMA_VERSION: i64 = 15;
+pub const MIGRATION_016: &str =
+    include_str!("../../../storage/migrations/016_task_threads_and_proposals.sql");
+pub const MIGRATION_017: &str =
+    include_str!("../../../storage/migrations/017_task_thread_retention.sql");
+const LATEST_SCHEMA_VERSION: i64 = 17;
 
 pub fn migrate(connection: &mut Connection) -> Result<()> {
     connection.busy_timeout(Duration::from_secs(5))?;
@@ -81,6 +85,12 @@ pub fn migrate(connection: &mut Connection) -> Result<()> {
     if current < 15 {
         transaction.execute_batch(MIGRATION_015)?;
     }
+    if current < 16 {
+        transaction.execute_batch(MIGRATION_016)?;
+    }
+    if current < 17 {
+        transaction.execute_batch(MIGRATION_017)?;
+    }
     transaction.commit()
 }
 
@@ -121,7 +131,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 48); // 47 canonical tables plus schema_migrations.
+        assert_eq!(count, 52); // 51 canonical tables plus schema_migrations.
 
         let integrity: String = connection
             .query_row("PRAGMA integrity_check", [], |row| row.get(0))
@@ -133,7 +143,7 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(migration_count, 15);
+        assert_eq!(migration_count, 17);
     }
 
     #[test]
@@ -207,7 +217,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(index_count, 35);
+        assert_eq!(index_count, 40);
     }
 
     #[test]

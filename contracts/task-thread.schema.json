@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-employee-os.local/contracts/task-thread.schema.json",
+  "title": "TaskThread",
+  "type": "object",
+  "required": ["schema_version", "id", "title", "status", "current_revision", "root_task_id", "execution", "created_at", "updated_at", "archived_at", "messages", "room"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "id": {"type": "string", "minLength": 1},
+    "title": {"type": "string", "minLength": 1},
+    "status": {"enum": ["drafting", "awaiting_input", "awaiting_confirmation", "materialized", "running", "succeeded", "failed", "cancelled"]},
+    "current_revision": {"type": "integer", "minimum": 1},
+    "root_task_id": {"type": ["string", "null"]},
+    "execution": {"type": ["object", "null"]},
+    "created_at": {"type": "string", "minLength": 1},
+    "updated_at": {"type": "string", "minLength": 1},
+    "archived_at": {"type": ["string", "null"]},
+    "messages": {"type": "array"},
+    "room": {
+      "type": "object",
+      "required": ["schema_version", "thread_id", "participants", "items"],
+      "properties": {
+        "schema_version": {"const": "1.0.0"},
+        "thread_id": {"type": "string", "minLength": 1},
+        "participants": {"type": "array"},
+        "items": {"type": "array"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,4 +1,5 @@
 import unittest
+from http.client import IncompleteRead
 from unittest.mock import patch
 
 from app.loop import (
@@ -17,6 +18,7 @@ from app.provider import (
     DeepSeekProvider,
     HttpResponse,
     PoeProvider,
+    UrllibTransport,
 )
 
 
@@ -51,6 +53,14 @@ class FakeGateway:
 
 
 class ProviderRouterTests(unittest.TestCase):
+    @patch("app.provider.request.urlopen")
+    def test_transport_retries_interrupted_response_once_and_normalizes_error(self, urlopen):
+        urlopen.side_effect = IncompleteRead(b"partial", 10)
+        with self.assertRaisesRegex(ProviderFailure, "provider_response_interrupted") as raised:
+            UrllibTransport().post("https://example.test", {}, {}, 1)
+        self.assertEqual(raised.exception.kind, ProviderErrorKind.NETWORK)
+        self.assertEqual(urlopen.call_count, 2)
+
     @patch.dict("os.environ", {"DEEPSEEK_API_KEY": "secret"})
     def test_deepseek_client_uses_chat_completions_without_exposing_key(self):
         transport = FakeTransport(HttpResponse(200, b'{"choices":[{"message":{"content":"ok"}}]}'))
@@ -102,6 +112,18 @@ class ProviderRouterTests(unittest.TestCase):
         result = PoeProvider("deepseek-v4-flash", 30, transport).complete([{"role": "user", "content": "hi"}])
         self.assertEqual(result.content, "fallback")
         self.assertEqual(transport.calls[0][0], "https://api.poe.com/v1/responses")
+
+    @patch.dict("os.environ", {"POE_API_KEY": "secret"})
+    def test_poe_supports_json_and_ordered_chat_delta(self):
+        body = b'{"output_text":"{\\"type\\":\\"complete\\"}","usage":{"input_tokens":3,"output_tokens":4}}'
+        transport = FakeTransport(HttpResponse(200, body))
+        provider = PoeProvider("claude-opus-4.8", 30, transport)
+        self.assertEqual(provider.complete_json([]).content, '{"type":"complete"}')
+        deltas = []
+        response = provider.stream_complete([], deltas.append)
+        self.assertEqual(deltas, ['{"type":"complete"}'])
+        self.assertEqual((response.input_tokens, response.output_tokens), (3, 4))
+        self.assertNotIn("secret", str(transport.calls[0][2]))
 
     def test_temporary_failure_uses_poe_fallback(self):
         router = ProviderRouter(

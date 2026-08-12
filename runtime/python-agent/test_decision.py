@@ -35,6 +35,22 @@ class DecisionTests(unittest.TestCase):
         self.assertEqual(value["deliverable_candidates"], [])
         self.assertEqual(value["evidence_refs"], [])
 
+    def test_worker_discards_model_owned_evidence_references(self):
+        value = parse_model_decision(
+            '{"type":"complete","output":{"summary":"ok"},"deliverable_candidates":[],'
+            '"evidence_refs":["sha256:model-invented"]}'
+        )
+        self.assertEqual(value["evidence_refs"], [])
+
+    def test_worker_discards_evidence_field_attached_to_tool_call(self):
+        value = parse_model_decision(
+            '{"type":"tool_call","skill_id":"web-search","tool_id":"agent-reach-tool",'
+            '"action":"search_web","arguments":{"query":"news"},"rationale_summary":"search",'
+            '"evidence_refs":[]}'
+        )
+        self.assertEqual(value["type"], "tool_call")
+        self.assertNotIn("evidence_refs", value)
+
     def test_worker_accepts_output_only_after_runtime_observation(self):
         value = parse_model_decision(
             '{"answer":"最新新闻","sources":["https://example.com"]}',

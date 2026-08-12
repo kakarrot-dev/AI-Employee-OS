@@ -56,18 +56,22 @@ def parse_model_decision(content: str, *, allow_observation_completion: bool = F
     if forbidden:
         raise ValueError(f"decision_forbidden_field: {sorted(forbidden)[0]}")
     value.pop("schema_version", None)
+    # Evidence identity never belongs to the model, regardless of which
+    # semantic decision envelope the provider attached it to.
+    value.pop("evidence_refs", None)
     decision_type = value.get("type")
     if decision_type is None and allow_observation_completion:
         value = {"type": "complete", "output": value}
         decision_type = "complete"
     if decision_type == "complete":
         deliverable_candidates = value.pop("deliverable_candidates", [])
-        evidence_refs = value.pop("evidence_refs", [])
         if "output" not in value:
             direct_output = {key: item for key, item in value.items() if key != "type"}
             value = {"type": "complete", "output": direct_output}
         value["deliverable_candidates"] = deliverable_candidates
-        value["evidence_refs"] = evidence_refs
+        # Evidence identity is Runtime-owned. Model-provided references are
+        # discarded; Rust derives evidence from persisted ToolExecution and Artifact rows.
+        value["evidence_refs"] = []
     if decision_type not in MODEL_FIELDS or set(value) != MODEL_FIELDS[decision_type]:
         field_names = ",".join(sorted(value))
         raise ValueError(

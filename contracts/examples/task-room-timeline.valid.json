@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0.0",
+  "thread_id": "thread-example",
+  "participants": [
+    {"agent_id": "researcher", "name": "数据搜集员工", "role": "研究员", "avatar_path": null, "status": "succeeded"}
+  ],
+  "items": [
+    {
+      "id": "message-example",
+      "sequence": 1,
+      "role": "user",
+      "kind": "goal",
+      "content": "调研并整理报告",
+      "created_at": "2026-08-12T00:00:00Z",
+      "agent_id": null,
+      "agent_name": null,
+      "agent_role": null,
+      "avatar_path": null,
+      "task_id": null,
+      "run_id": null,
+      "action_id": null,
+      "approval_id": null,
+      "handoff_id": null,
+      "deliverable_id": null,
+      "status": null,
+      "tool_id": null,
+      "action": null,
+      "artifact_uri": null
+    }
+  ]
+}

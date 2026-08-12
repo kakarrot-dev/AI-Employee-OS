@@ -2,7 +2,7 @@ import json
 import os
 import sys
 
-from .provider import DeepSeekProvider, DeterministicFakeProvider
+from .provider import DeepSeekProvider, DeterministicFakeProvider, PoeProvider
 from .provider_config import ProviderConfig
 
 
@@ -63,9 +63,13 @@ def main() -> int:
         if scripted is not None:
             provider = DeterministicFakeProvider([scripted])
         else:
-            config = ProviderConfig()
+            config = ProviderConfig.from_environment()
             config.validate()
-            provider = DeepSeekProvider(config.deepseek_model, config.scenario_request_timeout_seconds)
+            provider = (
+                PoeProvider(config.poe_model, config.scenario_request_timeout_seconds)
+                if config.provider == "poe"
+                else DeepSeekProvider(config.deepseek_model, config.scenario_request_timeout_seconds)
+            )
         response = provider.complete_json(_messages(request))
         proposal = json.loads(response.content)
         if not isinstance(proposal, dict):

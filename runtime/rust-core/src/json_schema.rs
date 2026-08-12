@@ -1,10 +1,19 @@
 use serde_json::Value;
 
 pub fn validate(schema: &Value, value: &Value) -> Result<(), String> {
-    validate_at(schema, value, "$")
+    validate_at(schema, schema, value, "$")
 }
 
-fn validate_at(schema: &Value, value: &Value, path: &str) -> Result<(), String> {
+fn validate_at(root: &Value, schema: &Value, value: &Value, path: &str) -> Result<(), String> {
+    if let Some(reference) = schema.get("$ref").and_then(Value::as_str) {
+        let pointer = reference
+            .strip_prefix('#')
+            .ok_or_else(|| format!("{path}: external schema reference unsupported"))?;
+        let resolved = root
+            .pointer(pointer)
+            .ok_or_else(|| format!("{path}: schema reference not found"))?;
+        return validate_at(root, resolved, value, path);
+    }
     if let Some(constant) = schema.get("const") {
         if value != constant {
             return Err(format!("{path}: value does not match const"));
@@ -82,7 +91,7 @@ fn validate_at(schema: &Value, value: &Value, path: &str) -> Result<(), String> 
         if let Some(properties) = properties {
             for (field, field_schema) in properties {
                 if let Some(field_value) = object.get(field) {
-                    validate_at(field_schema, field_value, &format!("{path}.{field}"))?;
+                    validate_at(root, field_schema, field_value, &format!("{path}.{field}"))?;
                 }
             }
         }
@@ -105,7 +114,7 @@ fn validate_at(schema: &Value, value: &Value, path: &str) -> Result<(), String> 
         }
         if let Some(item_schema) = schema.get("items") {
             for (index, item) in items.iter().enumerate() {
-                validate_at(item_schema, item, &format!("{path}[{index}]"))?;
+                validate_at(root, item_schema, item, &format!("{path}[{index}]"))?;
             }
         }
     }
@@ -123,5 +132,12 @@ mod tests {
         assert!(validate(&schema, &json!({"sources":[{"url":"https://example.com"}]})).is_ok());
         assert!(validate(&schema, &json!({"sources":"wrong"})).is_err());
         assert!(validate(&schema, &json!({"sources":[{"url":"","extra":true}]})).is_err());
+    }
+
+    #[test]
+    fn resolves_local_schema_references() {
+        let schema = json!({"$defs":{"item":{"type":"object","required":["name"],"properties":{"name":{"type":"string"}},"additionalProperties":false}},"type":"array","items":{"$ref":"#/$defs/item"}});
+        assert!(validate(&schema, &json!([{"name":"ok"}])).is_ok());
+        assert!(validate(&schema, &json!([{"wrong":true}])).is_err());
     }
 }

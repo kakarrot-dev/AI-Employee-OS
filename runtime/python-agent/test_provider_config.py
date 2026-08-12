@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from app.provider_config import ProviderConfig
 
@@ -12,6 +13,12 @@ class ProviderConfigTests(unittest.TestCase):
         self.assertEqual(config.request_timeout_seconds, 60.0)
         self.assertEqual(config.scenario_request_timeout_seconds, 180.0)
         self.assertNotIn("api_key", config.public_dict())
+
+    @patch.dict("os.environ", {"AI_EMPLOYEE_MODEL_PROVIDER": "poe", "AI_EMPLOYEE_MODEL": "claude-opus-4.8"})
+    def test_environment_selects_poe_model(self):
+        config = ProviderConfig.from_environment()
+        config.validate()
+        self.assertEqual((config.provider, config.model), ("poe", "claude-opus-4.8"))
 
     def test_client_values_are_bounded(self):
         with self.assertRaises(ValueError):

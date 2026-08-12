@@ -895,6 +895,27 @@ fn finalize_existing_run(
         params![deliverable_id, sha256(&output.to_string()), now],
     )
     .map_err(|error| error.to_string())?;
+    let successful_tool_calls = {
+        let mut statement = tx
+            .prepare(
+                "SELECT te.call_id FROM tool_executions te
+                 JOIN actions a ON a.id=te.action_id
+                 WHERE a.task_id=?1 AND te.status='succeeded'",
+            )
+            .map_err(|error| error.to_string())?;
+        statement
+            .query_map([task_id], |row| row.get::<_, String>(0))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?
+    };
+    for call_id in successful_tool_calls {
+        tx.execute(
+            "INSERT OR IGNORE INTO deliverable_evidence VALUES (?1,'tool_result',?2,?3)",
+            params![deliverable_id, call_id, now],
+        )
+        .map_err(|error| error.to_string())?;
+    }
     let artifact_result: Option<(String, String)> = tx.query_row(
         "SELECT te.call_id,te.result_json FROM tool_executions te JOIN actions a ON a.id=te.action_id WHERE a.task_id=?1 AND te.status='succeeded' AND json_type(te.result_json,'$.output.path')='text' ORDER BY te.started_at DESC LIMIT 1",
         [task_id], |row| Ok((row.get(0)?,row.get(1)?)),
@@ -915,11 +936,6 @@ fn finalize_existing_run(
         tx.execute(
             "INSERT INTO deliverable_evidence VALUES (?1,'artifact',?2,?3)",
             params![deliverable_id, artifact_id, now],
-        )
-        .map_err(|error| error.to_string())?;
-        tx.execute(
-            "INSERT INTO deliverable_evidence VALUES (?1,'tool_result',?2,?3)",
-            params![deliverable_id, call_id, now],
         )
         .map_err(|error| error.to_string())?;
     }

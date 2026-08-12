@@ -1,7 +1,7 @@
 import json
 import sys
 
-from .provider import DeepSeekProvider, ProviderFailure
+from .provider import ProviderFailure, configured_provider
 from .provider_config import ProviderConfig
 
 
@@ -25,9 +25,9 @@ def main() -> int:
             if not isinstance(message["content"], str) or not message["content"].strip():
                 raise ValueError("message content must not be empty")
             normalized.append(message)
-        config = ProviderConfig()
+        config = ProviderConfig.from_environment()
         config.validate()
-        provider = DeepSeekProvider(config.deepseek_model, config.request_timeout_seconds)
+        provider = configured_provider(config)
         if request.get("stream") is True:
             def publish(delta: str) -> None:
                 print(json.dumps({"type": "delta", "delta": delta}, ensure_ascii=False), flush=True)
@@ -38,7 +38,7 @@ def main() -> int:
             "schema_version": "1.0",
             "content": response.content,
             "provider": response.provider,
-            "model": config.deepseek_model,
+            "model": config.model,
             "input_tokens": response.input_tokens,
             "output_tokens": response.output_tokens,
         }, ensure_ascii=False))
