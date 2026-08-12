@@ -5,6 +5,7 @@ SOURCE = Path("apps/macos/AIEmployee/Sources/AIEmployee/Views/Office/OfficeWorks
 text = SOURCE.read_text(encoding="utf-8")
 snapshot = Path("apps/macos/AIEmployee/Sources/AIEmployee/Models/OfficeSnapshot.swift").read_text(encoding="utf-8")
 runtime = Path("runtime/rust-core/src/main.rs").read_text(encoding="utf-8")
+content = Path("apps/macos/AIEmployee/Sources/AIEmployee/Views/ContentView.swift").read_text(encoding="utf-8")
 
 required = {
     "explicit animation progress": "@State private var dataAnimationProgress = 0.0",
@@ -28,6 +29,21 @@ assert "OfficeSnapshot.EmployeeItem(id: \"alex\"" not in snapshot and "demo-runn
 )
 assert "USAGE_PRICING_VERSION" in runtime and '"pricing_version": USAGE_PRICING_VERSION' in runtime, (
     "estimated cost must expose the exact pricing configuration version"
+)
+assert ".creamFloatingComposer(focused: taskComposerFocused)" in text, (
+    "office task entry must reuse the canonical floating chat composer surface"
+)
+assert ".creamFloatingComposer(focused: taskComposerFocused)\n            .frame(maxWidth: .infinity)" in text, (
+    "office task composer must fill its task-entry container instead of inheriting chat reading width"
+)
+assert "任务已保存" not in text and "任务已交给 Runtime 执行" not in text, (
+    "office must not duplicate Task persistence status"
+)
+assert "store.proposeWork()" in text and "openWork()" in text, (
+    "office submit must start proposal generation and navigate to Work"
+)
+assert "OfficeWorkspaceView(store: store, employeeStore: employeeStore, openWork:" in content, (
+    "root navigation must own the Office to Work transition"
 )
 
 print("office motion checks: ok")

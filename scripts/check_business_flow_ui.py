@@ -14,10 +14,11 @@ view = source("apps/macos/AIEmployee/Sources/AIEmployee/Views/ScenarioLibraryWor
 service = source("apps/macos/AIEmployee/Sources/AIEmployee/Services/RuntimeService.swift")
 store = source("apps/macos/AIEmployee/Sources/AIEmployee/Stores/ScenarioStore.swift")
 chat = source("apps/macos/AIEmployee/Sources/AIEmployee/Views/EmployeeChat/EmployeeChatWorkspaceView.swift")
+task_room = source("apps/macos/AIEmployee/Sources/AIEmployee/Views/Work/TaskThreadWorkspaceView.swift")
 
-assert "[.office, .contacts, .work, .scenes, .knowledge, .skills, .tools]" in destination
-assert 'case .scenes: "场景库（暂定）"' in destination
-assert "ScenarioLibraryWorkspaceView" in content
+assert "[.office, .contacts, .work, .knowledge, .skills, .tools]" in destination
+assert "case scenes" not in destination and "场景库（暂定）" not in destination
+assert "ScenarioLibraryWorkspaceView" not in content and "case .scenes" not in content
 assert 'source = "ai_proposal"' in view and 'editorSource = "manual"' in view
 assert "ScenarioEditorSheet" not in view and "ScenarioEditorPage" in view
 assert 'case sop = "业务 SOP"' in view and 'case nodes = "节点配置"' in view and 'case review = "校验与启动"' in view
@@ -66,10 +67,10 @@ assert "isProposing = true" in store and "defer { isProposing = false }" in stor
 assert "flow.workOrders" in view
 assert "TaskStore" not in view
 assert "conversationRuns" in chat and "conversationID" in chat
-assert "DEEPSEEK_API_KEY" in service
+assert "ModelConfiguration.environment()" in service
 assert "restorePendingRun" in store and "runPhase" in source("apps/macos/AIEmployee/Sources/AIEmployee/Models/Scenario.swift")
-assert "resolvePendingRun" in chat and "cancelFlow" in chat and "continueFlow" in chat
-assert "禁止自动重试" in chat and "resolveUnknown" in chat
+assert "BusinessFlowHistoryBar" not in chat and "scenarioStore" not in chat
+assert 'Button("批准")' in task_room and 'Button("拒绝")' in task_room
 assert "effective_prompt" not in view.lower()
 assert "reasoning" not in view.lower()
 

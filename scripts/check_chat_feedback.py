@@ -35,6 +35,9 @@ assert "if conversationStore.isSending" in workspace, (
 assert "PendingAssistantResponseView" in workspace, (
     "pending assistant feedback must be a visible timeline element"
 )
+assert "BusinessFlowHistoryBar" not in workspace and "scenarioStore" not in workspace, (
+    "employee private chat must not duplicate Task Room execution status"
+)
 assert "proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)" in workspace, (
     "new messages and pending feedback must scroll into the visible viewport"
 )
@@ -50,14 +53,14 @@ assert '"--stream-events"' in Path(
 assert 'employee?.name ?? "Alex"' not in workspace and 'employee?.role ?? "AI 产品经理"' not in workspace, (
     "missing employee data must not be disguised as the default seed employee"
 )
-assert "交给 Alex 新工作" not in command_palette and "交给员工新工作" in command_palette, (
-    "the command palette must remain generic in a multi-employee workspace"
+assert "交给 Alex 新工作" not in command_palette and "在办公室描述目标，由系统匹配员工" in command_palette, (
+    "the command palette must route generic work through the unified Office entry"
 )
 assert "查看员工与工作状态" not in command_palette and "查看模型调用与 Token 用量" in command_palette, (
     "the Office command description must match its usage-only responsibility"
 )
-assert "Alex 无法调用真实模型" not in settings and "AI 员工无法调用真实模型" in settings, (
-    "credential state must describe every employee rather than the old seed"
+assert "SecureField" not in settings and "API Key 仅从项目根目录 .env 读取" in settings, (
+    "model credentials must not be exposed in the client"
 )
 assert "streamingContent += delta" in store, "stream deltas must update the visible assistant response"
 assert "func stopSending()" in store and "sendTask?.cancel()" in store, (
@@ -121,8 +124,14 @@ assert 'Label("复制", systemImage: "doc.on.doc")' not in workspace, (
 assert '.help("复制完整回复")' in workspace and '.accessibilityLabel("复制 \\(employeeName) 的回复")' in workspace, (
     "the icon-only assistant copy action must remain discoverable and accessible"
 )
-assert "private struct AgentTimelineBlock<Content: View>" in workspace, (
+assert "struct AgentTimelineBlock<Content: View>" in workspace, (
     "all agent-authored timeline entries must use one fixed composition component"
+)
+task_room = Path(
+    "apps/macos/AIEmployee/Sources/AIEmployee/Views/Work/TaskThreadWorkspaceView.swift"
+).read_text()
+assert "AgentTimelineBlock(" in task_room and "UserMessageBlock(text:" in task_room, (
+    "Task Room must reuse the canonical chat timeline components"
 )
 assert "metadata: TaskPresentation.time(message.createdAt)" in workspace, (
     "assistant identity and time must remain visible in the shared timeline block"
