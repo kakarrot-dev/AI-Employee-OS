@@ -107,7 +107,6 @@ final class ConversationStore: ObservableObject {
 
     private func submit(_ content: String, replacing messageID: String?) -> Bool {
         guard !employeeID.isEmpty else { error = "请先选择一名员工。"; return false }
-        guard let key = KeychainService.load() else { error = "请先在设置中保存 DeepSeek API Key。"; return false }
         let generation = selectionGeneration
         let targetEmployeeID = employeeID
         let targetConversationID = conversationID
@@ -122,7 +121,7 @@ final class ConversationStore: ObservableObject {
         logger.info("User message queued locally for employee \(targetEmployeeID, privacy: .public)")
         sendTask = Task {
             do {
-                let response = try await service.chatSend(targetConversationID, targetEmployeeID, content, key, messageID) { [weak self] delta in
+                let response = try await service.chatSend(targetConversationID, targetEmployeeID, content, "", messageID) { [weak self] delta in
                     guard let self,
                           generation == self.selectionGeneration,
                           targetConversationID == self.conversationID else { return }
@@ -191,6 +190,28 @@ final class ConversationStore: ObservableObject {
             if generation == selectionGeneration, targetConversationID == conversationID {
                 self.error = error.localizedDescription
             }
+        }
+    }
+
+    @discardableResult
+    func archiveHistory() async -> Bool {
+        guard !isSending, !messages.isEmpty else { return false }
+        let generation = selectionGeneration
+        let targetConversationID = conversationID
+        let targetEmployeeID = employeeID
+        do {
+            _ = try await service.chatRetention(targetConversationID, targetEmployeeID, "archive")
+            guard generation == selectionGeneration, targetConversationID == conversationID else { return false }
+            messages = []
+            latestPreviewByEmployee[targetEmployeeID] = nil
+            lastActivityByEmployee[targetEmployeeID] = nil
+            error = nil
+            return true
+        } catch {
+            if generation == selectionGeneration, targetConversationID == conversationID {
+                self.error = error.localizedDescription
+            }
+            return false
         }
     }
 

@@ -101,7 +101,7 @@ final class ScenarioStore: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         do {
-            let response = try await runtime.businessFlowContinue(flow.id, KeychainService.load())
+            let response = try await runtime.businessFlowContinue(flow.id, nil)
             activeFlow = response.flow
             pendingRun = response.run
             await reload()
@@ -116,7 +116,7 @@ final class ScenarioStore: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         do {
-            _ = try await runtime.continueRun(pendingRun.runID, approve, KeychainService.load())
+            _ = try await runtime.continueRun(pendingRun.runID, approve, nil)
             self.pendingRun = nil
             await reload()
             errorMessage = nil

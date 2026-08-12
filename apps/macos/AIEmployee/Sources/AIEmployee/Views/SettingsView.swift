@@ -2,13 +2,8 @@ import SwiftUI
 
 struct SettingsView: View {
     @State private var selection: SettingsSection = .general
-    @State private var deepSeekKey = ""
-    @State private var error: String?
-    @State private var keyTouched = false
-    @State private var isSavingKey = false
-    @State private var notice: UXToastNotice?
-    @State private var hasLegacyKey = false
-    @AppStorage("deepseekKeyConfigured") private var saved = false
+    @AppStorage(ModelConfiguration.providerKey) private var providerRaw = ""
+    @AppStorage(ModelConfiguration.modelKey) private var modelName = ""
     @AppStorage("appAppearance") private var appearanceRaw = AppAppearance.system.rawValue
     @Environment(\.colorScheme) private var colorScheme
 
@@ -27,15 +22,7 @@ struct SettingsView: View {
         }
         .tint(palette.primary)
         .moduleNavigationTitle(.settings)
-        .onAppear {
-            saved = KeychainService.exists()
-            hasLegacyKey = KeychainService.legacyItemExists()
-        }
-        .overlay(alignment: .topTrailing) {
-            UXToastOverlay(notice: $notice)
-                .padding(.top, AppTheme.Spacing.md)
-                .padding(.trailing, AppTheme.Spacing.md)
-        }
+        .onAppear { normalizeModelSelection() }
     }
 
     @ViewBuilder
@@ -72,67 +59,47 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             SettingsCard {
                 HStack(spacing: 18) {
-                    Text("API Key")
+                    Text("服务商")
                         .font(.callout)
                         .foregroundStyle(palette.muted)
                         .frame(width: 96, alignment: .leading)
-                    SecureField("输入 DeepSeek API Key", text: $deepSeekKey)
-                        .textFieldStyle(.plain)
-                        .foregroundStyle(palette.body)
-                        .onSubmit { saveAPIKey() }
-                        .onChange(of: deepSeekKey) { _, _ in
-                            if keyTouched { error = validationMessage }
+                    Picker("服务商", selection: $providerRaw) {
+                        ForEach(configuredProviders, id: \.self) { provider in
+                            Text(provider == "poe" ? "Poe" : provider.capitalized).tag(provider)
                         }
+                    }
+                    .labelsHidden()
+                    .onChange(of: providerRaw) { _, _ in
+                        normalizeModelSelection()
+                    }
                 }
                 .frame(minHeight: 46)
 
-                if let validationMessage, keyTouched {
-                    UXInlineFeedback(message: validationMessage)
-                        .padding(.bottom, AppTheme.Spacing.sm)
-                }
-
                 SettingsRowDivider()
 
-                HStack(spacing: 10) {
-                    Spacer(minLength: 0)
-                    if saved {
-                        Button("删除", role: .destructive) {
-                            KeychainService.delete()
-                            saved = false
-                            notice = UXToastNotice(message: "API Key 已从 macOS Keychain 删除", tone: .neutral)
+                HStack(spacing: 18) {
+                    Text("模型")
+                        .font(.callout)
+                        .foregroundStyle(palette.muted)
+                        .frame(width: 96, alignment: .leading)
+                    Picker("模型", selection: $modelName) {
+                        ForEach(configuredModels, id: \.self) { model in
+                            Text(model).tag(model)
                         }
-                        .buttonStyle(CreamSecondaryButtonStyle())
-                        .disabled(isSavingKey)
                     }
-                    Button(action: saveAPIKey) {
-                        UXAsyncActionLabel(
-                            idleTitle: saved ? "替换 API Key" : "保存 API Key",
-                            pendingTitle: "正在保存",
-                            isPending: isSavingKey
-                        )
-                    }
-                    .buttonStyle(CreamPrimaryButtonStyle())
-                    .disabled(validationMessage != nil || isSavingKey)
+                    .labelsHidden()
                 }
-                .frame(minHeight: 52)
+                .frame(minHeight: 46)
+
             }
 
             Label(
-                saved ? "已安全保存在 macOS Keychain" : "尚未配置，AI 员工无法调用真实模型",
-                systemImage: saved ? "checkmark.circle.fill" : "key"
+                ModelConfiguration.models.isEmpty ? "未在 .env 中发现可用模型" : "已从 .env 读取 \(ModelConfiguration.models.count) 个模型配置",
+                systemImage: ModelConfiguration.models.isEmpty ? "exclamationmark.triangle" : "checkmark.circle.fill"
             )
             .font(.caption)
-            .foregroundStyle(saved ? palette.success : palette.muted)
-
-            if !saved, hasLegacyKey {
-                SettingsFootnote(
-                    text: "检测到旧凭据。为彻底停止重复授权弹窗，请重新保存一次；新 Key 将由稳定凭据代理持有，旧项不会被读取或删除。",
-                    tone: .warning
-                )
-            }
-            if let error {
-                SettingsFootnote(text: error, tone: .error)
-            }
+            .foregroundStyle(ModelConfiguration.models.isEmpty ? palette.warning : palette.success)
+            SettingsFootnote(text: "API Key 仅从项目根目录 .env 读取，不在客户端展示或保存。")
         }
     }
 
@@ -198,28 +165,13 @@ struct SettingsView: View {
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 
-    private var validationMessage: String? {
-        deepSeekKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "请输入 DeepSeek API Key" : nil
-    }
+    private var configuredProviders: [String] { Array(Set(ModelConfiguration.models.map(\.provider))).sorted() }
+    private var configuredModels: [String] { ModelConfiguration.models.filter { $0.provider == providerRaw }.map(\.model) }
 
-    private func saveAPIKey() {
-        keyTouched = true
-        guard validationMessage == nil, !isSavingKey else {
-            error = validationMessage
-            return
-        }
-        isSavingKey = true
-        defer { isSavingKey = false }
-        do {
-            try KeychainService.save(deepSeekKey)
-            deepSeekKey = ""
-            saved = true
-            error = nil
-            keyTouched = false
-            notice = UXToastNotice(message: "API Key 已安全保存", tone: .success)
-        } catch {
-            self.error = error.localizedDescription
-        }
+    private func normalizeModelSelection() {
+        guard let first = ModelConfiguration.models.first else { providerRaw = ""; modelName = ""; return }
+        if !configuredProviders.contains(providerRaw) { providerRaw = first.provider }
+        if !configuredModels.contains(modelName) { modelName = configuredModels.first ?? first.model }
     }
 }
 
@@ -242,7 +194,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var detail: String {
         switch self {
         case .general: "窗口与语言偏好"
-        case .model: "DeepSeek Key 与调用配置"
+        case .model: "从 .env 选择模型配置"
         case .runtime: "本机执行边界说明"
         case .permissions: "Tool 与审批策略"
         case .appearance: "主题与配色"

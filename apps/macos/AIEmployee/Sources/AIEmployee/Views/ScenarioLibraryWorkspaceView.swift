@@ -192,7 +192,14 @@ struct ScenarioLibraryWorkspaceView: View {
             proposalID: "proposal_\(UUID().uuidString.lowercased().prefix(10))",
             title: "未命名场景",
             objective: "# 业务 SOP\n\n## 背景与目标\n\n说明为什么要执行这项业务，以及最终要达成什么结果。\n\n## 输入\n\n- 列出启动流程前必须具备的资料或条件。\n\n## 执行步骤\n\n1. 描述第一阶段工作。\n2. 描述后续处理与交接。\n3. 汇总并验证最终交付。\n\n## 约束\n\n- 仅使用已授权的数据与工具。\n- 不满足条件时停止并请求用户确认。\n\n## 验收标准\n\n- 最终交付物可追溯到全部上游证据。",
-            overallAcceptanceCriteria: ["最终交付物引用全部上游 verified Deliverable"],
+            overallAcceptanceCriteria: [
+                AcceptanceCriterion(
+                    criterionID: "final-deliverable",
+                    description: "最终交付物引用全部上游 verified Deliverable",
+                    evidenceType: "evaluation",
+                    required: true
+                )
+            ],
             coordinatorAgentID: employee.id,
             nodes: [],
             edges: []
@@ -621,15 +628,12 @@ private struct ScenarioEditorPage: View {
     }
 
     private func proposeFromSOP() {
-        guard let key = KeychainService.load(), let draft = store.draft else {
-            store.errorMessage = "请先在设置中配置 DeepSeek API Key。"
-            return
-        }
+        guard let draft = store.draft else { return }
         let title = draft.title
         let sop = draft.objective
         selectedTab = .nodes
         Task {
-            if await store.propose(objective: sop, key: key) {
+            if await store.propose(objective: sop, key: "") {
                 store.draft?.title = title
                 store.draft?.objective = sop
                 source = "ai_proposal"

@@ -4,7 +4,12 @@ import Security
 private let service = "com.kakarrot.ai-employee-os.credentials.v3"
 private let previousService = "com.kakarrot.ai-employee-os.credentials.v2"
 private let legacyService = "com.kakarrot.ai-employee-os"
-private let account = "deepseek-api-key"
+private let defaultAccount = "deepseek-api-key"
+private var account: String {
+    guard CommandLine.arguments.count > 2 else { return defaultAccount }
+    let value = CommandLine.arguments[2]
+    return ["deepseek-api-key", "poe-api-key"].contains(value) ? value : defaultAccount
+}
 
 private struct Response: Encodable {
     let ok: Bool

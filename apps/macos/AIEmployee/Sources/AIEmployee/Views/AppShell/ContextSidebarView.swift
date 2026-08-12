@@ -42,9 +42,9 @@ struct ContextSidebarView: View {
         switch selection {
         case .contacts:
             EmployeeDirectorySidebar(store: employeeStore)
-        case .work:
+        case .employeeChat:
             WorkConversationList(store: store, conversationStore: conversationStore, employeeStore: employeeStore)
-        case .office, .scenes, .knowledge, .skills, .tools, .settings:
+        case .office, .work, .archive, .knowledge, .skills, .tools, .settings:
             EmptyView()
         }
     }
@@ -145,16 +145,8 @@ struct WorkConversationList: View {
                                     employee: employee,
                                     preview: preview(for: employee),
                                     state: state(for: employee),
-                                    relativeTime: relativeTime(for: employee)
-                                )
-                                .padding(.horizontal, 11)
-                                .padding(.vertical, 7)
-                                .contentShape(Rectangle())
-                                .background(
-                                    employeeStore.selection == employee.id
-                                        ? palette.primary.opacity(0.12)
-                                        : Color.clear,
-                                    in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                    relativeTime: relativeTime(for: employee),
+                                    isSelected: employeeStore.selection == employee.id
                                 )
                             }
                             .buttonStyle(.plain)
@@ -193,7 +185,7 @@ struct WorkConversationList: View {
         return employee.role
     }
 
-    private func state(for employee: Employee) -> WorkConversationRow.State {
+    private func state(for employee: Employee) -> WorkConversationRow.RowState {
         if employee.status != "active" { return .disabled }
         let employeeRuns = runs(for: employee)
         if employeeRuns.contains(where: {
@@ -226,11 +218,13 @@ struct WorkConversationList: View {
 }
 
 private struct WorkConversationRow: View {
-    enum State { case idle, working, waiting, disabled }
+    enum RowState { case idle, working, waiting, disabled }
     let employee: Employee
     let preview: String
-    let state: State
+    let state: RowState
     let relativeTime: String?
+    var isSelected = false
+    @State private var isHovered = false
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -245,7 +239,13 @@ private struct WorkConversationRow: View {
                 }
                 Text(preview).font(.caption).foregroundStyle(palette.muted).lineLimit(2)
             }
-        }.padding(.vertical, 4)
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 11)
+        .contentShape(Rectangle())
+        .creamSidebarRowSurface(isSelected: isSelected, isHovered: isHovered)
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: AppTheme.Motion.fast), value: isHovered)
     }
 
     private var stateColor: Color {

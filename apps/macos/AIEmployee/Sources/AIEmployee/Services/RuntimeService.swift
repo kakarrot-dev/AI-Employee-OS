@@ -16,9 +16,34 @@ struct RuntimeService: Sendable {
             case .missingRuntime: "Runtime 尚未构建或 App Bundle 不完整，请重新构建并启动 App。"
             case .storageUnavailable(let message): "无法访问本地任务存储：\(message)"
             case .processUnavailable(let message): "无法启动 Runtime：\(message)"
-            case .processFailed(let message): "Runtime 执行失败：\(message)"
+            case .processFailed(let message): Self.userFacingRuntimeFailure(message)
             case .invalidResponse(let message): "Runtime 返回不可解析：\(message)"
             }
+        }
+
+        private static func userFacingRuntimeFailure(_ message: String) -> String {
+            if message.contains("task_proposal_provider_network") {
+                return "模型服务连接中断，请稍后重试提出方案。任务草稿已经保存。"
+            }
+            if message.contains("task_proposal_provider_rate_limited") {
+                return "模型服务当前请求过多，请稍后重试。任务草稿已经保存。"
+            }
+            if message.contains("task_proposal_provider_authentication") {
+                return "模型凭证无效或未配置，请检查设置后重试。任务草稿已经保存。"
+            }
+            if message.contains("task_proposal_provider_quota") {
+                return "模型服务额度不足，请检查账户额度后重试。任务草稿已经保存。"
+            }
+            if message.contains("task_proposal_provider_server_temporary") || message.contains("task_proposal_provider_dependency_unavailable") {
+                return "模型服务暂时不可用，请稍后重试。任务草稿已经保存。"
+            }
+            if message.contains("task_proposal_provider_invalid_response") {
+                return "模型返回的方案无法解析，请重新提出方案。任务草稿已经保存。"
+            }
+            if message.contains("task_proposal_schema_invalid") {
+                return "模型返回的方案不符合执行契约，请重新提出方案。任务草稿已经保存。"
+            }
+            return "Runtime 执行失败：\(message)"
         }
     }
 
@@ -33,6 +58,8 @@ struct RuntimeService: Sendable {
     let chatSend: @Sendable (String, String, String, String, String?, @escaping @MainActor @Sendable (String) -> Void) async throws -> ChatSendResponse
     let chatAbort: @Sendable (String, String) async throws -> Void
     let chatDelete: @Sendable (String, String) async throws -> ChatDeleteResponse
+    let chatRetention: @Sendable (String, String, String) async throws -> ChatRetentionResponse
+    let archiveList: @Sendable () async throws -> ArchiveListResponse
     let employeeList: @Sendable () async throws -> EmployeeListResponse
     let employeeSave: @Sendable (Employee) async throws -> EmployeeSaveResponse
     let employeeDelete: @Sendable (String) async throws -> EmployeeDeleteResponse
@@ -43,6 +70,12 @@ struct RuntimeService: Sendable {
     let knowledgeList: @Sendable () async throws -> KnowledgeListResponse
     let bindSkill: @Sendable (String, String, String) async throws -> BindSkillResponse
     let unbindSkill: @Sendable (String, String) async throws -> UnbindSkillResponse
+    let taskThreadCreate: @Sendable (String, String) async throws -> TaskThreadProjection
+    let taskThreadList: @Sendable (Bool) async throws -> [TaskThreadProjection]
+    let taskThreadMessage: @Sendable (String, String) async throws -> TaskThreadProjection
+    let taskThreadRetention: @Sendable (String, String) async throws -> TaskThreadRetentionResponse
+    let taskProposalGenerate: @Sendable (String, String?) async throws -> TaskProposalResponse
+    let taskProposalConfirm: @Sendable (String, String) async throws -> TaskProposalConfirmationResponse
     let scenarioList: @Sendable () async throws -> [ScenarioSummary]
     let scenarioPropose: @Sendable (String, String) async throws -> ScenarioProposalResponse
     let scenarioSave: @Sendable (String, String, ScenarioProposal) async throws -> ScenarioSaved
@@ -108,13 +141,18 @@ struct RuntimeService: Sendable {
             try await decodeCommand(["events", "--database", try databaseURL().path, "--task-id", taskID, "--after", String(after)], as: RuntimeEventsResponse.self)
         }, cancel: { taskID in
             let _: CancelResponse = try await decodeCommand(["cancel-task", "--database", try databaseURL().path, "--task-id", taskID], as: CancelResponse.self)
-        }, continueRun: { runID, approve, key in
+        }, continueRun: { runID, approve, inputJSON in
             let layout = try runtimeLayout()
-            return try await decodeCommand([
+            var arguments = [
                 "continue-run", "--repository-root", layout.resourceRoot.path,
-                "--database", try databaseURL().path, "--run-id", runID,
-                "--authorized-root", layout.outputDirectory.path, approve ? "--approve" : "--reject"
-            ], environment: key.map { ["DEEPSEEK_API_KEY": $0] } ?? [:], as: RunContinuationResponse.self)
+                "--database", try databaseURL().path, "--run-id", runID
+            ]
+            if let inputJSON {
+                arguments.append(contentsOf: ["--input-json", inputJSON])
+            } else {
+                arguments.append(contentsOf: ["--authorized-root", layout.outputDirectory.path, approve ? "--approve" : "--reject"])
+            }
+            return try await decodeCommand(arguments, environment: approve || inputJSON != nil ? try ModelConfiguration.environment() : [:], as: RunContinuationResponse.self)
         }, resolveUnknown: { actionID, status in
             let layout = try runtimeLayout()
             let evidence = try JSONSerialization.data(withJSONObject: [
@@ -128,15 +166,15 @@ struct RuntimeService: Sendable {
                 "--database", try databaseURL().path,
                 "--action-id", actionID, "--status", status,
                 "--evidence-json", evidenceJSON
-            ], environment: KeychainService.load().map { ["DEEPSEEK_API_KEY": $0] } ?? [:], as: RunContinuationResponse.self)
+            ], environment: try ModelConfiguration.environment(), as: RunContinuationResponse.self)
         }, chatHistory: { conversationID, employeeID in
             try await decodeCommand(["chat-history", "--database", try databaseURL().path, "--conversation-id", conversationID, "--employee-id", employeeID], as: ChatHistoryResponse.self)
-        }, chatSend: { conversationID, employeeID, input, key, replaceMessageID, onDelta in
+        }, chatSend: { conversationID, employeeID, input, _, replaceMessageID, onDelta in
             var arguments = ["chat-send", "--stream-events", "--repository-root", try runtimeLayout().resourceRoot.path, "--database", try databaseURL().path, "--conversation-id", conversationID, "--employee-id", employeeID, "--input", input]
             if let replaceMessageID { arguments.append(contentsOf: ["--replace-message-id", replaceMessageID]) }
             return try await streamChatCommand(
                 arguments,
-                environment: ["DEEPSEEK_API_KEY": key],
+                environment: try ModelConfiguration.environment(),
                 onDelta: onDelta
             )
         }, chatAbort: { conversationID, employeeID in
@@ -146,6 +184,10 @@ struct RuntimeService: Sendable {
             ], as: ChatAbortResponse.self)
         }, chatDelete: { conversationID, employeeID in
             try await decodeCommand(["chat-delete", "--database", try databaseURL().path, "--conversation-id", conversationID, "--employee-id", employeeID], as: ChatDeleteResponse.self)
+        }, chatRetention: { conversationID, employeeID, operation in
+            try await decodeCommand(["chat-retention", "--database", try databaseURL().path, "--conversation-id", conversationID, "--employee-id", employeeID, "--operation", operation], as: ChatRetentionResponse.self)
+        }, archiveList: {
+            try await decodeCommand(["archive-list", "--database", try databaseURL().path], as: ArchiveListResponse.self)
         }, employeeList: {
             try await decodeCommand(["employees-list", "--repository-root", try runtimeLayout().resourceRoot.path, "--database", try databaseURL().path], as: EmployeeListResponse.self)
         }, employeeSave: { employee in
@@ -183,11 +225,45 @@ struct RuntimeService: Sendable {
                 "--agent-id", agentID,
                 "--skill-id", skillID
             ], as: UnbindSkillResponse.self)
+        }, taskThreadCreate: { title, objective in
+            try await decodeCommand([
+                "task-thread-create", "--database", try databaseURL().path,
+                "--title", title, "--objective", objective
+            ], as: TaskThreadProjection.self)
+        }, taskThreadList: { archived in
+            var arguments = ["task-thread-list", "--database", try databaseURL().path]
+            if archived { arguments.append("--archived") }
+            return try await decodeCommand(arguments, as: [TaskThreadProjection].self)
+        }, taskThreadMessage: { threadID, input in
+            try await decodeCommand([
+                "task-thread-message", "--database", try databaseURL().path,
+                "--thread-id", threadID, "--input", input
+            ], as: TaskThreadProjection.self)
+        }, taskThreadRetention: { threadID, operation in
+            try await decodeCommand([
+                "task-thread-retention", "--database", try databaseURL().path,
+                "--thread-id", threadID, "--operation", operation
+            ], as: TaskThreadRetentionResponse.self)
+        }, taskProposalGenerate: { threadID, preferredAgentID in
+            let layout = try runtimeLayout()
+            var arguments = [
+                "task-proposal-generate", "--repository-root", layout.resourceRoot.path,
+                "--database", try databaseURL().path, "--thread-id", threadID
+            ]
+            if let preferredAgentID { arguments.append(contentsOf: ["--preferred-agent-id", preferredAgentID]) }
+            return try await decodeCommand(arguments, environment: try ModelConfiguration.environment(), as: TaskProposalResponse.self)
+        }, taskProposalConfirm: { proposalID, proposalHash in
+            let layout = try runtimeLayout()
+            return try await decodeCommand([
+                "task-proposal-confirm", "--repository-root", layout.resourceRoot.path,
+                "--database", try databaseURL().path, "--proposal-id", proposalID,
+                "--proposal-hash", proposalHash
+            ], environment: try ModelConfiguration.environment(), as: TaskProposalConfirmationResponse.self)
         }, scenarioList: {
             try await decodeCommand([
                 "scenario-list", "--database", try databaseURL().path
             ], as: [ScenarioSummary].self)
-        }, scenarioPropose: { objective, key in
+        }, scenarioPropose: { objective, _ in
             let input = try JSONSerialization.data(withJSONObject: [
                 "objective": objective,
                 "constraints": ["Phase 1 固定串行执行"],
@@ -204,7 +280,7 @@ struct RuntimeService: Sendable {
                 "--repository-root", layout.resourceRoot.path,
                 "--database", try databaseURL().path,
                 "--input-json", String(decoding: input, as: UTF8.self),
-            ], environment: ["DEEPSEEK_API_KEY": key], as: ScenarioProposalResponse.self)
+            ], environment: try ModelConfiguration.environment(), as: ScenarioProposalResponse.self)
         }, scenarioSave: { scenarioID, source, proposal in
             let payload = String(decoding: try JSONEncoder().encode(proposal), as: UTF8.self)
             return try await decodeCommand([
@@ -227,14 +303,14 @@ struct RuntimeService: Sendable {
             try await decodeCommand([
                 "business-flow-list", "--database", try databaseURL().path,
             ], as: [BusinessFlowProjection].self)
-        }, businessFlowContinue: { flowID, key in
+        }, businessFlowContinue: { flowID, _ in
             let layout = try runtimeLayout()
             return try await decodeCommand([
                 "business-flow-continue",
                 "--repository-root", layout.resourceRoot.path,
                 "--database", try databaseURL().path,
                 "--flow-id", flowID,
-            ], environment: key.map { ["DEEPSEEK_API_KEY": $0] } ?? [:], as: BusinessFlowContinueResponse.self)
+            ], environment: try ModelConfiguration.environment(), as: BusinessFlowContinueResponse.self)
         })
     }
 

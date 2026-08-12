@@ -4,11 +4,13 @@ import SwiftUI
 struct OfficeWorkspaceView: View {
     @ObservedObject var store: TaskStore
     @ObservedObject var employeeStore: EmployeeStore
+    let openWork: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var contentVisible = false
     @State private var dataAnimationProgress = 0.0
+    @FocusState private var taskComposerFocused: Bool
 
     private var snapshot: OfficeSnapshot {
         if let scene = OfficeDemoScene.current { return scene.snapshot }
@@ -29,6 +31,7 @@ struct OfficeWorkspaceView: View {
                     pageHeader(compact: compact)
                         .opacity(contentVisible ? 1 : 0)
                         .offset(y: contentVisible || reduceMotion ? 0 : 8)
+                    unifiedTaskEntry(compact: compact)
                     if let message = snapshot.runtimeMessage { runtimeBanner(message) }
                     if snapshot.isLoading { loadingState }
                     else {
@@ -66,6 +69,59 @@ struct OfficeWorkspaceView: View {
             contentVisible = false
             dataAnimationProgress = 0
         }
+    }
+
+    private func unifiedTaskEntry(compact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("交代一项工作")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(palette.ink)
+                Text("直接描述目标。系统会先提出单员工或多员工方案，确认后才执行。")
+                    .font(.caption)
+                    .foregroundStyle(palette.muted)
+            }
+
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+                TextField("例如：调研同类产品，并整理成一份产品决策文档", text: $store.draft, axis: .vertical)
+                    .textFieldStyle(.plain).font(.body).lineLimit(1...6)
+                    .frame(minHeight: 38, alignment: .topLeading)
+                    .focused($taskComposerFocused)
+                    .onSubmit(submitWork)
+                HStack(spacing: AppTheme.Spacing.xs) {
+                    Image(systemName: "plus").foregroundStyle(palette.muted).frame(width: 28, height: 28)
+                    Spacer()
+                    Text("Enter 提交 · Shift+Enter 换行").font(.caption2).foregroundStyle(palette.mutedSoft)
+                    Button(action: submitWork) {
+                        Group {
+                            if store.isSubmitting { ProgressView().controlSize(.small) }
+                            else { Image(systemName: "arrow.up").font(.callout.weight(.bold)) }
+                        }
+                        .foregroundStyle(canSubmitWork ? palette.surfaceCard : palette.mutedSoft)
+                        .frame(width: 32, height: 32)
+                        .background(canSubmitWork ? palette.ink : palette.hairlineSoft, in: Circle())
+                    }
+                    .buttonStyle(.plain).disabled(!canSubmitWork)
+                    .help("提出任务方案").accessibilityLabel("提出任务方案")
+                }
+            }
+            .padding(.horizontal, AppTheme.Spacing.md).padding(.top, AppTheme.Spacing.md).padding(.bottom, AppTheme.Spacing.xs)
+            .creamFloatingComposer(focused: taskComposerFocused)
+            .frame(maxWidth: .infinity)
+        }
+        .padding(compact ? 16 : 20)
+        .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.xl).stroke(palette.hairlineSoft) }
+    }
+
+    private var canSubmitWork: Bool {
+        !store.isSubmitting && !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func submitWork() {
+        guard canSubmitWork else { return }
+        store.proposeWork()
+        openWork()
     }
 
     private func pageHeader(compact: Bool) -> some View {

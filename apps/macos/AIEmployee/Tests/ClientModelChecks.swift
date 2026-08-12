@@ -95,8 +95,8 @@ enum ClientModelChecks {
             "mixed Runtime and ISO timestamps sort chronologically"
         )
         expect(
-            AppDestination.allCases == [.office, .contacts, .work, .scenes, .knowledge, .skills, .tools, .settings],
-            "main shell exposes the approved destinations with scenes after work"
+            AppDestination.allCases == [.office, .contacts, .work, .knowledge, .skills, .tools, .archive, .settings],
+            "main shell exposes only the approved user-facing destinations"
         )
         let flowPayload = """
         {"schema_version":"1.0.0","business_flow_id":"flow_12345678","root_task_id":"task_root","scenario_id":"scenario_launch","scenario_version_id":"scenario_launch:v1","scenario_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"发布准备","objective":"形成发布方案","status":"running","root_deliverable_id":null,"work_orders":[{"id":"work_12345678","node_id":"research","child_task_id":"task_child","assignee_agent_id":"maya","role":"executor","goal":"研究","status":"ready","revision":1}]}
@@ -112,7 +112,7 @@ enum ClientModelChecks {
         expect(ToolPresentation.actionTitle("create_file") == "创建文件", "tool action titles stay localized")
         expect(ToolPresentation.riskLabel(2) == "每次确认", "tool risk labels stay localized")
         expect(!AppDestination.primary.contains(.settings), "settings stays at the bottom of the global sidebar")
-        expect(AppDestination.primary.firstIndex(of: .scenes) == 3, "scenes is placed between work and knowledge")
+        expect(AppDestination.primary == [.office, .contacts, .work, .knowledge, .skills, .tools], "archive is pinned above settings while scenario builder stays out of the main list")
 
         var alex = Employee.draft()
         alex.id = "ai-product-manager"
@@ -229,6 +229,13 @@ enum ClientModelChecks {
         {"schema_version":"1.0","input_tokens":0,"output_tokens":0,"estimated_cost_cny":0,"model_calls":0,"points":[],"pricing_model":"deepseek-v4-flash","pricing_basis":"input_cache_miss"}
         """.data(using: .utf8)!
         expect(try! JSONDecoder().decode(UsageSummaryResponse.self, from: emptyUsage).officeSummary == nil, "zero model calls stay as empty placeholder")
+
+        let taskRoomPayload = """
+        {"schema_version":"1.0.0","id":"thread-1","title":"市场调研","status":"running","current_revision":1,"root_task_id":"root-1","execution":null,"created_at":"1","updated_at":"2","archived_at":null,"messages":[],"room":{"schema_version":"1.0.0","thread_id":"thread-1","participants":[{"agent_id":"researcher","name":"数据搜集员工","role":"研究员","avatar_path":null,"status":"running"}],"items":[{"id":"timeline-1","sequence":1,"role":"agent","kind":"agent_update","content":"开始检索","created_at":"2","agent_id":"researcher","agent_name":"数据搜集员工","agent_role":"研究员","avatar_path":null,"task_id":"task-1","run_id":"run-1","action_id":null,"approval_id":null,"handoff_id":null,"deliverable_id":null,"status":"started","tool_id":null,"action":null,"artifact_uri":null}]}}
+        """.data(using: .utf8)!
+        let taskRoom = try! JSONDecoder().decode(TaskThreadProjection.self, from: taskRoomPayload)
+        expect(taskRoom.room.participants.first?.name == "数据搜集员工", "task room decodes participant identity")
+        expect(taskRoom.room.items.first?.role == "agent" && taskRoom.room.items.first?.runID == "run-1", "task room binds agent message to canonical run")
 
         print("client model checks passed")
     }

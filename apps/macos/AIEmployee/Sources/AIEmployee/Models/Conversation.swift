@@ -58,3 +58,35 @@ struct ChatDeleteResponse: Codable, Sendable {
     let deleted: Bool
     enum CodingKeys: String, CodingKey { case schemaVersion = "schema_version"; case conversationID = "conversation_id"; case deleted }
 }
+
+struct ChatRetentionResponse: Codable, Sendable {
+    let schemaVersion: String
+    let conversationID: String
+    let operation: String
+    let updated: Bool
+    enum CodingKeys: String, CodingKey { case schemaVersion = "schema_version"; case conversationID = "conversation_id"; case operation, updated }
+}
+
+struct ArchivedConversation: Codable, Identifiable, Sendable {
+    let conversationID: String
+    let employeeID: String
+    let employeeName: String
+    let employeeRole: String
+    let updatedAt: String
+    let preview: String?
+    var id: String { conversationID }
+    enum CodingKeys: String, CodingKey {
+        case conversationID = "conversation_id"
+        case employeeID = "employee_id"
+        case employeeName = "employee_name"
+        case employeeRole = "employee_role"
+        case updatedAt = "updated_at"
+        case preview
+    }
+}
+
+struct ArchiveListResponse: Codable, Sendable {
+    let schemaVersion: String
+    let conversations: [ArchivedConversation]
+    enum CodingKeys: String, CodingKey { case schemaVersion = "schema_version"; case conversations }
+}

@@ -1,6 +1,100 @@
 import AppKit
 import SwiftUI
 
+struct CreamAvatar: View {
+    let path: String?
+    let name: String
+    var size: CGFloat = 32
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Group {
+            if let path, let image = NSImage(contentsOfFile: path) {
+                Image(nsImage: image).resizable().scaledToFill()
+            } else {
+                ZStack {
+                    Circle().fill(palette.primary.opacity(0.14))
+                    Text(String(name.prefix(1)))
+                        .font(.system(size: size * 0.42, weight: .semibold))
+                        .foregroundStyle(palette.primary)
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .accessibilityLabel(name)
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+struct CreamProgressBar: View {
+    let value: Double
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule().fill(palette.surfaceSoft)
+                Capsule()
+                    .fill(palette.primary)
+                    .frame(width: proxy.size.width * min(max(value, 0), 1))
+            }
+        }
+        .frame(height: 4)
+        .accessibilityElement()
+        .accessibilityLabel("进度")
+        .accessibilityValue("\(Int(min(max(value, 0), 1) * 100))%")
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct CreamFloatingComposerSurface: ViewModifier {
+    let focused: Bool
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AppTheme.Elevation.composerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: AppTheme.Elevation.composerRadius, style: .continuous)
+                    .stroke(focused ? palette.primary.opacity(0.20) : palette.hairlineSoft.opacity(0.72), lineWidth: 1)
+            }
+            .shadow(color: focused ? palette.primary.opacity(0.10) : .clear, radius: 8)
+            .shadow(color: palette.shadow, radius: AppTheme.Elevation.composerRadius, y: AppTheme.Elevation.composerY)
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct CreamSidebarRowSurface: ViewModifier {
+    let isSelected: Bool
+    let isHovered: Bool
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content.background(
+            isSelected ? palette.primary.opacity(0.12)
+                : isHovered ? palette.surfaceCard.opacity(0.72)
+                : Color.clear,
+            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+        )
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+extension View {
+    func creamFloatingComposer(focused: Bool) -> some View {
+        modifier(CreamFloatingComposerSurface(focused: focused))
+    }
+
+    func creamSidebarRowSurface(isSelected: Bool, isHovered: Bool) -> some View {
+        modifier(CreamSidebarRowSurface(isSelected: isSelected, isHovered: isHovered))
+    }
+}
+
 struct CreamPrimaryButtonStyle: ButtonStyle {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

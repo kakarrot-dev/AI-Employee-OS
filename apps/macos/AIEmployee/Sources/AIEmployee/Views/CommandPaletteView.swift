@@ -17,7 +17,7 @@ struct CommandPaletteView: View {
 
     private var commands: [PaletteCommand] {
         var all = [
-            PaletteCommand(id: "action-new-work", section: .actions, title: "交给员工新工作", subtitle: "进入员工会话并开始工作", image: "plus", searchTerms: "新建 委派 工作", action: newTask)
+            PaletteCommand(id: "action-new-work", section: .actions, title: "新建工作", subtitle: "在办公室描述目标，由系统匹配员工", image: "plus", searchTerms: "新建 委派 工作", action: newTask)
         ]
         all.append(contentsOf: employees.prefix(6).map { employee in
             PaletteCommand(

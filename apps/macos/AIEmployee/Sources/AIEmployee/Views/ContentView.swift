@@ -6,7 +6,7 @@ struct ContentView: View {
     @ObservedObject var employeeStore: EmployeeStore
     @ObservedObject var capabilityStore: CapabilityStore
     @StateObject private var knowledgeStore = KnowledgeLibraryStore()
-    @StateObject private var scenarioStore = ScenarioStore()
+    @StateObject private var archiveStore = ArchiveStore()
     @AppStorage("appDestination") private var destinationRaw = AppDestination.office.rawValue
     @SceneStorage("workComposerPresented") private var workComposerPresented = false
     @State private var demoEditorEmployee: Employee?
@@ -97,7 +97,6 @@ struct ContentView: View {
                 if scene.hasPrefix("knowledge") { destinationRaw = AppDestination.knowledge.rawValue }
                 if scene.hasPrefix("tools") { destinationRaw = AppDestination.tools.rawValue }
                 if scene.hasPrefix("work") { destinationRaw = AppDestination.work.rawValue }
-                if scene.hasPrefix("scenes") { destinationRaw = AppDestination.scenes.rawValue }
             }
 #endif
             Task {
@@ -111,7 +110,9 @@ struct ContentView: View {
     private var workspace: some View {
         switch destination.wrappedValue {
         case .office:
-            OfficeWorkspaceView(store: store, employeeStore: employeeStore)
+            OfficeWorkspaceView(store: store, employeeStore: employeeStore, openWork: {
+                destination.wrappedValue = .work
+            })
         case .contacts:
             EmployeeDirectoryView(
                 store: employeeStore,
@@ -120,19 +121,18 @@ struct ContentView: View {
                 editDemoEmployee: { demoEditorEmployee = $0 }
             )
         case .work:
+            TaskThreadWorkspaceView(store: store)
+        case .archive:
+            ArchiveWorkspaceView(store: archiveStore, taskStore: store)
+        case .employeeChat:
             EmployeeChatWorkspaceView(
                 store: store,
                 conversationStore: conversationStore,
                 employeeStore: employeeStore,
                 capabilityStore: capabilityStore,
-                scenarioStore: scenarioStore,
                 employee: selectedEmployee,
-                isCreatingWork: $workComposerPresented
-            )
-        case .scenes:
-            ScenarioLibraryWorkspaceView(
-                store: scenarioStore,
-                employees: employeeStore.employees
+                isCreatingWork: $workComposerPresented,
+                openArchive: { destination.wrappedValue = .archive }
             )
         case .skills:
             CapabilityLibraryWorkspaceView(scope: .skills, capabilityStore: capabilityStore)
@@ -148,7 +148,7 @@ struct ContentView: View {
     private func openConversation(_ employee: Employee) {
         employeeStore.selection = employee.id
         conversationStore.select(employee: employee)
-        destination.wrappedValue = .work
+        destination.wrappedValue = .employeeChat
     }
 
     private func openRun(_ run: TaskRun) {
@@ -169,13 +169,8 @@ struct ContentView: View {
     }
 
     private func beginWork() {
-        if let employee = employeeStore.employees.first(where: { $0.status == "active" })
-            ?? employeeStore.employees.first {
-            employeeStore.selection = employee.id
-            conversationStore.select(employee: employee)
-        }
-        destination.wrappedValue = .work
-        workComposerPresented = capabilityStore.tasksEnabled
+        destination.wrappedValue = .office
+        workComposerPresented = false
     }
 
     private var isModalPresented: Bool {

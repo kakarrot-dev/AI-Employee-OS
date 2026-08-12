@@ -25,9 +25,13 @@ struct MainSidebarView: View {
 
             Divider().overlay(palette.hairlineSoft)
 
+            navigationButton(.archive)
+                .padding(.horizontal, AppTheme.Spacing.sm)
+                .padding(.top, AppTheme.Spacing.sm)
+
             navigationButton(.settings)
                 .padding(.horizontal, AppTheme.Spacing.sm)
-                .padding(.vertical, AppTheme.Spacing.sm)
+                .padding(.bottom, AppTheme.Spacing.sm)
                 .help("设置（⌘,）")
         }
         .background(.ultraThinMaterial)

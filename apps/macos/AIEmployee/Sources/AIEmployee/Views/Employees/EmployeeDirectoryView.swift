@@ -163,7 +163,7 @@ struct EmployeeDirectoryView: View {
         .contextMenu {
             if demo == nil {
                 Button("编辑资料") { store.edit(employee) }
-                Button("开始对话") { openChat(employee) }
+                Button("私人聊聊") { openChat(employee) }
                 Divider()
                 Button(employee.status == "active" ? "停用或删除" : "删除", role: .destructive) { confirmingRemoval = employee }
             } else {
@@ -402,10 +402,10 @@ private struct EmployeeProfileView: View {
             }
             Spacer(minLength: 8)
             if !compact {
-                Button("编辑资料", action: edit).buttonStyle(CreamSecondaryButtonStyle())
-                Button("开始对话", action: openChat).buttonStyle(CreamPrimaryButtonStyle()).disabled(isDemo)
+                Button("编辑资料", action: edit).buttonStyle(CreamPrimaryButtonStyle())
+                Button("私人聊聊", action: openChat).buttonStyle(CreamSecondaryButtonStyle()).disabled(isDemo)
             }
-            else { Menu { Button("编辑资料", action: edit); Button("开始对话", action: openChat).disabled(isDemo) } label: { Image(systemName: "ellipsis.circle") } }
+            else { Menu { Button("编辑资料", action: edit); Button("私人聊聊", action: openChat).disabled(isDemo) } label: { Image(systemName: "ellipsis.circle") } }
         }
     }
 

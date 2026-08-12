@@ -47,6 +47,26 @@ struct GraphNodeEvidence: Codable, Identifiable, Sendable {
 
     var id: String { actionID }
 
+    init(
+        stepID: String,
+        actionID: String,
+        status: String,
+        outputAs: String,
+        toolID: String? = nil,
+        action: String? = nil,
+        resource: String? = nil,
+        rationaleSummary: String? = nil
+    ) {
+        self.stepID = stepID
+        self.actionID = actionID
+        self.status = status
+        self.outputAs = outputAs
+        self.toolID = toolID
+        self.action = action
+        self.resource = resource
+        self.rationaleSummary = rationaleSummary
+    }
+
     enum CodingKeys: String, CodingKey {
         case stepID = "step_id"
         case actionID = "action_id"
