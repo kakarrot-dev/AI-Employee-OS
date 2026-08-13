@@ -7,8 +7,10 @@ struct ContentView: View {
     @ObservedObject var capabilityStore: CapabilityStore
     @StateObject private var knowledgeStore = KnowledgeLibraryStore()
     @StateObject private var archiveStore = ArchiveStore()
+    @StateObject private var layoutCoordinator = AppLayoutCoordinator()
     @AppStorage("appDestination") private var destinationRaw = AppDestination.office.rawValue
     @SceneStorage("workComposerPresented") private var workComposerPresented = false
+    @SceneStorage("globalSidebarPreferred") private var globalSidebarPreferred = true
     @State private var demoEditorEmployee: Employee?
     @Environment(\.colorScheme) private var colorScheme
 
@@ -26,6 +28,8 @@ struct ContentView: View {
                 store: store,
                 conversationStore: conversationStore,
                 employeeStore: employeeStore,
+                layoutCoordinator: layoutCoordinator,
+                prefersGlobalNavigation: $globalSidebarPreferred,
                 newWork: { beginWork() }
             ) {
                 workspace

@@ -2,27 +2,54 @@ import SwiftUI
 
 struct SettingsView: View {
     @State private var selection: SettingsSection = .general
+    @State private var compactShowsDetail = false
     @AppStorage(ModelConfiguration.providerKey) private var providerRaw = ""
     @AppStorage(ModelConfiguration.modelKey) private var modelName = ""
     @AppStorage("appAppearance") private var appearanceRaw = AppAppearance.system.rawValue
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        NavigationSplitView {
-            SettingsSidebarView(selection: $selection)
-                .navigationSplitViewColumnWidth(min: 220, ideal: 232, max: 240)
-        } detail: {
-            ScrollView {
-                settingsPage
-                    .frame(maxWidth: 620, alignment: .topLeading)
-                    .padding(.horizontal, 32)
-                    .padding(.vertical, 28)
-            }
-            .background(palette.canvas)
+        AdaptiveBrowser(profile: .settings, compactShowsDetail: $compactShowsDetail) {
+            SettingsSidebarView(selection: adaptiveSelection)
+        } detail: { showsBack in
+            settingsDetail(showsBack: showsBack)
         }
         .tint(palette.primary)
         .moduleNavigationTitle(.settings)
         .onAppear { normalizeModelSelection() }
+    }
+
+    private var adaptiveSelection: Binding<SettingsSection> {
+        Binding(
+            get: { selection },
+            set: { next in
+                selection = next
+                compactShowsDetail = true
+            }
+        )
+    }
+
+    private func settingsDetail(showsBack: Bool) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                if showsBack {
+                    Button {
+                        compactShowsDetail = false
+                    } label: {
+                        Label("返回设置", systemImage: "chevron.left")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(palette.body)
+                    .help("返回设置列表")
+                }
+                settingsPage
+            }
+            .frame(maxWidth: 620, alignment: .topLeading)
+            .padding(.horizontal, showsBack ? 16 : 32)
+            .padding(.vertical, showsBack ? 20 : 28)
+            .frame(maxWidth: .infinity, alignment: .top)
+        }
+        .background(palette.canvas)
     }
 
     @ViewBuilder

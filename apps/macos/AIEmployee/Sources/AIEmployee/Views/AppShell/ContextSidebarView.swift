@@ -56,6 +56,7 @@ struct WorkConversationList: View {
     @ObservedObject var store: TaskStore
     @ObservedObject var conversationStore: ConversationStore
     @ObservedObject var employeeStore: EmployeeStore
+    var didSelect: (() -> Void)? = nil
     @State private var query = ""
     @Environment(\.colorScheme) private var colorScheme
 
@@ -140,6 +141,7 @@ struct WorkConversationList: View {
                             Button {
                                 employeeStore.selection = employee.id
                                 conversationStore.select(employee: employee)
+                                didSelect?()
                             } label: {
                                 WorkConversationRow(
                                     employee: employee,

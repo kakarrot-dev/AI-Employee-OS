@@ -24,29 +24,23 @@ struct OfficeWorkspaceView: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            let compact = proxy.size.width < 700
-            ScrollView {
-                VStack(alignment: .leading, spacing: compact ? 28 : 36) {
-                    pageHeader(compact: compact)
+        AdaptivePage(profile: .office) { layout in
+            let compact = layout.isCompact
+            VStack(alignment: .leading, spacing: compact ? 28 : 36) {
+                pageHeader(compact: compact)
+                    .opacity(contentVisible ? 1 : 0)
+                    .offset(y: contentVisible || reduceMotion ? 0 : 8)
+                unifiedTaskEntry(compact: compact)
+                if let message = snapshot.runtimeMessage { runtimeBanner(message) }
+                if snapshot.isLoading { loadingState }
+                else {
+                    usageSection(compact: compact)
                         .opacity(contentVisible ? 1 : 0)
-                        .offset(y: contentVisible || reduceMotion ? 0 : 8)
-                    unifiedTaskEntry(compact: compact)
-                    if let message = snapshot.runtimeMessage { runtimeBanner(message) }
-                    if snapshot.isLoading { loadingState }
-                    else {
-                        usageSection(compact: compact)
-                            .opacity(contentVisible ? 1 : 0)
-                            .offset(y: contentVisible || reduceMotion ? 0 : 10)
-                    }
+                        .offset(y: contentVisible || reduceMotion ? 0 : 10)
                 }
-                .frame(maxWidth: 1180, alignment: .leading)
-                .padding(.horizontal, compact ? 20 : 32)
-                .padding(.top, compact ? 26 : 34)
-                .padding(.bottom, 64)
-                .frame(maxWidth: .infinity)
-                .animation(reduceMotion ? nil : .easeOut(duration: AppTheme.Motion.standard), value: snapshotRevision)
             }
+            .padding(.bottom, compact ? 24 : 36)
+            .animation(reduceMotion ? nil : .easeOut(duration: AppTheme.Motion.standard), value: snapshotRevision)
         }
         .background(palette.canvas)
         .moduleNavigationTitle(.office)

@@ -8,7 +8,7 @@ struct ArchiveWorkspaceView: View {
     @State private var pendingThreadDeletion: TaskThreadProjection?
 
     var body: some View {
-        ScrollView {
+        AdaptivePage(profile: .archive) { _ in
             LazyVStack(alignment: .leading, spacing: 28) {
                 archiveSection("私聊会话", count: store.conversations.count) {
                     ForEach(store.conversations) { conversation in
@@ -35,9 +35,7 @@ struct ArchiveWorkspaceView: View {
                         .frame(maxWidth: .infinity).padding(.top, 90)
                 }
             }
-            .padding(28)
-            .frame(maxWidth: 920)
-            .frame(maxWidth: .infinity, alignment: .top)
+            .padding(.bottom, 24)
             .animation(.easeInOut(duration: AppTheme.Motion.standard), value: store.conversations.map(\.id))
             .animation(.easeInOut(duration: AppTheme.Motion.standard), value: taskStore.archivedTaskThreads.map(\.id))
         }

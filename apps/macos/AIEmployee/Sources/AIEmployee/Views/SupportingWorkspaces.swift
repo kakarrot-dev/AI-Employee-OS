@@ -18,7 +18,6 @@ struct CapabilityLibraryWorkspaceView: View {
     @State private var tab: CapabilityDetailTab = .document
     @State private var compactShowsDetail = false
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.appWindowWidth) private var appWindowWidth
 
     private var capabilities: [CapabilityLibraryItem] {
         capabilityStore.libraryItems(for: scope)
@@ -42,7 +41,7 @@ struct CapabilityLibraryWorkspaceView: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
+        Group {
             if capabilityStore.isLoading && capabilities.isEmpty {
                 ProgressView(scope == .skills ? "正在读取技能…" : "正在读取工具…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -59,16 +58,12 @@ struct CapabilityLibraryWorkspaceView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if isDisconnected {
                 emptyState
-            } else if appWindowWidth >= 960, proxy.size.width >= 700 {
-                HStack(spacing: 0) {
-                    catalogList.frame(width: min(286, proxy.size.width * 0.36))
-                    Divider().overlay(palette.hairlineSoft)
-                    detail(showsBack: false)
-                }
-            } else if compactShowsDetail {
-                detail(showsBack: true)
             } else {
-                catalogList
+                AdaptiveBrowser(profile: .capabilities, compactShowsDetail: $compactShowsDetail) {
+                    catalogList
+                } detail: { showsBack in
+                    detail(showsBack: showsBack)
+                }
             }
         }
         .background(palette.canvas)
@@ -318,7 +313,6 @@ private struct SkillPackageBrowser: View {
     @State private var expandedFolders: Set<String> = []
     @State private var compactShowsDocument = false
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.appWindowWidth) private var appWindowWidth
 
     private var selectedSource: String? {
         guard let selectedDocumentID else { return nil }
@@ -341,22 +335,17 @@ private struct SkillPackageBrowser: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            if appWindowWidth >= 880, proxy.size.width >= 620 {
-                HStack(spacing: 0) {
-                    directory.frame(width: min(230, proxy.size.width * 0.32))
-                    Divider().overlay(palette.hairlineSoft)
-                    document(showsBack: false)
-                }
-            } else if compactShowsDocument {
-                document(showsBack: true)
-            } else {
-                directory
-            }
+        AdaptiveBrowser(profile: .skillPackage, compactShowsDetail: $compactShowsDocument) {
+            directory
+        } detail: { showsBack in
+            document(showsBack: showsBack)
         }
         .onAppear {
             expandedFolders = Set(item.directory.filter(\.isFolder).map(\.id))
             selectedDocumentID = item.directory.first { $0.name == "SKILL.md" }?.id
+            if selectedDocumentID == nil {
+                compactShowsDocument = false
+            }
         }
     }
 

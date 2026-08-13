@@ -12,13 +12,15 @@ struct EmployeeChatWorkspaceView: View {
     let openArchive: () -> Void
 
     @SceneStorage("taskInspectorVisible") private var inspectorVisible = true
-    @State private var inspectorWidth: CGFloat = 320
-    @State private var workspaceWidth: CGFloat = 0
+    @State private var compactShowsPrimary = true
+    @State private var resolvedLayout = AppLayoutResolver.resolve(
+        profile: .employeeChat,
+        availableSize: CGSize(width: 1_048, height: 768),
+        context: .default,
+        prefersInspector: true
+    )
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.appWindowWidth) private var appWindowWidth
-
-    private static let conversationListMinimumWindowWidth: CGFloat = 960
 
     private var activeRun: TaskRun? {
         guard supportsTasks else { return nil }
@@ -41,10 +43,39 @@ struct EmployeeChatWorkspaceView: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            workspace(availableWidth: proxy.size.width)
+        AdaptiveWorkspace(
+            profile: .employeeChat,
+            compactShowsPrimary: $compactShowsPrimary,
+            prefersInspector: inspectorPreference,
+            onLayoutChange: { resolvedLayout = $0 }
+        ) {
+            WorkConversationList(
+                store: store,
+                conversationStore: conversationStore,
+                employeeStore: employeeStore,
+                didSelect: { compactShowsPrimary = true }
+            )
+        } primary: { _, _ in
+            VStack(spacing: 0) {
+                EmployeeMessageStream(store: store, conversationStore: conversationStore, employee: employee, showsTasks: supportsTasks)
+                EmployeeComposerContainer(
+                    store: store,
+                    conversationStore: conversationStore,
+                    activeRun: activeRun,
+                    employeeName: employee?.name ?? conversationStore.employeeName,
+                    supportsTasks: supportsTasks,
+                    isCreatingWork: $isCreatingWork
+                )
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(palette.canvas)
+        } inspector: {
+            TaskInspectorView(
+                run: selectedRun,
+                store: store,
+                employeeName: employee?.name ?? conversationStore.employeeName
+            )
         }
-        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { workspaceWidth = $0 }
         .onChange(of: conversationStore.pendingTaskRefresh) { _, pending in
             guard pending else { return }
             conversationStore.clearPendingTaskRefresh()
@@ -52,6 +83,16 @@ struct EmployeeChatWorkspaceView: View {
         }
         .navigationTitle("")
         .toolbar {
+            if resolvedLayout.presentation == .singlePane, compactShowsPrimary {
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        compactShowsPrimary = false
+                    } label: {
+                        Label("会话列表", systemImage: "chevron.left")
+                    }
+                    .help("返回员工会话列表")
+                }
+            }
             ToolbarItem(placement: .navigation) {
                 EmployeeToolbarTitle(employee: employee, run: activeRun, reduceMotion: reduceMotion)
             }
@@ -68,62 +109,24 @@ struct EmployeeChatWorkspaceView: View {
                     .disabled(conversationStore.isSending)
                 }
             }
-            if supportsTasks, selectedRun != nil {
+            if supportsTasks, selectedRun != nil, resolvedLayout.inspectorAvailable {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         inspectorVisible.toggle()
                     } label: {
-                        Label(showsInspector(availableWidth: workspaceWidth) ? "隐藏任务面板" : "显示任务面板", systemImage: "sidebar.right")
+                        Label(resolvedLayout.showsInspector ? "隐藏任务面板" : "显示任务面板", systemImage: "sidebar.right")
                     }
-                    .help(workspaceWidth < 1020 ? "扩大窗口后可显示工作检查器" : (showsInspector(availableWidth: workspaceWidth) ? "隐藏工作检查器" : "显示工作检查器"))
-                    .disabled(workspaceWidth < 1020)
+                    .help(resolvedLayout.showsInspector ? "隐藏工作检查器" : "显示工作检查器")
                 }
             }
         }
     }
 
-    @ViewBuilder
-    private func workspace(availableWidth: CGFloat) -> some View {
-        HSplitView {
-            if showsConversationList(availableWidth: availableWidth) {
-                WorkConversationList(store: store, conversationStore: conversationStore, employeeStore: employeeStore)
-                    .frame(minWidth: 230, idealWidth: 250, maxWidth: 280)
-            }
-
-            VStack(spacing: 0) {
-                EmployeeMessageStream(store: store, conversationStore: conversationStore, employee: employee, showsTasks: supportsTasks)
-                EmployeeComposerContainer(
-                    store: store,
-                    conversationStore: conversationStore,
-                    activeRun: activeRun,
-                    employeeName: employee?.name ?? conversationStore.employeeName,
-                    supportsTasks: supportsTasks,
-                    isCreatingWork: $isCreatingWork
-                )
-            }
-            .frame(minWidth: 460, maxWidth: .infinity, maxHeight: .infinity)
-            .background(palette.canvas)
-
-            if showsInspector(availableWidth: availableWidth) {
-                TaskInspectorView(
-                    run: selectedRun,
-                    store: store,
-                    employeeName: employee?.name ?? conversationStore.employeeName
-                )
-                    .frame(minWidth: 280, idealWidth: inspectorWidth, maxWidth: 420)
-                    .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { newWidth in
-                        inspectorWidth = min(max(newWidth, 280), 420)
-                    }
-            }
-        }
-    }
-
-    private func showsInspector(availableWidth: CGFloat) -> Bool {
-        supportsTasks && selectedRun != nil && inspectorVisible && availableWidth >= 1020
-    }
-
-    private func showsConversationList(availableWidth: CGFloat) -> Bool {
-        appWindowWidth >= Self.conversationListMinimumWindowWidth && availableWidth >= 700
+    private var inspectorPreference: Binding<Bool> {
+        Binding(
+            get: { supportsTasks && selectedRun != nil && inspectorVisible },
+            set: { inspectorVisible = $0 }
+        )
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
@@ -1042,6 +1045,7 @@ private struct EmployeeComposerContainer: View {
     let employeeName: String
     let supportsTasks: Bool
     @Binding var isCreatingWork: Bool
+    @Environment(\.resolvedAppLayout) private var layout
 
     var body: some View {
         Group {
@@ -1068,7 +1072,9 @@ private struct EmployeeComposerContainer: View {
                 )
             }
         }
-        .padding(.horizontal, AppTheme.Spacing.lg)
+        .frame(maxWidth: AppLayoutProfile.employeeChat.primary.maxWidth)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, layout.isCompact ? 16 : AppTheme.Spacing.lg)
         .padding(.bottom, AppTheme.Spacing.md)
         .onChange(of: store.awaitingWorkConfirmation) { _, awaitingConfirmation in
             if awaitingConfirmation { isCreatingWork = false }

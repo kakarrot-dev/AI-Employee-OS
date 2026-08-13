@@ -4,22 +4,28 @@ import SwiftUI
 struct TaskThreadWorkspaceView: View {
     @ObservedObject var store: TaskStore
     @Environment(\.colorScheme) private var colorScheme
-    @State private var showsInspector = true
+    @SceneStorage("workInspectorPreferred") private var inspectorPreferred = true
+    @State private var compactShowsRoom = false
     @State private var roomDraft = ""
     @State private var pendingDeletion: TaskThreadProjection?
     @FocusState private var composerFocused: Bool
 
     var body: some View {
-        HSplitView {
+        AdaptiveWorkspace(
+            profile: .work,
+            compactShowsPrimary: $compactShowsRoom,
+            prefersInspector: inspectorPreference
+        ) {
             threadList
+        } primary: { showsBack, layout in
             if let thread = store.activeThread {
-                HSplitView {
-                    taskRoom(thread)
-                    if showsInspector { inspector(thread) }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                taskRoom(thread, showsBack: showsBack, layout: layout)
             } else {
-                emptyDetail
+                emptyDetail(showsBack: showsBack)
+            }
+        } inspector: {
+            if let thread = store.activeThread {
+                inspector(thread)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -39,6 +45,13 @@ struct TaskThreadWorkspaceView: View {
         }
     }
 
+    private var inspectorPreference: Binding<Bool> {
+        Binding(
+            get: { store.activeThread != nil && inspectorPreferred },
+            set: { inspectorPreferred = $0 }
+        )
+    }
+
     private var threadList: some View {
         VStack(spacing: 0) {
             ScrollView {
@@ -47,7 +60,10 @@ struct TaskThreadWorkspaceView: View {
                         TaskThreadSidebarRow(
                             thread: thread,
                             isSelected: store.activeThread?.id == thread.id,
-                            select: { store.selectThread(thread) },
+                            select: {
+                                store.selectThread(thread)
+                                compactShowsRoom = true
+                            },
                             archive: { store.archiveThread(thread) },
                             restore: { store.restoreThread(thread) },
                             delete: { pendingDeletion = thread }
@@ -58,22 +74,32 @@ struct TaskThreadWorkspaceView: View {
                 .padding(.vertical, 8)
             }
         }
-        .frame(minWidth: 210, idealWidth: 236, maxWidth: 270, maxHeight: .infinity)
     }
 
-    private var emptyDetail: some View {
-        ContentUnavailableView(
-            "还没有工作",
-            systemImage: "tray",
-            description: Text("在办公室描述目标后，Task 会持续保存在这里。")
-        )
-        .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
+    private func emptyDetail(showsBack: Bool) -> some View {
+        VStack(spacing: 16) {
+            if showsBack {
+                Button {
+                    compactShowsRoom = false
+                } label: {
+                    Label("返回工作列表", systemImage: "chevron.left")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(palette.body)
+            }
+            ContentUnavailableView(
+                "还没有工作",
+                systemImage: "tray",
+                description: Text("在办公室描述目标后，Task 会持续保存在这里。")
+            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(palette.canvas)
     }
 
-    private func taskRoom(_ thread: TaskThreadProjection) -> some View {
+    private func taskRoom(_ thread: TaskThreadProjection, showsBack: Bool, layout: ResolvedLayout) -> some View {
         VStack(spacing: 0) {
-            roomHeader(thread)
+            roomHeader(thread, showsBack: showsBack, layout: layout)
             Divider()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
@@ -84,14 +110,13 @@ struct TaskThreadWorkspaceView: View {
                     }
                     ForEach(thread.room.items) { item in timelineItem(item, thread: thread) }
                 }
-                .padding(.horizontal, 28)
+                .padding(.horizontal, layout.isCompact ? 16 : 28)
                 .padding(.vertical, 22)
                 .frame(maxWidth: 820)
                 .frame(maxWidth: .infinity)
             }
-            composer(thread)
+            composer(thread, layout: layout)
         }
-        .frame(minWidth: 500)
     }
 
     private func proposalReview(_ response: TaskProposalResponse) -> some View {
@@ -131,8 +156,19 @@ struct TaskThreadWorkspaceView: View {
         .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg).stroke(palette.hairlineSoft) }
     }
 
-    private func roomHeader(_ thread: TaskThreadProjection) -> some View {
+    private func roomHeader(_ thread: TaskThreadProjection, showsBack: Bool, layout: ResolvedLayout) -> some View {
         HStack(spacing: 12) {
+            if showsBack {
+                Button {
+                    compactShowsRoom = false
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(palette.body)
+                .help("返回工作列表")
+                .accessibilityLabel("返回工作列表")
+            }
             VStack(alignment: .leading, spacing: 4) {
                 Text(thread.title).font(.headline).foregroundStyle(palette.ink)
                 HStack(spacing: -5) {
@@ -145,14 +181,16 @@ struct TaskThreadWorkspaceView: View {
                 }
             }
             Spacer()
-            Button { showsInspector.toggle() } label: {
-                Image(systemName: "sidebar.trailing")
+            if layout.inspectorAvailable {
+                Button { inspectorPreferred.toggle() } label: {
+                    Image(systemName: "sidebar.trailing")
+                }
+                .buttonStyle(.plain)
+                .help(layout.showsInspector ? "隐藏任务详情" : "显示任务详情")
+                .accessibilityLabel(layout.showsInspector ? "隐藏任务详情" : "显示任务详情")
             }
-            .buttonStyle(.plain)
-            .help(showsInspector ? "隐藏任务详情" : "显示任务详情")
-            .accessibilityLabel(showsInspector ? "隐藏任务详情" : "显示任务详情")
         }
-        .padding(.horizontal, 20).padding(.vertical, 12)
+        .padding(.horizontal, layout.isCompact ? 16 : 20).padding(.vertical, 12)
     }
 
     @ViewBuilder
@@ -212,7 +250,7 @@ struct TaskThreadWorkspaceView: View {
         }
     }
 
-    private func composer(_ thread: TaskThreadProjection) -> some View {
+    private func composer(_ thread: TaskThreadProjection, layout: ResolvedLayout) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             TextField(composerPlaceholder(thread), text: $roomDraft, axis: .vertical)
                 .textFieldStyle(.plain).font(.body).lineLimit(1...6)
@@ -235,7 +273,10 @@ struct TaskThreadWorkspaceView: View {
         }
         .padding(.horizontal, AppTheme.Spacing.md).padding(.top, AppTheme.Spacing.md).padding(.bottom, AppTheme.Spacing.xs)
         .creamFloatingComposer(focused: composerFocused)
-        .padding(.horizontal, AppTheme.Spacing.lg).padding(.bottom, AppTheme.Spacing.md)
+        .frame(maxWidth: AppLayoutProfile.work.primary.maxWidth)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, layout.isCompact ? 16 : AppTheme.Spacing.lg)
+        .padding(.bottom, AppTheme.Spacing.md)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(thread.status == "awaiting_input" ? "补充任务信息" : "任务执行状态输入区")
     }

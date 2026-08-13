@@ -10,7 +10,6 @@ struct EmployeeDirectoryView: View {
     @State private var compactShowsProfile = false
     @State private var confirmingRemoval: Employee?
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.appWindowWidth) private var appWindowWidth
 
     private var demo: ContactsDemoData? { ContactsDemoData.current }
     private var employees: [Employee] { demo?.employees ?? store.employees }
@@ -24,19 +23,10 @@ struct EmployeeDirectoryView: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            if appWindowWidth >= 1020, proxy.size.width >= 760 {
-                HStack(spacing: 0) {
-                    directory
-                        .frame(width: min(280, max(232, proxy.size.width * 0.28)))
-                    Divider().overlay(palette.hairlineSoft)
-                    workspace(compact: false)
-                }
-            } else if compactShowsProfile, store.selected != nil {
-                workspace(compact: true)
-            } else {
-                directory
-            }
+        AdaptiveBrowser(profile: .contacts, compactShowsDetail: $compactShowsProfile) {
+            directory
+        } detail: { showsBack in
+            workspace(compact: showsBack)
         }
         .background(palette.canvas)
         .moduleNavigationTitle(.contacts)

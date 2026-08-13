@@ -90,7 +90,6 @@ struct KnowledgeLibraryWorkspaceView: View {
     @State private var expandedFolders: Set<String> = []
     @State private var compactShowsDocument = false
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.appWindowWidth) private var appWindowWidth
 
     private var filteredDocuments: [KnowledgeDocument] {
         guard !query.isEmpty else { return store.documents }
@@ -173,7 +172,7 @@ struct KnowledgeLibraryWorkspaceView: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
+        Group {
             if store.isLoading && store.documents.isEmpty {
                 ProgressView("正在读取 Runtime 知识索引…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -190,16 +189,12 @@ struct KnowledgeLibraryWorkspaceView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if store.documents.isEmpty {
                 emptyState
-            } else if appWindowWidth >= 960, proxy.size.width >= 700 {
-                HStack(spacing: 0) {
-                    documentList.frame(width: min(286, proxy.size.width * 0.36))
-                    Divider().overlay(palette.hairlineSoft)
-                    documentPreview(showsBack: false)
-                }
-            } else if compactShowsDocument {
-                documentPreview(showsBack: true)
             } else {
-                documentList
+                AdaptiveBrowser(profile: .knowledge, compactShowsDetail: $compactShowsDocument) {
+                    documentList
+                } detail: { showsBack in
+                    documentPreview(showsBack: showsBack)
+                }
             }
         }
         .background(palette.canvas)
