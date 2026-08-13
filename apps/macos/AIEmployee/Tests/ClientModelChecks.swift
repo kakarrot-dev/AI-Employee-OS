@@ -114,6 +114,72 @@ enum ClientModelChecks {
         expect(!AppDestination.primary.contains(.settings), "settings stays at the bottom of the global sidebar")
         expect(AppDestination.primary == [.office, .contacts, .work, .knowledge, .skills, .tools], "archive is pinned above settings while scenario builder stays out of the main list")
 
+        let compactContext = AppLayoutResolver.context(
+            windowSize: CGSize(width: 720, height: 572),
+            globalNavigationVisible: false
+        )
+        let compactWork = AppLayoutResolver.resolve(
+            profile: .work,
+            availableSize: compactContext.windowSize,
+            context: compactContext,
+            prefersInspector: true
+        )
+        expect(compactContext.shellClass == .compact, "720pt resolves the compact shell")
+        expect(compactContext.verticalDensity == .compact, "short windows use compact vertical density")
+        expect(compactWork.presentation == .singlePane, "compact work uses a single semantic pane")
+        expect(compactWork.primaryWidth >= 480 && !compactWork.showsCollection && !compactWork.showsInspector, "compact work preserves primary width and removes hidden panes")
+        expect(
+            !AppLayoutResolver.defaultGlobalNavigationVisible(windowSize: compactContext.windowSize, prefersGlobalNavigation: true),
+            "compact shell defaults the global navigation to hidden without erasing preference"
+        )
+
+        let regularContext = AppLayoutResolver.context(
+            windowSize: CGSize(width: 960, height: 600),
+            globalNavigationVisible: true
+        )
+        let regularWork = AppLayoutResolver.resolve(
+            profile: .work,
+            availableSize: CGSize(width: 728, height: 600),
+            context: regularContext,
+            prefersInspector: true
+        )
+        expect(regularContext.shellClass == .regular, "960pt resolves the regular shell")
+        expect(regularWork.presentation == .split, "960pt work keeps collection and primary content")
+        expect(regularWork.primaryWidth >= AppLayoutProfile.work.primary.minWidth, "regular work never compresses primary content below its profile")
+        expect(!regularWork.inspectorAvailable && !regularWork.showsInspector, "regular work omits an inspector that cannot meet minimum widths")
+
+        let expandedContext = AppLayoutResolver.context(
+            windowSize: CGSize(width: 1_280, height: 820),
+            globalNavigationVisible: true
+        )
+        let expandedWork = AppLayoutResolver.resolve(
+            profile: .work,
+            availableSize: CGSize(width: 1_048, height: 820),
+            context: expandedContext,
+            prefersInspector: true
+        )
+        expect(expandedWork.presentation == .splitWithInspector, "1280pt work fits collection, primary content, and inspector")
+        expect(expandedWork.primaryWidth >= AppLayoutProfile.work.primary.minWidth, "expanded work keeps the primary minimum")
+        expect(expandedWork.visiblePanes.contains(.inspector), "expanded work renders its inspector")
+
+        let compactBrowser = AppLayoutResolver.resolve(
+            profile: .contacts,
+            availableSize: compactContext.windowSize,
+            context: compactContext
+        )
+        let compactBrowserCollection = compactBrowser.resolvingSinglePane(.collection)
+        let compactBrowserDetail = compactBrowser.resolvingSinglePane(.primaryContent)
+        expect(compactBrowser.presentation == .singlePane, "compact browsers drill between collection and detail")
+        expect(compactBrowserCollection.showsCollection && !compactBrowserCollection.visiblePanes.contains(.primaryContent), "compact browser collection is the only rendered workspace pane")
+        expect(!compactBrowserDetail.showsCollection && compactBrowserDetail.visiblePanes.contains(.primaryContent), "compact browser detail replaces the collection pane")
+
+        let regularSettings = AppLayoutResolver.resolve(
+            profile: .settings,
+            availableSize: CGSize(width: 728, height: 600),
+            context: regularContext
+        )
+        expect(regularSettings.presentation == .split && regularSettings.primaryWidth >= 480, "settings shares the regular browser contract")
+
         var alex = Employee.draft()
         alex.id = "ai-product-manager"
         alex.name = "Alex"

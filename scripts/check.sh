@@ -16,6 +16,7 @@ python3 scripts/check_generic_runtime.py
 python3 scripts/check_business_flow_runtime.py
 python3 scripts/check_business_flow_ui.py
 python3 scripts/check_task_room_ui.py
+python3 scripts/check_adaptive_layout.py
 PYTHONPATH=runtime/python-agent python3 -m unittest discover -s runtime/python-agent -p 'test_*.py'
 CLIENT_CHECK_BINARY="${TMPDIR:-/tmp}/ai-employee-client-model-checks"
 swiftc \
@@ -27,6 +28,7 @@ swiftc \
   apps/macos/AIEmployee/Sources/AIEmployee/Models/RuntimeCapabilities.swift \
   apps/macos/AIEmployee/Sources/AIEmployee/Models/Scenario.swift \
   apps/macos/AIEmployee/Sources/AIEmployee/Models/TaskThread.swift \
+  apps/macos/AIEmployee/Sources/AIEmployee/DesignSystem/AppLayout.swift \
   apps/macos/AIEmployee/Sources/AIEmployee/Support/EmployeePresentation.swift \
   apps/macos/AIEmployee/Sources/AIEmployee/Support/MarkdownBlock.swift \
   apps/macos/AIEmployee/Sources/AIEmployee/Support/TaskPresentation.swift \

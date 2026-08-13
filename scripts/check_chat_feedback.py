@@ -216,8 +216,8 @@ assert "entries.append(contentsOf: conversationRuns.filter" in workspace, (
 assert "entries.append(contentsOf: store.runs.filter" not in workspace, (
     "the chat timeline must never append the global task history"
 )
-assert "@Environment(\\.appWindowWidth)" in workspace and "conversationListMinimumWindowWidth" in workspace, (
-    "compact windows must not swap the global sidebar for the conversation sidebar after toggling"
+assert "AdaptiveWorkspace(" in workspace and "conversationListMinimumWindowWidth" not in workspace, (
+    "chat layout must use the shared workspace resolver instead of a local window breakpoint"
 )
 assert "private var selectedRun: TaskRun? {\n        activeRun\n    }" in workspace, (
     "the current-work inspector must not present a terminal historical run as active work"
