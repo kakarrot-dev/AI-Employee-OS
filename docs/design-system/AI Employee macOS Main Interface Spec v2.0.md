@@ -395,6 +395,47 @@ Settings 使用独立 macOS `Settings` Scene，通过 `⌘,` 打开。Bloome 的
 
 ## 15. 窗口缩放
 
+### 15.0 全局自适应契约
+
+- 所有尺寸判断使用主窗口内容区的逻辑点（pt），不使用屏幕物理分辨率、像素密度或显示器型号。
+- `AppLayoutCoordinator` 是 Scene 级唯一布局事实源。它接收窗口内容区尺寸和用户偏好，输出只读的 `AppLayoutContext` 与 `ResolvedLayout`。
+- 页面只能声明语义 Pane 和 `AppLayoutProfile`，不得读取原始窗口宽度、复制断点或自行决定全局 Sidebar 的显隐。
+- Pane 仅有四种语义角色：`globalNavigation`、`collection`、`primaryContent`、`inspector`。业务页面不得用具体页面名称建立第二套布局角色。
+- 布局必须区分 `preferred` 与 `resolved`：`preferred` 保存用户希望显示的 Sidebar / Inspector；`resolved` 根据当前空间决定实际显示内容。缩小窗口只改变 `resolved`，不得覆盖用户偏好。
+- 通用页面骨架只有三类：
+  - `AdaptivePage`：办公室、归档等单主内容页面。
+  - `AdaptiveBrowser`：通讯录、知识库、技能库、工具库、设置等集合到详情页面。
+  - `AdaptiveWorkspace`：工作库、员工私聊等集合、主内容与检查器页面。
+- 主内容优先级最高，`primaryContent` 可用宽度不得低于 `480pt`。任何 Pane 都不得被压缩到自身 `AppLayoutProfile` 声明的最小宽度以下。
+- 被 `resolved` 隐藏的 Pane 必须停止渲染，不得仅靠透明度、偏移或裁切隐藏，也不得继续出现在 Accessibility Tree 中。
+- 窗口缩放只改变布局投影，不得修改员工、会话、任务、文档等业务选择，不得清空草稿、滚动位置或执行状态。
+- Inspector 只承载补充信息和次级操作，不得拥有完成核心任务所必需的唯一操作。
+- 单 Pane 模式必须提供明确的选择进入详情和返回集合路径；不能依赖窗口放大才能返回。
+- Message Stream 与 Composer 默认最大宽度为 `820pt`，页面正文使用各自 `AppLayoutProfile` 的最大宽度；宽屏多余空间保持留白或分配给 Inspector。
+- 高度低于 `600pt` 时只切换垂直紧凑密度并保证可滚动，不改变页面信息架构或 Pane 组合。
+
+### 15.0.1 全局 Sidebar 解析规则
+
+- 窗口内容区宽度 `< 960pt` 时进入 compact shell，全局 Sidebar 的 `resolved` 默认值为收起，可通过原生 Sidebar 控件临时打开。
+- 窗口内容区宽度 `>= 960pt` 时进入 regular shell，全局 Sidebar 的 `resolved` 跟随用户 `preferred` 值。
+- compact 与 regular 之间切换不得丢失用户在 regular shell 下的 Sidebar 偏好。
+
+### 15.0.2 Workspace 解析规则
+
+- `AppLayoutProfile` 为每个语义 Pane 声明 `min / ideal / max`，布局解析器按 Pane 最小宽度之和判断可用组合，不使用页面私有断点。
+- compact shell 强制使用单 Pane，Inspector 收起。
+- regular shell 空间只满足 `collection + primaryContent` 时使用双 Pane；只有同时满足 `collection + primaryContent + inspector` 的最小宽度且用户偏好显示 Inspector 时，才使用三 Pane。
+- 空间不足时按 `inspector → collection → globalNavigation` 的顺序降低并发可见性，永远不牺牲 `primaryContent` 最小宽度。
+- Pane 从可见变为隐藏时只改变布局投影，选择仍由原业务 Store 持有；恢复空间后应回到同一业务上下文。
+
+### 15.0.3 验收矩阵
+
+- `720 × 520pt`：compact shell；全局 Sidebar 默认收起；Browser / Workspace 为单 Pane；Inspector 不渲染；主内容宽度至少 `480pt`。
+- `960 × 600pt`：regular shell；全局 Sidebar 按用户偏好显示；Browser / Workspace 至少满足集合与主内容的最小宽度，不满足三 Pane 时 Inspector 不渲染。
+- `1280 × 820pt`：regular shell；工作库和员工私聊在满足各自 Profile 最小宽度时可显示集合、主内容和 Inspector。
+- `>= 1440pt`：正文和 Composer 继续受最大宽度约束，不通过拉伸文字行宽填满窗口。
+- 每个宽度都必须验证 8 个主菜单、详情钻取与返回、Sidebar / Inspector 偏好恢复、键盘焦点和 Accessibility Tree。
+
 ### 15.1 默认 `1280 × 820pt`
 
 - 全局 Sidebar 展开。
