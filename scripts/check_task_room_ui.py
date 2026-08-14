@@ -17,7 +17,7 @@ archive = source("apps/macos/AIEmployee/Sources/AIEmployee/Views/Archive/Archive
 assert 'item.role == "user"' in view and 'item.role == "agent"' in view
 assert 'item.kind == "approval"' in view and 'case "handoff"' in view
 assert 'Button("批准")' in view and 'Button("拒绝")' in view
-assert 'Text("参与员工")' in view and 'Text("任务进度")' in view
+assert 'Text("任务进度")' in view
 assert "CreamAvatar(" in view and "CreamProgressBar(" in view
 assert "struct CreamAvatar" in controls and "struct CreamProgressBar" in controls
 assert "creamFloatingComposer" in controls and ".creamFloatingComposer" in view
@@ -25,12 +25,16 @@ assert "ThreadScope" not in view and "CreamTabBar" not in view
 assert "TaskThreadSidebarRow(" in view and ".creamSidebarRowSurface" in view
 assert "UserMessageBlock(text:" in view and "AgentTimelineBlock(" in view
 assert "proposal.threadID == thread.id" in view and 'Button("确认执行"' in view
-assert 'Text("尚未匹配员工")' in view
+assert 'Text(candidateAssignments.isEmpty ? "参与员工" : "拟参与员工")' in view
 assert 'Button("重新生成方案", action: store.regenerateProposal)' in view
 assert 'Text("正在匹配员工…")' in view
 assert 'Text("方案匹配")' in view
 assert 'proposal.candidateAssignments(employees: employeeStore.employees)' in view
 assert 'thread.room.participants.isEmpty ? "尚未匹配员工"' in view
+assert 'private func inspectorCandidateAssignments(for thread: TaskThreadProjection)' in view
+assert 'case .review(let proposal) where proposal.threadID == thread.id:' in view
+assert 'ForEach(candidateAssignments)' in view
+assert 'Text("待确认")' in view
 assert 'private var proposalStateAllowsRoomInput: Bool' in view
 assert 'case .recoverable, .failed, .restoring, .generating:' in view
 assert 'case .idle, .review:' in view

@@ -368,7 +368,8 @@ struct TaskThreadWorkspaceView: View {
     }
 
     private func inspector(_ thread: TaskThreadProjection) -> some View {
-        ScrollView {
+        let candidateAssignments = inspectorCandidateAssignments(for: thread)
+        return ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 VStack(alignment: .leading, spacing: 9) {
                     HStack {
@@ -384,12 +385,31 @@ struct TaskThreadWorkspaceView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("参与员工").font(.caption.weight(.semibold)).foregroundStyle(palette.muted)
+                    Text(candidateAssignments.isEmpty ? "参与员工" : "拟参与员工")
+                        .font(.caption.weight(.semibold)).foregroundStyle(palette.muted)
                     if thread.room.participants.isEmpty {
-                        Text("尚未匹配员工")
-                            .font(.callout.weight(.medium)).foregroundStyle(palette.ink)
-                        Text("确认方案后显示正式参与员工")
-                            .font(.caption).foregroundStyle(palette.muted)
+                        if candidateAssignments.isEmpty {
+                            Text("尚未匹配员工")
+                                .font(.callout.weight(.medium)).foregroundStyle(palette.ink)
+                            Text("方案生成后将在这里显示")
+                                .font(.caption).foregroundStyle(palette.muted)
+                        } else {
+                            ForEach(candidateAssignments) { candidate in
+                                HStack(spacing: 10) {
+                                    CreamAvatar(path: candidate.avatarPath, name: candidate.name, size: 34)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(candidate.name)
+                                            .font(.callout.weight(.medium)).foregroundStyle(palette.ink).lineLimit(1)
+                                        Text(candidate.role)
+                                            .font(.caption).foregroundStyle(palette.muted).lineLimit(1)
+                                    }
+                                    Spacer(minLength: 6)
+                                    Text("待确认")
+                                        .font(.caption2.weight(.medium))
+                                        .foregroundStyle(palette.warning)
+                                }
+                            }
+                        }
                     } else {
                         ForEach(thread.room.participants) { participant in
                             VStack(alignment: .leading, spacing: 8) {
@@ -416,6 +436,13 @@ struct TaskThreadWorkspaceView: View {
         }
         .frame(minWidth: 220, idealWidth: 240, maxWidth: 270)
         .background(palette.surfaceCard.opacity(0.32))
+    }
+
+    private func inspectorCandidateAssignments(for thread: TaskThreadProjection) -> [TaskProposalCandidateAssignment] {
+        guard thread.room.participants.isEmpty,
+              case .review(let proposal) = store.proposalState,
+              proposal.threadID == thread.id else { return [] }
+        return proposal.candidateAssignments(employees: employeeStore.employees)
     }
 
     private func systemLabel(_ item: TaskRoomTimelineItem) -> String {
