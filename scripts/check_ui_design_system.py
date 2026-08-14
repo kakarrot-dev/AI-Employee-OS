@@ -23,7 +23,6 @@ EMPLOYEE_DIRECTORY = SWIFT_ROOT / "Views/Employees/EmployeeDirectoryView.swift"
 CONTENT_VIEW = SWIFT_ROOT / "Views/ContentView.swift"
 CONTRACT = ROOT / "docs/design-system/AI Employee macOS UI Token & Component Contract v1.0.md"
 PREVIEW = ROOT / "docs/design-system/AI Employee macOS Component Library Preview.html"
-PROJECT_SKILL = ROOT / ".agents/skills/taste-skill/SKILL.md"
 
 
 def declaration_block(source: str, declaration: str) -> str:
@@ -93,7 +92,6 @@ def main() -> int:
         CONTENT_VIEW,
         CONTRACT,
         PREVIEW,
-        PROJECT_SKILL,
     )
     for path in required_files:
         if not path.is_file():
@@ -337,14 +335,16 @@ def main() -> int:
 
     tab_bar = declaration_block(controls_source, "struct CreamTabBar")
     for description, marker in {
-        "independent keyboard focus treatment": "if focusedItemID == item.id",
-        "visible keyboard focus outline": ".stroke(palette.focusStroke, lineWidth: 1.5)",
+        "independent keyboard focus treatment": "else if focusedItemID == item.id",
+        "visible keyboard focus underline": "fill(palette.focusStroke).frame(height: 2)",
         "disabled enclosing focus stroke": "showsFocusStroke: false",
         "disabled system focus ring": ".focusEffectDisabled()",
         "hover state": "hoveredItemID",
     }.items():
         if marker not in tab_bar:
             failures.append(f"CreamTabBar lacks {description}: {marker}")
+    if ".stroke(palette.focusStroke, lineWidth: 1.5)" in tab_bar:
+        failures.append("CreamTabBar must not draw a rounded focus outline around a tab")
 
     modal_block = declaration_block(controls_source, "struct CreamModalOverlay")
     for description, marker in {

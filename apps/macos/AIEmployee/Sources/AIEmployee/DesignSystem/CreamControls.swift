@@ -357,6 +357,8 @@ struct CreamTabBar<Item: Identifiable & Equatable>: View {
                             Rectangle().fill(Color.clear).frame(height: 2)
                             if selection == item {
                                 RoundedRectangle(cornerRadius: 1).fill(palette.primaryActive).frame(height: 2).matchedGeometryEffect(id: "indicator", in: tabIndicator)
+                            } else if focusedItemID == item.id {
+                                RoundedRectangle(cornerRadius: 1).fill(palette.focusStroke).frame(height: 2)
                             }
                         }
                     }
@@ -374,14 +376,6 @@ struct CreamTabBar<Item: Identifiable & Equatable>: View {
                 .focusable()
                 .focused($focusedItemID, equals: item.id)
                 .focusEffectDisabled()
-                .overlay {
-                    if focusedItemID == item.id {
-                        RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
-                            .stroke(palette.focusStroke, lineWidth: 1.5)
-                            .padding(.horizontal, -8)
-                            .padding(.vertical, -4)
-                    }
-                }
                 .onHover { hovered in
                     withAnimation(reduceMotion ? nil : AppTheme.Motion.hoverReveal) {
                         hoveredItemID = hovered ? item.id : nil
