@@ -31,6 +31,12 @@ assert 'Text("正在匹配员工…")' in view
 assert 'Text("方案匹配")' in view
 assert 'proposal.candidateAssignments(employees: employeeStore.employees)' in view
 assert 'thread.room.participants.isEmpty ? "尚未匹配员工"' in view
+assert 'private var proposalStateAllowsRoomInput: Bool' in view
+assert 'case .recoverable, .failed, .restoring, .generating:' in view
+assert 'case .idle, .review:' in view
+assert '.disabled(!canSendMessage(thread))' in view
+assert 'guard canSubmit(thread) else { return }' in view
+assert 'guard let thread = store.activeThread, canSubmit(thread) else { return }' in view
 assert 'Button("归档"' in view
 assert 'Button("删除"' in archive and "taskThreadRetention" in source("apps/macos/AIEmployee/Sources/AIEmployee/Services/RuntimeService.swift")
 assert '.frame(maxWidth: .infinity, maxHeight: .infinity)' in view

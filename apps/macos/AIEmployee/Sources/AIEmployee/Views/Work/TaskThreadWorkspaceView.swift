@@ -307,8 +307,11 @@ struct TaskThreadWorkspaceView: View {
                 .textFieldStyle(.plain).font(.body).lineLimit(1...6)
                 .frame(minHeight: 36, alignment: .topLeading)
                 .focused($composerFocused)
-                .onSubmit { sendRoomMessage() }
-                .disabled(!canSendMessage(thread) || thread.archivedAt != nil)
+                .onSubmit {
+                    guard canSubmit(thread) else { return }
+                    sendRoomMessage()
+                }
+                .disabled(!canSendMessage(thread))
             HStack(spacing: 8) {
                 Image(systemName: "plus").foregroundStyle(palette.muted).frame(width: 28, height: 28)
                 Spacer()
@@ -333,13 +336,12 @@ struct TaskThreadWorkspaceView: View {
     }
 
     private func canSubmit(_ thread: TaskThreadProjection) -> Bool {
-        canSendMessage(thread) && thread.archivedAt == nil && !store.isSubmitting
-            && !roomDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        canSendMessage(thread) && !roomDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func sendRoomMessage() {
+        guard let thread = store.activeThread, canSubmit(thread) else { return }
         let value = roomDraft
-        guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         store.sendTaskRoomMessage(value)
         roomDraft = ""
     }
@@ -351,8 +353,18 @@ struct TaskThreadWorkspaceView: View {
     }
 
     private func canSendMessage(_ thread: TaskThreadProjection) -> Bool {
-        ["drafting", "awaiting_input"].contains(thread.status)
+        guard proposalStateAllowsRoomInput, !store.isSubmitting, thread.archivedAt == nil else { return false }
+        return ["drafting", "awaiting_input"].contains(thread.status)
             || thread.execution?.workOrders.contains(where: { $0.runPhase == "waiting_user" }) == true
+    }
+
+    private var proposalStateAllowsRoomInput: Bool {
+        switch store.proposalState {
+        case .recoverable, .failed, .restoring, .generating:
+            return false
+        case .idle, .review:
+            return true
+        }
     }
 
     private func inspector(_ thread: TaskThreadProjection) -> some View {
