@@ -918,6 +918,26 @@ fn generate_task_proposal(
     preferred_agent_id: Option<String>,
     mode: ProposalGenerationMode,
 ) -> Result<Value, String> {
+    generate_task_proposal_with_hook(
+        connection,
+        root,
+        python,
+        thread_id,
+        preferred_agent_id,
+        mode,
+        || Ok(()),
+    )
+}
+
+fn generate_task_proposal_with_hook(
+    connection: &mut Connection,
+    root: &Path,
+    python: &Path,
+    thread_id: &str,
+    preferred_agent_id: Option<String>,
+    mode: ProposalGenerationMode,
+    before_save: impl FnOnce() -> Result<(), String>,
+) -> Result<Value, String> {
     if matches!(mode, ProposalGenerationMode::Regenerate) {
         let stamp = now();
         let current_epoch_seconds = SystemTime::now()
@@ -1022,9 +1042,10 @@ fn generate_task_proposal(
         }
     }
     let resolved_assignments = resolve_all_assignments(&connection, &proposal)?;
+    before_save()?;
     let canonical = serde_json::to_string(&proposal).map_err(|e| e.to_string())?;
     let hash = format!("{:x}", Sha256::digest(canonical.as_bytes()));
-    let proposal_id = format!("proposal_{}", unique_suffix());
+    let mut proposal_id = format!("proposal_{}", unique_suffix());
     let stamp = now();
     let expires_at = (SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1043,12 +1064,52 @@ fn generate_task_proposal(
     let tx = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e| e.to_string())?;
-    tx.execute("INSERT INTO task_proposals(id,thread_id,revision,status,proposal_json,proposal_sha256,expires_at,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?8)",rusqlite::params![proposal_id,thread_id,revision,if status=="awaiting_input"{"awaiting_input"}else{"validated"},canonical,hash,expires_at,stamp]).map_err(|e|e.to_string())?;
-    tx.execute(
-        "UPDATE task_threads SET status=?2,updated_at=?3 WHERE id=?1",
-        rusqlite::params![thread_id, status, stamp],
-    )
-    .map_err(|e| e.to_string())?;
+    let thread_updated = tx
+        .execute(
+            "UPDATE task_threads SET status=?2,updated_at=?3
+             WHERE id=?1 AND current_revision=?4",
+            rusqlite::params![thread_id, status, stamp, revision],
+        )
+        .map_err(|error| error.to_string())?;
+    if thread_updated != 1 {
+        return Err("task_proposal_revision_conflict".into());
+    }
+    let stored_status = if status == "awaiting_input" {
+        "awaiting_input"
+    } else {
+        "validated"
+    };
+    let reusable_proposal_id: Option<String> = tx
+        .query_row(
+            "SELECT id FROM task_proposals
+             WHERE thread_id=?1 AND proposal_sha256=?2 AND status IN ('expired','rejected')",
+            rusqlite::params![thread_id, hash],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    if let Some(reusable_proposal_id) = reusable_proposal_id {
+        proposal_id = reusable_proposal_id;
+        let reused = tx
+            .execute(
+                "UPDATE task_proposals SET revision=?2,status=?3,proposal_json=?4,expires_at=?5,
+                 confirmed_at=NULL,updated_at=?6 WHERE id=?1 AND status IN ('expired','rejected')",
+                rusqlite::params![
+                    proposal_id,
+                    revision,
+                    stored_status,
+                    canonical,
+                    expires_at,
+                    stamp
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if reused != 1 {
+            return Err("task_proposal_revision_conflict".into());
+        }
+    } else {
+        tx.execute("INSERT INTO task_proposals(id,thread_id,revision,status,proposal_json,proposal_sha256,expires_at,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?8)",rusqlite::params![proposal_id,thread_id,revision,stored_status,canonical,hash,expires_at,stamp]).map_err(|e|e.to_string())?;
+    }
     let sequence: i64 = tx
         .query_row(
             "SELECT COALESCE(MAX(sequence),0)+1 FROM task_thread_messages WHERE thread_id=?1",
@@ -1219,7 +1280,14 @@ fn task_proposal_response(
     })
 }
 
-fn task_proposal_confirm(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+fn task_proposal_confirm(arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    task_proposal_confirm_with_hook(arguments, |_, _| Ok(()))
+}
+
+fn task_proposal_confirm_with_hook(
+    mut arguments: impl Iterator<Item = String>,
+    after_claim: impl FnOnce(&str, &str) -> Result<(), String>,
+) -> Result<Value, String> {
     let mut database = None;
     let mut repository_root = None;
     let mut proposal_id = None;
@@ -1291,8 +1359,21 @@ fn task_proposal_confirm(mut arguments: impl Iterator<Item = String>) -> Result<
         .iter()
         .map(|assignment| resolve_task_assignment(&connection, assignment))
         .collect::<Result<Vec<_>, _>>()?;
+    let is_single_agent = proposal["intent"] == "single_agent_task" && resolved.len() == 1;
+    if !is_single_agent && (proposal["intent"] != "multi_agent_task" || resolved.len() < 2) {
+        return Err("task_proposal_intent_assignment_mismatch".into());
+    }
+    let scenario = if is_single_agent {
+        None
+    } else {
+        let scenario = task_proposal_to_scenario(&proposal_id, &proposal, &resolved)?;
+        validate_scenario(&connection, scenario.clone())?;
+        Some(scenario)
+    };
     let stamp = now();
-    if proposal["intent"] == "single_agent_task" && resolved.len() == 1 {
+    claim_task_proposal_confirmation(&mut connection, &proposal_id, &expected_hash, &stamp)?;
+    after_claim(&thread_id, &proposal_id)?;
+    if is_single_agent {
         let result = execute_agent(
             &mut connection,
             &root,
@@ -1317,10 +1398,7 @@ fn task_proposal_confirm(mut arguments: impl Iterator<Item = String>) -> Result<
         );
     }
 
-    if proposal["intent"] != "multi_agent_task" || resolved.len() < 2 {
-        return Err("task_proposal_intent_assignment_mismatch".into());
-    }
-    let scenario = task_proposal_to_scenario(&proposal_id, &proposal, &resolved)?;
+    let scenario = scenario.expect("multi-agent proposal has a validated scenario");
     let scenario_id = format!("internal:{proposal_id}");
     let saved = save_scenario(
         &mut connection,
@@ -1365,6 +1443,29 @@ fn task_proposal_confirm(mut arguments: impl Iterator<Item = String>) -> Result<
     Ok(
         json!({"schema_version":"1.0.0","thread":task_thread_projection(&connection,&thread_id)?,"execution":flow}),
     )
+}
+
+fn claim_task_proposal_confirmation(
+    connection: &mut Connection,
+    proposal_id: &str,
+    expected_hash: &str,
+    stamp: &str,
+) -> Result<(), String> {
+    let tx = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    let claimed = tx
+        .execute(
+            "UPDATE task_proposals SET status='confirmed',confirmed_at=?3,updated_at=?3
+             WHERE id=?1 AND proposal_sha256=?2 AND status='validated'
+             AND revision=(SELECT current_revision FROM task_threads WHERE id=task_proposals.thread_id)",
+            rusqlite::params![proposal_id, expected_hash, stamp],
+        )
+        .map_err(|error| error.to_string())?;
+    if claimed != 1 {
+        return Err("task_proposal_revision_conflict".into());
+    }
+    tx.commit().map_err(|error| error.to_string())
 }
 
 fn resolve_task_assignment(
@@ -1526,12 +1627,18 @@ fn bind_materialized_task(
     let tx = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e| e.to_string())?;
+    if role != "child" {
+        let materialized = tx
+            .execute(
+                "UPDATE task_proposals SET status='materialized',updated_at=?2 WHERE id=?1 AND status='confirmed'",
+                rusqlite::params![proposal_id, stamp],
+            )
+            .map_err(|e| e.to_string())?;
+        if materialized != 1 {
+            return Err("task_proposal_revision_conflict".into());
+        }
+    }
     tx.execute("INSERT OR IGNORE INTO task_thread_task_bindings(thread_id,task_id,proposal_id,binding_role,created_at) VALUES (?1,?2,?3,?4,?5)",rusqlite::params![thread_id,task_id,proposal_id,role,stamp]).map_err(|e|e.to_string())?;
-    tx.execute(
-        "UPDATE task_proposals SET status='materialized',confirmed_at=?2,updated_at=?2 WHERE id=?1 AND status='validated'",
-        rusqlite::params![proposal_id, stamp],
-    )
-    .map_err(|e| e.to_string())?;
     if role != "child" {
         tx.execute(
             "UPDATE task_threads SET status=?2,updated_at=?3 WHERE id=?1",
@@ -4707,6 +4814,7 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     const VALID_TWO_ASSIGNMENT_PROPOSAL: &str = r#"{"schema_version":"1.0.0","intent":"multi_agent_task","title":"Research and write","objective":"Research and write a summary","missing_inputs":[],"deliverable":{"type":"structured_result","description":"Research summary","target_path":null},"assignments":[{"node_id":"research","role":"owner","employee_selector":{"preferred_id":"data-researcher","capabilities":["web-search"]},"goal":"Research the current topic","depends_on":[],"acceptance_criteria":[{"criterion_id":"sources","description":"Includes sources","evidence_type":"structured_output","required":true}]},{"node_id":"write","role":"finalizer","employee_selector":{"preferred_id":"ai-product-manager","capabilities":["local-file-operations"]},"goal":"Write the final summary","depends_on":["research"],"acceptance_criteria":[{"criterion_id":"summary","description":"Produces the final summary","evidence_type":"artifact","required":true}]}],"acceptance_criteria":[{"criterion_id":"complete","description":"Research and summary are complete","evidence_type":"evaluation","required":true}],"requested_resources":[],"budget_hint":{"input_tokens":0,"output_tokens":0,"tool_rounds":0,"wall_clock_ms":0}}"#;
+    const VALID_SINGLE_ASSIGNMENT_PROPOSAL: &str = r#"{"schema_version":"1.0.0","intent":"single_agent_task","title":"Write","objective":"Write the requested summary","missing_inputs":[],"deliverable":{"type":"structured_result","description":"Written summary","target_path":null},"assignments":[{"node_id":"write","role":"owner","employee_selector":{"preferred_id":"ai-product-manager","capabilities":["local-file-operations"]},"goal":"Write the requested summary","depends_on":[],"acceptance_criteria":[{"criterion_id":"summary","description":"Includes a summary","evidence_type":"structured_output","required":true}]}],"acceptance_criteria":[{"criterion_id":"summary","description":"Includes a summary","evidence_type":"structured_output","required":true}],"requested_resources":[],"budget_hint":{"input_tokens":0,"output_tokens":0,"tool_rounds":0,"wall_clock_ms":0}}"#;
     static PROPOSAL_FIXTURE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     struct ProposalGenerationFixture {
@@ -4738,6 +4846,44 @@ mod tests {
             .unwrap();
             fs::set_permissions(&self.worker_path, fs::Permissions::from_mode(0o700)).unwrap();
             self.arguments()
+        }
+
+        fn write_successful_decision_worker(&self) {
+            fs::write(
+                &self.worker_path,
+                "#!/bin/sh\nprintf '%s\\n' '{\"schema_version\":\"1.0.0\",\"type\":\"complete\",\"output\":{\"summary\":\"ok\"},\"deliverable_candidates\":[],\"evidence_refs\":[]}'\n",
+            )
+            .unwrap();
+            fs::set_permissions(&self.worker_path, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+
+        fn arguments_for_confirm_with_success_worker(&self) -> impl Iterator<Item = String> {
+            self.write_successful_decision_worker();
+            let proposal_id = self
+                .old_proposal_id
+                .as_deref()
+                .expect("fixture has an old proposal");
+            let proposal_hash: String = Connection::open(&self.database)
+                .unwrap()
+                .query_row(
+                    "SELECT proposal_sha256 FROM task_proposals WHERE id=?1",
+                    [proposal_id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            vec![
+                "--database".to_owned(),
+                self.database.display().to_string(),
+                "--repository-root".to_owned(),
+                self.repository_root.display().to_string(),
+                "--proposal-id".to_owned(),
+                proposal_id.to_owned(),
+                "--proposal-hash".to_owned(),
+                proposal_hash,
+                "--python".to_owned(),
+                self.worker_path.display().to_string(),
+            ]
+            .into_iter()
         }
 
         fn arguments(&self) -> impl Iterator<Item = String> {
@@ -4831,6 +4977,46 @@ mod tests {
         fixture
     }
 
+    fn proposal_generation_fixture_with_single_validated_proposal() -> ProposalGenerationFixture {
+        let mut fixture = proposal_generation_fixture();
+        let connection = Connection::open(&fixture.database).unwrap();
+        let proposal_id = "proposal_generation_single".to_owned();
+        let proposal: Value = serde_json::from_str(VALID_SINGLE_ASSIGNMENT_PROPOSAL).unwrap();
+        let canonical = serde_json::to_string(&proposal).unwrap();
+        let hash = format!("{:x}", Sha256::digest(canonical.as_bytes()));
+        let stamp = now();
+        connection.execute("INSERT INTO task_proposals(id,thread_id,revision,status,proposal_json,proposal_sha256,expires_at,created_at,updated_at) VALUES (?1,?2,1,'validated',?3,?4,?5,?6,?6)", rusqlite::params![proposal_id,fixture.thread_id,canonical,hash,future_expiry(),stamp]).unwrap();
+        connection
+            .execute(
+                "UPDATE task_threads SET status='awaiting_confirmation' WHERE id=?1",
+                [&fixture.thread_id],
+            )
+            .unwrap();
+        drop(connection);
+        fixture.old_proposal_id = Some(proposal_id);
+        fixture
+    }
+
+    fn proposal_generation_fixture_with_matching_validated_proposal() -> ProposalGenerationFixture {
+        let mut fixture = proposal_generation_fixture();
+        let connection = Connection::open(&fixture.database).unwrap();
+        let proposal_id = "proposal_generation_matching".to_owned();
+        let proposal: Value = serde_json::from_str(VALID_TWO_ASSIGNMENT_PROPOSAL).unwrap();
+        let canonical = serde_json::to_string(&proposal).unwrap();
+        let hash = format!("{:x}", Sha256::digest(canonical.as_bytes()));
+        let stamp = now();
+        connection.execute("INSERT INTO task_proposals(id,thread_id,revision,status,proposal_json,proposal_sha256,expires_at,created_at,updated_at) VALUES (?1,?2,1,'validated',?3,?4,?5,?6,?6)", rusqlite::params![proposal_id,fixture.thread_id,canonical,hash,future_expiry(),stamp]).unwrap();
+        connection
+            .execute(
+                "UPDATE task_threads SET status='awaiting_confirmation' WHERE id=?1",
+                [&fixture.thread_id],
+            )
+            .unwrap();
+        drop(connection);
+        fixture.old_proposal_id = Some(proposal_id);
+        fixture
+    }
+
     fn proposal_status(database: &Path, proposal_id: &Option<String>) -> String {
         Connection::open(database)
             .unwrap()
@@ -4907,6 +5093,170 @@ mod tests {
         assert_eq!(goal_count(&fixture.database, &fixture.thread_id), 1);
     }
 
+    #[test]
+    fn regenerate_reuses_the_old_row_when_the_canonical_hash_is_unchanged() {
+        let fixture = proposal_generation_fixture_with_matching_validated_proposal();
+        let old_proposal_id = fixture.old_proposal_id.as_deref().unwrap();
+
+        let response = task_proposal_regenerate(fixture.arguments_with_success_worker()).unwrap();
+
+        assert_eq!(response["proposal_id"], old_proposal_id);
+        assert_eq!(response["revision"], 2);
+        assert_eq!(
+            proposal_status(&fixture.database, &fixture.old_proposal_id),
+            "validated"
+        );
+        let proposal_count: i64 = Connection::open(&fixture.database)
+            .unwrap()
+            .query_row("SELECT count(*) FROM task_proposals", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(proposal_count, 1);
+        assert_eq!(
+            task_proposal_current(proposal_current_arguments(
+                &fixture.database,
+                &fixture.thread_id
+            ))
+            .unwrap()["proposal_id"],
+            old_proposal_id
+        );
+    }
+
+    #[test]
+    fn task_proposal_save_rejects_revision_drift_after_the_worker() {
+        let fixture = proposal_generation_fixture();
+        let _ = fixture.arguments_with_success_worker();
+        let mut connection = Connection::open(&fixture.database).unwrap();
+
+        let error = generate_task_proposal_with_hook(
+            &mut connection,
+            &fixture.repository_root,
+            &fixture.worker_path,
+            &fixture.thread_id,
+            None,
+            ProposalGenerationMode::Initial,
+            || {
+                task_thread_message(
+                    vec![
+                        "--database".to_owned(),
+                        fixture.database.display().to_string(),
+                        "--thread-id".to_owned(),
+                        fixture.thread_id.clone(),
+                        "--input".to_owned(),
+                        "Use the newer clarification".to_owned(),
+                    ]
+                    .into_iter(),
+                )?;
+                Ok(())
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(error, "task_proposal_revision_conflict");
+        let thread: (String, i64) = connection
+            .query_row(
+                "SELECT status,current_revision FROM task_threads WHERE id=?1",
+                [&fixture.thread_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(thread, ("drafting".to_owned(), 2));
+        let proposal_count: i64 = connection
+            .query_row("SELECT count(*) FROM task_proposals", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(proposal_count, 0);
+    }
+
+    #[test]
+    fn confirm_claim_prevents_regenerate_from_rejecting_the_proposal() {
+        let fixture = proposal_generation_fixture_with_single_validated_proposal();
+        let response = task_proposal_confirm_with_hook(
+            fixture.arguments_for_confirm_with_success_worker(),
+            |thread_id, proposal_id| {
+                assert_eq!(
+                    proposal_status(&fixture.database, &Some(proposal_id.to_owned())),
+                    "confirmed"
+                );
+                let error = task_proposal_regenerate(fixture.arguments_with_failing_worker(
+                    r#"{"schema_version":"1.0","error_code":"network"}"#,
+                ))
+                .unwrap_err();
+                assert_eq!(error, "task_proposal_provider_network");
+                assert_eq!(thread_id, fixture.thread_id);
+                assert_eq!(
+                    proposal_status(&fixture.database, &Some(proposal_id.to_owned())),
+                    "confirmed"
+                );
+                fixture.write_successful_decision_worker();
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert_eq!(response["execution"]["status"], "succeeded");
+        assert_eq!(
+            proposal_status(&fixture.database, &fixture.old_proposal_id),
+            "materialized"
+        );
+        assert_eq!(
+            message_kind_count(&fixture.database, &fixture.thread_id, "confirmation"),
+            1
+        );
+    }
+
+    #[test]
+    fn confirm_invalid_intent_assignment_does_not_claim_the_proposal() {
+        let fixture = proposal_generation_fixture_with_matching_validated_proposal();
+        let proposal_id = fixture.old_proposal_id.as_deref().unwrap();
+        let connection = Connection::open(&fixture.database).unwrap();
+        let mut proposal: Value = serde_json::from_str(VALID_TWO_ASSIGNMENT_PROPOSAL).unwrap();
+        proposal["intent"] = json!("single_agent_task");
+        let canonical = serde_json::to_string(&proposal).unwrap();
+        let hash = format!("{:x}", Sha256::digest(canonical.as_bytes()));
+        connection
+            .execute(
+                "UPDATE task_proposals SET proposal_json=?2,proposal_sha256=?3 WHERE id=?1",
+                rusqlite::params![proposal_id, canonical, hash],
+            )
+            .unwrap();
+        drop(connection);
+
+        let error =
+            task_proposal_confirm(fixture.arguments_for_confirm_with_success_worker()).unwrap_err();
+
+        assert_eq!(error, "task_proposal_intent_assignment_mismatch");
+        assert_eq!(
+            proposal_status(&fixture.database, &fixture.old_proposal_id),
+            "validated"
+        );
+    }
+
+    #[test]
+    fn confirm_invalid_scenario_does_not_claim_the_proposal() {
+        let fixture = proposal_generation_fixture_with_matching_validated_proposal();
+        let proposal_id = fixture.old_proposal_id.as_deref().unwrap();
+        let connection = Connection::open(&fixture.database).unwrap();
+        let mut proposal: Value = serde_json::from_str(VALID_TWO_ASSIGNMENT_PROPOSAL).unwrap();
+        proposal["assignments"][1]["role"] = json!("contributor");
+        let canonical = serde_json::to_string(&proposal).unwrap();
+        let hash = format!("{:x}", Sha256::digest(canonical.as_bytes()));
+        connection
+            .execute(
+                "UPDATE task_proposals SET proposal_json=?2,proposal_sha256=?3 WHERE id=?1",
+                rusqlite::params![proposal_id, canonical, hash],
+            )
+            .unwrap();
+        drop(connection);
+
+        let error =
+            task_proposal_confirm(fixture.arguments_for_confirm_with_success_worker()).unwrap_err();
+
+        assert_eq!(error, "task_proposal_finalizer_required");
+        assert_eq!(
+            proposal_status(&fixture.database, &fixture.old_proposal_id),
+            "validated"
+        );
+    }
+
     fn future_expiry() -> String {
         (SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -4931,8 +5281,9 @@ mod tests {
 
     fn proposal_recovery_fixture(status: &str, expires_at: String) -> (PathBuf, String, String) {
         let database = env::temp_dir().join(format!(
-            "ai-employee-proposal-current-{}.db",
-            unique_suffix()
+            "ai-employee-proposal-current-{}-{}.db",
+            unique_suffix(),
+            PROPOSAL_FIXTURE_COUNTER.fetch_add(1, Ordering::Relaxed)
         ));
         let mut connection = Connection::open(&database).unwrap();
         migrate(&mut connection).unwrap();
