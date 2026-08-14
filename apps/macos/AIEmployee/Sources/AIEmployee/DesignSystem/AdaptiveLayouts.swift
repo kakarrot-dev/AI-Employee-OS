@@ -104,11 +104,13 @@ struct AdaptiveBrowser<Collection: View, Detail: View>: View {
                             .environment(\.resolvedAppLayout, layout.resolvingSinglePane(.primaryContent))
                     } else {
                         collection()
+                            .creamPaneSurface(.collection)
                             .environment(\.resolvedAppLayout, layout.resolvingSinglePane(.collection))
                     }
                 } else {
                     HSplitView {
                         collection()
+                            .creamPaneSurface(.collection)
                             .frame(
                                 minWidth: profile.collection?.minWidth,
                                 idealWidth: profile.collection?.idealWidth,
@@ -202,6 +204,7 @@ struct AdaptiveWorkspace<Collection: View, Primary: View, Inspector: View>: View
 
     private var collectionPane: some View {
         collection()
+            .creamPaneSurface(.collection)
             .frame(
                 minWidth: profile.collection?.minWidth,
                 idealWidth: profile.collection?.idealWidth,

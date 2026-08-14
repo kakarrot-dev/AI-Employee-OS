@@ -79,8 +79,7 @@ struct CreamTimelineAgentRow<Content: View>: View {
                         .font(AppTheme.Typography.messageAuthor)
                         .foregroundStyle(palette.ink)
                     if let statusSystemImage {
-                        Image(systemName: statusSystemImage)
-                            .font(.caption2.weight(.semibold))
+                        CreamSymbol(systemName: statusSystemImage, scale: .compact)
                             .foregroundStyle(statusColor)
                     }
                     Text("· \(metadata)")
@@ -339,8 +338,7 @@ private struct CreamTimelineActionButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemImage)
-                .font(AppTheme.Typography.compactMetadata(weight: .semibold))
+            CreamSymbol(systemName: systemImage, scale: .compact)
                 .foregroundStyle(palette.muted)
                 .frame(width: 24, height: 24)
                 .contentShape(Rectangle())

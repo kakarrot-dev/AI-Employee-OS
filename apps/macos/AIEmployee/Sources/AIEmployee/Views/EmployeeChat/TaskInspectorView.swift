@@ -63,10 +63,11 @@ struct TaskInspectorView: View {
             if run.runPhase == "waiting_approval" {
                 HStack(spacing: AppTheme.Spacing.sm) {
                     Button("拒绝") { store.resolveApproval(for: run, approve: false) }
+                        .buttonStyle(CreamSecondaryButtonStyle())
                     Button(store.isResolvingApproval(for: run) ? "处理中…" : "批准并继续") {
                         store.resolveApproval(for: run, approve: true)
                     }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(CreamPrimaryButtonStyle())
                 }
                 .disabled(store.isResolvingApproval(for: run))
                 .padding(.top, AppTheme.Spacing.xs)
@@ -112,7 +113,8 @@ struct TaskInspectorView: View {
                     if run.status == .running || run.status == .pending {
                         ProgressView().controlSize(.small).tint(palette.accentTeal)
                     } else {
-                        Image(systemName: "minus.circle").foregroundStyle(palette.mutedSoft)
+                        CreamSymbol(systemName: "minus.circle")
+                            .foregroundStyle(palette.mutedSoft)
                     }
                     Text(run.status == .running || run.status == .pending
                          ? "正在制定执行计划"
@@ -125,8 +127,7 @@ struct TaskInspectorView: View {
                     ForEach(Array(run.actions.enumerated()), id: \.element.id) { index, node in
                         HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
                             VStack(spacing: 0) {
-                                Image(systemName: stepSymbol(node.status))
-                                    .font(.caption.weight(.semibold))
+                                CreamSymbol(systemName: stepSymbol(node.status), scale: .compact)
                                     .foregroundStyle(stepColor(node.status))
                                     .frame(width: 16, height: 18)
                                 if index < run.actions.count {
@@ -164,8 +165,7 @@ struct TaskInspectorView: View {
         let status = finalizationStatus(run)
         return HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
             VStack(spacing: 0) {
-                Image(systemName: stepSymbol(status))
-                    .font(.caption.weight(.semibold))
+                CreamSymbol(systemName: stepSymbol(status), scale: .compact)
                     .foregroundStyle(stepColor(status))
                     .frame(width: 16, height: 18)
             }

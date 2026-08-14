@@ -61,7 +61,7 @@ assert ".pickerStyle(.segmented)" not in view
 assert 'Label("返回场景库", systemImage: "chevron.left")' in view
 assert "CreamModalOverlay(" in view and "ScenarioDiscardConfirmation" in view
 assert "private func discardDraft()" in view and "放弃未保存的场景修改" in view
-assert ".onHover { isExitHovered = $0 }" in view
+assert "isExitHovered" not in view and ".buttonStyle(CreamSecondaryButtonStyle())" in view
 assert 'Button("退出配置", action: close)' not in view
 assert ".confirmationDialog(" not in view
 assert "@Binding var draft: ScenarioProposal" in view

@@ -24,7 +24,7 @@ assert "struct CreamAvatar" in controls and "struct CreamProgressBar" in control
 assert "creamFloatingComposer" in composer and "CreamFloatingComposerSurface" in composer
 assert "CreamComposer(" in view and "size: .regular" in view
 assert "ThreadScope" not in view and "CreamTabBar" not in view
-assert "TaskThreadSidebarRow(" in view and ".creamSidebarRowSurface" in view
+assert "TaskThreadSidebarRow(" in view and "CreamInteractiveRow(" in view
 assert "CreamTimelineUserMessage(" in view and "CreamTimelineAgentRow(" in view
 assert "CreamTimelineLayout(" in view and "CreamTimelineMarkdownBody(" in view
 assert "proposal.threadID == thread.id" in view and 'Button("确认执行"' in view
@@ -37,7 +37,7 @@ assert 'thread.room.participants.isEmpty ? "尚未匹配员工"' in view
 assert 'private func inspectorCandidateAssignments(for thread: TaskThreadProjection)' in view
 assert 'case .review(let proposal) where proposal.threadID == thread.id:' in view
 assert 'ForEach(candidateAssignments)' in view
-assert 'Text("待确认")' in view
+assert 'title: "待确认"' in view and "CreamStatusLabel(" in view
 assert 'private var proposalStateAllowsRoomInput: Bool' in view
 assert 'case .recoverable, .failed, .restoring, .generating:' in view
 assert 'case .idle, .review:' in view

@@ -112,7 +112,7 @@ struct UXToastOverlay: View {
         Group {
             if let notice {
                 HStack(spacing: AppTheme.Spacing.xs) {
-                    Image(systemName: icon(for: notice.tone))
+                    CreamSymbol(systemName: icon(for: notice.tone))
                         .foregroundStyle(color(for: notice.tone))
                     Text(notice.message)
                         .font(AppTheme.Typography.interfaceBody(weight: .medium))

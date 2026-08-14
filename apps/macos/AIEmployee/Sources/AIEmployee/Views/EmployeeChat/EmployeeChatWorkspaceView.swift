@@ -82,12 +82,12 @@ struct EmployeeChatWorkspaceView: View {
         .toolbar {
             if resolvedLayout.presentation == .singlePane, compactShowsPrimary {
                 ToolbarItem(placement: .navigation) {
-                    Button {
-                        compactShowsPrimary = false
-                    } label: {
-                        Label("会话列表", systemImage: "chevron.left")
-                    }
-                    .help("返回员工会话列表")
+                    CreamIconButton(
+                        systemName: "chevron.left",
+                        accessibilityLabel: "返回员工会话列表",
+                        help: "返回员工会话列表",
+                        action: { compactShowsPrimary = false }
+                    )
                 }
             }
             ToolbarItem(placement: .navigation) {
@@ -95,25 +95,28 @@ struct EmployeeChatWorkspaceView: View {
             }
             if !conversationStore.messages.isEmpty {
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        Task {
-                            if await conversationStore.archiveHistory() { openArchive() }
+                    CreamIconButton(
+                        systemName: "archivebox",
+                        accessibilityLabel: "归档当前私聊",
+                        help: "归档当前私聊",
+                        action: {
+                            Task {
+                                if await conversationStore.archiveHistory() { openArchive() }
+                            }
                         }
-                    } label: {
-                        Label("归档会话", systemImage: "archivebox")
-                    }
-                    .help("归档当前私聊")
+                    )
                     .disabled(conversationStore.isSending)
                 }
             }
             if supportsTasks, selectedRun != nil, resolvedLayout.inspectorAvailable {
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        inspectorVisible.toggle()
-                    } label: {
-                        Label(resolvedLayout.showsInspector ? "隐藏任务面板" : "显示任务面板", systemImage: "sidebar.right")
-                    }
-                    .help(resolvedLayout.showsInspector ? "隐藏工作检查器" : "显示工作检查器")
+                    CreamIconButton(
+                        systemName: "sidebar.right",
+                        accessibilityLabel: resolvedLayout.showsInspector ? "隐藏工作检查器" : "显示工作检查器",
+                        help: resolvedLayout.showsInspector ? "隐藏工作检查器" : "显示工作检查器",
+                        isSelected: resolvedLayout.showsInspector,
+                        action: { inspectorVisible.toggle() }
+                    )
                 }
             }
         }
@@ -160,7 +163,7 @@ private struct EmployeeToolbarTitle: View {
                 }
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CreamInlineButtonStyle())
         .help(run.map { "\(employee?.name ?? "该员工") 正在处理：\($0.input)" } ?? "查看员工详情")
         .popover(isPresented: $detailsVisible, arrowEdge: .top) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
@@ -171,7 +174,11 @@ private struct EmployeeToolbarTitle: View {
                     Text("员工资料不存在或已被删除").font(.callout).foregroundStyle(.secondary)
                 }
                 Divider()
-                Label(employee?.status == "active" ? "可用" : "已停用", systemImage: employee?.status == "active" ? "checkmark.circle" : "pause.circle")
+                CreamStatusLabel(
+                    title: employee?.status == "active" ? "可用" : "已停用",
+                    systemImage: employee?.status == "active" ? "checkmark.circle.fill" : "pause.circle.fill",
+                    tone: employee?.status == "active" ? .success : .neutral
+                )
                 Text("消息和工作会保留在这名员工的持续会话中。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -472,8 +479,7 @@ private struct ConversationMessageBlock: View {
             Label(expanded ? "收起" : "展开完整消息", systemImage: expanded ? "chevron.up" : "chevron.down")
                 .font(.caption.weight(.medium))
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(palette.primaryActive)
+        .buttonStyle(CreamInlineButtonStyle(tone: .primary))
         .help(expanded ? "折叠长消息" : "查看完整消息")
     }
 
@@ -503,8 +509,7 @@ private struct ChatAttachmentRow: View {
 
     var body: some View {
         HStack(spacing: AppTheme.Spacing.sm) {
-            Image(systemName: icon)
-                .font(.callout.weight(.medium))
+            CreamSymbol(systemName: icon)
                 .foregroundStyle(palette.primaryActive)
                 .frame(width: 30, height: 30)
                 .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous))
@@ -519,14 +524,12 @@ private struct ChatAttachmentRow: View {
             }
             Spacer(minLength: AppTheme.Spacing.sm)
             if let remove {
-                Button(action: remove) {
-                    Image(systemName: "xmark")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(palette.muted)
-                        .frame(width: 24, height: 24)
-                }
-                .buttonStyle(.plain)
-                .help("移除附件")
+                CreamIconButton(
+                    systemName: "xmark",
+                    accessibilityLabel: "移除附件 \(attachment.name)",
+                    help: "移除附件 \(attachment.name)",
+                    action: remove
+                )
             }
         }
         .padding(.horizontal, AppTheme.Spacing.xs)
@@ -673,8 +676,7 @@ private struct ArtifactMessageBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
-                Image(systemName: fileIcon)
-                    .font(.system(size: 20, weight: .medium))
+                CreamSymbol(systemName: fileIcon, scale: .feature)
                     .foregroundStyle(palette.primaryActive)
                     .frame(width: 40, height: 40)
                     .background(palette.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -709,7 +711,7 @@ private struct ArtifactMessageBlock: View {
                             .frame(height: 32)
                             .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(CreamEmbeddedButtonStyle())
                     .help("使用系统默认 App 打开文件")
 
                     Rectangle()
@@ -721,8 +723,7 @@ private struct ArtifactMessageBlock: View {
                             perform { try ArtifactService.openContainingFolder(path) }
                         }
                     } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 9, weight: .bold))
+                        CreamSymbol(systemName: "chevron.down", scale: .compact)
                             .foregroundStyle(palette.onPrimary)
                             .frame(width: 28, height: 32)
                             .contentShape(Rectangle())
@@ -851,7 +852,7 @@ private struct LiveActionApprovalBar: View {
                     .font(.caption.weight(.medium))
                     .foregroundStyle(palette.muted)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(CreamInlineButtonStyle())
 
             if expanded {
                 Divider().overlay(palette.hairlineSoft)
@@ -893,9 +894,8 @@ private struct LiveActionApprovalBar: View {
 
     private var summary: some View {
         HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
-            Image(systemName: "hand.raised.fill")
+            CreamSymbol(systemName: "hand.raised.fill")
                 .foregroundStyle(palette.warning)
-                .frame(width: 18)
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
                 Text("\(employeeName) 需要你确认")
                     .font(.callout.weight(.semibold))
@@ -937,7 +937,7 @@ private struct DemoActionApprovalBar: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             if let decision {
                 HStack(spacing: AppTheme.Spacing.sm) {
-                    Image(systemName: decision == .approved ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    CreamSymbol(systemName: decision == .approved ? "checkmark.circle.fill" : "xmark.circle.fill")
                         .foregroundStyle(decision == .approved ? palette.success : palette.error)
                     VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
                         Text(decision == .approved ? "已允许本次操作" : "已拒绝本次操作")
@@ -987,7 +987,7 @@ private struct DemoActionApprovalBar: View {
                     .font(.caption.weight(.medium))
                     .foregroundStyle(palette.muted)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(CreamInlineButtonStyle())
 
             if expanded {
                 Divider().overlay(palette.hairlineSoft)
@@ -1005,9 +1005,8 @@ private struct DemoActionApprovalBar: View {
 
     private var approvalSummary: some View {
         HStack(alignment: .top, spacing: AppTheme.Spacing.sm) {
-            Image(systemName: "hand.raised.fill")
+            CreamSymbol(systemName: "hand.raised.fill")
                 .foregroundStyle(palette.warning)
-                .frame(width: 18)
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
                 Text("\(employeeName) 需要你确认")
                     .font(.callout.weight(.semibold))
@@ -1060,7 +1059,7 @@ private struct WorkingStatusBar: View {
             }
             Spacer()
             Button(run.isCancellationRequested ? "正在停止…" : "停止", role: .destructive, action: stop)
-                .buttonStyle(.plain)
+                .buttonStyle(CreamInlineButtonStyle(tone: .destructive))
                 .disabled(run.isCancellationRequested)
         }
         .padding(.horizontal, AppTheme.Spacing.md)
@@ -1107,10 +1106,10 @@ private struct WorkSubmissionConfirmationBar: View {
                     } label: {
                         HStack(spacing: 5) {
                             Text("确认交给 \(employeeName) 执行").font(.callout.weight(.semibold))
-                            Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.caption2)
+                            CreamSymbol(systemName: expanded ? "chevron.down" : "chevron.right", scale: .compact)
                         }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(CreamInlineButtonStyle(tone: .primary))
                     Text("工作 · 保留执行记录与交付物")
                         .font(.caption)
                         .foregroundStyle(palette.muted)

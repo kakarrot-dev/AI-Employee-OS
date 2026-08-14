@@ -76,6 +76,7 @@ extension View {
 struct CreamSidebarButtonStyle: ButtonStyle {
     let isSelected: Bool
     let isHovered: Bool
+    var isFocused = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
@@ -89,6 +90,10 @@ struct CreamSidebarButtonStyle: ButtonStyle {
                     : Color.clear,
                 in: RoundedRectangle(cornerRadius: AppTheme.Radius.selection, style: .continuous)
             )
+            .overlay {
+                RoundedRectangle(cornerRadius: AppTheme.Radius.selection, style: .continuous)
+                    .stroke(isFocused ? palette.focusStroke : .clear, lineWidth: 1.5)
+            }
             .scaleEffect(configuration.isPressed && !reduceMotion ? AppTheme.Interaction.pressedScale : 1)
             .opacity(isEnabled ? 1 : AppTheme.Interaction.disabledOpacity)
             .animation(reduceMotion ? nil : AppTheme.Motion.pressFeedback, value: configuration.isPressed)
@@ -133,6 +138,8 @@ struct CreamPrimaryButtonStyle: ButtonStyle {
             .allowsHitTesting(!isLoading)
             .accessibilityValue(isLoading ? "正在处理" : "")
             .animation(reduceMotion ? nil : AppTheme.Motion.pressFeedback, value: configuration.isPressed)
+            .modifier(CreamButtonHoverFeedback(kind: .primary))
+            .focusEffectDisabled()
     }
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
@@ -173,8 +180,65 @@ struct CreamSecondaryButtonStyle: ButtonStyle {
             .allowsHitTesting(!isLoading)
             .accessibilityValue(isLoading ? "正在处理" : "")
             .animation(reduceMotion ? nil : AppTheme.Motion.pressFeedback, value: configuration.isPressed)
+            .modifier(CreamButtonHoverFeedback(kind: .secondary))
+            .focusEffectDisabled()
     }
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+struct CreamInlineButtonStyle: ButtonStyle {
+    var tone: CreamIconButtonTone = .neutral
+
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.isFocused) private var isFocused
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(AppTheme.Typography.metadata(weight: .medium))
+            .foregroundStyle(foreground.opacity(configuration.isPressed ? 0.72 : 1))
+            .padding(.horizontal, AppTheme.Spacing.xxs)
+            .frame(minHeight: AppTheme.Control.compactHeight)
+            .background(
+                configuration.isPressed ? palette.surfaceSoft : Color.clear,
+                in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
+                    .stroke(isFocused ? palette.focusStroke : .clear, lineWidth: 1.5)
+            }
+            .scaleEffect(configuration.isPressed && !reduceMotion ? AppTheme.Interaction.pressedScale : 1)
+            .opacity(isEnabled ? 1 : AppTheme.Interaction.disabledOpacity)
+            .animation(reduceMotion ? nil : AppTheme.Motion.pressFeedback, value: configuration.isPressed)
+            .modifier(CreamButtonHoverFeedback(kind: .secondary))
+            .focusEffectDisabled()
+    }
+
+    private var foreground: Color {
+        switch tone {
+        case .neutral: palette.body
+        case .primary: palette.primaryActive
+        case .destructive: palette.error
+        }
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+/// Interaction-only style for a button embedded inside an already styled compound control.
+struct CreamEmbeddedButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.72 : isEnabled ? 1 : AppTheme.Interaction.disabledOpacity)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? AppTheme.Interaction.pressedScale : 1)
+            .animation(reduceMotion ? nil : AppTheme.Motion.pressFeedback, value: configuration.isPressed)
+            .modifier(CreamButtonHoverFeedback(kind: .primary))
+            .focusEffectDisabled()
+    }
 }
 
 struct CreamMenuLabel: View {
@@ -183,10 +247,14 @@ struct CreamMenuLabel: View {
     @Environment(\.colorScheme) private var colorScheme
     var body: some View {
         HStack(spacing: 8) {
-            if let icon { Image(systemName: icon).foregroundStyle(palette.muted) }
+            if let icon {
+                CreamSymbol(systemName: icon)
+                    .foregroundStyle(palette.muted)
+            }
             Text(title).foregroundStyle(palette.body).lineLimit(1)
             Spacer(minLength: 12)
-            Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(palette.mutedSoft)
+            CreamSymbol(systemName: "chevron.up.chevron.down", scale: .compact)
+                .foregroundStyle(palette.mutedSoft)
         }
         .font(AppTheme.Typography.interfaceBody())
         .padding(.horizontal, 11)
@@ -204,6 +272,7 @@ struct CreamSegmentedControl<Option: Hashable & Identifiable>: View {
     let title: (Option) -> String
     @Environment(\.colorScheme) private var colorScheme
     @FocusState private var focusedOptionID: Option.ID?
+    @State private var hoveredOptionID: Option.ID?
 
     var body: some View {
         HStack(spacing: 2) {
@@ -213,7 +282,7 @@ struct CreamSegmentedControl<Option: Hashable & Identifiable>: View {
                 } label: {
                     Text(title(option))
                         .font(AppTheme.Typography.metadata(weight: .semibold))
-                        .foregroundStyle(selection == option ? palette.primaryActive : palette.muted)
+                        .foregroundStyle(selection == option ? palette.primaryActive : hoveredOptionID == option.id ? palette.body : palette.muted)
                         .frame(maxWidth: .infinity)
                         .frame(height: 28)
                         .contentShape(Rectangle())
@@ -222,11 +291,18 @@ struct CreamSegmentedControl<Option: Hashable & Identifiable>: View {
                     CreamSelectionButtonStyle(
                         isSelected: selection == option,
                         isFocused: focusedOptionID == option.id,
-                        showsSelectedFill: true
+                        showsSelectedFill: true,
+                        showsFocusStroke: true,
+                        showsHoverFill: true,
+                        isHovered: hoveredOptionID == option.id
                     )
                 )
                 .focusable()
                 .focused($focusedOptionID, equals: option.id)
+                .focusEffectDisabled()
+                .onHover { hovered in
+                    hoveredOptionID = hovered ? option.id : nil
+                }
                 .accessibilityAddTraits(selection == option ? .isSelected : [])
             }
         }
@@ -264,6 +340,7 @@ struct CreamTabBar<Item: Identifiable & Equatable>: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var focusedItemID: Item.ID?
+    @State private var hoveredItemID: Item.ID?
 
     var body: some View {
         HStack(spacing: 24) {
@@ -274,7 +351,7 @@ struct CreamTabBar<Item: Identifiable & Equatable>: View {
                     VStack(spacing: 8) {
                         Text(title(item))
                             .font(AppTheme.Typography.interfaceBody(weight: selection == item ? .semibold : .medium))
-                            .foregroundStyle(selection == item ? palette.primaryActive : palette.muted)
+                            .foregroundStyle(selection == item ? palette.primaryActive : hoveredItemID == item.id ? palette.body : palette.muted)
                             .lineLimit(1)
                         ZStack {
                             Rectangle().fill(Color.clear).frame(height: 2)
@@ -288,16 +365,35 @@ struct CreamTabBar<Item: Identifiable & Equatable>: View {
                     CreamSelectionButtonStyle(
                         isSelected: selection == item,
                         isFocused: focusedItemID == item.id,
-                        showsSelectedFill: false
+                        showsSelectedFill: false,
+                        showsFocusStroke: false,
+                        showsHoverFill: false,
+                        isHovered: hoveredItemID == item.id
                     )
                 )
                 .focusable()
                 .focused($focusedItemID, equals: item.id)
+                .focusEffectDisabled()
+                .overlay {
+                    if focusedItemID == item.id {
+                        RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
+                            .stroke(palette.focusStroke, lineWidth: 1.5)
+                            .padding(.horizontal, -8)
+                            .padding(.vertical, -4)
+                    }
+                }
+                .onHover { hovered in
+                    withAnimation(reduceMotion ? nil : AppTheme.Motion.hoverReveal) {
+                        hoveredItemID = hovered ? item.id : nil
+                    }
+                }
                 .accessibilityAddTraits(selection == item ? .isSelected : [])
             }
             Spacer(minLength: 0)
         }
-        .overlay(alignment: .bottom) { Rectangle().fill(palette.hairlineSoft).frame(height: 1) }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(palette.hairlineSoft.opacity(0.68)).frame(height: 1)
+        }
         .onMoveCommand(perform: moveFocus)
     }
 
@@ -323,6 +419,9 @@ private struct CreamSelectionButtonStyle: ButtonStyle {
     let isSelected: Bool
     let isFocused: Bool
     let showsSelectedFill: Bool
+    let showsFocusStroke: Bool
+    let showsHoverFill: Bool
+    let isHovered: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
@@ -331,16 +430,44 @@ private struct CreamSelectionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(
-                showsSelectedFill && isSelected ? palette.selectionFill : Color.clear,
+                showsSelectedFill && isSelected ? palette.selectionFill
+                    : showsHoverFill && isHovered ? palette.hoverFill
+                    : Color.clear,
                 in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
-                    .stroke(isFocused ? palette.focusStroke : .clear, lineWidth: 1.5)
+                    .stroke(showsFocusStroke && isFocused ? palette.focusStroke : .clear, lineWidth: 1.5)
             }
             .scaleEffect(configuration.isPressed && !reduceMotion ? AppTheme.Interaction.pressedScale : 1)
             .opacity(isEnabled ? 1 : AppTheme.Interaction.disabledOpacity)
             .animation(reduceMotion ? nil : AppTheme.Motion.pressFeedback, value: configuration.isPressed)
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct CreamButtonHoverFeedback: ViewModifier {
+    enum Kind { case primary, secondary }
+
+    let kind: Kind
+    @State private var isHovered = false
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                kind == .secondary && isHovered && isEnabled ? palette.hoverFill : Color.clear,
+                in: RoundedRectangle(cornerRadius: AppTheme.Radius.control, style: .continuous)
+            )
+            .opacity(kind == .primary && isHovered && isEnabled ? 0.92 : 1)
+            .onHover { hovered in
+                withAnimation(reduceMotion ? nil : AppTheme.Motion.hoverReveal) {
+                    isHovered = hovered
+                }
+            }
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
@@ -353,11 +480,13 @@ struct ModuleToolbarTitle: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        Label(title, systemImage: systemImage)
-            .labelStyle(.titleAndIcon)
+        HStack(spacing: AppTheme.Spacing.xs) {
+            CreamSymbol(systemName: systemImage)
+            Text(title)
+        }
             .font(AppTheme.Typography.workspaceTitle)
             .foregroundStyle(palette.ink)
-            .imageScale(.medium)
+            .accessibilityElement(children: .combine)
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }

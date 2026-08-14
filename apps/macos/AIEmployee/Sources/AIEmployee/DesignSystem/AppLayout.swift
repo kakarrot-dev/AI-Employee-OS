@@ -43,6 +43,9 @@ struct AppPaneMetrics: Equatable {
 }
 
 struct AppLayoutProfile: Equatable {
+    /// One readable content track for every page-level tab detail surface.
+    static let tabbedDetailContentMaxWidth: CGFloat = 820
+
     let id: String
     let family: AppLayoutFamily
     let collection: AppPaneMetrics?
@@ -74,11 +77,11 @@ struct AppLayoutProfile: Equatable {
     static let contacts = browser(
         id: "contacts",
         collection: AppPaneMetrics(minWidth: 232, idealWidth: 260, maxWidth: 280),
-        contentMaxWidth: 820
+        contentMaxWidth: tabbedDetailContentMaxWidth
     )
 
     static let knowledge = browser(id: "knowledge", contentMaxWidth: 820)
-    static let capabilities = browser(id: "capabilities", contentMaxWidth: 780)
+    static let capabilities = browser(id: "capabilities", contentMaxWidth: tabbedDetailContentMaxWidth)
     static let settings = browser(
         id: "settings",
         collection: AppPaneMetrics(minWidth: 220, idealWidth: 232, maxWidth: 240),

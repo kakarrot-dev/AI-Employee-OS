@@ -236,19 +236,23 @@ struct KnowledgeLibraryWorkspaceView: View {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(visibleTreeRows) { row in
-                            Button { select(row) } label: {
+                            CreamInteractiveRow(
+                                isSelected: row.documentID == selectedID,
+                                accessibilityLabel: row.name,
+                                action: { select(row) }
+                            ) {
                                 HStack(spacing: 7) {
                                     if row.isFolder {
-                                        Image(systemName: expandedFolders.contains(folderPath(for: row)) ? "chevron.down" : "chevron.right")
-                                            .font(.system(size: 8, weight: .semibold))
+                                        CreamSymbol(
+                                            systemName: expandedFolders.contains(folderPath(for: row)) ? "chevron.down" : "chevron.right",
+                                            scale: .compact
+                                        )
                                             .foregroundStyle(palette.mutedSoft)
-                                            .frame(width: 10)
                                     } else {
-                                        Color.clear.frame(width: 10, height: 1)
+                                        Color.clear.frame(width: 12, height: 1)
                                     }
-                                    Image(systemName: row.isFolder ? "folder" : "doc.richtext")
+                                    CreamSymbol(systemName: row.isFolder ? "folder" : "doc.richtext")
                                         .foregroundStyle(row.isFolder ? palette.primaryActive : palette.muted)
-                                        .frame(width: 17)
                                     Text(row.name)
                                         .font(.system(.caption, design: row.isFolder ? .default : .monospaced))
                                         .fontWeight(row.isFolder ? .semibold : .regular)
@@ -259,9 +263,8 @@ struct KnowledgeLibraryWorkspaceView: View {
                                 .padding(.leading, CGFloat(row.depth * 15) + 10)
                                 .padding(.trailing, 10)
                                 .frame(height: 31)
-                                .background(row.documentID == selectedID ? palette.primary.opacity(0.11) : Color.clear)
                                 .contentShape(Rectangle())
-                            }.buttonStyle(.plain)
+                            }
                         }
                     }.padding(.vertical, 6)
                 }
@@ -281,7 +284,8 @@ struct KnowledgeLibraryWorkspaceView: View {
                         action: { compactShowsDocument = false }
                     )
                 }
-                Image(systemName: "doc.richtext").foregroundStyle(palette.primaryActive)
+                CreamSymbol(systemName: "doc.richtext")
+                    .foregroundStyle(palette.primaryActive)
                 Text(selected?.relativePath ?? "选择文档").font(.callout.weight(.semibold)).foregroundStyle(palette.ink).lineLimit(1)
                 Spacer()
                 if let selected {
@@ -313,8 +317,8 @@ struct KnowledgeLibraryWorkspaceView: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Image(systemName: "books.vertical")
-                .font(.system(size: 28, weight: .light)).foregroundStyle(palette.primaryActive)
+            CreamSymbol(systemName: "books.vertical", scale: .emptyState)
+                .foregroundStyle(palette.primaryActive)
             VStack(alignment: .leading, spacing: 6) {
                 Text("Runtime 知识库中还没有来源").font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
                 Text("只有通过 Runtime 导入并写入 knowledge_sources 的内容会在这里显示；文件目录本身不是知识库事实源。")

@@ -15,7 +15,6 @@ struct ContextSidebarView: View {
             content
         }
         .background(palette.surfaceSoft)
-        .overlay(alignment: .trailing) { Rectangle().fill(palette.hairlineSoft).frame(width: 1) }
     }
 
     private var header: some View {
@@ -117,20 +116,22 @@ struct WorkConversationList: View {
                             .padding(.top, 14)
                             .padding(.bottom, 6)
                         ForEach(employees) { employee in
-                            Button {
-                                employeeStore.selection = employee.id
-                                conversationStore.select(employee: employee)
-                                didSelect?()
-                            } label: {
+                            CreamInteractiveRow(
+                                isSelected: employeeStore.selection == employee.id,
+                                accessibilityLabel: "与\(employee.name)的持续会话",
+                                action: {
+                                    employeeStore.selection = employee.id
+                                    conversationStore.select(employee: employee)
+                                    didSelect?()
+                                }
+                            ) {
                                 WorkConversationRow(
                                     employee: employee,
                                     preview: preview(for: employee),
                                     state: state(for: employee),
-                                    relativeTime: relativeTime(for: employee),
-                                    isSelected: employeeStore.selection == employee.id
+                                    relativeTime: relativeTime(for: employee)
                                 )
                             }
-                            .buttonStyle(.plain)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 1)
                         }
@@ -204,8 +205,6 @@ private struct WorkConversationRow: View {
     let preview: String
     let state: RowState
     let relativeTime: String?
-    var isSelected = false
-    @State private var isHovered = false
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -235,9 +234,6 @@ private struct WorkConversationRow: View {
         .padding(.horizontal, 11)
         .padding(.vertical, 11)
         .contentShape(Rectangle())
-        .creamSidebarRowSurface(isSelected: isSelected, isHovered: isHovered)
-        .onHover { isHovered = $0 }
-        .animation(AppTheme.Motion.hoverReveal, value: isHovered)
     }
 
     private var stateColor: Color {
@@ -263,12 +259,17 @@ struct EmployeeContextRow: View {
                 .overlay { Text(employee.name.prefix(1)).font(.caption.weight(.semibold)).foregroundStyle(palette.primaryActive) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(employee.name).font(AppTheme.Typography.interfaceBody(weight: .medium)).lineLimit(1)
-                HStack(spacing: 5) {
-                    Circle().fill(employee.status == "active" ? palette.success : palette.muted).frame(width: 5, height: 5)
-                    Text("\(employee.role) · \(employee.status == "active" ? "可用" : "已停用")")
+                HStack(spacing: AppTheme.Spacing.xxs) {
+                    Text(employee.role)
                         .font(AppTheme.Typography.metadata())
                         .foregroundStyle(palette.muted)
                         .lineLimit(1)
+                    Spacer(minLength: AppTheme.Spacing.xxs)
+                    CreamStatusLabel(
+                        title: employee.status == "active" ? "可用" : "已停用",
+                        systemImage: employee.status == "active" ? "checkmark.circle.fill" : "pause.circle.fill",
+                        tone: employee.status == "active" ? .success : .neutral
+                    )
                 }
             }
         }

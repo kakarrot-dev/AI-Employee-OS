@@ -10,7 +10,7 @@ struct EmployeeEditorView: View {
     @State private var section: EmployeeEditorSection = .profile
     @State private var soulPrompt = ""
     @State private var isSaving = false
-    @State private var previewMode = false
+    @State private var promptMode: EmployeePromptMode = .edit
     @State private var isChoosingAvatar = false
     @State private var avatarError: String?
     @State private var selectedSkillIDs: Set<String> = []
@@ -143,15 +143,19 @@ struct EmployeeEditorView: View {
     private var editorNavigation: some View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(EmployeeEditorSection.allCases) { item in
-                Button {
-                    section = item
-                } label: {
-                    Label(item.title, systemImage: item.icon)
-                        .font(.callout.weight(section == item ? .semibold : .regular))
-                        .foregroundStyle(section == item ? palette.ink : palette.body)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).frame(height: 38)
-                        .background(section == item ? palette.primary.opacity(0.11) : .clear, in: RoundedRectangle(cornerRadius: 8))
-                }.buttonStyle(.plain)
+                CreamInteractiveRow(
+                    isSelected: section == item,
+                    accessibilityLabel: item.title,
+                    action: { section = item }
+                ) {
+                    HStack(spacing: AppTheme.Spacing.xs) {
+                        CreamSymbol(systemName: item.icon)
+                        Text(item.title)
+                    }
+                    .font(.callout.weight(section == item ? .semibold : .regular))
+                    .foregroundStyle(section == item ? palette.ink : palette.body)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).frame(height: 38)
+                }
             }
             Spacer()
         }.padding(12).background(palette.surfaceSoft)
@@ -180,7 +184,8 @@ struct EmployeeEditorView: View {
                     Button(employee.avatarPath == nil ? "上传头像" : "更换头像") { isChoosingAvatar = true }
                         .buttonStyle(CreamSecondaryButtonStyle())
                     if employee.avatarPath != nil {
-                        Button("移除头像", role: .destructive) { employee.avatarPath = nil }.buttonStyle(.plain).font(.caption)
+                        Button("移除头像", role: .destructive) { employee.avatarPath = nil }
+                            .buttonStyle(CreamInlineButtonStyle(tone: .destructive))
                     }
                     Text("支持 PNG、JPEG、HEIC 和 WebP").font(.caption).foregroundStyle(palette.muted)
                 }
@@ -232,7 +237,8 @@ struct EmployeeEditorView: View {
             }
             if items.isEmpty {
                 HStack(spacing: 12) {
-                    Image(systemName: title == "技能" ? "sparkles" : "wrench.and.screwdriver").foregroundStyle(palette.primaryActive)
+                    CreamSymbol(systemName: title == "技能" ? "sparkles" : "wrench.and.screwdriver")
+                        .foregroundStyle(palette.primaryActive)
                     Text(empty).font(.callout).foregroundStyle(palette.body)
                 }
                 .padding(14)
@@ -243,8 +249,8 @@ struct EmployeeEditorView: View {
                 VStack(spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                         HStack(spacing: 12) {
-                            Image(systemName: item.kind == .skill ? "sparkles" : "wrench.and.screwdriver")
-                                .foregroundStyle(palette.primaryActive).frame(width: 22)
+                            CreamSymbol(systemName: item.kind == .skill ? "sparkles" : "wrench.and.screwdriver")
+                                .foregroundStyle(palette.primaryActive)
                             VStack(alignment: .leading, spacing: 3) {
                                 HStack(spacing: 7) {
                                     Text(item.name).font(.callout.weight(.semibold)).foregroundStyle(palette.ink)
@@ -253,15 +259,13 @@ struct EmployeeEditorView: View {
                                 Text(item.detail).font(.caption).foregroundStyle(palette.muted).lineLimit(2)
                             }
                             Spacer()
-                            Button { remove(item) } label: {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(palette.error)
-                                    .frame(width: 26, height: 26)
-                                    .background(palette.error.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
-                            }
-                            .buttonStyle(.plain)
-                            .help("移除")
+                            CreamIconButton(
+                                systemName: "trash",
+                                accessibilityLabel: "移除\(item.name)",
+                                help: "移除\(item.name)",
+                                tone: .destructive,
+                                action: { remove(item) }
+                            )
                         }
                         .padding(.vertical, 12)
                         if index < items.count - 1 { Divider().overlay(palette.hairlineSoft) }
@@ -279,14 +283,10 @@ struct EmployeeEditorView: View {
             HStack(alignment: .top) {
                 formHeading(title, detail)
                 Spacer()
-                HStack(spacing: 4) {
-                    Button("编辑") { previewMode = false }
-                        .buttonStyle(CreamPromptModeButtonStyle(isSelected: !previewMode))
-                    Button("预览") { previewMode = true }
-                        .buttonStyle(CreamPromptModeButtonStyle(isSelected: previewMode))
-                }
+                CreamSegmentedControl(options: EmployeePromptMode.allCases, selection: $promptMode, title: \.title)
+                    .frame(width: 132)
             }
-            if previewMode {
+            if promptMode == .preview {
                 MarkdownDocumentView(source: text.wrappedValue)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
@@ -405,16 +405,12 @@ struct EmployeeEditorView: View {
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
-private struct CreamPromptModeButtonStyle: ButtonStyle {
-    let isSelected: Bool
-    @Environment(\.colorScheme) private var colorScheme
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(.caption.weight(.semibold))
-            .foregroundStyle(isSelected ? palette.primaryActive : palette.muted)
-            .padding(.horizontal, 10).frame(height: 28)
-            .background(isSelected ? palette.primary.opacity(0.11) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
-    }
-    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+private enum EmployeePromptMode: String, CaseIterable, Identifiable {
+    case edit
+    case preview
+
+    var id: String { rawValue }
+    var title: String { self == .edit ? "编辑" : "预览" }
 }
 
 private enum EmployeeEditorSection: String, CaseIterable, Identifiable {

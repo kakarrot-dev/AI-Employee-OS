@@ -80,15 +80,37 @@ struct ScenarioLibraryWorkspaceView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .padding(.top, 28)
             } else {
-                List(filtered, selection: $store.selectedID) { item in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(item.title).font(.callout.weight(.semibold))
-                        Text("v\(item.currentVersion) · \(item.status)")
-                            .font(.caption).foregroundStyle(palette.muted)
+                ScrollView {
+                    LazyVStack(spacing: 2) {
+                        ForEach(filtered) { item in
+                            CreamInteractiveRow(
+                                isSelected: store.selectedID == item.id,
+                                accessibilityLabel: "\(item.title)，\(item.status)",
+                                action: { store.selectedID = item.id }
+                            ) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(item.title)
+                                        .font(.callout.weight(.semibold))
+                                        .foregroundStyle(palette.ink)
+                                    HStack(spacing: AppTheme.Spacing.xs) {
+                                        Text("v\(item.currentVersion)")
+                                            .font(AppTheme.Typography.compactMetadata().monospacedDigit())
+                                            .foregroundStyle(palette.muted)
+                                        CreamStatusLabel(
+                                            title: item.status,
+                                            systemImage: "info.circle.fill",
+                                            tone: .neutral
+                                        )
+                                    }
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
                     }
-                    .tag(item.id)
+                    .padding(8)
                 }
-                .listStyle(.sidebar)
             }
         }
         .background(palette.surfaceSoft)
@@ -154,8 +176,7 @@ struct ScenarioLibraryWorkspaceView: View {
                 .padding(28)
             } else {
                 VStack(spacing: 12) {
-                    Image(systemName: "point.3.connected.trianglepath.dotted")
-                        .font(.system(size: 34, weight: .light))
+                    CreamSymbol(systemName: "point.3.connected.trianglepath.dotted", scale: .emptyState)
                         .foregroundStyle(palette.primaryActive)
                     Text("创建第一个场景")
                         .font(.title2.weight(.semibold))
@@ -256,46 +277,57 @@ private struct ScenarioEditorPage: View {
     @Binding var selectedTab: ScenarioEditorTab
     let close: () -> Void
     @State private var showsSOPPreview = false
-    @State private var isExitHovered = false
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("配置场景")
-                        .font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
-                    Text("先定义业务 SOP，再配置员工节点，最后校验并启动。")
-                        .font(.callout).foregroundStyle(palette.muted)
+            CreamTabbedPageContainer {
+                VStack(spacing: 0) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("配置场景")
+                                .font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
+                            Text("先定义业务 SOP，再配置员工节点，最后校验并启动。")
+                                .font(.callout).foregroundStyle(palette.muted)
+                        }
+                        Spacer()
+                        Button {
+                            close()
+                        } label: {
+                            Label("返回场景库", systemImage: "chevron.left")
+                        }
+                        .buttonStyle(CreamSecondaryButtonStyle())
+                        .help("返回场景库，未保存修改需要确认")
+                    }
+                    .padding(.vertical, 16)
+                    Divider().overlay(palette.hairlineSoft)
+                    CreamTabBar(items: ScenarioEditorTab.allCases, selection: $selectedTab, title: \.rawValue)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 14)
                 }
-                Spacer()
-                Button {
-                    close()
-                } label: {
-                    Label("返回场景库", systemImage: "chevron.left")
-                }
-                .buttonStyle(CreamSecondaryButtonStyle())
-                .foregroundStyle(isExitHovered ? palette.warning : palette.body)
-                .background(
-                    isExitHovered ? palette.warning.opacity(0.10) : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                )
-                .onHover { isExitHovered = $0 }
-                .help("返回场景库，未保存修改需要确认")
             }
-            .padding(.horizontal, 24).padding(.vertical, 16)
-            Divider().overlay(palette.hairlineSoft)
-            CreamTabBar(items: ScenarioEditorTab.allCases, selection: $selectedTab, title: \.rawValue)
-                .frame(maxWidth: 620)
-                .padding(.horizontal, 24)
-                .padding(.top, 14)
             switch selectedTab {
             case .sop:
-                sopPage($draft)
+                CreamTabbedPageContainer(showsWorkspaceSurface: true) {
+                    sopPage($draft)
+                }
+                .padding(.top, AppTheme.Spacing.sm)
+                .padding(.bottom, AppTheme.Spacing.lg)
+                .frame(maxHeight: .infinity)
             case .nodes:
-                nodesPage($draft)
+                CreamTabbedPageContainer(showsWorkspaceSurface: true) {
+                    nodesPage($draft)
+                }
+                .padding(.top, AppTheme.Spacing.sm)
+                .padding(.bottom, AppTheme.Spacing.lg)
+                .frame(maxHeight: .infinity)
             case .review:
-                reviewPage($draft)
+                CreamTabbedPageContainer(showsWorkspaceSurface: true) {
+                    reviewPage($draft)
+                }
+                .padding(.top, AppTheme.Spacing.sm)
+                .padding(.bottom, AppTheme.Spacing.lg)
+                .frame(maxHeight: .infinity)
             }
         }
         .background(palette.canvas)
@@ -358,8 +390,7 @@ private struct ScenarioEditorPage: View {
                     proposalLoadingView
                 } else if binding.nodes.wrappedValue.isEmpty {
                     VStack(spacing: 14) {
-                        Image(systemName: "point.3.connected.trianglepath.dotted")
-                            .font(.system(size: 30, weight: .light))
+                        CreamSymbol(systemName: "point.3.connected.trianglepath.dotted", scale: .emptyState)
                             .foregroundStyle(palette.primaryActive)
                         Text("尚未配置节点")
                             .font(.title3.weight(.semibold))
@@ -409,7 +440,7 @@ private struct ScenarioEditorPage: View {
                     .disabled(binding.nodes.count >= 12)
                 }
             }
-            .padding(28).frame(maxWidth: 820, alignment: .leading).frame(maxWidth: .infinity)
+            .padding(28).frame(maxWidth: .infinity, alignment: .leading)
         }
         .safeAreaInset(edge: .bottom) {
             HStack {
@@ -453,17 +484,13 @@ private struct ScenarioEditorPage: View {
                     .background(palette.primary.opacity(0.10), in: Capsule())
                 Spacer()
                 if node.wrappedValue.role != "finalization" {
-                    Button {
-                        removeNode(node.wrappedValue.nodeID)
-                    } label: {
-                        Image(systemName: "trash")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(palette.error)
-                            .frame(width: 26, height: 26)
-                            .background(palette.error.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
-                    }
-                    .buttonStyle(.plain).help("删除节点")
-                    .accessibilityLabel("删除执行节点")
+                    CreamIconButton(
+                        systemName: "trash",
+                        accessibilityLabel: "删除执行节点",
+                        help: "删除执行节点",
+                        tone: .destructive,
+                        action: { removeNode(node.wrappedValue.nodeID) }
+                    )
                 }
             }
             .frame(minHeight: 36)

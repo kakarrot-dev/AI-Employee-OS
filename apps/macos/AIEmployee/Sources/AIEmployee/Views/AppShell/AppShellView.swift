@@ -89,6 +89,7 @@ struct AppShellView<Workspace: View>: View {
             }
         }
         .background(palette.canvas)
+        .symbolRenderingMode(.monochrome)
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }

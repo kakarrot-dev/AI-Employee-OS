@@ -130,8 +130,7 @@ struct CreamComposer<LeadingActions: View, StatusContent: View>: View {
                         .controlSize(.small)
                         .tint(palette.surfaceCard)
                 } else {
-                    Image(systemName: actionState == .stop ? "stop.fill" : "arrow.up")
-                        .font(.callout.weight(.bold))
+                    CreamSymbol(systemName: actionState == .stop ? "stop.fill" : "arrow.up")
                         .foregroundStyle(actionLooksActive ? palette.surfaceCard : palette.mutedSoft)
                 }
             }

@@ -147,11 +147,13 @@ Timeline / Composer / Approval / Artifact / Task Status / Inspector
 
 ### 8.1 Button
 
-`CreamPrimaryButtonStyle` 用于一个表面唯一的主要动作。`CreamSecondaryButtonStyle` 用于取消、返回或次要动作。`CreamIconButton` 用于纯图标次要动作。
+`CreamPrimaryButtonStyle` 用于一个表面唯一的主要动作。`CreamSecondaryButtonStyle` 用于取消、返回或次要动作。`CreamInlineButtonStyle` 用于正文、折叠说明与弱化链接动作。`CreamEmbeddedButtonStyle` 只用于已经存在完整外观的组合控件内部。`CreamIconButton` 用于纯图标次要动作；带菜单的同类入口使用 `CreamIconMenu`，保持相同的 `40pt` 命中区域、Hover、Focus、Help 和 Accessibility Label，并隐藏系统菜单箭头。
 
-必须覆盖 Default、Pressed、Keyboard Focus、Disabled 和 Loading。纯图标按钮必须由组件 API 强制提供 Help 和 Accessibility Label。
+所有按钮必须覆盖 Default、Hover、Pressed、Keyboard Focus 和 Disabled；Primary 与 Secondary 额外覆盖 Loading。Hover 使用 `hoverFill` 或同一前景色的轻微明度变化，Pressed 统一缩放至 `0.98`，Keyboard Focus 只使用 `focusStroke`，必须关闭系统蓝色 Focus Ring。纯图标按钮必须由组件 API 强制提供 Help 和 Accessibility Label。
 
-Primary 与 Secondary Style 通过 `isLoading` 显式接收进行中状态；Loading 时组件负责替换视觉标签、阻止重复点击并提供可访问性状态值，调用方仍负责以 `.disabled(...)` 暴露真实业务可用性。自定义 Button、Tab 与 Segment 的 Keyboard Focus 必须使用 `focusStroke`，不得仅依赖 Hover 或颜色变化。
+同组操作统一使用 `CreamSymbol` 的单色线性 SF Symbol、Medium 光学重量和 Neutral 前景色；只允许通过 `compact | standard | feature | emptyState` 表达信息层级，不允许业务页面自行指定 Symbol 粗细。只有真实主要动作、危险动作或状态本身才改变颜色，不以不同颜色区分同级按钮。列表对象与详情对象的图标表面使用 `CreamFeatureIcon`。
+
+Primary 与 Secondary Style 通过 `isLoading` 显式接收进行中状态；Loading 时组件负责替换视觉标签、阻止重复点击并提供可访问性状态值，调用方仍负责以 `.disabled(...)` 暴露真实业务可用性。自定义 Button 与 Segment 的 Keyboard Focus 必须使用 `focusStroke`，不得仅依赖 Hover 或颜色变化。Tab 的 Focus 与 Selected 统一由底部指示器表达，不绘制包围整项的系统 Focus Ring 或第二层主题描边。
 
 ### 8.2 Search Field
 
@@ -161,7 +163,7 @@ Primary 与 Secondary Style 通过 `isLoading` 显式接收进行中状态；Loa
 
 ### 8.3 Sidebar Row
 
-`creamSidebarRowSurface` 只负责 Default、Hover、Selected 表面。Row 内容仍由业务页面负责，并保持一个图标、一行标题和最多一行次要信息。
+`CreamInteractiveRow` 是导航、Browser 列表、树目录、设置侧栏和选择列表的唯一选择行入口。它统一 Default、Hover、Pressed、Selected、Keyboard Focus 与 Disabled，并负责关闭系统 Focus Ring。Selected 使用 `selectionFill`；Hover 只在未选中行使用 `hoverFill`；Focus 使用一层 `focusStroke`，不得与 Selected 再叠加系统蓝环。`creamSidebarRowSurface` 仅供非点击行等 DesignSystem 内部表面复用，Feature 不再直接组合交互状态。
 
 ### 8.4 Section Header
 
@@ -169,19 +171,35 @@ Primary 与 Secondary Style 通过 `isLoading` 显式接收进行中状态；Loa
 
 ### 8.5 Status Badge
 
-`CreamStatusBadge` 只接收已经派生好的文案、图标和 `UXFeedbackTone`。它不解析 Runtime 字符串，不自行决定 Task 或 Action 状态。
+`CreamStatusBadge` 用于页面头部、文档工具栏和其他需要表面强调的状态；`CreamStatusLabel` 用于员工行、任务行和目录行等高密度内联状态。两者只接收已经派生好的文案、图标和 `UXFeedbackTone`，不解析 Runtime 字符串，不自行决定 Task 或 Action 状态。状态必须同时有文字和图标，不依赖颜色单独表达。
 
-### 8.6 Feedback
+### 8.6 Tab 与 Segment
+
+`CreamTabBar` 的选择态只使用 Semibold 主题文字与 `2pt` 底部主题指示器，不增加胶囊背景、外框或系统蓝色 Focus Ring。Hover 只把未选中标签从 Muted 提升为 Body，不增加第二个选中表面。未选择项通过键盘获得焦点时，使用同位置的 `2pt focusStroke` 指示器；选择项同时获得焦点时仍只显示一条主题指示器。`CreamSegmentedControl` 保留选中填充、Hover 填充与主题 Focus 描边，两类控件不得混用选择态。
+
+`CreamTabbedDetailHeader` 是带 Tab 的对象详情页唯一头部组合。布局顺序固定为对象图标或头像、标题与版本、紧邻标题的状态、摘要、右侧动作、同宽 Tab。状态不得被 `Spacer` 推到容器最右侧，动作不得脱离头部内容宽度。通讯录、技能库和工具库使用同一组合；编辑器内的模式切换使用 `CreamSegmentedControl`，不得伪装成页面 Tab。
+
+`CreamTabbedPageContainer` 是所有页面级 Tab 的唯一水平内容轨道。最大内容宽度统一为 `820pt`，窗口不足时自动缩窄，宽屏时水平居中；头部、Tab、正文和底部操作必须分别放入同一轨道，左右留白由当前自适应布局的 `horizontalInset` 决定。Feature 页面不得再用私有 `frame(maxWidth:)` 和单边 `padding` 拼接 Tab 布局。通讯录、技能库、工具库与场景编辑器均遵守该规则；目录树、Inspector 等非页面级 Tab 结构不强制使用。
+
+### 8.7 Pane 与 Tab 工作面
+
+`CreamPaneSurfaceRole` 是窗口主要分栏的统一表面契约。`globalNavigation` 使用最柔和的材质、`16pt` 连续圆角与外侧呼吸区；`collection` 使用次级暖色表面、`12pt` 连续圆角与较弱阴影；二者不再额外绘制贯穿全高的尾随分割线。`HSplitView` 的原生拖拽边界继续保留，但通过背景落差、`6–8pt` 间隙、`0.75pt` 弱描边和主题阴影表达层级，避免形成锋利竖墙。
+
+`tabWorkspace` 只用于页面级 Tab 下的编辑器、目录浏览器或可持续工作的正文区域。它使用 `16pt` 连续圆角和 `surfaceCard`，由 `CreamTabbedPageContainer(showsWorkspaceSurface: true)` 放入同一 `820pt` 居中轨道。普通段落、设置项和短说明不得为了统一而全部包成 Card；表面只表达真实的工作区层级。
+
+说明文档、依赖信息、能力信息和权限信息等阅读型 Tab 使用 `CreamTabContentSection`。结构固定为语义标题与说明在上、`CreamContentSurface` 正文在下，正文内边距为 `20pt`；它与通讯录 Identity / Soul 页面共享同一垂直节奏。对象 Header 到内容标题保持 `28pt`，不得把正文直接贴到圆角边缘，也不得用整块 `tabWorkspace` 代替阅读层级。目录浏览器与编辑器仍使用 edge-to-edge 的 `tabWorkspace`，不强行增加正文内边距。
+
+### 8.8 Feedback
 
 继续使用 `UXFeedbackStateView`、`UXInlineFeedback`、`UXAsyncActionLabel` 和 `UXToastOverlay`。Loading、Empty、Failure、Blocked、Result Unknown 必须保留不同表达。
 
-### 8.7 Timeline
+### 8.9 Timeline
 
 员工私聊与 Task Thread 必须复用 `CreamTimelineLayout`、`CreamTimelineUserMessage`、`CreamTimelineAgentRow` 和 `CreamTimelineMarkdownBody`。共享层统一阅读宽度、轮次间距、消息对齐、用户气泡、头像与作者元数据、时间、复制、可选编辑、长消息折叠、Markdown 排印和 Reduce Motion。
 
 Feature 只负责把 `ChatMessage`、`TaskRun` 或 `TaskRoomTimelineItem` 映射为共享组件，并提供编辑、审批、交接、产物等业务动作。审批、Handoff、Deliverable 与 Runtime Activity 可以保留专用内容，但其事件表面不得创建第二套普通消息阅读模式。页面可以调整外边距和用户消息最大宽度，不得重新实现同类气泡、作者行或消息动作。
 
-### 8.8 Composer 与 Modal
+### 8.10 Composer 与 Modal
 
 `CreamComposer` 是办公室任务入口、员工私聊和 Task Thread 的共享输入组件。组件统一负责多行输入、Focus 表面、Enter 提交、Shift+Enter 换行、32pt 提交/停止按钮、40pt 命中区域、Disabled、Loading、Help、Accessibility Label 和 Reduce Motion；业务草稿、是否可提交、提交/停止动作与邻近错误仍由各自 Store 和 Feature 提供。
 
@@ -193,7 +211,7 @@ Feature 只负责把 `ChatMessage`、`TaskRun` 或 `TaskRoomTimelineItem` 映射
 
 `CreamModalOverlay` 必须统一 Escape 关闭、Modal Focus Section、全屏 Pointer 遮罩、背景 Accessibility 隔离，以及关闭后的 First Responder 恢复。背景禁用必须推迟到 Bridge 捕获原 First Responder 之后，关闭时先恢复背景可用性，再恢复原控件；不得通过直接绑定 `isModalPresented` 的 `.disabled(...)` 提前清空焦点。SwiftUI 继续拥有显示状态，AppKit Bridge 只保存和恢复 `NSWindow.firstResponder`，不得持有业务状态或建立第二套导航。
 
-### 8.9 Command Palette 专用 Pattern
+### 8.11 Command Palette 专用 Pattern
 
 `CreamCommandPaletteSearchField` 是已标准化的 Specialized Pattern，不是普通 `CreamSearchField` 的待迁移副本。它由 Command Palette 持有 Focus Binding，并将 Return、上下键选择和 Escape 保留给命令路由；共享视觉 Token、清除动作、Help 与 Accessibility Label 仍必须复用 DesignSystem。
 
@@ -260,8 +278,11 @@ Do Not：
 
 - “使用 `canvas #F5F5F2 / #2D2E2D`、系统 SF Pro/PingFang、22pt 页面主标题、16pt Section 标题、13pt 界面正文和 24pt Section 间距创建无 Card 的 `AdaptivePage`。”
 - “使用 `CreamSearchField`，字段高度 34pt、圆角 8pt、Surface Card 背景、Hairline 描边，并提供清除搜索的 Help 与 Accessibility Label。”
-- “使用 `CreamIconButton` 创建 40pt 命中区域的纯图标操作，Press 缩放 0.98、120ms ease out，Reduce Motion 下取消缩放。”
-- “使用 `CreamStatusBadge` 展示已经派生好的状态，文字 11pt Semibold，颜色与图标同时表达语义，不在组件内解析 Runtime 状态。”
+- “使用 `CreamIconButton` 创建 40pt 命中区域的纯图标操作，Hover 使用 hoverFill，Press 缩放 0.98，Focus 只使用 focusStroke，Reduce Motion 下取消缩放。”
+- “使用 `CreamInteractiveRow` 实现导航与选择行，不在 Feature 内分别组合 Hover、Selected 与系统 Focus Ring。”
+- “使用 `CreamStatusBadge` 或 `CreamStatusLabel` 展示已经派生好的状态，颜色与图标同时表达语义，不在组件内解析 Runtime 状态。”
+- “带页签的对象详情头使用 `CreamTabbedDetailHeader`，状态紧邻标题，右侧动作与 Tab 共享同一内容宽度。”
+- “页面级 Tab 的头部、页签、正文和底部操作分别使用 `CreamTabbedPageContainer`，统一 `820pt` 最大宽度并水平居中。”
 - “Panel 进入使用 220ms ease out、Opacity 加最多 8pt 位移，退出使用 160ms ease in，键盘高频操作不播放动画。”
 
 ## 14. Taste Skill 使用边界

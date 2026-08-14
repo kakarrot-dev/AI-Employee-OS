@@ -8,7 +8,6 @@ struct EmployeeDirectoryView: View {
     @State private var query = ""
     @State private var compactShowsProfile = false
     @State private var confirmingDeletion: Employee?
-    @State private var hoveredEmployeeID: String?
     @Environment(\.colorScheme) private var colorScheme
 
     private var demo: ContactsDemoData? { ContactsDemoData.current }
@@ -52,11 +51,21 @@ struct EmployeeDirectoryView: View {
     private var directory: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
-                CreamSectionHeader("AI 员工", count: employees.count) {
+                HStack(spacing: AppTheme.Spacing.xs) {
                     HStack(spacing: AppTheme.Spacing.xs) {
-                    if demo != nil {
-                            CreamStatusBadge(title: "演示数据", systemImage: "sparkles", tone: .warning)
+                        Text("AI 员工")
+                            .font(AppTheme.Typography.sectionTitle)
+                            .foregroundStyle(palette.ink)
+                        Text("\(employees.count)")
+                            .font(AppTheme.Typography.metadata().monospacedDigit())
+                            .foregroundStyle(palette.muted)
+                            .accessibilityLabel("共 \(employees.count) 名员工")
                     }
+                    Spacer(minLength: AppTheme.Spacing.sm)
+                    HStack(spacing: AppTheme.Spacing.xs) {
+                        if demo != nil {
+                            CreamStatusBadge(title: "演示数据", systemImage: "sparkles", tone: .warning)
+                        }
                         CreamIconButton(
                             systemName: "person.badge.plus",
                             accessibilityLabel: "新建员工",
@@ -66,6 +75,7 @@ struct EmployeeDirectoryView: View {
                         )
                     }
                 }
+                .frame(minHeight: AppTheme.Control.hitTarget)
                 CreamSearchField("搜索姓名、岗位或部门", text: $query, accessibilityLabel: "搜索员工")
             }
             .padding(16)
@@ -96,8 +106,7 @@ struct EmployeeDirectoryView: View {
 
     private var directoryEmptyState: some View {
         VStack(spacing: 10) {
-            Image(systemName: query.isEmpty ? "person.2" : "magnifyingglass")
-                .font(.system(size: 22, weight: .light))
+            CreamSymbol(systemName: query.isEmpty ? "person.2" : "magnifyingglass", scale: .feature)
                 .foregroundStyle(palette.mutedSoft)
             Text(query.isEmpty ? "还没有 AI 员工" : "没有匹配的员工")
                 .font(.callout.weight(.semibold))
@@ -113,40 +122,39 @@ struct EmployeeDirectoryView: View {
     }
 
     private func employeeRow(_ employee: Employee) -> some View {
-        Button {
-            store.selection = employee.id
-            compactShowsProfile = true
-        } label: {
+        CreamInteractiveRow(
+            isSelected: store.selection == employee.id,
+            accessibilityLabel: "\(employee.name)，\(employee.role)，\(employee.status == "active" ? "可用" : "已停用")",
+            action: {
+                store.selection = employee.id
+                compactShowsProfile = true
+            }
+        ) {
             HStack(spacing: 11) {
                 CreamAvatar(path: employee.avatarPath, name: employee.name, size: 36)
                 VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text(employee.name)
-                            .font(AppTheme.Typography.sidebarTitle())
-                            .foregroundStyle(palette.ink)
-                    }
-                    Text(employee.role)
-                        .font(AppTheme.Typography.metadata())
-                        .foregroundStyle(palette.muted)
+                    Text(employee.name)
+                        .font(AppTheme.Typography.sidebarTitle())
+                        .foregroundStyle(palette.ink)
                         .lineLimit(1)
+                    HStack(spacing: AppTheme.Spacing.xxs) {
+                        Text(employee.role)
+                            .font(AppTheme.Typography.metadata())
+                            .foregroundStyle(palette.muted)
+                            .lineLimit(1)
+                        Spacer(minLength: AppTheme.Spacing.xxs)
+                        CreamStatusLabel(
+                            title: employee.status == "active" ? "可用" : "已停用",
+                            systemImage: employee.status == "active" ? "checkmark.circle.fill" : "pause.circle.fill",
+                            tone: employee.status == "active" ? .success : .neutral
+                        )
+                    }
                 }
-                Spacer(minLength: 4)
-                Text(employee.status == "active" ? "可用" : "已停用")
-                    .font(AppTheme.Typography.compactMetadata(weight: .semibold))
-                    .foregroundStyle(employee.status == "active" ? palette.success : palette.mutedSoft)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, 12)
             .frame(height: 56)
             .contentShape(Rectangle())
-        }
-        .buttonStyle(
-            CreamSidebarButtonStyle(
-                isSelected: store.selection == employee.id,
-                isHovered: hoveredEmployeeID == employee.id
-            )
-        )
-        .onHover { hovered in
-            hoveredEmployeeID = hovered ? employee.id : nil
         }
         .padding(.horizontal, 8)
         .contextMenu {
@@ -192,8 +200,7 @@ struct EmployeeDirectoryView: View {
             )
         } else {
             VStack(spacing: 14) {
-                Image(systemName: "person.text.rectangle")
-                    .font(.system(size: 34, weight: .light))
+                CreamSymbol(systemName: "person.text.rectangle", scale: .emptyState)
                     .foregroundStyle(palette.primaryActive)
                 Text("AI 员工 Profile")
                     .font(.title2.weight(.semibold))
@@ -239,7 +246,6 @@ struct EmployeeDirectoryView: View {
 struct EmployeeDirectorySidebar: View {
     @ObservedObject var store: EmployeeStore
     @State private var query = ""
-    @State private var hoveredEmployeeID: String?
     @Environment(\.colorScheme) private var colorScheme
 
     private var employees: [Employee] {
@@ -299,21 +305,16 @@ struct EmployeeDirectorySidebar: View {
                                     .foregroundStyle(palette.muted)
                                     .padding(.horizontal, 16)
                                 ForEach(employees.filter { $0.department == department }) { employee in
-                                    Button { store.selection = employee.id } label: {
+                                    CreamInteractiveRow(
+                                        isSelected: store.selection == employee.id,
+                                        accessibilityLabel: "\(employee.name)，\(employee.role)，\(employee.status == "active" ? "可用" : "已停用")",
+                                        action: { store.selection = employee.id }
+                                    ) {
                                         EmployeeContextRow(employee: employee)
                                             .padding(.horizontal, 11)
                                             .padding(.vertical, 7)
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                             .contentShape(Rectangle())
-                                    }
-                                    .buttonStyle(
-                                        CreamSidebarButtonStyle(
-                                            isSelected: store.selection == employee.id,
-                                            isHovered: hoveredEmployeeID == employee.id
-                                        )
-                                    )
-                                    .onHover { hovered in
-                                        hoveredEmployeeID = hovered ? employee.id : nil
                                     }
                                     .padding(.horizontal, 8)
                                 }
@@ -363,26 +364,38 @@ private struct EmployeeProfileView: View {
         VStack(spacing: 0) {
             if compact {
                 HStack {
-                    Button(action: back) { Label("员工", systemImage: "chevron.left") }.buttonStyle(.plain)
+                    Button(action: back) { Label("员工", systemImage: "chevron.left") }
+                        .buttonStyle(CreamSecondaryButtonStyle())
                     Spacer()
                 }.padding(.horizontal, 20).frame(height: 44)
                 Divider().overlay(palette.hairlineSoft)
             }
             ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    profileHeader
-                    CreamTabBar(items: EmployeeProfileTab.allCases, selection: $tab, title: \.title)
-                        .frame(maxWidth: 600)
+                CreamTabbedPageContainer {
+                    VStack(alignment: .leading, spacing: 28) {
+                        CreamTabbedDetailHeader(
+                            title: employee.name,
+                            subtitle: "\(employee.role) · \(employee.department)",
+                            statusTitle: employee.status == "active" ? "启用" : "停用",
+                            statusSystemImage: employee.status == "active" ? "checkmark.circle.fill" : "pause.circle.fill",
+                            statusTone: employee.status == "active" ? .success : .neutral,
+                            tabs: EmployeeProfileTab.allCases,
+                            selection: $tab,
+                            tabTitle: \.title
+                        ) {
+                            CreamAvatar(path: employee.avatarPath, name: employee.name, size: compact ? 52 : 64)
+                        } actions: {
+                            profileActions
+                        }
 
-                    switch tab {
-                    case .identity: promptPage(title: "身份提示词", detail: "定义这名 AI 员工是谁、负责什么，以及必须遵守的工作边界。", markdown: employee.basePrompt)
-                    case .soul: promptPage(title: "灵魂提示词", detail: "定义思考、判断、沟通与行动方式。", markdown: employee.soul.joined(separator: "\n\n"))
-                    case .capabilities: capabilityPage
+                        switch tab {
+                        case .identity: promptPage(title: "身份提示词", detail: "定义这名 AI 员工是谁、负责什么，以及必须遵守的工作边界。", markdown: employee.basePrompt)
+                        case .soul: promptPage(title: "灵魂提示词", detail: "定义思考、判断、沟通与行动方式。", markdown: employee.soul.joined(separator: "\n\n"))
+                        case .capabilities: capabilityPage
+                        }
                     }
                 }
-                .frame(maxWidth: 900, alignment: .leading)
-                .padding(.horizontal, compact ? 20 : 36).padding(.vertical, compact ? 24 : 36)
-                .frame(maxWidth: .infinity)
+                .padding(.vertical, compact ? 24 : 36)
             }
         }
         .background(palette.canvas)
@@ -392,61 +405,55 @@ private struct EmployeeProfileView: View {
         }
     }
 
-    private var profileHeader: some View {
-        HStack(alignment: .top, spacing: 16) {
-            CreamAvatar(path: employee.avatarPath, name: employee.name, size: compact ? 52 : 64)
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 9) {
-                    Text(employee.name)
-                        .font(AppTheme.Typography.pageTitle)
-                        .foregroundStyle(palette.ink)
-                    CreamStatusBadge(
-                        title: employee.status == "active" ? "启用" : "停用",
-                        systemImage: employee.status == "active" ? "checkmark.circle.fill" : "pause.circle.fill",
-                        tone: employee.status == "active" ? .success : .neutral
-                    )
-                }
-                Text("\(employee.role) · \(employee.department)")
-                    .font(AppTheme.Typography.supporting())
-                    .foregroundStyle(palette.muted)
-            }
-            Spacer(minLength: 8)
-            if !compact {
-                Button("编辑资料", action: edit).buttonStyle(CreamPrimaryButtonStyle())
-                Button("私人聊聊", action: openChat).buttonStyle(CreamSecondaryButtonStyle()).disabled(isDemo)
+    @ViewBuilder private var profileActions: some View {
+        if !compact {
+            HStack(spacing: AppTheme.Spacing.xxs) {
+                CreamIconButton(
+                    systemName: "pencil",
+                    accessibilityLabel: "编辑资料",
+                    help: "编辑\(employee.name)的资料",
+                    action: edit
+                )
+                CreamIconButton(
+                    systemName: "bubble.left",
+                    accessibilityLabel: "私人聊聊",
+                    help: "与\(employee.name)私人聊聊",
+                    action: openChat
+                )
+                .disabled(isDemo)
                 if !isDemo {
-                    Menu {
+                    CreamIconMenu(
+                        systemName: "ellipsis",
+                        accessibilityLabel: "更多员工操作",
+                        help: "更多员工操作"
+                    ) {
                         Button(employee.status == "active" ? "禁用" : "启用", action: setStatus)
                         Divider()
                         Button("删除", role: .destructive, action: deleteEmployee)
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
                     }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-                    .help("员工操作")
                 }
-            } else {
-                Menu {
-                    Button("编辑资料", action: edit)
-                    Button("私人聊聊", action: openChat).disabled(isDemo)
-                    if !isDemo {
-                        Divider()
-                        Button(employee.status == "active" ? "禁用" : "启用", action: setStatus)
-                        Divider()
-                        Button("删除", role: .destructive, action: deleteEmployee)
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
+            }
+        } else {
+            CreamIconMenu(
+                systemName: "ellipsis",
+                accessibilityLabel: "员工操作",
+                help: "员工操作"
+            ) {
+                Button("编辑资料", action: edit)
+                Button("私人聊聊", action: openChat).disabled(isDemo)
+                if !isDemo {
+                    Divider()
+                    Button(employee.status == "active" ? "禁用" : "启用", action: setStatus)
+                    Divider()
+                    Button("删除", role: .destructive, action: deleteEmployee)
                 }
             }
         }
     }
 
     private func promptPage(title: String, detail: String, markdown: String) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
-            CreamSectionHeader(title, subtitle: detail)
-            MarkdownDocumentView(source: markdown)
+        CreamTabContentSection(title, subtitle: detail) {
+            MarkdownDocumentView(source: markdown, maxWidth: .infinity, showsSurface: false)
         }
     }
 
@@ -488,15 +495,16 @@ private struct EmployeeProfileView: View {
                 Text(description).font(AppTheme.Typography.interfaceBody()).foregroundStyle(palette.muted)
                 if items.isEmpty {
                     HStack(spacing: 12) {
-                        Image(systemName: title == "技能" ? "sparkles" : "wrench.and.screwdriver").foregroundStyle(palette.primaryActive)
+                        CreamSymbol(systemName: title == "技能" ? "sparkles" : "wrench.and.screwdriver")
+                            .foregroundStyle(palette.primaryActive)
                         Text("当前未配置\(title)").font(AppTheme.Typography.interfaceBody()).foregroundStyle(palette.body)
                     }.padding(.vertical, 10)
                 } else {
                     VStack(spacing: 0) {
                         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                             HStack(spacing: 12) {
-                                Image(systemName: item.kind == .skill ? "sparkles" : "wrench.and.screwdriver")
-                                    .foregroundStyle(palette.primaryActive).frame(width: 22)
+                                CreamSymbol(systemName: item.kind == .skill ? "sparkles" : "wrench.and.screwdriver")
+                                    .foregroundStyle(palette.primaryActive)
                                 VStack(alignment: .leading, spacing: 3) {
                                     HStack(spacing: 7) {
                                         Text(item.name).font(AppTheme.Typography.interfaceBody(weight: .semibold)).foregroundStyle(palette.ink)
@@ -526,7 +534,8 @@ private struct EmployeeProfileView: View {
                 VStack(spacing: 0) {
                     ForEach(Array(capabilityProfile.permissions.enumerated()), id: \.element.id) { index, permission in
                         HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: "lock.shield").foregroundStyle(palette.primaryActive).frame(width: 22)
+                            CreamSymbol(systemName: "lock.shield")
+                                .foregroundStyle(palette.primaryActive)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(permission.name).font(AppTheme.Typography.interfaceBody(weight: .semibold)).foregroundStyle(palette.ink)
                                 Text("\(permission.resource) · 来源：\(permission.source)").font(AppTheme.Typography.metadata()).foregroundStyle(palette.muted)
@@ -599,20 +608,25 @@ struct CapabilityPickerSheet: View {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(filteredItems) { item in
-                            Button {
-                                guard item.isAvailable else { return }
-                                if selectedIDs.contains(item.id) { selectedIDs.remove(item.id) } else { selectedIDs.insert(item.id) }
-                            } label: {
+                            CreamInteractiveRow(
+                                isSelected: selectedIDs.contains(item.id),
+                                accessibilityLabel: "\(item.name)，\(selectedIDs.contains(item.id) ? "已选择" : "未选择")",
+                                action: {
+                                    guard item.isAvailable else { return }
+                                    if selectedIDs.contains(item.id) { selectedIDs.remove(item.id) } else { selectedIDs.insert(item.id) }
+                                }
+                            ) {
                                 HStack(alignment: .top, spacing: 12) {
-                                    Image(systemName: selectedIDs.contains(item.id) ? "checkmark.square.fill" : "square")
-                                        .foregroundStyle(item.isAvailable ? palette.primaryActive : palette.mutedSoft).font(.system(size: 16))
+                                    CreamSymbol(systemName: selectedIDs.contains(item.id) ? "checkmark.square.fill" : "square")
+                                        .foregroundStyle(item.isAvailable ? palette.primaryActive : palette.mutedSoft)
                                     VStack(alignment: .leading, spacing: 4) {
                                         HStack { Text(item.name).font(.callout.weight(.semibold)).foregroundStyle(palette.ink); Text("v\(item.version)").font(.caption.monospaced()).foregroundStyle(palette.muted); Spacer(); if !item.isAvailable { Text("不可用").font(.caption).foregroundStyle(palette.error) } }
                                         Text(item.detail).font(.caption).foregroundStyle(palette.muted).lineLimit(2)
                                         Text(item.metadata).font(.caption2).foregroundStyle(palette.mutedSoft)
                                     }
                                 }.padding(.horizontal, 18).padding(.vertical, 12).contentShape(Rectangle())
-                            }.buttonStyle(.plain).disabled(!item.isAvailable)
+                            }
+                            .disabled(!item.isAvailable)
                             Divider().overlay(palette.hairlineSoft).padding(.leading, 46)
                         }
                     }
@@ -636,23 +650,38 @@ struct CapabilityPickerSheet: View {
 
 struct MarkdownDocumentView: View {
     let source: String
+    var maxWidth: CGFloat = 760
+    var showsSurface = true
     @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
+        document
+            .textSelection(.enabled)
+    }
+
+    @ViewBuilder private var document: some View {
+        if showsSurface {
+            CreamContentSurface(maxWidth: maxWidth) {
+                documentBody
+            }
+        } else {
+            documentBody
+                .frame(maxWidth: maxWidth, alignment: .leading)
+        }
+    }
+
+    private var documentBody: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(MarkdownBlock.parse(source).enumerated()), id: \.offset) { _, block in
                 blockView(block)
             }
         }
-        .frame(maxWidth: 720, alignment: .leading).padding(20)
-        .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.xl).stroke(palette.hairlineSoft) }
-        .textSelection(.enabled)
     }
     @ViewBuilder private func blockView(_ block: MarkdownBlock) -> some View {
         switch block {
         case .heading(let level, let text): Text(text).font(level == 1 ? .title2.weight(.semibold) : level == 2 ? .title3.weight(.semibold) : .headline).foregroundStyle(palette.ink).padding(.top, level == 1 ? 4 : 8)
         case .paragraph(let text): Text(inline(text)).foregroundStyle(palette.body).lineSpacing(3)
-        case .bullet(let text): Label { Text(inline(text)).foregroundStyle(palette.body) } icon: { Image(systemName: "circle.fill").font(.system(size: 5)).foregroundStyle(palette.primaryActive) }
+        case .bullet(let text): HStack(alignment: .firstTextBaseline, spacing: AppTheme.Spacing.xs) { Circle().fill(palette.primaryActive).frame(width: 5, height: 5); Text(inline(text)).foregroundStyle(palette.body) }
         case .numbered(let text): Text(inline(text)).foregroundStyle(palette.body)
         case .quote(let text): Text(inline(text)).foregroundStyle(palette.muted).padding(.leading, 12).overlay(alignment: .leading) { Rectangle().fill(palette.primary.opacity(0.4)).frame(width: 2) }
         case .code(let text): Text(text).font(.system(.caption, design: .monospaced)).foregroundStyle(palette.body).padding(12).frame(maxWidth: .infinity, alignment: .leading).background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: 8))

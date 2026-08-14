@@ -130,14 +130,17 @@ struct CommandPaletteView: View {
     }
 
     private func commandRow(_ command: PaletteCommand, index: Int) -> some View {
-        Button {
-            selectedIndex = index
-            command.action()
-        } label: {
+        CreamInteractiveRow(
+            isSelected: selectedIndex == index,
+            accessibilityLabel: "\(command.title)，\(command.subtitle)",
+            action: {
+                selectedIndex = index
+                command.action()
+            }
+        ) {
             HStack(spacing: AppTheme.Spacing.sm) {
-                Image(systemName: command.image)
+                CreamSymbol(systemName: command.image)
                     .foregroundStyle(selectedIndex == index ? palette.primaryActive : palette.muted)
-                    .frame(width: 22)
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
                     Text(command.title)
                         .font(AppTheme.Typography.interfaceBody(weight: .medium))
@@ -150,19 +153,15 @@ struct CommandPaletteView: View {
                 }
                 Spacer()
                 if selectedIndex == index {
-                    Image(systemName: "return")
-                        .font(AppTheme.Typography.compactMetadata(weight: .semibold))
+                    CreamSymbol(systemName: "return", scale: .compact)
                         .foregroundStyle(palette.mutedSoft)
                 }
             }
             .contentShape(Rectangle())
             .padding(.horizontal, AppTheme.Spacing.md)
             .frame(minHeight: 50)
-            .background(selectedIndex == index ? palette.primary.opacity(0.11) : Color.clear, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
         }
-        .buttonStyle(.plain)
         .onHover { if $0 { selectedIndex = index } }
-        .accessibilityAddTraits(selectedIndex == index ? .isSelected : [])
         .accessibilityValue(selectedIndex == index ? "当前命令" : "")
     }
 
@@ -204,9 +203,8 @@ struct CreamCommandPaletteSearchField: View {
 
     var body: some View {
         HStack(spacing: AppTheme.Spacing.sm) {
-            Image(systemName: "magnifyingglass")
+            CreamSymbol(systemName: "magnifyingglass")
                 .foregroundStyle(palette.muted)
-                .accessibilityHidden(true)
 
             TextField("搜索员工、工作或命令", text: $text)
                 .textFieldStyle(.plain)

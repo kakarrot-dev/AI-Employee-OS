@@ -84,8 +84,7 @@ struct TaskThreadWorkspaceView: View {
                 } label: {
                     Label("返回工作列表", systemImage: "chevron.left")
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(palette.body)
+                .buttonStyle(CreamSecondaryButtonStyle())
             }
             ContentUnavailableView(
                 "还没有工作",
@@ -210,15 +209,12 @@ struct TaskThreadWorkspaceView: View {
         let participantSummary = thread.room.participants.isEmpty ? "尚未匹配员工" : "\(thread.room.participants.count) 位员工"
         return HStack(spacing: 12) {
             if showsBack {
-                Button {
-                    compactShowsRoom = false
-                } label: {
-                    Image(systemName: "chevron.left")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(palette.body)
-                .help("返回工作列表")
-                .accessibilityLabel("返回工作列表")
+                CreamIconButton(
+                    systemName: "chevron.left",
+                    accessibilityLabel: "返回工作列表",
+                    help: "返回工作列表",
+                    action: { compactShowsRoom = false }
+                )
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(thread.title).font(AppTheme.Typography.workspaceTitle).foregroundStyle(palette.ink)
@@ -233,12 +229,13 @@ struct TaskThreadWorkspaceView: View {
             }
             Spacer()
             if layout.inspectorAvailable {
-                Button { inspectorPreferred.toggle() } label: {
-                    Image(systemName: "sidebar.trailing")
-                }
-                .buttonStyle(.plain)
-                .help(layout.showsInspector ? "隐藏任务详情" : "显示任务详情")
-                .accessibilityLabel(layout.showsInspector ? "隐藏任务详情" : "显示任务详情")
+                CreamIconButton(
+                    systemName: "sidebar.trailing",
+                    accessibilityLabel: layout.showsInspector ? "隐藏任务详情" : "显示任务详情",
+                    help: layout.showsInspector ? "隐藏任务详情" : "显示任务详情",
+                    isSelected: layout.showsInspector,
+                    action: { inspectorPreferred.toggle() }
+                )
             }
         }
         .padding(.horizontal, layout.isCompact ? 16 : 20).padding(.vertical, 12)
@@ -290,15 +287,15 @@ struct TaskThreadWorkspaceView: View {
                    let work = execution.workOrders.first(where: { $0.actionID == item.actionID }) {
                     HStack(spacing: 8) {
                         Button("批准") { store.resolveApproval(for: work, in: execution, approve: true) }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(CreamPrimaryButtonStyle())
                         Button("拒绝") { store.resolveApproval(for: work, in: execution, approve: false) }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(CreamSecondaryButtonStyle())
                     }
                     .disabled(store.isResolvingApproval(for: work))
                 }
                 if let uri = item.artifactURI {
                     Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: uri)]) }
-                        .buttonStyle(.link)
+                        .buttonStyle(CreamInlineButtonStyle(tone: .primary))
                 }
             }
             .padding(14)
@@ -397,9 +394,11 @@ struct TaskThreadWorkspaceView: View {
                                             .font(AppTheme.Typography.metadata()).foregroundStyle(palette.muted).lineLimit(1)
                                     }
                                     Spacer(minLength: 6)
-                                    Text("待确认")
-                                        .font(AppTheme.Typography.compactMetadata(weight: .medium))
-                                        .foregroundStyle(palette.warning)
+                                    CreamStatusLabel(
+                                        title: "待确认",
+                                        systemImage: "clock.fill",
+                                        tone: .warning
+                                    )
                                 }
                             }
                         }
@@ -413,9 +412,11 @@ struct TaskThreadWorkspaceView: View {
                                         Text(participant.role).font(AppTheme.Typography.metadata()).foregroundStyle(palette.muted).lineLimit(1)
                                     }
                                     Spacer(minLength: 6)
-                                    Text(statusLabel(participantStatus(participant, in: thread)))
-                                        .font(AppTheme.Typography.compactMetadata(weight: .medium))
-                                        .foregroundStyle(statusColor(participantStatus(participant, in: thread)))
+                                    CreamStatusLabel(
+                                        title: statusLabel(participantStatus(participant, in: thread)),
+                                        systemImage: statusSymbol(participantStatus(participant, in: thread)),
+                                        tone: statusTone(participantStatus(participant, in: thread))
+                                    )
                                 }
                                 if let progress = participantProgress(participant, in: thread) {
                                     CreamProgressBar(value: progress)
@@ -496,6 +497,24 @@ struct TaskThreadWorkspaceView: View {
         status == "succeeded" ? palette.success : status == "failed" ? palette.error : palette.primary
     }
 
+    private func statusSymbol(_ status: String) -> String {
+        switch status {
+        case "succeeded", "verified", "approved", "accepted": "checkmark.circle.fill"
+        case "failed", "rejected", "cancelled": "xmark.circle.fill"
+        case "running", "started": "play.circle.fill"
+        default: "clock.fill"
+        }
+    }
+
+    private func statusTone(_ status: String) -> UXFeedbackTone {
+        switch status {
+        case "succeeded", "verified", "approved", "accepted": .success
+        case "failed", "rejected", "cancelled": .error
+        case "pending", "waiting_dependency", "waiting_approval", "awaiting_input", "awaiting_confirmation": .warning
+        default: .neutral
+        }
+    }
+
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
@@ -506,19 +525,21 @@ private struct TaskThreadSidebarRow: View {
     let archive: () -> Void
     let restore: () -> Void
     let delete: () -> Void
-    @State private var isHovered = false
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        Button(action: select) {
+        CreamInteractiveRow(
+            isSelected: isSelected,
+            accessibilityLabel: "\(thread.title)，\(statusLabel)",
+            action: select
+        ) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(thread.title)
                     .font(AppTheme.Typography.sidebarTitle())
                     .foregroundStyle(palette.ink)
                     .lineLimit(1)
                 HStack(spacing: 5) {
-                    Circle().fill(statusColor).frame(width: 6, height: 6)
-                    Text(statusLabel).font(AppTheme.Typography.metadata()).foregroundStyle(palette.muted)
+                    CreamStatusLabel(title: statusLabel, systemImage: statusIcon, tone: statusTone)
                     if let latest = thread.room.items.last?.content {
                         Text("· \(latest)").font(AppTheme.Typography.metadata()).foregroundStyle(palette.muted).lineLimit(1)
                     }
@@ -528,11 +549,7 @@ private struct TaskThreadSidebarRow: View {
             .padding(.vertical, 11)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .creamSidebarRowSurface(isSelected: isSelected, isHovered: isHovered)
         }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-        .animation(AppTheme.Motion.hoverReveal, value: isHovered)
         .contextMenu {
             if thread.archivedAt == nil {
                 Button("归档", systemImage: "archivebox", action: archive)
@@ -548,8 +565,22 @@ private struct TaskThreadSidebarRow: View {
         ["drafting": "草拟中", "awaiting_input": "等待补充", "awaiting_confirmation": "等待确认", "pending": "等待开始", "running": "执行中", "succeeded": "已完成", "failed": "失败", "cancelled": "已取消"][thread.status] ?? thread.status
     }
 
-    private var statusColor: Color {
-        thread.status == "succeeded" ? palette.success : thread.status == "failed" ? palette.error : palette.primary
+    private var statusIcon: String {
+        switch thread.status {
+        case "succeeded": "checkmark.circle.fill"
+        case "failed", "cancelled": "xmark.circle.fill"
+        case "running": "play.circle.fill"
+        default: "clock.fill"
+        }
+    }
+
+    private var statusTone: UXFeedbackTone {
+        switch thread.status {
+        case "succeeded": .success
+        case "failed", "cancelled": .error
+        case "pending", "awaiting_input", "awaiting_confirmation": .warning
+        default: .neutral
+        }
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }

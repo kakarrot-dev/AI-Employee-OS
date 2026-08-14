@@ -87,7 +87,7 @@ assert "func stopSending()" in store and "sendTask?.cancel()" in store, (
 assert '"chat-abort"' in Path(
     "apps/macos/AIEmployee/Sources/AIEmployee/Services/RuntimeService.swift"
 ).read_text(), "chat stop must converge the persisted model call"
-assert 'Image(systemName: actionState == .stop ? "stop.fill" : "arrow.up")' in composer, (
+assert 'CreamSymbol(systemName: actionState == .stop ? "stop.fill" : "arrow.up")' in composer, (
     "the stable composer action slot must switch from send to stop while replying"
 )
 assert "TimelineView(.periodic(from: .now, by: 1))" in workspace and "TaskPresentation.elapsed(run.createdAt" in workspace, (
@@ -235,7 +235,7 @@ assert 'Label("打开文件", systemImage: "arrow.up.right")' in workspace and "
 assert 'Button("打开文件夹", systemImage: "folder")' in workspace and "openContainingFolder" in workspace, (
     "the delivery dropdown must expose its containing folder"
 )
-assert 'Image(systemName: "chevron.down")' in workspace and '.menuIndicator(.hidden)' in workspace, (
+assert 'CreamSymbol(systemName: "chevron.down", scale: .compact)' in workspace and '.menuIndicator(.hidden)' in workspace, (
     "the split button must show a dedicated dropdown trigger without requiring a long press"
 )
 assert "Text(displayTitle)" in workspace and "Text(formatLabel)" in workspace, (

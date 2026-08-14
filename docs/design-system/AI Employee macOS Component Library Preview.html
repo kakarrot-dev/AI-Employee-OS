@@ -3755,7 +3755,7 @@
                       <div class="client-profile-head">
                         <span class="avatar">A</span>
                         <div class="client-profile-copy"><h3>Alex <span class="status-badge success">启用</span></h3><p>产品经理 · 产品部</p></div>
-                        <div class="client-page-actions"><button class="primary-button" type="button">编辑资料</button><button class="secondary-button" type="button">私人聊聊</button><button class="icon-button" type="button" aria-label="更多员工操作" title="更多员工操作">•••</button></div>
+                        <div class="client-page-actions"><button class="icon-button" type="button" aria-label="编辑资料" title="编辑资料">✎</button><button class="icon-button" type="button" aria-label="私人聊聊" title="私人聊聊">□</button><button class="icon-button" type="button" aria-label="更多员工操作" title="更多员工操作">•••</button></div>
                       </div>
                       <div class="client-tabs" aria-label="员工资料页签"><span class="client-tab active">身份</span><span class="client-tab">灵魂</span><span class="client-tab">能力与权限</span></div>
                       <article class="client-document">
@@ -3858,7 +3858,7 @@
                     </div>
                   </aside>
                   <div class="client-detail">
-                    <div class="client-package-head"><span class="client-package-icon">SK</span><div class="client-package-copy"><h3>local-file-operations <span class="client-count">v2.0.0</span></h3><p>在授权目录内读取、创建与精确编辑 UTF-8 文件。</p></div><span class="status-badge success">可用</span></div>
+                    <div class="client-package-head"><span class="client-package-icon">SK</span><div class="client-package-copy"><h3>local-file-operations <span class="client-count">v2.0.0</span> <span class="status-badge success">可用</span></h3><p>在授权目录内读取、创建与精确编辑 UTF-8 文件。</p></div></div>
                     <div class="client-tabs client-package-tabs"><span class="client-tab active">技能文件</span><span class="client-tab">依赖信息</span></div>
                     <div class="client-package-body">
                       <div class="client-package-tree"><div class="client-list-row compact selected"><span class="client-folder">§</span><span class="client-row-title">SKILL.md</span></div><div class="client-list-row compact"><span class="client-folder">◇</span><span class="client-row-title">manifest.json</span></div><div class="client-list-row compact"><span class="client-folder">⌄</span><span class="client-row-title">references</span></div><div class="client-list-row compact" style="padding-left:22px"><span class="client-folder">§</span><span class="client-row-title">file-editing.md</span></div></div>
@@ -3877,7 +3877,7 @@
                     </div>
                   </aside>
                   <div class="client-detail">
-                    <div class="client-package-head"><span class="client-package-icon">TL</span><div class="client-package-copy"><h3>file-tool <span class="client-count">v2.0.0</span></h3><p>授权目录内的受控文件操作。</p></div><span class="status-badge success">可用</span></div>
+                    <div class="client-package-head"><span class="client-package-icon">TL</span><div class="client-package-copy"><h3>file-tool <span class="client-count">v2.0.0</span> <span class="status-badge success">可用</span></h3><p>授权目录内的受控文件操作。</p></div></div>
                     <div class="client-tabs client-package-tabs"><span class="client-tab active">说明文档</span><span class="client-tab">能力信息</span><span class="client-tab">权限与风险</span></div>
                     <article class="client-document-body"><h4>能力信息</h4><div class="client-setting-row"><span>读取文件</span><span>只读，低风险</span></div><div class="client-setting-row"><span>创建文件</span><span>需要授权目录</span></div><div class="client-setting-row"><span>精确编辑</span><span>写入前一次性审批</span></div><h4 style="margin-top:24px">安全边界</h4><p>客户端不直接执行 Tool。所有调用由 Rust ToolExecutor 校验 Skill、Tool、Action、权限与幂等键。</p><div class="client-code">skill_id: local-file-operations
 tool_id: file-tool
@@ -4049,7 +4049,7 @@ approval: required</div><div class="client-source-map"><span>CapabilityDetailVie
 
             <div class="component-block">
               <div class="component-title-row">
-                <span class="component-title">CreamIconButton</span>
+                <span class="component-title">CreamIconButton / CreamIconMenu / CreamSymbol</span>
                 <span class="component-source">CreamComponentLibrary.swift</span>
               </div>
               <div class="sample-row">
@@ -4126,7 +4126,7 @@ approval: required</div><div class="client-source-map"><span>CapabilityDetailVie
           <div class="two-column">
             <div class="board">
               <div class="component-title-row">
-                <span class="component-title">CreamStatusBadge</span>
+                <span class="component-title">CreamStatusBadge / CreamStatusLabel</span>
                 <span class="component-source">4 tones</span>
               </div>
               <div class="badge-row">
@@ -4155,8 +4155,8 @@ approval: required</div><div class="client-source-map"><span>CapabilityDetailVie
 
           <div class="board" style="margin-top:24px">
             <div class="component-title-row">
-              <span class="component-title">creamSidebarRowSurface</span>
-              <span class="component-source">Default, Hover, Selected</span>
+              <span class="component-title">CreamInteractiveRow</span>
+              <span class="component-source">Default, Hover, Pressed, Selected, Focus, Disabled</span>
             </div>
             <div class="two-column">
               <div class="sidebar-demo" id="search-results">
@@ -4340,9 +4340,12 @@ approval: required</div><div class="client-source-map"><span>CapabilityDetailVie
           <div class="board flat">
             <div class="coverage-list">
               <div class="coverage-row" data-coverage-status="standardized" data-component-level="Foundation"><div class="coverage-name"><code>Palette / Typography / Radius / Motion</code></div><div class="coverage-level">Foundation</div><div class="coverage-state"><span class="stage stable">已标准化</span></div></div>
-              <div class="coverage-row" data-coverage-status="standardized" data-component-level="Native Primitive"><div class="coverage-name"><code>CreamSearchField / IconButton / SectionHeader / StatusBadge</code></div><div class="coverage-level">Native Primitive</div><div class="coverage-state"><span class="stage stable">已标准化</span></div></div>
-              <div class="coverage-row" data-coverage-status="standardized" data-component-level="Native Primitive"><div class="coverage-name"><code>CreamPrimaryButtonStyle / CreamSecondaryButtonStyle</code></div><div class="coverage-level">Native Primitive</div><div class="coverage-state"><span class="stage stable">状态已闭环</span></div></div>
+              <div class="coverage-row" data-coverage-status="standardized" data-component-level="Native Primitive"><div class="coverage-name"><code>CreamSearchField / IconButton / CreamSymbol / CreamFeatureIcon / SectionHeader / StatusBadge / StatusLabel</code></div><div class="coverage-level">Native Primitive</div><div class="coverage-state"><span class="stage stable">已标准化</span></div></div>
+              <div class="coverage-row" data-coverage-status="standardized" data-component-level="Native Primitive"><div class="coverage-name"><code>CreamPrimaryButtonStyle / CreamSecondaryButtonStyle / CreamInlineButtonStyle</code></div><div class="coverage-level">Native Primitive</div><div class="coverage-state"><span class="stage stable">状态已闭环</span></div></div>
               <div class="coverage-row" data-coverage-status="standardized" data-component-level="Native Primitive"><div class="coverage-name"><code>CreamTabBar / CreamSegmentedControl</code></div><div class="coverage-level">Native Primitive</div><div class="coverage-state"><span class="stage stable">状态已闭环</span></div></div>
+              <div class="coverage-row" data-coverage-status="standardized" data-component-level="Business Pattern"><div class="coverage-name"><code>CreamInteractiveRow / CreamTabbedDetailHeader / CreamTabbedPageContainer</code></div><div class="coverage-level">Business Pattern</div><div class="coverage-state"><span class="stage stable">全客户端复用</span></div></div>
+              <div class="coverage-row" data-coverage-status="standardized" data-component-level="Business Pattern"><div class="coverage-name"><code>CreamPaneSurfaceRole globalNavigation / collection / tabWorkspace</code></div><div class="coverage-level">Business Pattern</div><div class="coverage-state"><span class="stage stable">分栏与工作面统一</span></div></div>
+              <div class="coverage-row" data-coverage-status="standardized" data-component-level="Business Pattern"><div class="coverage-name"><code>CreamTabContentSection / CreamContentSurface</code></div><div class="coverage-level">Business Pattern</div><div class="coverage-state"><span class="stage stable">阅读型 Tab 统一</span></div></div>
               <div class="coverage-row" data-coverage-status="standardized" data-component-level="Business Pattern"><div class="coverage-name"><code>CreamModalOverlay</code></div><div class="coverage-level">Business Pattern</div><div class="coverage-state"><span class="stage stable">焦点已闭环</span></div></div>
               <div class="coverage-row" data-coverage-status="standardized" data-component-level="Business Pattern"><div class="coverage-name"><code>CreamTimelineLayout / UserMessage / AgentRow / MarkdownBody</code></div><div class="coverage-level">Business Pattern</div><div class="coverage-state"><span class="stage stable">已复用</span></div></div>
               <div class="coverage-row" data-coverage-status="standardized" data-component-level="Business Pattern"><div class="coverage-name"><code>CreamComposer compact / regular / expanded</code></div><div class="coverage-level">Business Pattern</div><div class="coverage-state"><span class="stage stable">已复用</span></div></div>

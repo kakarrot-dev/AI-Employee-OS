@@ -113,11 +113,7 @@ struct OfficeWorkspaceView: View {
                             .font(AppTheme.Typography.pageTitle)
                             .foregroundStyle(palette.ink)
                         if snapshot.isDemo {
-                            Text("演示")
-                                .font(AppTheme.Typography.compactMetadata(weight: .semibold))
-                                .foregroundStyle(palette.warning)
-                                .padding(.horizontal, 7).padding(.vertical, 3)
-                                .background(palette.primary.opacity(0.10), in: Capsule())
+                            CreamStatusBadge(title: "演示数据", systemImage: "sparkles", tone: .warning)
                         }
                     }
                     Text("查看最近 7 天的模型调用、Token 消耗与预估成本。")

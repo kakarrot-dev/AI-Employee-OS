@@ -12,6 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SWIFT_ROOT = ROOT / "apps/macos/AIEmployee/Sources/AIEmployee"
 THEME = SWIFT_ROOT / "DesignSystem/AppTheme.swift"
+APP_LAYOUT = SWIFT_ROOT / "DesignSystem/AppLayout.swift"
 COMPONENTS = SWIFT_ROOT / "DesignSystem/CreamComponentLibrary.swift"
 CONTROLS = SWIFT_ROOT / "DesignSystem/CreamControls.swift"
 COMPOSER = SWIFT_ROOT / "DesignSystem/CreamComposer.swift"
@@ -81,6 +82,7 @@ def main() -> int:
 
     required_files = (
         THEME,
+        APP_LAYOUT,
         COMPONENTS,
         CONTROLS,
         COMPOSER,
@@ -102,6 +104,7 @@ def main() -> int:
         return 1
 
     theme_source = THEME.read_text(encoding="utf-8")
+    app_layout_source = APP_LAYOUT.read_text(encoding="utf-8")
     component_source = COMPONENTS.read_text(encoding="utf-8")
     controls_source = CONTROLS.read_text(encoding="utf-8")
     composer_source = COMPOSER.read_text(encoding="utf-8")
@@ -110,6 +113,7 @@ def main() -> int:
     command_palette_source = COMMAND_PALETTE.read_text(encoding="utf-8")
     employee_directory_source = EMPLOYEE_DIRECTORY.read_text(encoding="utf-8")
     content_view_source = CONTENT_VIEW.read_text(encoding="utf-8")
+    contract_source = CONTRACT.read_text(encoding="utf-8")
     preview_source = PREVIEW.read_text(encoding="utf-8")
     swift_files = list(SWIFT_ROOT.rglob("*.swift"))
     feature_source = "\n".join(
@@ -160,14 +164,134 @@ def main() -> int:
             if f"#{value}" not in preview_source.upper():
                 failures.append(f"component preview is missing {scheme} {role} color #{value}")
 
-    for component in ("CreamSearchField", "CreamIconButton", "CreamSectionHeader", "CreamStatusBadge"):
+    for component in (
+        "CreamSearchField",
+        "CreamIconButton",
+        "CreamSectionHeader",
+        "CreamStatusBadge",
+        "CreamStatusLabel",
+        "CreamSymbol",
+        "CreamFeatureIcon",
+        "CreamInteractiveRow",
+        "CreamTabbedDetailHeader",
+        "CreamTabbedPageContainer",
+    ):
         if f"struct {component}" not in component_source:
             failures.append(f"missing shared component definition: {component}")
-        call_count = feature_source.count(f"{component}(")
+        call_marker = component if component == "CreamTabbedPageContainer" else f"{component}("
+        call_count = feature_source.count(call_marker)
         if call_count < 2:
             failures.append(f"{component} has {call_count} feature call sites; at least 2 are required")
         if component not in preview_source:
             failures.append(f"component preview is missing shared component: {component}")
+
+    if "static let tabbedDetailContentMaxWidth: CGFloat = 820" not in app_layout_source:
+        failures.append("page-level tab content track is not fixed to the shared 820pt maximum")
+    tabbed_container = declaration_block(component_source, "struct CreamTabbedPageContainer")
+    for description, marker in {
+        "shared content width": "AppLayoutProfile.tabbedDetailContentMaxWidth",
+        "adaptive horizontal inset": "horizontalInset ?? layout.horizontalInset",
+        "centered outer frame": '.frame(maxWidth: .infinity, alignment: .top)',
+    }.items():
+        if marker not in tabbed_container:
+            failures.append(f"CreamTabbedPageContainer lacks {description}: {marker}")
+
+    pane_roles = declaration_block(component_source, "enum CreamPaneSurfaceRole")
+    for role in ("globalNavigation", "collection", "tabWorkspace"):
+        if f"case {role}" not in pane_roles:
+            failures.append(f"CreamPaneSurfaceRole lacks shared surface role: {role}")
+    pane_surface = declaration_block(component_source, "struct CreamPaneSurfaceModifier")
+    for description, marker in {
+        "continuous rounded clipping": ".clipShape(shape)",
+        "soft theme stroke": "palette.hairlineSoft.opacity(strokeOpacity)",
+        "theme shadow": ".shadow(color: palette.shadow",
+        "canvas breathing room": ".background(palette.canvas)",
+    }.items():
+        if marker not in pane_surface:
+            failures.append(f"CreamPaneSurfaceModifier lacks {description}: {marker}")
+    if feature_source.count(".creamPaneSurface(.globalNavigation)") < 1:
+        failures.append("global navigation does not use CreamPaneSurfaceRole.globalNavigation")
+    if all_swift.count(".creamPaneSurface(.collection)") < 3:
+        failures.append("shared browser layouts do not consistently use CreamPaneSurfaceRole.collection")
+    if feature_source.count("showsWorkspaceSurface: true") < 4:
+        failures.append("page-level tab workspaces do not consistently enable the shared workspace surface")
+    for marker in ("CreamPaneSurfaceRole", "globalNavigation", "collection", "tabWorkspace"):
+        if marker not in contract_source or marker not in preview_source:
+            failures.append(f"pane surface contract or preview is missing: {marker}")
+
+    content_surface = declaration_block(component_source, "struct CreamContentSurface")
+    for description, marker in {
+        "standard reading inset": "var contentInset: CGFloat = 20",
+        "shared card fill": "palette.surfaceCard",
+        "continuous extra-large radius": "AppTheme.Radius.xl",
+        "soft outline": "palette.hairlineSoft",
+    }.items():
+        if marker not in content_surface:
+            failures.append(f"CreamContentSurface lacks {description}: {marker}")
+    tab_content_section = declaration_block(component_source, "struct CreamTabContentSection")
+    for description, marker in {
+        "semantic section header": "CreamSectionHeader(title, subtitle: subtitle)",
+        "shared content surface": "CreamContentSurface",
+        "Contacts-aligned vertical rhythm": "spacing: 18",
+    }.items():
+        if marker not in tab_content_section:
+            failures.append(f"CreamTabContentSection lacks {description}: {marker}")
+    if feature_source.count("CreamTabContentSection(") < 2:
+        failures.append("reading-style tabs do not share CreamTabContentSection across Contacts and capability pages")
+    for marker in ("CreamTabContentSection", "CreamContentSurface"):
+        if marker not in contract_source or marker not in preview_source:
+            failures.append(f"tab reading surface contract or preview is missing: {marker}")
+
+    symbol = declaration_block(component_source, "struct CreamSymbol")
+    for description, marker in {
+        "monochrome SF Symbol rendering": ".symbolRenderingMode(.monochrome)",
+        "shared icon weight": "weight: .medium",
+    }.items():
+        if marker not in symbol:
+            failures.append(f"CreamSymbol lacks {description}: {marker}")
+    for scale in ("compact", "standard", "feature", "emptyState"):
+        if f"case {scale}" not in component_source:
+            failures.append(f"CreamSymbol lacks semantic scale: {scale}")
+
+    action_icon = declaration_block(component_source, "struct CreamActionIcon")
+    for description, marker in {
+        "shared symbol": "CreamSymbol(systemName: systemName)",
+        "fixed hit target": "AppTheme.Control.hitTarget",
+    }.items():
+        if marker not in action_icon:
+            failures.append(f"CreamActionIcon lacks {description}: {marker}")
+
+    icon_menu = declaration_block(component_source, "struct CreamIconMenu")
+    for description, marker in {
+        "shared action icon": "CreamActionIcon(systemName: systemName)",
+        "hidden system menu indicator": ".menuIndicator(.hidden)",
+        "explicit neutral tint": ".tint(foreground)",
+        "keyboard focus binding": ".focused($isFocused)",
+        "theme focus stroke": "palette.focusStroke",
+        "help text": ".help(help)",
+        "accessibility label": ".accessibilityLabel(accessibilityLabel)",
+    }.items():
+        if marker not in icon_menu:
+            failures.append(f"CreamIconMenu lacks {description}: {marker}")
+
+    sidebar_button = declaration_block(controls_source, "struct CreamSidebarButtonStyle")
+    for description, marker in {
+        "explicit focus state": "var isFocused = false",
+        "theme focus stroke": "palette.focusStroke",
+    }.items():
+        if marker not in sidebar_button:
+            failures.append(f"CreamSidebarButtonStyle lacks {description}: {marker}")
+
+    interactive_row = declaration_block(component_source, "struct CreamInteractiveRow")
+    for description, marker in {
+        "shared selection style": "CreamSidebarButtonStyle(",
+        "hover state": ".onHover",
+        "keyboard focus binding": ".focused($isFocused)",
+        "disabled system focus ring": ".focusEffectDisabled()",
+        "selected accessibility trait": ".accessibilityAddTraits(",
+    }.items():
+        if marker not in interactive_row:
+            failures.append(f"CreamInteractiveRow lacks {description}: {marker}")
 
     for style_name in ("CreamPrimaryButtonStyle", "CreamSecondaryButtonStyle"):
         block = declaration_block(controls_source, f"struct {style_name}")
@@ -176,6 +300,22 @@ def main() -> int:
             "loading indicator": "ProgressView()",
             "keyboard focus state": "@Environment(\\.isFocused)",
             "focus stroke": "palette.focusStroke",
+        }.items():
+            if marker not in block:
+                failures.append(f"{style_name} lacks {description}: {marker}")
+        for description, marker in {
+            "shared hover feedback": "CreamButtonHoverFeedback(",
+            "disabled system focus ring": ".focusEffectDisabled()",
+        }.items():
+            if marker not in block:
+                failures.append(f"{style_name} lacks {description}: {marker}")
+
+    for style_name in ("CreamInlineButtonStyle", "CreamEmbeddedButtonStyle"):
+        block = declaration_block(controls_source, f"struct {style_name}")
+        for description, marker in {
+            "shared hover feedback": "CreamButtonHoverFeedback(",
+            "pressed scale": "AppTheme.Interaction.pressedScale",
+            "disabled system focus ring": ".focusEffectDisabled()",
         }.items():
             if marker not in block:
                 failures.append(f"{style_name} lacks {description}: {marker}")
@@ -190,6 +330,21 @@ def main() -> int:
         }.items():
             if marker not in block:
                 failures.append(f"{control_name} lacks {description}: {marker}")
+
+    segmented_control = declaration_block(controls_source, "struct CreamSegmentedControl")
+    if "showsFocusStroke: true" not in segmented_control or ".focusEffectDisabled()" not in segmented_control:
+        failures.append("CreamSegmentedControl must replace the system focus ring with the theme focus stroke")
+
+    tab_bar = declaration_block(controls_source, "struct CreamTabBar")
+    for description, marker in {
+        "independent keyboard focus treatment": "if focusedItemID == item.id",
+        "visible keyboard focus outline": ".stroke(palette.focusStroke, lineWidth: 1.5)",
+        "disabled enclosing focus stroke": "showsFocusStroke: false",
+        "disabled system focus ring": ".focusEffectDisabled()",
+        "hover state": "hoveredItemID",
+    }.items():
+        if marker not in tab_bar:
+            failures.append(f"CreamTabBar lacks {description}: {marker}")
 
     modal_block = declaration_block(controls_source, "struct CreamModalOverlay")
     for description, marker in {
@@ -252,13 +407,14 @@ def main() -> int:
             "CreamSectionHeader(",
             "CreamIconButton(",
             "CreamStatusBadge(",
-            "CreamSidebarButtonStyle(",
+            "CreamInteractiveRow(",
         ),
         "ScenarioLibraryWorkspaceView.swift": (
             "CreamSearchField(",
             "CreamSectionHeader(",
             "CreamIconButton(",
             "CreamStatusBadge(",
+            "CreamInteractiveRow(",
         ),
     }
     for filename, markers in component_migrations.items():
@@ -270,6 +426,57 @@ def main() -> int:
         for marker in markers:
             if marker not in source:
                 failures.append(f"{filename} has not migrated shared component: {marker}")
+
+    for marker in (
+        'systemName: "pencil"',
+        'systemName: "bubble.left"',
+        "CreamIconMenu(",
+        "CreamTabbedDetailHeader(",
+        "CreamInteractiveRow(",
+    ):
+        if marker not in employee_directory_source:
+            failures.append(f"EmployeeDirectoryView lacks compact icon action or row focus behavior: {marker}")
+    for obsolete_marker in ('systemName: "square.and.pencil"', 'systemName: "bubble.left.and.bubble.right"'):
+        if obsolete_marker in employee_directory_source:
+            failures.append(f"EmployeeDirectoryView still mixes a heavier profile action glyph: {obsolete_marker}")
+
+    if 'Image(systemName:' in feature_source:
+        failures.append("feature views still construct raw SF Symbols outside CreamSymbol")
+    for raw_style in (".buttonStyle(.plain)", ".buttonStyle(.bordered)", ".buttonStyle(.borderedProminent)", ".buttonStyle(.link)"):
+        if raw_style in feature_source:
+            failures.append(f"feature views still use a raw button interaction style: {raw_style}")
+    if re.search(r"\bList\(", feature_source):
+        failures.append("feature views still use a system List instead of CreamInteractiveRow for selectable rows")
+
+    if feature_source.count("CreamInteractiveRow(") < 10:
+        failures.append("CreamInteractiveRow has not migrated the client-wide selectable row surfaces")
+    if feature_source.count("CreamTabbedDetailHeader(") < 2:
+        failures.append("CreamTabbedDetailHeader must be shared by Contacts and Capability detail pages")
+    if feature_source.count("CreamTabbedPageContainer") < 6:
+        failures.append("CreamTabbedPageContainer has not centered every page-level tab header and body")
+    if feature_source.count("CreamStatusLabel(") < 5:
+        failures.append("CreamStatusLabel has not migrated client-wide inline status surfaces")
+
+    supporting_source = next(
+        path.read_text(encoding="utf-8") for path in swift_files if path.name == "SupportingWorkspaces.swift"
+    )
+    for source_name, source in {
+        "EmployeeDirectoryView.swift": employee_directory_source,
+        "SupportingWorkspaces.swift": supporting_source,
+    }.items():
+        if "CreamTabbedDetailHeader(" not in source:
+            failures.append(f"{source_name} does not use the shared tabbed detail header")
+
+    scenario_source = next(
+        path.read_text(encoding="utf-8") for path in swift_files if path.name == "ScenarioLibraryWorkspaceView.swift"
+    )
+    for source_name, source in {
+        "EmployeeDirectoryView.swift": employee_directory_source,
+        "SupportingWorkspaces.swift": supporting_source,
+        "ScenarioLibraryWorkspaceView.swift": scenario_source,
+    }.items():
+        if "CreamTabbedPageContainer" not in source:
+            failures.append(f"{source_name} does not use the shared centered tab page container")
 
     raw_search_field = re.compile(r'TextField\("搜索[^"\\n]*"')
     for path in swift_files:
@@ -425,6 +632,8 @@ def main() -> int:
         "keyboard focus support": "@FocusState",
         "icon button Help": ".help(help)",
         "icon button accessibility label": ".accessibilityLabel(accessibilityLabel)",
+        "client-wide hover contract": "CreamInteractiveRow",
+        "shared SF Symbol grammar": "CreamSymbol",
     }
     for description, marker in component_requirements.items():
         if marker not in component_source:

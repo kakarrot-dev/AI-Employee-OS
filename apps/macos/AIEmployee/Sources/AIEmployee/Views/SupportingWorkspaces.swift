@@ -129,12 +129,13 @@ struct CapabilityLibraryWorkspaceView: View {
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 10) {
-                Image(systemName: scope.icon).font(.system(size: 25, weight: .light)).foregroundStyle(palette.primaryActive)
-                Text("尚未接通 Runtime")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(palette.warning)
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(palette.warning.opacity(0.12), in: Capsule())
+                CreamSymbol(systemName: scope.icon, scale: .emptyState)
+                    .foregroundStyle(palette.primaryActive)
+                CreamStatusBadge(
+                    title: "尚未接通 Runtime",
+                    systemImage: "exclamationmark.triangle.fill",
+                    tone: .warning
+                )
             }
             VStack(alignment: .leading, spacing: 6) {
                 Text(scope.emptyTitle).font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
@@ -162,24 +163,29 @@ private struct CapabilityCatalogRow: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        Button(action: select) {
+        CreamInteractiveRow(
+            isSelected: isSelected,
+            accessibilityLabel: "\(item.name)，\(item.status)",
+            action: select
+        ) {
             HStack(alignment: .top, spacing: 11) {
-                Image(systemName: item.icon)
-                    .font(.system(size: 14, weight: .medium)).foregroundStyle(palette.primaryActive)
-                    .frame(width: 32, height: 32).background(palette.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
+                CreamFeatureIcon(systemName: item.icon, size: .compact)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Text(item.name).font(.callout.weight(.semibold)).foregroundStyle(palette.ink).lineLimit(1)
                         Text("v\(item.version)").font(.caption2.monospaced()).foregroundStyle(palette.mutedSoft)
                     }
                     Text(item.summary).font(.caption).foregroundStyle(palette.muted).lineLimit(2)
-                    Text(item.category).font(.caption2.weight(.medium)).foregroundStyle(item.statusColor(palette))
+                    CreamStatusLabel(
+                        title: item.category,
+                        systemImage: item.status == "可用" ? "checkmark.circle.fill" : "exclamationmark.circle.fill",
+                        tone: item.status == "可用" ? .success : .warning
+                    )
                 }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 12).padding(.vertical, 11).contentShape(Rectangle())
-            .background(isSelected ? palette.primary.opacity(0.11) : Color.clear)
-        }.buttonStyle(.plain)
+        }
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
@@ -213,64 +219,98 @@ private struct CapabilityDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .top, spacing: 14) {
-                    if showsBack {
-                        CreamIconButton(
-                            systemName: "chevron.left",
-                            accessibilityLabel: "返回列表",
-                            help: "返回列表",
-                            action: close
-                        )
-                    }
-                    Image(systemName: item.icon).font(.system(size: 20, weight: .medium)).foregroundStyle(palette.primaryActive)
-                        .frame(width: 46, height: 46).background(palette.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: 13))
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack(spacing: 8) {
-                            Text(item.name).font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
-                            Text("v\(item.version)").font(.caption.monospaced()).foregroundStyle(palette.muted)
+            CreamTabbedPageContainer {
+                CreamTabbedDetailHeader(
+                    title: item.name,
+                    metadata: "v\(item.version)",
+                    subtitle: item.summary,
+                    statusTitle: item.status,
+                    statusSystemImage: item.status == "可用" ? "checkmark.circle.fill" : "exclamationmark.circle.fill",
+                    statusTone: item.status == "可用" ? .success : .warning,
+                    tabs: tabs,
+                    selection: $tab,
+                    tabTitle: \.title
+                ) {
+                    HStack(spacing: AppTheme.Spacing.xs) {
+                        if showsBack {
+                            CreamIconButton(
+                                systemName: "chevron.left",
+                                accessibilityLabel: "返回列表",
+                                help: "返回列表",
+                                action: close
+                            )
                         }
-                        Text(item.summary).font(.callout).foregroundStyle(palette.muted)
+                        CreamFeatureIcon(systemName: item.icon)
                     }
-                    Spacer()
-                    CreamStatusBadge(
-                        title: item.status,
-                        systemImage: item.status == "可用" ? "checkmark.circle.fill" : "exclamationmark.circle.fill",
-                        tone: item.status == "可用" ? .success : .warning
-                    )
+                } actions: {
+                    EmptyView()
                 }
-                CreamTabBar(items: tabs, selection: $tab, title: \ .title)
             }
-            .padding(.horizontal, 28).padding(.top, 24)
+            .padding(.top, 24)
 
             if scope == .skills, tab == .structure {
-                SkillPackageBrowser(item: item).id(item.id)
+                CreamTabbedPageContainer(showsWorkspaceSurface: true) {
+                    SkillPackageBrowser(item: item).id(item.id)
+                }
+                .padding(.top, AppTheme.Spacing.sm)
+                .padding(.bottom, AppTheme.Spacing.lg)
+                .frame(maxHeight: .infinity)
             } else {
                 ScrollView {
-                    Group {
-                        switch tab {
-                        case .document: CapabilityMarkdownPreview(source: item.markdown)
-                        case .dependencies: CapabilityMetadataView(sections: item.dependencySections)
-                        case .capabilities:
-                            VStack(alignment: .leading, spacing: 28) {
-                                if !item.capabilitySections.isEmpty {
-                                    CapabilityMetadataView(sections: item.capabilitySections)
-                                }
-                                if !item.dataSources.isEmpty {
-                                    AgentReachDataSourcesView(sources: item.dataSources)
-                                }
-                                if item.capabilitySections.isEmpty && item.dataSources.isEmpty {
-                                    Text("暂无能力信息").font(.callout).foregroundStyle(palette.muted)
+                    CreamTabbedPageContainer {
+                        CreamTabContentSection(tabContentTitle, subtitle: tabContentSubtitle) {
+                            Group {
+                                switch tab {
+                                case .document:
+                                    CapabilityMarkdownPreview(source: item.markdown, hidesLeadingTitle: true)
+                                case .dependencies:
+                                    CapabilityMetadataView(sections: item.dependencySections)
+                                case .capabilities:
+                                    VStack(alignment: .leading, spacing: 28) {
+                                        if !item.capabilitySections.isEmpty {
+                                            CapabilityMetadataView(sections: item.capabilitySections)
+                                        }
+                                        if !item.dataSources.isEmpty {
+                                            AgentReachDataSourcesView(sources: item.dataSources)
+                                        }
+                                        if item.capabilitySections.isEmpty && item.dataSources.isEmpty {
+                                            Text("暂无能力信息").font(.callout).foregroundStyle(palette.muted)
+                                        }
+                                    }
+                                case .security:
+                                    CapabilitySecurityView(actions: item.actions)
+                                case .structure:
+                                    EmptyView()
                                 }
                             }
-                        case .security: CapabilitySecurityView(actions: item.actions)
-                        case .structure: EmptyView()
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
-                    .frame(maxWidth: 780, alignment: .leading).padding(.horizontal, 28).padding(.vertical, 24)
+                    .padding(.top, 28)
+                    .padding(.bottom, 36)
                 }
             }
         }.background(palette.canvas)
+    }
+
+    private var tabContentTitle: String {
+        switch tab {
+        case .document: "说明文档"
+        case .dependencies: "依赖信息"
+        case .capabilities: "能力信息"
+        case .security: "权限与风险"
+        case .structure: "技能文件"
+        }
+    }
+
+    private var tabContentSubtitle: String {
+        switch tab {
+        case .document: "了解这个 Tool Package 的用途、边界与运行方式。"
+        case .dependencies: "查看这个 Skill Package 的安装状态、版本与运行依赖。"
+        case .capabilities: "查看这个 Tool Package 暴露的动作、执行约束与可用数据源。"
+        case .security: "查看调用动作的权限、审批、副作用与敏感参数。"
+        case .structure: "浏览 Package 中的目录与只读文档。"
+        }
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
@@ -278,11 +318,21 @@ private struct CapabilityDetailView: View {
 
 private struct CapabilityMarkdownPreview: View {
     let source: String
+    var hidesLeadingTitle = false
     @Environment(\.colorScheme) private var colorScheme
+
+    private var blocks: [MarkdownBlock] {
+        let parsed = MarkdownBlock.parse(source)
+        guard hidesLeadingTitle, let first = parsed.first else { return parsed }
+        if case .heading(let level, _) = first, level == 1 {
+            return Array(parsed.dropFirst())
+        }
+        return parsed
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            ForEach(Array(MarkdownBlock.parse(source).enumerated()), id: \.offset) { _, block in blockView(block) }
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in blockView(block) }
         }.frame(maxWidth: 680, alignment: .leading).textSelection(.enabled)
     }
 
@@ -357,23 +407,29 @@ private struct SkillPackageBrowser: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(visibleRows) { row in
-                        Button { select(row) } label: {
+                        CreamInteractiveRow(
+                            isSelected: selectedDocumentID == row.id,
+                            accessibilityLabel: row.name,
+                            action: { select(row) }
+                        ) {
                             HStack(spacing: 7) {
                                 if row.isFolder {
-                                    Image(systemName: expandedFolders.contains(row.id) ? "chevron.down" : "chevron.right")
-                                        .font(.system(size: 8, weight: .semibold)).foregroundStyle(palette.mutedSoft).frame(width: 10)
+                                    CreamSymbol(
+                                        systemName: expandedFolders.contains(row.id) ? "chevron.down" : "chevron.right",
+                                        scale: .compact
+                                    )
+                                    .foregroundStyle(palette.mutedSoft)
                                 } else {
-                                    Color.clear.frame(width: 10, height: 1)
+                                    Color.clear.frame(width: 12, height: 1)
                                 }
-                                Image(systemName: row.isFolder ? "folder" : row.icon)
-                                    .foregroundStyle(row.isFolder ? palette.primaryActive : palette.muted).frame(width: 17)
+                                CreamSymbol(systemName: row.isFolder ? "folder" : row.icon)
+                                    .foregroundStyle(row.isFolder ? palette.primaryActive : palette.muted)
                                 Text(row.name).font(.system(.caption, design: .monospaced)).foregroundStyle(palette.body).lineLimit(1)
                                 Spacer(minLength: 0)
                             }
                             .padding(.leading, CGFloat(row.depth * 15) + 10).padding(.trailing, 10).frame(height: 31)
-                            .background(selectedDocumentID == row.id ? palette.primary.opacity(0.11) : Color.clear)
                             .contentShape(Rectangle())
-                        }.buttonStyle(.plain)
+                        }
                     }
                 }.padding(.vertical, 6)
             }
@@ -391,7 +447,8 @@ private struct SkillPackageBrowser: View {
                         action: { compactShowsDocument = false }
                     )
                 }
-                Image(systemName: "doc.richtext").foregroundStyle(palette.primaryActive)
+                CreamSymbol(systemName: "doc.richtext")
+                    .foregroundStyle(palette.primaryActive)
                 Text(selectedName).font(.callout.weight(.semibold)).foregroundStyle(palette.ink)
                 Spacer()
                 Text("只读预览").font(.caption).foregroundStyle(palette.mutedSoft)

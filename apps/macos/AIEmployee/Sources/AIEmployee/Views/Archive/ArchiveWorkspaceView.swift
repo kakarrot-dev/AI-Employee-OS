@@ -99,7 +99,7 @@ private struct ArchivedTaskRow: View {
     @Environment(\.colorScheme) private var colorScheme
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "briefcase").foregroundStyle(palette.primary).frame(width: 38, height: 38).background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: 10))
+            CreamFeatureIcon(systemName: "briefcase", size: .compact)
             VStack(alignment: .leading, spacing: 3) {
                 HStack { Text(thread.title).font(.callout.weight(.semibold)); Text("工作").font(.caption).foregroundStyle(palette.muted) }
                 Text(thread.messages.first?.content ?? "暂无任务描述").font(.caption).foregroundStyle(palette.muted).lineLimit(1)
@@ -117,8 +117,6 @@ private struct ArchivedTaskRow: View {
 private struct ArchiveRowActions: View {
     let restore: () -> Void
     let delete: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
         HStack(spacing: 4) {
             actionButton("恢复", systemImage: "tray.and.arrow.up", action: restore)
@@ -128,17 +126,12 @@ private struct ArchiveRowActions: View {
     }
 
     private func actionButton(_ title: String, systemImage: String, role: ButtonRole? = nil, action: @escaping () -> Void) -> some View {
-        Button(role: role, action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(role == .destructive ? palette.error : palette.body)
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(title)
-        .accessibilityLabel(title)
+        CreamIconButton(
+            systemName: systemImage,
+            accessibilityLabel: title,
+            help: title,
+            tone: role == .destructive ? .destructive : .neutral,
+            action: action
+        )
     }
-
-    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }

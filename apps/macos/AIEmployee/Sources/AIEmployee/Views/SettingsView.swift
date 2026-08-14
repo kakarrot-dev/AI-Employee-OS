@@ -38,8 +38,7 @@ struct SettingsView: View {
                     } label: {
                         Label("返回设置", systemImage: "chevron.left")
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(palette.body)
+                    .buttonStyle(CreamSecondaryButtonStyle())
                     .help("返回设置列表")
                 }
                 settingsPage

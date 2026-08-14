@@ -16,11 +16,13 @@ struct SettingsSidebarView: View {
 
             VStack(spacing: 4) {
                 ForEach(SettingsSection.allCases) { section in
-                    Button {
-                        selection = section
-                    } label: {
+                    CreamInteractiveRow(
+                        isSelected: selection == section,
+                        accessibilityLabel: section.title,
+                        action: { selection = section }
+                    ) {
                         HStack(spacing: 10) {
-                            Image(systemName: section.systemImage).frame(width: 18)
+                            CreamSymbol(systemName: section.systemImage)
                             Text(section.title)
                             Spacer(minLength: 0)
                         }
@@ -30,12 +32,6 @@ struct SettingsSidebarView: View {
                         .frame(height: 36)
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .background(
-                        selection == section ? palette.primary.opacity(0.12) : .clear,
-                        in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    )
-                    .accessibilityAddTraits(selection == section ? .isSelected : [])
                 }
             }
             .padding(.horizontal, 10)
@@ -44,9 +40,6 @@ struct SettingsSidebarView: View {
             Spacer(minLength: 0)
         }
         .background(palette.surfaceSoft)
-        .overlay(alignment: .trailing) {
-            Rectangle().fill(palette.hairlineSoft).frame(width: 1)
-        }
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
