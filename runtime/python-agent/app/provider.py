@@ -67,7 +67,13 @@ class UrllibTransport:
         for attempt in range(2):
             try:
                 with request.urlopen(req, timeout=timeout) as response:
-                    return HttpResponse(response.status, response.read())
+                    try:
+                        body = response.read()
+                    except IncompleteRead as exc:
+                        if _is_complete_json(exc.partial):
+                            return HttpResponse(response.status, exc.partial)
+                        raise
+                    return HttpResponse(response.status, body)
             except error.HTTPError as exc:
                 try:
                     return HttpResponse(exc.code, exc.read())
@@ -284,6 +290,14 @@ def _poe_output_text(payload: dict) -> str:
             if content.get("type") == "output_text" and isinstance(content.get("text"), str):
                 parts.append(content["text"])
     return "".join(parts)
+
+
+def _is_complete_json(body: bytes) -> bool:
+    try:
+        json.loads(body)
+        return True
+    except (TypeError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
 
 
 def _token_count(usage: object, primary: str, alternate: str) -> int:

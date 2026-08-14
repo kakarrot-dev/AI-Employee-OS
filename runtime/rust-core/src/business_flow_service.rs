@@ -998,6 +998,26 @@ pub fn next_ready_work_order(
         .find(|work_order| work_order.status == "ready"))
 }
 
+pub fn reconcile_business_flow_thread_status(
+    connection: &Connection,
+    flow_id: &str,
+    now: &str,
+) -> Result<bool, String> {
+    let (root_task_id, root_status): (String, String) = connection
+        .query_row(
+            "SELECT flow.root_task_id,task.status FROM business_flows flow
+             JOIN tasks task ON task.id=flow.root_task_id WHERE flow.id=?1",
+            [flow_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|_| "business_flow_not_found".to_owned())?;
+    if !matches!(root_status.as_str(), "succeeded" | "failed" | "cancelled") {
+        return Ok(false);
+    }
+    sync_task_thread_status(connection, &root_task_id, &root_status, now)?;
+    Ok(true)
+}
+
 pub fn advance_after_child_success(
     connection: &mut Connection,
     flow_id: &str,
@@ -1048,6 +1068,16 @@ pub fn advance_after_child_success(
     };
     if already_advanced {
         return project_business_flow(connection, flow_id);
+    }
+    let source_acceptance: String = connection
+        .query_row(
+            "SELECT acceptance_json FROM work_orders WHERE id=?1 AND business_flow_id=?2",
+            params![source_work_order_id, flow_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if !acceptance_satisfied(connection, deliverable_id, &source_acceptance)? {
+        return Err("work_order_acceptance_failed".into());
     }
     append_root_event(
         connection,
@@ -1140,6 +1170,7 @@ pub fn advance_after_child_success(
                 params![now, flow_id],
             )
             .map_err(|error| error.to_string())?;
+        sync_task_thread_status(connection, &root_task_id, "succeeded", now)?;
         connection
             .execute(
                 "INSERT OR IGNORE INTO audit_logs(id,agent_id,task_id,approval_id,action,resource,result,created_at)
@@ -1303,10 +1334,30 @@ pub fn settle_failed_work_order(
                     params![now, root_task_id],
                 )
                 .map_err(|error| error.to_string())?;
+            sync_task_thread_status(connection, &root_task_id, "failed", now)?;
         }
         _ => return Err("failure_policy_invalid".into()),
     }
     project_business_flow(connection, flow_id)
+}
+
+fn sync_task_thread_status(
+    connection: &Connection,
+    root_task_id: &str,
+    status: &str,
+    now: &str,
+) -> Result<(), String> {
+    connection
+        .execute(
+            "UPDATE task_threads SET status=?1,updated_at=?2
+             WHERE id IN (
+               SELECT thread_id FROM task_thread_task_bindings
+               WHERE task_id=?3 AND binding_role='root'
+             )",
+            params![status, now, root_task_id],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 fn append_root_event(
@@ -1664,6 +1715,81 @@ mod tests {
                 .unwrap()
                 .node_id,
             "finalize"
+        );
+    }
+
+    #[test]
+    fn finalizer_must_satisfy_its_own_artifact_acceptance() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        let mut proposal = fixture(&mut connection);
+        proposal.nodes[1].acceptance_criteria[0].evidence_type = "artifact".into();
+        save_scenario(&mut connection, "scenario", "manual", proposal, "t1").unwrap();
+        let hash = get_scenario(&connection, "scenario").unwrap().sha256;
+        start_business_flow(&mut connection, "flow", "scenario", &hash, "t2").unwrap();
+
+        connection
+            .execute(
+                "UPDATE tasks SET status='succeeded' WHERE id='flow:task:work'",
+                [],
+            )
+            .unwrap();
+        connection.execute(
+            "INSERT INTO agent_runs(id,task_id,schema_version,phase,revision,model_turns_used,tool_calls_used,max_model_turns,max_tool_calls,deadline,waiting_reason,stop_reason,created_at,updated_at)
+             VALUES ('run-work','flow:task:work','1.0.0','terminal',1,0,0,1,0,'t4',NULL,'completed','t2','t3')", []).unwrap();
+        connection.execute(
+            "INSERT INTO deliverables(id,task_id,run_id,deliverable_type,title,summary,status,output_json,created_at,verified_at)
+             VALUES ('deliverable-work','flow:task:work','run-work','structured_result','Research','Verified','verified','{}','t3','t3')", []).unwrap();
+        connection.execute("INSERT INTO evaluations(id,task_id,agent_id,score,metrics_json,created_at) VALUES ('evaluation-work','flow:task:work','alex',1.0,'{\"delivery_allowed\":true}','t3')", []).unwrap();
+        connection.execute("INSERT INTO deliverable_evidence VALUES ('deliverable-work','evaluation','evaluation-work','t3')", []).unwrap();
+        advance_after_child_success(
+            &mut connection,
+            "flow",
+            "flow:work:work",
+            "deliverable-work",
+            "t3",
+        )
+        .unwrap();
+
+        connection
+            .execute(
+                "UPDATE tasks SET status='succeeded' WHERE id='flow:task:finalize'",
+                [],
+            )
+            .unwrap();
+        connection.execute(
+            "INSERT INTO agent_runs(id,task_id,schema_version,phase,revision,model_turns_used,tool_calls_used,max_model_turns,max_tool_calls,deadline,waiting_reason,stop_reason,created_at,updated_at)
+             VALUES ('run-final','flow:task:finalize','1.0.0','terminal',1,0,0,1,0,'t5',NULL,'completed','t4','t4')", []).unwrap();
+        connection.execute(
+            "INSERT INTO deliverables(id,task_id,run_id,deliverable_type,title,summary,status,output_json,created_at,verified_at)
+             VALUES ('deliverable-final','flow:task:finalize','run-final','structured_result','Document','Verified','verified','{}','t4','t4')", []).unwrap();
+        connection.execute("INSERT INTO evaluations(id,task_id,agent_id,score,metrics_json,created_at) VALUES ('evaluation-final','flow:task:finalize','alex',1.0,'{\"delivery_allowed\":true}','t4')", []).unwrap();
+        connection.execute("INSERT INTO deliverable_evidence VALUES ('deliverable-final','evaluation','evaluation-final','t4')", []).unwrap();
+
+        assert_eq!(
+            advance_after_child_success(
+                &mut connection,
+                "flow",
+                "flow:work:finalize",
+                "deliverable-final",
+                "t4",
+            )
+            .unwrap_err(),
+            "work_order_acceptance_failed"
+        );
+
+        connection.execute("INSERT INTO deliverable_evidence VALUES ('deliverable-final','artifact','artifact-final','t4')", []).unwrap();
+        let completed = advance_after_child_success(
+            &mut connection,
+            "flow",
+            "flow:work:finalize",
+            "deliverable-final",
+            "t5",
+        )
+        .unwrap();
+        assert_eq!(completed.status, "succeeded");
+        assert_eq!(
+            completed.root_deliverable_id.as_deref(),
+            Some("deliverable-final")
         );
     }
 

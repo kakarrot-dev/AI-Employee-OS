@@ -17,9 +17,9 @@ use ai_employee_runtime::business_flow::{
 use ai_employee_runtime::business_flow_service::{
     advance_after_child_success, disable_scenario, get_scenario, list_business_flows,
     list_scenarios, next_ready_work_order, project_business_flow,
-    reconcile_unbound_business_flow_threads, record_assignee_unavailable,
-    record_work_order_started, save_scenario, settle_failed_work_order, start_business_flow,
-    start_direct_business_flow, validate_scenario,
+    reconcile_business_flow_thread_status, reconcile_unbound_business_flow_threads,
+    record_assignee_unavailable, record_work_order_started, save_scenario,
+    settle_failed_work_order, start_business_flow, start_direct_business_flow, validate_scenario,
 };
 use ai_employee_runtime::employee_prompt::{
     compile_effective_prompt, legacy_mission_from_base_prompt,
@@ -1763,10 +1763,7 @@ fn task_proposal_to_scenario(
                 } else {
                     ScenarioNodeRole::Executor
                 },
-                goal: item["goal"]
-                    .as_str()
-                    .ok_or("task_proposal_goal_invalid")?
-                    .to_owned(),
+                goal: task_assignment_goal(item, proposal)?,
                 suggested_agent_id: resolved[index].0.clone(),
                 required_capabilities: resolved[index].1.clone(),
                 input_refs: vec![],
@@ -1807,6 +1804,33 @@ fn task_proposal_to_scenario(
         risks: vec![],
         questions_for_user: vec![],
     })
+}
+
+fn task_assignment_goal(assignment: &Value, proposal: &Value) -> Result<String, String> {
+    let mut goal = assignment["goal"]
+        .as_str()
+        .ok_or("task_proposal_goal_invalid")?
+        .trim()
+        .to_owned();
+    if assignment["role"] == "finalizer" {
+        if let Some(description) = proposal["deliverable"]["description"]
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            goal.push_str("\n\n最终交付要求：");
+            goal.push_str(description);
+        }
+        if let Some(target_path) = proposal["deliverable"]["target_path"]
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            goal.push_str("\n目标文件路径：");
+            goal.push_str(target_path);
+        }
+    }
+    Ok(goal)
 }
 
 fn bind_materialized_flow(
@@ -1924,6 +1948,36 @@ fn drive_business_flow_once(
     python: &Path,
     flow_id: &str,
 ) -> Result<Value, String> {
+    if reconcile_business_flow_thread_status(connection, flow_id, &now())? {
+        return serde_json::to_value(project_business_flow(connection, flow_id)?)
+            .map_err(|error| error.to_string());
+    }
+    let failed_work_order: Option<(String, Option<String>)> = connection
+        .query_row(
+            "SELECT work.id,
+                    (SELECT run.stop_reason FROM agent_runs run
+                     WHERE run.task_id=child.id ORDER BY run.created_at DESC LIMIT 1)
+             FROM work_orders work
+             JOIN tasks child ON child.id=work.child_task_id
+             JOIN business_flows flow ON flow.id=work.business_flow_id
+             JOIN tasks root ON root.id=flow.root_task_id
+             WHERE work.business_flow_id=?1 AND child.status='failed' AND root.status='running'
+             ORDER BY work.created_at LIMIT 1",
+            [flow_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    if let Some((work_order_id, reason)) = failed_work_order {
+        return serde_json::to_value(settle_failed_work_order(
+            connection,
+            flow_id,
+            &work_order_id,
+            reason.as_deref().unwrap_or("child_run_failed_recovered"),
+            &now(),
+        )?)
+        .map_err(|error| error.to_string());
+    }
     record_assignee_unavailable(connection, flow_id, &now())?;
     let ready = next_ready_work_order(&connection, &flow_id)?;
     let Some(work_order) = ready else {
@@ -1956,6 +2010,27 @@ fn drive_business_flow_once(
                     &now(),
                 )?)
                 .map_err(|serialization_error| serialization_error.to_string());
+            }
+            let child_status: String = connection
+                .query_row(
+                    "SELECT status FROM tasks WHERE id=?1",
+                    [&work_order.child_task_id],
+                    |row| row.get(0),
+                )
+                .map_err(|query_error| query_error.to_string())?;
+            if child_status == "failed" {
+                let projection =
+                    settle_failed_work_order(connection, flow_id, &work_order.id, &error, &now())?;
+                return Ok(json!({
+                    "flow": projection,
+                    "run": {
+                        "schema_version":"1.0.0",
+                        "task_id":work_order.child_task_id,
+                        "status":"failed",
+                        "phase":"terminal",
+                        "reason":error
+                    }
+                }));
             }
             return Err(error);
         }
@@ -2345,60 +2420,118 @@ fn employee_arguments(
 
 const DEFAULT_AGENT_ID: &str = "ai-product-manager";
 const DEFAULT_AGENT_DISMISSED_FLAG: &str = "default_agent_dismissed";
+const SPECIALIST_AGENT_IDS: [&str; 2] = ["data-researcher", "document-writer"];
 const HISTORICAL_AGENT_ID: &str = "system:historical-employee";
 
 fn ensure_default_agent(connection: &mut Connection, root: &std::path::Path) -> Result<(), String> {
     let stamp = now();
     bootstrap_packages(connection, root, &stamp)?;
-    if default_agent_dismissed(connection)? {
-        return Ok(());
+    if !default_agent_dismissed(connection)? {
+        let exists = employee_exists(connection, DEFAULT_AGENT_ID)?;
+        if !exists {
+            let default_agent = install_agent_package(
+                connection,
+                &root.join("packages/agents/ai-product-manager"),
+                &stamp,
+            )
+            .map_err(|error| format!("could not install default agent: {error:?}"))?;
+            let alex_identity = "把模糊需求转化为可执行的产品方案。\n\n职责：需求分析、产品方案、可评审文档。\n\n边界：不虚构缺失事实；没有授权时不执行外部操作。\n\n可靠、直接地协助用户完成产品工作。闲聊不会执行 Skill 或 Tool；工作能力在绑定仓库 Package 后接通。";
+            connection.execute(
+                "INSERT OR IGNORE INTO employee_profiles (agent_id,department,mission,responsibilities_json,boundaries_json,soul_json,base_prompt,config_version,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,1,?8,?8)",
+                rusqlite::params![
+                    default_agent.id,
+                    "产品部",
+                    legacy_mission_from_base_prompt(alex_identity),
+                    json!([]).to_string(),
+                    json!([]).to_string(),
+                    json!(["用户价值优先", "区分事实、推测与未知", "结论必须可执行和可验收"]).to_string(),
+                    alex_identity,
+                    stamp
+                ],
+            ).map_err(|error| error.to_string())?;
+        }
+        if employee_status(connection, DEFAULT_AGENT_ID)?.as_deref() == Some("active") {
+            let _ = bind_skill(
+                connection,
+                DEFAULT_AGENT_ID,
+                "local-file-operations",
+                "1.0.0",
+                &stamp,
+            );
+            let _ = bind_skill(connection, DEFAULT_AGENT_ID, "web-search", "1.0.0", &stamp);
+        }
     }
-    let exists: bool = connection
+    for (agent_id, skill_id) in [
+        ("data-researcher", "web-search"),
+        ("document-writer", "local-file-operations"),
+    ] {
+        ensure_specialist_agent(connection, root, agent_id, skill_id, &stamp)?;
+    }
+    Ok(())
+}
+
+fn employee_exists(connection: &Connection, agent_id: &str) -> Result<bool, String> {
+    connection
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM agents WHERE id=?1)",
-            [DEFAULT_AGENT_ID],
+            [agent_id],
             |row| row.get(0),
         )
-        .map_err(|error| error.to_string())?;
-    if !exists {
-        let default_agent = install_agent_package(
-            connection,
-            &root.join("packages/agents/ai-product-manager"),
-            &stamp,
-        )
-        .map_err(|error| format!("could not install default agent: {error:?}"))?;
-        let alex_identity = "把模糊需求转化为可执行的产品方案。\n\n职责：需求分析、产品方案、可评审文档。\n\n边界：不虚构缺失事实；没有授权时不执行外部操作。\n\n可靠、直接地协助用户完成产品工作。闲聊不会执行 Skill 或 Tool；工作能力在绑定仓库 Package 后接通。";
-        connection.execute(
-            "INSERT OR IGNORE INTO employee_profiles (agent_id,department,mission,responsibilities_json,boundaries_json,soul_json,base_prompt,config_version,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,1,?8,?8)",
-            rusqlite::params![
-                default_agent.id,
-                "产品部",
-                legacy_mission_from_base_prompt(alex_identity),
-                json!([]).to_string(),
-                json!([]).to_string(),
-                json!(["用户价值优先", "区分事实、推测与未知", "结论必须可执行和可验收"]).to_string(),
-                alex_identity,
-                stamp
-            ],
-        ).map_err(|error| error.to_string())?;
-    }
-    let status: Option<String> = connection
+        .map_err(|error| error.to_string())
+}
+
+fn employee_status(connection: &Connection, agent_id: &str) -> Result<Option<String>, String> {
+    connection
+        .query_row("SELECT status FROM agents WHERE id=?1", [agent_id], |row| {
+            row.get::<_, String>(0)
+        })
+        .optional()
+        .map_err(|error| error.to_string())
+}
+
+fn specialist_dismissed_flag(agent_id: &str) -> String {
+    format!("builtin_agent_dismissed:{agent_id}")
+}
+
+fn specialist_agent_dismissed(connection: &Connection, agent_id: &str) -> Result<bool, String> {
+    let key = specialist_dismissed_flag(agent_id);
+    let value: Option<String> = connection
         .query_row(
-            "SELECT status FROM agents WHERE id=?1",
-            [DEFAULT_AGENT_ID],
-            |row| row.get::<_, String>(0),
+            "SELECT value FROM runtime_flags WHERE key=?1",
+            [&key],
+            |row| row.get(0),
         )
         .optional()
         .map_err(|error| error.to_string())?;
-    if status.as_deref() == Some("active") {
-        let _ = bind_skill(
+    Ok(value.as_deref() == Some("1"))
+}
+
+fn ensure_specialist_agent(
+    connection: &mut Connection,
+    root: &Path,
+    agent_id: &str,
+    skill_id: &str,
+    stamp: &str,
+) -> Result<(), String> {
+    if specialist_agent_dismissed(connection, agent_id)? {
+        return Ok(());
+    }
+    if !employee_exists(connection, agent_id)? {
+        install_agent_package(
             connection,
-            DEFAULT_AGENT_ID,
-            "local-file-operations",
-            "1.0.0",
-            &stamp,
-        );
-        let _ = bind_skill(connection, DEFAULT_AGENT_ID, "web-search", "1.0.0", &stamp);
+            &root.join("packages/agents").join(agent_id),
+            stamp,
+        )
+        .map_err(|error| format!("could not install specialist agent {agent_id}: {error:?}"))?;
+    }
+    if employee_status(connection, agent_id)?.as_deref() == Some("active") {
+        bind_skill(connection, agent_id, skill_id, "1.0.0", stamp)?;
+        connection
+            .execute(
+                "UPDATE agent_skills SET enabled=0 WHERE agent_id=?1 AND skill_id!=?2",
+                rusqlite::params![agent_id, skill_id],
+            )
+            .map_err(|error| error.to_string())?;
     }
     Ok(())
 }
@@ -3169,6 +3302,13 @@ fn employee_delete(arguments: impl Iterator<Item = String>) -> Result<serde_json
             "INSERT INTO runtime_flags(key,value,updated_at) VALUES (?1,'1',?2)
              ON CONFLICT(key) DO UPDATE SET value='1',updated_at=excluded.updated_at",
             rusqlite::params![DEFAULT_AGENT_DISMISSED_FLAG, now()],
+        )
+        .map_err(|error| error.to_string())?;
+    } else if SPECIALIST_AGENT_IDS.contains(&id.as_str()) {
+        tx.execute(
+            "INSERT INTO runtime_flags(key,value,updated_at) VALUES (?1,'1',?2)
+             ON CONFLICT(key) DO UPDATE SET value='1',updated_at=excluded.updated_at",
+            rusqlite::params![specialist_dismissed_flag(&id), now()],
         )
         .map_err(|error| error.to_string())?;
     }
@@ -4625,13 +4765,13 @@ fn continue_run(mut arguments: impl Iterator<Item = String>) -> Result<serde_jso
 }
 
 fn advance_parent_flow_if_any(connection: &mut Connection, result: &Value) -> Result<(), String> {
-    if result.get("status").and_then(Value::as_str) != Some("succeeded") {
+    let Some(status) = result.get("status").and_then(Value::as_str) else {
+        return Ok(());
+    };
+    if !matches!(status, "succeeded" | "failed") {
         return Ok(());
     }
     let Some(task_id) = result.get("task_id").and_then(Value::as_str) else {
-        return Ok(());
-    };
-    let Some(deliverable_id) = result.get("deliverable_id").and_then(Value::as_str) else {
         return Ok(());
     };
     let parent: Option<(String, String)> = connection
@@ -4643,7 +4783,29 @@ fn advance_parent_flow_if_any(connection: &mut Connection, result: &Value) -> Re
         .optional()
         .map_err(|error| error.to_string())?;
     if let Some((flow_id, work_order_id)) = parent {
-        advance_after_child_success(connection, &flow_id, &work_order_id, deliverable_id, &now())?;
+        if status == "succeeded" {
+            let Some(deliverable_id) = result.get("deliverable_id").and_then(Value::as_str) else {
+                return Ok(());
+            };
+            advance_after_child_success(
+                connection,
+                &flow_id,
+                &work_order_id,
+                deliverable_id,
+                &now(),
+            )?;
+        } else {
+            settle_failed_work_order(
+                connection,
+                &flow_id,
+                &work_order_id,
+                result
+                    .get("reason")
+                    .and_then(Value::as_str)
+                    .unwrap_or("child_run_failed"),
+                &now(),
+            )?;
+        }
     }
     Ok(())
 }
@@ -5141,9 +5303,274 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::sync::atomic::{AtomicU64, Ordering};
 
-    const VALID_TWO_ASSIGNMENT_PROPOSAL: &str = r#"{"schema_version":"1.0.0","intent":"multi_agent_task","title":"Research and write","objective":"Research and write a summary","missing_inputs":[],"deliverable":{"type":"structured_result","description":"Research summary","target_path":null},"assignments":[{"node_id":"research","role":"owner","employee_selector":{"preferred_id":"data-researcher","capabilities":["web-search"]},"goal":"Research the current topic","depends_on":[],"acceptance_criteria":[{"criterion_id":"sources","description":"Includes sources","evidence_type":"structured_output","required":true}]},{"node_id":"write","role":"finalizer","employee_selector":{"preferred_id":"ai-product-manager","capabilities":["local-file-operations"]},"goal":"Write the final summary","depends_on":["research"],"acceptance_criteria":[{"criterion_id":"summary","description":"Produces the final summary","evidence_type":"artifact","required":true}]}],"acceptance_criteria":[{"criterion_id":"complete","description":"Research and summary are complete","evidence_type":"evaluation","required":true}],"requested_resources":[],"budget_hint":{"input_tokens":0,"output_tokens":0,"tool_rounds":0,"wall_clock_ms":0}}"#;
+    const VALID_TWO_ASSIGNMENT_PROPOSAL: &str = r#"{"schema_version":"1.0.0","intent":"multi_agent_task","title":"Research and write","objective":"Research and write a summary","missing_inputs":[],"deliverable":{"type":"markdown_document","description":"Research summary","target_path":"research-summary.md"},"assignments":[{"node_id":"research","role":"owner","employee_selector":{"preferred_id":"data-researcher","capabilities":["web-search"]},"goal":"Research the current topic","depends_on":[],"acceptance_criteria":[{"criterion_id":"sources","description":"Includes sources","evidence_type":"structured_output","required":true}]},{"node_id":"write","role":"finalizer","employee_selector":{"preferred_id":"document-writer","capabilities":["local-file-operations"]},"goal":"Write the final summary","depends_on":["research"],"acceptance_criteria":[{"criterion_id":"summary","description":"Produces the final summary","evidence_type":"structured_output","required":true}]}],"acceptance_criteria":[{"criterion_id":"complete","description":"Research and summary are complete","evidence_type":"evaluation","required":true}],"requested_resources":[],"budget_hint":{"input_tokens":0,"output_tokens":0,"tool_rounds":0,"wall_clock_ms":0}}"#;
     const VALID_SINGLE_ASSIGNMENT_PROPOSAL: &str = r#"{"schema_version":"1.0.0","intent":"single_agent_task","title":"Write","objective":"Write the requested summary","missing_inputs":[],"deliverable":{"type":"structured_result","description":"Written summary","target_path":null},"assignments":[{"node_id":"write","role":"owner","employee_selector":{"preferred_id":"ai-product-manager","capabilities":["local-file-operations"]},"goal":"Write the requested summary","depends_on":[],"acceptance_criteria":[{"criterion_id":"summary","description":"Includes a summary","evidence_type":"structured_output","required":true}]}],"acceptance_criteria":[{"criterion_id":"summary","description":"Includes a summary","evidence_type":"structured_output","required":true}],"requested_resources":[],"budget_hint":{"input_tokens":0,"output_tokens":0,"tool_rounds":0,"wall_clock_ms":0}}"#;
     static PROPOSAL_FIXTURE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn built_in_specialists_have_isolated_skill_bindings_and_prompts() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        migrate(&mut connection).unwrap();
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+
+        ensure_default_agent(&mut connection, &repository_root).unwrap();
+
+        for (agent_id, expected_skill, forbidden_skill) in [
+            ("data-researcher", "web-search", "local-file-operations"),
+            ("document-writer", "local-file-operations", "web-search"),
+        ] {
+            let enabled: Vec<String> = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT skill_id FROM agent_skills WHERE agent_id=?1 AND enabled=1 ORDER BY skill_id",
+                    )
+                    .unwrap();
+                statement
+                    .query_map([agent_id], |row| row.get(0))
+                    .unwrap()
+                    .collect::<Result<Vec<_>, _>>()
+                    .unwrap()
+            };
+            assert_eq!(enabled, vec![expected_skill]);
+            assert!(!enabled.contains(&forbidden_skill.to_owned()));
+        }
+        let (research_prompt, _) =
+            compile_effective_prompt(&connection, "data-researcher").unwrap();
+        let (writer_prompt, _) = compile_effective_prompt(&connection, "document-writer").unwrap();
+        assert!(research_prompt.contains("只使用网络搜索能力"));
+        assert!(writer_prompt.contains("只使用本地文件操作能力"));
+    }
+
+    #[test]
+    fn deleted_specialist_is_not_restored_by_bootstrap() {
+        let database =
+            env::temp_dir().join(format!("ai-employee-specialist-delete-{}", unique_suffix()));
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut connection = Connection::open(&database).unwrap();
+        migrate(&mut connection).unwrap();
+        ensure_default_agent(&mut connection, &repository_root).unwrap();
+        drop(connection);
+
+        employee_delete(
+            vec![
+                "--database".to_owned(),
+                database.display().to_string(),
+                "--employee-id".to_owned(),
+                "data-researcher".to_owned(),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
+
+        let mut connection = Connection::open(&database).unwrap();
+        ensure_default_agent(&mut connection, &repository_root).unwrap();
+        assert!(!employee_exists(&connection, "data-researcher").unwrap());
+        assert!(specialist_agent_dismissed(&connection, "data-researcher").unwrap());
+        drop(connection);
+        fs::remove_file(database).unwrap();
+    }
+
+    #[test]
+    fn task_proposal_carries_confirmed_target_path_into_finalizer_goal() {
+        let proposal: Value = serde_json::from_str(VALID_TWO_ASSIGNMENT_PROPOSAL).unwrap();
+        let resolved = vec![
+            ("data-researcher".to_owned(), vec!["web-search".to_owned()]),
+            (
+                "document-writer".to_owned(),
+                vec!["local-file-operations".to_owned()],
+            ),
+        ];
+
+        let scenario = task_proposal_to_scenario("proposal", &proposal, &resolved).unwrap();
+
+        assert!(!scenario.nodes[0].goal.contains("research-summary.md"));
+        assert!(scenario.nodes[1].goal.contains("research-summary.md"));
+        assert!(scenario.nodes[1].goal.contains("Research summary"));
+    }
+
+    fn resumed_flow_fixture(mark_first_child_failed: bool) -> (Connection, String, String) {
+        let mut connection = Connection::open_in_memory().unwrap();
+        migrate(&mut connection).unwrap();
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        ensure_default_agent(&mut connection, &repository_root).unwrap();
+        let proposal: Value = serde_json::from_str(VALID_TWO_ASSIGNMENT_PROPOSAL).unwrap();
+        let resolved = vec![
+            ("data-researcher".to_owned(), vec!["web-search".to_owned()]),
+            (
+                "document-writer".to_owned(),
+                vec!["local-file-operations".to_owned()],
+            ),
+        ];
+        let scenario = task_proposal_to_scenario("proposal", &proposal, &resolved).unwrap();
+        save_scenario(
+            &mut connection,
+            "resume-failure",
+            "ai_proposal",
+            scenario,
+            "t1",
+        )
+        .unwrap();
+        let hash = get_scenario(&connection, "resume-failure").unwrap().sha256;
+        start_business_flow(
+            &mut connection,
+            "flow-resume-failure",
+            "resume-failure",
+            &hash,
+            "t2",
+        )
+        .unwrap();
+        let root_task_id: String = connection
+            .query_row(
+                "SELECT root_task_id FROM business_flows WHERE id='flow-resume-failure'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO task_threads(id,title,status,current_revision,created_at,updated_at) VALUES ('thread-resume-failure','Resume failure','running',1,'t2','t2')",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO task_thread_task_bindings(thread_id,task_id,binding_role,created_at) VALUES ('thread-resume-failure',?1,'root','t2')",
+                [&root_task_id],
+            )
+            .unwrap();
+        let (work_order_id, child_task_id): (String, String) = connection
+            .query_row(
+                "SELECT id,child_task_id FROM work_orders WHERE business_flow_id='flow-resume-failure' AND assignee_agent_id='data-researcher'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        if mark_first_child_failed {
+            connection
+                .execute(
+                    "UPDATE tasks SET status='failed' WHERE id=?1",
+                    [&child_task_id],
+                )
+                .unwrap();
+        }
+        (connection, work_order_id, child_task_id)
+    }
+
+    #[test]
+    fn failed_resumed_child_settles_its_parent_flow() {
+        let (mut connection, work_order_id, child_task_id) = resumed_flow_fixture(true);
+
+        advance_parent_flow_if_any(
+            &mut connection,
+            &json!({
+                "status":"failed",
+                "phase":"terminal",
+                "task_id":child_task_id,
+                "reason":"worker_disconnect: provider_response_interrupted"
+            }),
+        )
+        .unwrap();
+
+        let root_status: String = connection
+            .query_row(
+                "SELECT task.status FROM business_flows flow JOIN tasks task ON task.id=flow.root_task_id WHERE flow.id='flow-resume-failure'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(root_status, "failed");
+        let thread_status: String = connection
+            .query_row(
+                "SELECT thread.status FROM task_threads thread JOIN task_thread_task_bindings binding ON binding.thread_id=thread.id WHERE binding.task_id=(SELECT root_task_id FROM business_flows WHERE id='flow-resume-failure') AND binding.binding_role='root'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(thread_status, "failed");
+        let downstream_status: String = connection
+            .query_row(
+                "SELECT task.status FROM work_orders work JOIN tasks task ON task.id=work.child_task_id WHERE work.business_flow_id='flow-resume-failure' AND work.id!=?1",
+                [&work_order_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(downstream_status, "cancelled");
+    }
+
+    #[test]
+    fn business_flow_continue_recovers_a_failed_child_after_restart() {
+        let (mut connection, _, _) = resumed_flow_fixture(true);
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+
+        let projection = drive_business_flow_once(
+            &mut connection,
+            &repository_root,
+            Path::new("/missing-worker-must-not-run"),
+            "flow-resume-failure",
+        )
+        .unwrap();
+
+        assert_eq!(projection["status"], "failed");
+        assert_eq!(projection["work_orders"][1]["status"], "cancelled");
+
+        connection
+            .execute(
+                "UPDATE task_threads SET status='running' WHERE id='thread-resume-failure'",
+                [],
+            )
+            .unwrap();
+        let terminal_projection = drive_business_flow_once(
+            &mut connection,
+            &repository_root,
+            Path::new("/missing-worker-must-not-run"),
+            "flow-resume-failure",
+        )
+        .unwrap();
+        assert_eq!(terminal_projection["status"], "failed");
+        let thread_status: String = connection
+            .query_row(
+                "SELECT status FROM task_threads WHERE id='thread-resume-failure'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(thread_status, "failed");
+    }
+
+    #[test]
+    fn business_flow_drive_settles_a_child_failed_by_worker_error() {
+        let (mut connection, _, _) = resumed_flow_fixture(false);
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+
+        let result = drive_business_flow_once(
+            &mut connection,
+            &repository_root,
+            Path::new("/missing-worker"),
+            "flow-resume-failure",
+        )
+        .unwrap();
+
+        assert_eq!(result["flow"]["status"], "failed");
+        assert_eq!(result["run"]["status"], "failed");
+        let states: (String, String, String) = connection
+            .query_row(
+                "SELECT root.status,thread.status,downstream.status
+                 FROM business_flows flow
+                 JOIN tasks root ON root.id=flow.root_task_id
+                 JOIN task_thread_task_bindings binding ON binding.task_id=root.id AND binding.binding_role='root'
+                 JOIN task_threads thread ON thread.id=binding.thread_id
+                 JOIN work_orders work ON work.business_flow_id=flow.id AND work.assignee_agent_id='document-writer'
+                 JOIN tasks downstream ON downstream.id=work.child_task_id
+                 WHERE flow.id='flow-resume-failure'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            states,
+            ("failed".into(), "failed".into(), "cancelled".into())
+        );
+    }
 
     struct ProposalGenerationFixture {
         database: PathBuf,
@@ -5261,32 +5688,6 @@ mod tests {
         migrate(&mut connection).unwrap();
         ensure_default_agent(&mut connection, &repository_root).unwrap();
         let stamp = now();
-        connection
-            .execute(
-                "INSERT INTO agents VALUES ('data-researcher','Data Researcher','researcher','user','active',?1,?1)",
-                [&stamp],
-            )
-            .unwrap();
-        connection
-            .execute(
-                "INSERT INTO employee_profiles (agent_id,department,mission,responsibilities_json,boundaries_json,soul_json,base_prompt,config_version,created_at,updated_at) VALUES ('data-researcher','Research','Research','[]','[]','[\"Evidence first\"]','Research',1,?1,?1)",
-                [&stamp],
-            )
-            .unwrap();
-        connection
-            .execute(
-                "INSERT INTO personas VALUES ('data-researcher','{}','{}','{}','{}',?1,?1)",
-                [&stamp],
-            )
-            .unwrap();
-        bind_skill(
-            &connection,
-            "data-researcher",
-            "web-search",
-            "1.0.0",
-            &stamp,
-        )
-        .unwrap();
         let thread_id = "thread_proposal_generation".to_owned();
         connection.execute("INSERT INTO task_threads(id,title,status,current_revision,created_at,updated_at) VALUES (?1,'Research and write','drafting',1,?2,?2)", rusqlite::params![thread_id,stamp]).unwrap();
         connection.execute("INSERT INTO task_thread_messages(id,thread_id,sequence,role,kind,content,created_at) VALUES ('message_generation_goal',?1,1,'user','goal','Research and write a summary',?2),('message_generation_clarification',?1,2,'user','clarification','Use public sources',?2)", rusqlite::params![thread_id,stamp]).unwrap();

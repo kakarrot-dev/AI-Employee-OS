@@ -24,6 +24,13 @@ class TaskProposalWorkerTests(unittest.TestCase):
         self.assertIn("Prefer one agent", prompt)
         self.assertIn("Never emit task/run/action", prompt)
 
+    def test_prompt_routes_web_research_to_a_file_finalizer_with_a_default_relative_path(self):
+        prompt = messages(request())[0]["content"]
+        self.assertIn("public-web evidence and a saved local document", prompt)
+        self.assertIn("exactly one finalizer", prompt)
+        self.assertIn("safe relative Markdown filename", prompt)
+        self.assertIn("client supplies the authorized output root", prompt)
+
     def test_provider_failure_is_a_stable_error_code(self):
         environment = dict(os.environ)
         environment.pop("DEEPSEEK_API_KEY", None)

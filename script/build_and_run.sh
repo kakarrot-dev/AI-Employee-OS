@@ -47,11 +47,13 @@ cp "$CREDENTIAL_BROKER_BINARY" "$HELPER_BINARY"
 mkdir -p "$APP_CONTENTS/Resources"
 cp "$ROOT_DIR/apps/macos/AIEmployee/Resources/AIEmployee.icns" "$APP_CONTENTS/Resources/AIEmployee.icns"
 mkdir -p "$RUNTIME_RESOURCES/runtime" \
+  "$RUNTIME_RESOURCES/contracts" \
   "$RUNTIME_RESOURCES/packages/agents" \
   "$RUNTIME_RESOURCES/packages/skills" \
   "$RUNTIME_RESOURCES/packages/tools"
 rsync -a --exclude '__pycache__' --exclude '*.pyc' "$ROOT_DIR/runtime/python-agent/" "$RUNTIME_RESOURCES/runtime/python-agent/"
-cp -R "$ROOT_DIR/packages/agents/ai-product-manager" "$RUNTIME_RESOURCES/packages/agents/ai-product-manager"
+rsync -a --exclude '.DS_Store' "$ROOT_DIR/contracts/" "$RUNTIME_RESOURCES/contracts/"
+rsync -a --exclude '.DS_Store' "$ROOT_DIR/packages/agents/" "$RUNTIME_RESOURCES/packages/agents/"
 rsync -a --exclude '.DS_Store' "$ROOT_DIR/packages/skills/" "$RUNTIME_RESOURCES/packages/skills/"
 rsync -a --exclude '.DS_Store' "$ROOT_DIR/packages/tools/" "$RUNTIME_RESOURCES/packages/tools/"
 chmod +x "$APP_BINARY"

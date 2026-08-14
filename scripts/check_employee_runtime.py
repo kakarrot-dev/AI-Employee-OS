@@ -36,8 +36,13 @@ def run_failed(database: Path, *arguments: str) -> str:
 with tempfile.TemporaryDirectory() as directory:
     database = Path(directory) / "runtime.db"
     listed = run(database, "employees-list", "--repository-root", str(ROOT))
-    assert [item["id"] for item in listed["employees"]] == ["ai-product-manager"]
-    alex = listed["employees"][0]
+    employees_by_id = {item["id"]: item for item in listed["employees"]}
+    assert set(employees_by_id) == {
+        "ai-product-manager",
+        "data-researcher",
+        "document-writer",
+    }
+    alex = employees_by_id["ai-product-manager"]
     assert "把模糊需求转化为可执行的产品方案" in alex["base_prompt"]
     assert alex["soul"]
     assert "mission" not in alex
@@ -83,6 +88,27 @@ with tempfile.TemporaryDirectory() as directory:
         )["skills"]
     }
     assert alex_skills == {"local-file-operations", "web-search"}
+    specialist_expectations = {
+        "data-researcher": ("web-search", "只使用网络搜索能力", "来源可追溯"),
+        "document-writer": ("local-file-operations", "只使用本地文件操作能力", "忠实高于扩写"),
+    }
+    for employee_id, (expected_skill, identity_fragment, soul_fragment) in specialist_expectations.items():
+        specialist_skills = {
+            item["id"]
+            for item in run(
+                database,
+                "skills-list",
+                "--repository-root",
+                str(ROOT),
+                "--agent-id",
+                employee_id,
+            )["skills"]
+        }
+        assert specialist_skills == {expected_skill}
+        specialist = employees_by_id[employee_id]
+        assert identity_fragment in specialist["base_prompt"]
+        assert any(soul_fragment in item for item in specialist["soul"])
+
     unbound = run(
         database,
         "unbind-skill",

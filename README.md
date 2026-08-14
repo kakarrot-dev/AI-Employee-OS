@@ -26,7 +26,7 @@
 
 AI Employee OS turns an AI assistant into a governed local worker. The macOS client handles interaction and Keychain access, the Rust runtime owns state and permissions, and the Python worker handles intent, context, planning, and model calls.
 
-Fresh installs seed Alex, an AI product manager (`ai-product-manager`). Users can permanently delete that seed so bootstrap will not restore it. Multiple employee profiles can be created and edited. Work execution requires a bound Skill with Manifest `schema_version: 2.0.0` and readiness `ready`. The validated mainline example is `local-file-operations`. Bootstrap also binds `web-search`. Legacy Manifest 1.0 skills such as `prd-generation` are `incompatible` with the Generic Run Kernel if still present.
+Fresh installs seed Alex (`ai-product-manager`) plus two least-privilege specialists: a data researcher (`data-researcher`) bound only to `web-search`, and a document writer (`document-writer`) bound only to `local-file-operations`. Users can permanently delete any built-in employee so bootstrap will not restore it. Multiple employee profiles can also be created and edited. Work execution requires a bound Skill with Manifest `schema_version: 2.0.0` and readiness `ready`. Legacy Manifest 1.0 skills such as `prd-generation` are `incompatible` with the Generic Run Kernel if still present.
 
 ## Current capabilities
 
@@ -39,9 +39,10 @@ Fresh installs seed Alex, an AI product manager (`ai-product-manager`). Users ca
 - Intent routing between conversation and governed task execution via Resolver and the Generic Run Kernel (Golden Path removed).
 - Repository-installed Agent, Skill, and Tool packages. Built-in tools on mainline: `file-tool` (read / create / edit) and `agent-reach-tool` (`search_web`).
 - Executable skills on mainline: `local-file-operations` and `web-search`.
+- A serial multi-employee mainline for public-web research, verified handoff, and an approved Markdown file artifact.
 - Task and Action state machines with approval, cancellation, audit, events, and recovery.
 - Tool execution through the Rust `ToolExecutor`, including idempotency and result verification.
-- In progress: real-network `web-search` end-to-end without Fake Decision (requires local `mcporter` + Exa).
+- Real-network `web-search` requires local `mcporter` + Exa and is therefore not a dependency-free CI gate.
 - Local packaging of the Swift client, Rust runtime, Python worker, and built-in packages into a macOS app bundle.
 - Claude Cream design tokens with light and dark appearances.
 
@@ -111,7 +112,7 @@ The packaged application is written to `dist/AIEmployee.app`. Runtime data is st
 
 1. Open Settings in the app.
 2. Save the DeepSeek API key to macOS Keychain.
-3. Open Work and select an active employee (fresh installs seed Alex; create one in Contacts if you deleted the seed).
+3. Open Work and select an active employee (fresh installs include Alex and the two specialists; create one in Contacts if you deleted them).
 4. Start a conversation or submit a work request.
 
 DeepSeek Chat Completions are stateless. The runtime reconstructs the ordered conversation from SQLite for every model request.

@@ -1,6 +1,6 @@
 # AI Employee OS 技术决策记录 ADR（Architecture Decision Records）v1.0
 
-> 阅读顺序：先读文首 ADR-037、ADR-036、ADR-035、ADR-034、ADR-033、ADR-032，再读 ADR-027～031 和 ADR-001 起的历史记录。ADR-031 已被 ADR-032 取代；ADR-017 已被 ADR-034 取代，只保留历史意义。
+> 阅读顺序：先读 ADR-041、ADR-040、ADR-039，再读文首 ADR-037、ADR-036、ADR-035、ADR-034、ADR-033、ADR-032，最后读 ADR-027～031 和 ADR-001 起的历史记录。ADR-031 已被 ADR-032 取代；ADR-017 已被 ADR-034 取代，只保留历史意义。
 
 ## ADR-037：Task Thread 采用任务协作群表现层，执行事实仍由 Runtime 投影
 
@@ -1401,6 +1401,16 @@ Employee 生命周期操作固定为启用、禁用和删除。启用/禁用只�
 终态工作属于工作库与审计事实，不属于可调度 Employee 私有状态。每个 Task 创建时写入不可变 `task_participant_snapshots`，Task Thread 使用快照显示历史姓名和岗位，使用 canonical Task / Action / WorkOrder 显示进度。为避免重建全部已发布历史外键，Runtime 以固定 ID `system:historical-employee` 的永久 disabled、不可见、不可调度系统主体承接 Task、Approval、Evaluation、Scenario Node 与 WorkOrder 外键；`system:` 命名空间由 Runtime 保留，Employee CRUD 与 Agent Package 均不得占用。原员工 ID 与员工记录仍必须物理删除。该系统主体不得具有 Employee Profile、Persona 或 Skill，也不得进入员工目录或 Task Proposal。
 
 Scenario Version 的定义正文与 Hash 不因员工删除而改写；`scenario_nodes.historical_agent_id` 保留确认时员工 ID，只有用于外键完整性的 `assignee_agent_id` 重绑定到系统历史主体。Audit Log 仍为追加写记录，员工外键按 canonical `ON DELETE SET NULL` 收敛，应用层不得改写既有审计事件。
+
+## ADR-041：网络研究与文档交付使用两个最小权限内置员工
+
+状态：Accepted（2026-08-14）
+
+真实的“网络搜集后形成文件”同时需要 `network.search` 与受控本地文件写入。把两类权限都交给同一员工，会让研究阶段无故获得文件权限，也无法在 Task Thread 中验证跨员工 Handoff。Runtime bootstrap 因此安装两个可删除的内置 Agent Package：`data-researcher` 只绑定 `web-search`，其 Tool Surface 只能由该 Skill 暴露 `agent-reach-tool.search_web`；`document-writer` 只绑定 `local-file-operations`，其 Tool Surface 只能由该 Skill 暴露 `file-tool`。Tool 仍全局安装，不新增 per-agent Tool 绑定表。
+
+Task Proposal 遇到同时要求公开网络证据与本地文档的目标时，应提出串行多员工方案：数据搜集员工产生带来源的 verified Deliverable，经 Handoff/SharedContextRef 交给文档编写员工；后者只使用授权上游资料并以真实 Artifact 证据完成最终 WorkOrder。Rust 继续验证员工、Capability Set、依赖、Acceptance、权限与最终产物，Python 只提出结构化方案和 Tool Call。
+
+两个专职员工的 Identity、Soul 与 Persona 来自各自 Agent Package；首次安装写入 Profile，已有用户编辑不得被 bootstrap 覆盖。Runtime 每次 bootstrap 收敛其启用 Skill 为上述唯一集合，防止旧数据库遗留的越权绑定。用户删除任一内置专职员工后写入对应 `runtime_flags.builtin_agent_dismissed:<agent_id>`，以后不自动恢复；存在活动工作时仍按 ADR-040 拒绝删除。
 
 ## Version
 

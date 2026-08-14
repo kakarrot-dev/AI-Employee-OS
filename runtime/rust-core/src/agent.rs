@@ -46,6 +46,7 @@ struct AgentManifest {
     description: String,
     status: String,
     persona: String,
+    profile: Option<String>,
     skills: Vec<PackageDependency>,
     tools: Vec<PackageDependency>,
     memory_enabled: bool,
@@ -66,6 +67,14 @@ struct PersonaManifest {
     thinking: serde_yaml::Value,
     decision: serde_yaml::Value,
     habit: serde_yaml::Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AgentProfileManifest {
+    department: String,
+    soul: Vec<String>,
+    base_prompt: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -100,6 +109,27 @@ pub fn install_agent_package(
     let thinking_json = yaml_value_to_json(&persona.thinking)?;
     let decision_json = yaml_value_to_json(&persona.decision)?;
     let habit_json = yaml_value_to_json(&persona.habit)?;
+    let profile = package
+        .agent
+        .profile
+        .as_deref()
+        .map(
+            |relative_path| -> Result<AgentProfileManifest, AgentError> {
+                let raw_profile = fs::read_to_string(package_path.join(relative_path))?;
+                serde_yaml::from_str(&raw_profile).map_err(AgentError::Persona)
+            },
+        )
+        .transpose()?;
+    if profile.as_ref().is_some_and(|profile| {
+        profile.department.trim().is_empty()
+            || profile.base_prompt.trim().is_empty()
+            || profile.soul.is_empty()
+            || profile.soul.iter().any(|item| item.trim().is_empty())
+    }) {
+        return Err(AgentError::InvalidStatus(
+            "agent profile fields must not be empty".to_owned(),
+        ));
+    }
 
     // Touch all frozen package declarations during validation; installation of the
     // referenced packages is handled by their own loaders in later phases.
@@ -149,6 +179,23 @@ pub fn install_agent_package(
             now
         ],
     )?;
+    if let Some(profile) = profile {
+        transaction.execute(
+            "INSERT INTO employee_profiles (
+               agent_id,department,mission,responsibilities_json,boundaries_json,
+               soul_json,base_prompt,config_version,created_at,updated_at
+             ) VALUES (?1,?2,?3,'[]','[]',?4,?5,1,?6,?6)
+             ON CONFLICT(agent_id) DO NOTHING",
+            params![
+                package.agent.id,
+                profile.department.trim(),
+                crate::employee_prompt::legacy_mission_from_base_prompt(&profile.base_prompt),
+                serde_json::to_string(&profile.soul).map_err(AgentError::Json)?,
+                profile.base_prompt.trim(),
+                now,
+            ],
+        )?;
+    }
     transaction.commit()?;
 
     get_agent(connection, &package.agent.id).map_err(AgentError::Database)
@@ -242,5 +289,26 @@ mod tests {
             validate_agent_id("system:historical-employee"),
             Err(AgentError::InvalidId(id)) if id == "system:historical-employee"
         ));
+    }
+
+    #[test]
+    fn installs_specialist_profile_from_the_real_package() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        migrate(&mut connection).unwrap();
+        let package_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/agents/data-researcher");
+
+        install_agent_package(&mut connection, &package_path, "2026-08-14T00:00:00Z").unwrap();
+
+        let profile: (String, String, String) = connection
+            .query_row(
+                "SELECT department,base_prompt,soul_json FROM employee_profiles WHERE agent_id='data-researcher'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(profile.0, "研究部");
+        assert!(profile.1.contains("只使用网络搜索能力"));
+        assert!(profile.2.contains("来源可追溯"));
     }
 }

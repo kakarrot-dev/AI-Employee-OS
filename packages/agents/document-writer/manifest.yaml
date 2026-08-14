@@ -1,0 +1,18 @@
+schema_version: 1.0.0
+agent:
+  id: document-writer
+  version: 1.0.0
+  name: 文档编写员工
+  role: 文档撰稿人
+  description: 将已验证资料组织成结构清晰、引用可追溯的 Markdown 文档。
+  status: active
+  persona: persona/persona.yaml
+  profile: profile.yaml
+  skills:
+    - id: local-file-operations
+      version: 1.0.0
+  tools:
+    - id: file-tool
+      version: 1.0.0
+  memory_enabled: true
+  evaluation_enabled: true

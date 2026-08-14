@@ -26,7 +26,7 @@
 
 AI Employee OS 将 AI 助手变成受治理的本地工作者。macOS 客户端负责交互与 Keychain 访问，Rust 运行时负责状态和权限，Python Worker 负责意图、上下文、规划和模型调用。
 
-新装会种子化 AI 产品经理 Alex（`ai-product-manager`）；用户可彻底删除该种子，bootstrap 不会自动恢复。客户端可以创建和编辑多个员工 Profile。工作执行要求已绑定且 Manifest `schema_version: 2.0.0`、readiness 为 `ready` 的 Skill。当前主线已验证的可执行示例是 `local-file-operations`；bootstrap 同时绑定 `web-search`。Manifest 1.0 的遗留 Skill（如 `prd-generation`）若仍存在，对 Generic Run Kernel 为 `incompatible`。
+新装会种子化 Alex（`ai-product-manager`）和两名最小权限专职员工：数据搜集员工（`data-researcher`）只绑定 `web-search`，文档编写员工（`document-writer`）只绑定 `local-file-operations`。用户可彻底删除任一内置员工，bootstrap 不会自动恢复；客户端也可以创建和编辑其他员工 Profile。工作执行要求已绑定且 Manifest `schema_version: 2.0.0`、readiness 为 `ready` 的 Skill。Manifest 1.0 的遗留 Skill（如 `prd-generation`）若仍存在，对 Generic Run Kernel 为 `incompatible`。
 
 ## 当前能力
 
@@ -36,9 +36,10 @@ AI Employee OS 将 AI 助手变成受治理的本地工作者。macOS 客户端�
 - 识别对话意图，经 Resolver 与 Generic Run Kernel 在闲聊和受治理工作执行之间路由（Golden Path 已移除）。
 - 从仓库安装 Agent、Skill 和 Tool Package。主线内置 Tool 为 `file-tool`（读 / 创建 / 编辑）与 `agent-reach-tool`（`search_web`）。
 - 主线可执行 Skill：`local-file-operations`、`web-search`。
+- 串行多员工主路径：公开网络搜集、verified Handoff、审批后生成 Markdown 文件产物。
 - Task 与 Action 状态机，包括审批、取消、审计、事件和恢复。
 - 所有 Tool 调用通过 Rust `ToolExecutor` 执行，具备幂等和结果验证机制。
-- 进行中：`web-search` 真实网络端到端（依赖本机 `mcporter` + Exa；默认门禁仍以 Fake Decision 验证到审批闸）。
+- `web-search` 真实网络端到端依赖本机 `mcporter` + Exa，因此不属于无外部依赖的 CI 门禁。
 - 将 Swift 客户端、Rust 运行时、Python Worker 和内置 Package 打包到本地 macOS App Bundle。
 - 使用 Claude Cream 设计 Token，支持浅色和深色外观。
 
@@ -155,7 +156,7 @@ script/                    App 打包与分发检查
 以下能力暂不属于当前 MVP：
 
 - Computer Use 与任意站点网页抓取
-- Multi-Agent 协作
+- 并行 Multi-Agent 调度与 Task Thread 外自由员工群聊
 - Cloud Sync
 - Marketplace 分发
 - 企业 RBAC

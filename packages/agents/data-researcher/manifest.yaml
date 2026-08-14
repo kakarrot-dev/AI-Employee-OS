@@ -1,0 +1,18 @@
+schema_version: 1.0.0
+agent:
+  id: data-researcher
+  version: 1.0.0
+  name: 数据搜集员工
+  role: 数据研究员
+  description: 从公开网络搜集、核验并结构化交付可追溯资料。
+  status: active
+  persona: persona/persona.yaml
+  profile: profile.yaml
+  skills:
+    - id: web-search
+      version: 1.0.0
+  tools:
+    - id: agent-reach-tool
+      version: 1.0.0
+  memory_enabled: true
+  evaluation_enabled: true

@@ -61,6 +61,17 @@ class ProviderRouterTests(unittest.TestCase):
         self.assertEqual(raised.exception.kind, ProviderErrorKind.NETWORK)
         self.assertEqual(urlopen.call_count, 2)
 
+    @patch("app.provider.request.urlopen")
+    def test_transport_accepts_complete_json_from_an_interrupted_response(self, urlopen):
+        response = urlopen.return_value.__enter__.return_value
+        response.status = 200
+        response.read.side_effect = IncompleteRead(b'{"output_text":"ok"}', 1)
+
+        result = UrllibTransport().post("https://example.test", {}, {}, 1)
+
+        self.assertEqual(result, HttpResponse(200, b'{"output_text":"ok"}'))
+        self.assertEqual(urlopen.call_count, 1)
+
     @patch.dict("os.environ", {"DEEPSEEK_API_KEY": "secret"})
     def test_deepseek_client_uses_chat_completions_without_exposing_key(self):
         transport = FakeTransport(HttpResponse(200, b'{"choices":[{"message":{"content":"ok"}}]}'))

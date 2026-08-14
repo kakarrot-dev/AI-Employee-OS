@@ -29,7 +29,7 @@ MVP canonical 数据模型现包含 28 张表；Conversation 扩展由追加 Mig
 - `messages`：只保存用户和 Assistant 最终文本；不保存 reasoning、Secret 或 Tool 消息。
 - `model_calls`：记录 DeepSeek 调用状态、模型、脱敏错误码和 Token 用量。
 - Conversation 与 Task 相互独立。普通聊天不创建 Task，也不触发 Skill、Tool、Approval 或外部副作用。
-- 当前员工默认不绑定 Skill 或 Tool；旧数据库中的已引用能力记录保留为 disabled 历史事实。
+- 用户新建员工默认不绑定 Skill。内置 Agent Package 可声明 bootstrap 绑定；`data-researcher` 只启用 `web-search`，`document-writer` 只启用 `local-file-operations`。Tool 继续全局安装，不新增 per-agent Tool 绑定表；员工实际 Tool Surface 只能由本次 Run 锁定的 Skill 推导。
 
 ### 1.2 Employee Profile 与 Prompt 追溯（2026-08-05）
 
@@ -40,7 +40,7 @@ MVP canonical 数据模型现包含 28 张表；Conversation 扩展由追加 Mig
 - 员工只有 `active | disabled` 两种持久化状态；删除不是第三种状态，而是物理移除原 `agents`、Profile、Persona、Skill 绑定、私人 Conversation、员工 Memory 与权限记录。
 - 员工存在 `pending | running` Task 时禁止删除；Runtime 必须在同一写事务内再次检查并以 `employee_delete_blocked_active_work` 拒绝，客户端不得把该错误降级成停用。
 - 已完成、失败或取消的工作继续保留 Task、Action、Handoff、Deliverable、Evaluation 与 Audit。`task_participant_snapshots` 保存任务创建时的最小历史身份，工作库不得依赖实时 Employee Profile 回放历史。
-- 默认种子员工 `ai-product-manager` 删除后写入 `runtime_flags.default_agent_dismissed`，此后 bootstrap 不再自动恢复；其历史工作遵循同一快照保留规则。
+- 内置员工可彻底删除且不自动恢复：`ai-product-manager` 写入 `runtime_flags.default_agent_dismissed`；`data-researcher` 与 `document-writer` 写入 `runtime_flags.builtin_agent_dismissed:<agent_id>`。其历史工作均遵循同一快照保留规则。
 
 此前定义的核心表如下：
 
