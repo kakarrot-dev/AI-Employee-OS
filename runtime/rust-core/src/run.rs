@@ -5,7 +5,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -73,6 +73,66 @@ pub fn run_agent(
         conversation_id,
         capability_mode: true,
         existing_task_id: None,
+    })
+}
+
+pub fn materialize_agent_task(
+    transaction: &Transaction<'_>,
+    task_id: &str,
+    agent_id: &str,
+    input: &Value,
+    now: &str,
+) -> Result<(), String> {
+    let serialized = input.to_string();
+    transaction
+        .execute(
+            "INSERT OR IGNORE INTO tasks(id,agent_id,input,status,created_at,updated_at,parent_task_id)
+             VALUES (?1,?2,?3,'pending',?4,?4,NULL)",
+            params![task_id, agent_id, serialized, now],
+        )
+        .map_err(|error| error.to_string())?;
+    let persisted: (String, String, Option<String>) = transaction
+        .query_row(
+            "SELECT agent_id,input,parent_task_id FROM tasks WHERE id=?1",
+            [task_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|error| error.to_string())?;
+    if persisted != (agent_id.to_owned(), serialized, None) {
+        return Err("prepared_task_revision_conflict".to_owned());
+    }
+    Ok(())
+}
+
+pub fn run_prepared_agent_task(
+    connection: &mut Connection,
+    repository_root: &Path,
+    python: &Path,
+    task_id: &str,
+) -> Result<Value, String> {
+    let (agent_id, input, status): (String, String, String) = connection
+        .query_row(
+            "SELECT agent_id,input,status FROM tasks WHERE id=?1 AND parent_task_id IS NULL",
+            [task_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|_| "prepared_task_not_found".to_owned())?;
+    if status != "pending" {
+        return Err("prepared_task_not_dispatchable".to_owned());
+    }
+    let input: Value = serde_json::from_str(&input).map_err(|_| "task_input_invalid")?;
+    let skills = crate::skill_resolver::ready_skill_ids(connection, &agent_id)?;
+    let first = skills.first().ok_or("capability_not_found")?.clone();
+    run_skill(RunSkillConfig {
+        connection,
+        repository_root,
+        python,
+        agent_id: &agent_id,
+        skill_id: &first,
+        input,
+        conversation_id: None,
+        capability_mode: true,
+        existing_task_id: Some(task_id),
     })
 }
 
@@ -1171,14 +1231,16 @@ fn lock_run(config: &mut RunSkillConfig<'_>, now: &str) -> Result<LockedRun, Str
         .transaction()
         .map_err(|error| error.to_string())?;
     if config.existing_task_id.is_some() {
-        let changed = tx
-            .execute(
-                "UPDATE tasks SET status='running',updated_at=?1
-             WHERE id=?2 AND agent_id=?3 AND status='pending' AND parent_task_id IS NOT NULL",
-                params![now, task_id, config.agent_id],
-            )
-            .map_err(|error| error.to_string())?;
-        if changed != 1 {
+        if !claim_prepared_task_run(
+            &tx,
+            &task_id,
+            config.agent_id,
+            &run_id,
+            max_model_turns,
+            max_tool_calls,
+            &deadline,
+            now,
+        )? {
             return Err("existing_task_not_dispatchable".into());
         }
     } else {
@@ -1187,12 +1249,12 @@ fn lock_run(config: &mut RunSkillConfig<'_>, now: &str) -> Result<LockedRun, Str
             params![task_id, config.agent_id, config.input.to_string(), now],
         )
         .map_err(|error| error.to_string())?;
+        tx.execute(
+            "INSERT INTO agent_runs(id,task_id,schema_version,phase,revision,model_turns_used,tool_calls_used,max_model_turns,max_tool_calls,deadline,created_at,updated_at)
+             VALUES (?1,?2,'1.0.0','preflight',1,0,0,?3,?4,?5,?6,?6)",
+            params![run_id,task_id,max_model_turns,max_tool_calls,deadline,now],
+        ).map_err(|error| error.to_string())?;
     }
-    tx.execute(
-        "INSERT INTO agent_runs(id,task_id,schema_version,phase,revision,model_turns_used,tool_calls_used,max_model_turns,max_tool_calls,deadline,created_at,updated_at)
-         VALUES (?1,?2,'1.0.0','preflight',1,0,0,?3,?4,?5,?6,?6)",
-        params![run_id,task_id,max_model_turns,max_tool_calls,deadline,now],
-    ).map_err(|error| error.to_string())?;
     let snapshots = [
         (
             "agent",
@@ -1247,6 +1309,34 @@ fn lock_run(config: &mut RunSkillConfig<'_>, now: &str) -> Result<LockedRun, Str
         max_model_turns,
         max_tool_calls,
     })
+}
+
+fn claim_prepared_task_run(
+    transaction: &Transaction<'_>,
+    task_id: &str,
+    agent_id: &str,
+    run_id: &str,
+    max_model_turns: i64,
+    max_tool_calls: i64,
+    deadline: &str,
+    now: &str,
+) -> Result<bool, String> {
+    let changed = transaction
+        .execute(
+            "UPDATE tasks SET status='running',updated_at=?1
+             WHERE id=?2 AND agent_id=?3 AND status='pending'",
+            params![now, task_id, agent_id],
+        )
+        .map_err(|error| error.to_string())?;
+    if changed != 1 {
+        return Ok(false);
+    }
+    transaction.execute(
+        "INSERT INTO agent_runs(id,task_id,schema_version,phase,revision,model_turns_used,tool_calls_used,max_model_turns,max_tool_calls,deadline,created_at,updated_at)
+         VALUES (?1,?2,'1.0.0','preflight',1,0,0,?3,?4,?5,?6,?6)",
+        params![run_id,task_id,max_model_turns,max_tool_calls,deadline,now],
+    ).map_err(|error| error.to_string())?;
+    Ok(true)
 }
 
 fn request_payload(config: &RunSkillConfig<'_>, run: &LockedRun) -> Result<Value, String> {
@@ -1880,6 +1970,69 @@ mod tests {
         assert_eq!(
             ensure_run_can_advance(&connection, "task", "run").unwrap_err(),
             "run_not_advancable"
+        );
+    }
+
+    #[test]
+    fn deterministic_root_task_identity_creates_one_task_and_one_run() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        crate::storage::migrate(&mut connection).unwrap();
+        connection
+            .execute(
+                "INSERT INTO agents VALUES ('alex','Alex','role','path','active','t','t')",
+                [],
+            )
+            .unwrap();
+
+        let input = json!({"objective":"write"});
+        for _ in 0..2 {
+            let transaction = connection.transaction().unwrap();
+            materialize_agent_task(&transaction, "proposal:r1:task", "alex", &input, "t").unwrap();
+            transaction.commit().unwrap();
+        }
+        let first = connection.transaction().unwrap();
+        assert!(
+            claim_prepared_task_run(
+                &first,
+                "proposal:r1:task",
+                "alex",
+                "run:first",
+                2,
+                1,
+                "9999999999",
+                "t"
+            )
+            .unwrap()
+        );
+        first.commit().unwrap();
+        let second = connection.transaction().unwrap();
+        assert!(
+            !claim_prepared_task_run(
+                &second,
+                "proposal:r1:task",
+                "alex",
+                "run:second",
+                2,
+                1,
+                "9999999999",
+                "t"
+            )
+            .unwrap()
+        );
+        second.commit().unwrap();
+
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM tasks", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM agent_runs", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
         );
     }
 }

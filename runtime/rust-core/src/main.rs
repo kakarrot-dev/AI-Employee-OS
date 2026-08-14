@@ -27,8 +27,9 @@ use ai_employee_runtime::memory::retrieve as retrieve_memory;
 use ai_employee_runtime::recovery::reconcile_interrupted;
 use ai_employee_runtime::run::{
     ContinueRunConfig, RunSkillConfig, continue_after_verified_action, continue_run as resume_run,
-    continue_with_user_input, resolve_unknown_action, run_agent as execute_agent,
-    run_existing_agent_task, run_skill as execute_skill,
+    continue_with_user_input, materialize_agent_task, resolve_unknown_action,
+    run_agent as execute_agent, run_existing_agent_task, run_prepared_agent_task,
+    run_skill as execute_skill,
 };
 use ai_employee_runtime::skill_package::install_skill_package;
 use ai_employee_runtime::skill_resolver::readiness as skill_readiness;
@@ -296,9 +297,13 @@ fn task_thread_projection(connection: &Connection, thread_id: &str) -> Result<Va
     let thread: (String,String,i64,String,String,Option<String>)=connection.query_row("SELECT title,status,current_revision,created_at,updated_at,archived_at FROM task_threads WHERE id=?1 AND deleted_at IS NULL",[thread_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?))).map_err(|_|"task_thread_not_found".to_owned())?;
     let root_task:Option<(String,String)>=connection.query_row("SELECT binding.task_id,task.status FROM task_thread_task_bindings binding JOIN tasks task ON task.id=binding.task_id WHERE binding.thread_id=?1 AND binding.binding_role IN ('single','root') ORDER BY binding.created_at DESC LIMIT 1",[thread_id],|r|Ok((r.get(0)?,r.get(1)?))).optional().map_err(|e|e.to_string())?;
     let root_task_id = root_task.as_ref().map(|item| item.0.clone());
-    let projected_status = root_task
-        .as_ref()
-        .map_or(thread.1.as_str(), |item| item.1.as_str());
+    let projected_status = root_task.as_ref().map_or(thread.1.as_str(), |item| {
+        if item.1 == "pending" {
+            thread.1.as_str()
+        } else {
+            item.1.as_str()
+        }
+    });
     let execution = if let Some(task_id) = &root_task_id {
         let flow_id: Option<String> = connection
             .query_row(
@@ -1192,23 +1197,24 @@ fn task_proposal_current(mut arguments: impl Iterator<Item = String>) -> Result<
     let (database, thread_id) = parse_database_and_thread_id(&mut arguments)?;
     let connection = Connection::open_with_flags(database, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|error| error.to_string())?;
-    let (proposal_id, raw, hash, expires_at): (String, String, String, String) = connection
+    let (proposal_id, raw, hash, expires_at, status): (String, String, String, String, String) = connection
         .query_row(
-            "SELECT id,proposal_json,proposal_sha256,expires_at FROM task_proposals
+            "SELECT id,proposal_json,proposal_sha256,expires_at,status FROM task_proposals
              WHERE thread_id=?1 AND revision=(SELECT current_revision FROM task_threads WHERE id=?1)
-             AND status IN ('awaiting_input','validated') ORDER BY created_at DESC LIMIT 1",
+             AND status IN ('awaiting_input','validated','confirmed') ORDER BY created_at DESC LIMIT 1",
             [&thread_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
         )
         .map_err(|_| "task_proposal_not_found".to_owned())?;
     let current = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    if current
-        > expires_at
-            .parse::<u64>()
-            .map_err(|_| "task_proposal_expiry_invalid")?
+    if status != "confirmed"
+        && current
+            > expires_at
+                .parse::<u64>()
+                .map_err(|_| "task_proposal_expiry_invalid")?
     {
         return Err("task_proposal_expired".into());
     }
@@ -1281,11 +1287,12 @@ fn task_proposal_response(
 }
 
 fn task_proposal_confirm(arguments: impl Iterator<Item = String>) -> Result<Value, String> {
-    task_proposal_confirm_with_hook(arguments, |_, _| Ok(()))
+    task_proposal_confirm_with_hooks(arguments, |_, _, _| Ok(()), |_, _| Ok(()))
 }
 
-fn task_proposal_confirm_with_hook(
+fn task_proposal_confirm_with_hooks(
     mut arguments: impl Iterator<Item = String>,
+    before_claim: impl FnOnce(&str, &str, i64) -> Result<(), String>,
     after_claim: impl FnOnce(&str, &str) -> Result<(), String>,
 ) -> Result<Value, String> {
     let mut database = None;
@@ -1310,19 +1317,29 @@ fn task_proposal_confirm_with_hook(
         Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
     migrate(&mut connection).map_err(|e| e.to_string())?;
     bootstrap_packages(&mut connection, &root, &now())?;
-    let (thread_id, status, raw, stored_hash): (String, String, String, String) = connection
+    let (thread_id, status, raw, stored_hash, expected_revision): (
+        String,
+        String,
+        String,
+        String,
+        i64,
+    ) = connection
         .query_row(
-            "SELECT thread_id,status,proposal_json,proposal_sha256 FROM task_proposals WHERE id=?1",
+            "SELECT thread_id,status,proposal_json,proposal_sha256,revision FROM task_proposals WHERE id=?1",
             [&proposal_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
         )
         .map_err(|_| "task_proposal_not_found".to_owned())?;
     if status == "materialized" {
-        return Ok(
-            json!({"schema_version":"1.0.0","thread":task_thread_projection(&connection,&thread_id)?}),
+        return resume_materialized_confirmation(
+            &mut connection,
+            &root,
+            &python,
+            &thread_id,
+            &proposal_id,
         );
     }
-    if status != "validated" || stored_hash != expected_hash {
+    if !matches!(status.as_str(), "validated" | "confirmed") || stored_hash != expected_hash {
         return Err("task_proposal_revision_conflict".into());
     }
     let expires_at: u64 = connection
@@ -1338,7 +1355,7 @@ fn task_proposal_confirm_with_hook(
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    if current > expires_at {
+    if status == "validated" && current > expires_at {
         connection.execute("UPDATE task_proposals SET status='expired',updated_at=?2 WHERE id=?1 AND status='validated'",rusqlite::params![proposal_id,now()]).map_err(|e|e.to_string())?;
         return Err("task_proposal_expired".into());
     }
@@ -1371,35 +1388,45 @@ fn task_proposal_confirm_with_hook(
         Some(scenario)
     };
     let stamp = now();
-    claim_task_proposal_confirmation(&mut connection, &proposal_id, &expected_hash, &stamp)?;
-    after_claim(&thread_id, &proposal_id)?;
+    before_claim(&thread_id, &proposal_id, expected_revision)?;
     if is_single_agent {
-        let result = execute_agent(
-            &mut connection,
-            &root,
-            &python,
-            &resolved[0].0,
-            json!({"objective": proposal["objective"], "acceptance_criteria": proposal["acceptance_criteria"], "requested_resources": proposal["requested_resources"]}),
-            None,
-        )?;
-        let task_id = result["task_id"]
-            .as_str()
-            .ok_or("task_materialization_failed")?;
-        bind_materialized_task(
+        let input = json!({"objective": proposal["objective"], "acceptance_criteria": proposal["acceptance_criteria"], "requested_resources": proposal["requested_resources"]});
+        let task_id = materialize_single_agent_confirmation(
             &mut connection,
             &thread_id,
             &proposal_id,
-            task_id,
-            "single",
+            &expected_hash,
+            expected_revision,
+            status == "confirmed",
+            &resolved[0].0,
+            &input,
             &stamp,
         )?;
+        after_claim(&thread_id, &proposal_id)?;
+        let result = run_prepared_agent_task(&mut connection, &root, &python, &task_id)?;
         return Ok(
             json!({"schema_version":"1.0.0","thread":task_thread_projection(&connection,&thread_id)?,"execution":result}),
         );
     }
 
+    if status == "validated" {
+        claim_task_proposal_confirmation(
+            &mut connection,
+            &proposal_id,
+            &expected_hash,
+            expected_revision,
+            &stamp,
+        )?;
+    } else {
+        ensure_confirmed_proposal_is_current(
+            &connection,
+            &proposal_id,
+            &expected_hash,
+            expected_revision,
+        )?;
+    }
     let scenario = scenario.expect("multi-agent proposal has a validated scenario");
-    let scenario_id = format!("internal:{proposal_id}");
+    let scenario_id = format!("internal:{proposal_id}:revision:{expected_revision}");
     let saved = save_scenario(
         &mut connection,
         &scenario_id,
@@ -1407,7 +1434,7 @@ fn task_proposal_confirm_with_hook(
         scenario,
         &stamp,
     )?;
-    let flow_id = format!("flow_{}", unique_suffix());
+    let flow_id = format!("{proposal_id}:revision:{expected_revision}:flow");
     let flow = start_business_flow(
         &mut connection,
         &flow_id,
@@ -1415,24 +1442,22 @@ fn task_proposal_confirm_with_hook(
         &saved.sha256,
         &stamp,
     )?;
-    bind_materialized_task(
+    after_claim(&thread_id, &proposal_id)?;
+    let child_task_ids = flow
+        .work_orders
+        .iter()
+        .map(|work| work.child_task_id.clone())
+        .collect::<Vec<_>>();
+    bind_materialized_flow(
         &mut connection,
         &thread_id,
         &proposal_id,
+        &expected_hash,
+        expected_revision,
         &flow.root_task_id,
-        "root",
+        &child_task_ids,
         &stamp,
     )?;
-    for work in &flow.work_orders {
-        bind_materialized_task(
-            &mut connection,
-            &thread_id,
-            &proposal_id,
-            &work.child_task_id,
-            "child",
-            &stamp,
-        )?;
-    }
     for _ in 0..resolved.len() {
         if next_ready_work_order(&connection, &flow_id)?.is_none() {
             break;
@@ -1449,6 +1474,7 @@ fn claim_task_proposal_confirmation(
     connection: &mut Connection,
     proposal_id: &str,
     expected_hash: &str,
+    expected_revision: i64,
     stamp: &str,
 ) -> Result<(), String> {
     let tx = connection
@@ -1456,16 +1482,175 @@ fn claim_task_proposal_confirmation(
         .map_err(|error| error.to_string())?;
     let claimed = tx
         .execute(
-            "UPDATE task_proposals SET status='confirmed',confirmed_at=?3,updated_at=?3
-             WHERE id=?1 AND proposal_sha256=?2 AND status='validated'
+            "UPDATE task_proposals SET status='confirmed',confirmed_at=?4,updated_at=?4
+             WHERE id=?1 AND proposal_sha256=?2 AND revision=?3 AND status='validated'
              AND revision=(SELECT current_revision FROM task_threads WHERE id=task_proposals.thread_id)",
-            rusqlite::params![proposal_id, expected_hash, stamp],
+            rusqlite::params![proposal_id, expected_hash, expected_revision, stamp],
         )
         .map_err(|error| error.to_string())?;
     if claimed != 1 {
         return Err("task_proposal_revision_conflict".into());
     }
     tx.commit().map_err(|error| error.to_string())
+}
+
+fn ensure_confirmed_proposal_is_current(
+    connection: &Connection,
+    proposal_id: &str,
+    expected_hash: &str,
+    expected_revision: i64,
+) -> Result<(), String> {
+    let current: bool = connection
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM task_proposals proposal
+                JOIN task_threads thread ON thread.id=proposal.thread_id
+                WHERE proposal.id=?1 AND proposal.proposal_sha256=?2
+                  AND proposal.revision=?3 AND proposal.status='confirmed'
+                  AND thread.current_revision=?3
+            )",
+            rusqlite::params![proposal_id, expected_hash, expected_revision],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if current {
+        Ok(())
+    } else {
+        Err("task_proposal_revision_conflict".to_owned())
+    }
+}
+
+fn materialize_single_agent_confirmation(
+    connection: &mut Connection,
+    thread_id: &str,
+    proposal_id: &str,
+    expected_hash: &str,
+    expected_revision: i64,
+    recovering_confirmed: bool,
+    agent_id: &str,
+    input: &Value,
+    stamp: &str,
+) -> Result<String, String> {
+    let task_id = format!("{proposal_id}:revision:{expected_revision}:task");
+    let tx = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    if recovering_confirmed {
+        let current: bool = tx
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM task_proposals proposal
+                    JOIN task_threads thread ON thread.id=proposal.thread_id
+                    WHERE proposal.id=?1 AND proposal.proposal_sha256=?2
+                      AND proposal.revision=?3 AND proposal.status='confirmed'
+                      AND thread.current_revision=?3
+                )",
+                rusqlite::params![proposal_id, expected_hash, expected_revision],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if !current {
+            return Err("task_proposal_revision_conflict".to_owned());
+        }
+    } else {
+        let claimed = tx
+            .execute(
+                "UPDATE task_proposals SET status='confirmed',confirmed_at=?4,updated_at=?4
+                 WHERE id=?1 AND proposal_sha256=?2 AND revision=?3 AND status='validated'
+                   AND revision=(SELECT current_revision FROM task_threads WHERE id=task_proposals.thread_id)",
+                rusqlite::params![proposal_id, expected_hash, expected_revision, stamp],
+            )
+            .map_err(|error| error.to_string())?;
+        if claimed != 1 {
+            return Err("task_proposal_revision_conflict".to_owned());
+        }
+    }
+    materialize_agent_task(&tx, &task_id, agent_id, input, stamp)?;
+    tx.execute(
+        "INSERT OR IGNORE INTO task_thread_task_bindings(thread_id,task_id,proposal_id,binding_role,created_at)
+         VALUES (?1,?2,?3,'single',?4)",
+        rusqlite::params![thread_id, task_id, proposal_id, stamp],
+    )
+    .map_err(|error| error.to_string())?;
+    let binding_matches: bool = tx
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM task_thread_task_bindings
+             WHERE thread_id=?1 AND task_id=?2 AND proposal_id=?3 AND binding_role='single')",
+            rusqlite::params![thread_id, task_id, proposal_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if !binding_matches {
+        return Err("task_proposal_revision_conflict".to_owned());
+    }
+    let materialized = tx
+        .execute(
+            "UPDATE task_proposals SET status='materialized',updated_at=?4
+             WHERE id=?1 AND proposal_sha256=?2 AND revision=?3 AND status='confirmed'",
+            rusqlite::params![proposal_id, expected_hash, expected_revision, stamp],
+        )
+        .map_err(|error| error.to_string())?;
+    if materialized != 1 {
+        return Err("task_proposal_revision_conflict".to_owned());
+    }
+    tx.execute(
+        "UPDATE task_threads SET status='materialized',updated_at=?2 WHERE id=?1",
+        rusqlite::params![thread_id, stamp],
+    )
+    .map_err(|error| error.to_string())?;
+    let sequence: i64 = tx
+        .query_row(
+            "SELECT COALESCE(MAX(sequence),0)+1 FROM task_thread_messages WHERE thread_id=?1",
+            [thread_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    tx.execute(
+        "INSERT INTO task_thread_messages(id,thread_id,sequence,role,kind,content,proposal_id,task_id,created_at)
+         VALUES (?1,?2,?3,'user','confirmation','确认执行',?4,?5,?6)",
+        rusqlite::params![
+            format!("message_{}", unique_suffix()),
+            thread_id,
+            sequence,
+            proposal_id,
+            task_id,
+            stamp
+        ],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.commit().map_err(|error| error.to_string())?;
+    Ok(task_id)
+}
+
+fn resume_materialized_confirmation(
+    connection: &mut Connection,
+    root: &Path,
+    python: &Path,
+    thread_id: &str,
+    proposal_id: &str,
+) -> Result<Value, String> {
+    let binding: Option<(String, String, String)> = connection
+        .query_row(
+            "SELECT binding.task_id,binding.binding_role,task.status
+             FROM task_thread_task_bindings binding JOIN tasks task ON task.id=binding.task_id
+             WHERE binding.thread_id=?1 AND binding.proposal_id=?2
+               AND binding.binding_role IN ('single','root')
+             ORDER BY CASE binding.binding_role WHEN 'single' THEN 0 ELSE 1 END LIMIT 1",
+            rusqlite::params![thread_id, proposal_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let Some((task_id, role, task_status)) = binding else {
+        return Err("task_materialization_missing".to_owned());
+    };
+    if role == "single" && task_status == "pending" {
+        let execution = run_prepared_agent_task(connection, root, python, &task_id)?;
+        return Ok(
+            json!({"schema_version":"1.0.0","thread":task_thread_projection(connection,thread_id)?,"execution":execution}),
+        );
+    }
+    Ok(json!({"schema_version":"1.0.0","thread":task_thread_projection(connection,thread_id)?}))
 }
 
 fn resolve_task_assignment(
@@ -1605,55 +1790,68 @@ fn task_proposal_to_scenario(
     })
 }
 
-fn bind_materialized_task(
+fn bind_materialized_flow(
     connection: &mut Connection,
     thread_id: &str,
     proposal_id: &str,
-    task_id: &str,
-    role: &str,
+    expected_hash: &str,
+    expected_revision: i64,
+    root_task_id: &str,
+    child_task_ids: &[String],
     stamp: &str,
 ) -> Result<(), String> {
-    let task_status: String = connection
-        .query_row("SELECT status FROM tasks WHERE id=?1", [task_id], |r| {
-            r.get(0)
-        })
-        .map_err(|e| e.to_string())?;
-    let thread_status = match task_status.as_str() {
-        "succeeded" => "succeeded",
-        "failed" => "failed",
-        "cancelled" => "cancelled",
-        _ => "running",
-    };
     let tx = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e| e.to_string())?;
-    if role != "child" {
-        let materialized = tx
-            .execute(
-                "UPDATE task_proposals SET status='materialized',updated_at=?2 WHERE id=?1 AND status='confirmed'",
-                rusqlite::params![proposal_id, stamp],
-            )
-            .map_err(|e| e.to_string())?;
-        if materialized != 1 {
-            return Err("task_proposal_revision_conflict".into());
-        }
-    }
-    tx.execute("INSERT OR IGNORE INTO task_thread_task_bindings(thread_id,task_id,proposal_id,binding_role,created_at) VALUES (?1,?2,?3,?4,?5)",rusqlite::params![thread_id,task_id,proposal_id,role,stamp]).map_err(|e|e.to_string())?;
-    if role != "child" {
-        tx.execute(
-            "UPDATE task_threads SET status=?2,updated_at=?3 WHERE id=?1",
-            rusqlite::params![thread_id, thread_status, stamp],
+    let materialized = tx
+        .execute(
+            "UPDATE task_proposals SET status='materialized',updated_at=?4
+             WHERE id=?1 AND proposal_sha256=?2 AND revision=?3 AND status='confirmed'
+               AND revision=(SELECT current_revision FROM task_threads WHERE id=task_proposals.thread_id)",
+            rusqlite::params![proposal_id, expected_hash, expected_revision, stamp],
         )
         .map_err(|e| e.to_string())?;
-        let sequence: i64 = tx
-            .query_row(
-                "SELECT COALESCE(MAX(sequence),0)+1 FROM task_thread_messages WHERE thread_id=?1",
-                [thread_id],
-                |r| r.get(0),
-            )
-            .map_err(|e| e.to_string())?;
-        tx.execute("INSERT INTO task_thread_messages(id,thread_id,sequence,role,kind,content,proposal_id,task_id,created_at) VALUES (?1,?2,?3,'user','confirmation','确认执行',?4,?5,?6)",rusqlite::params![format!("message_{}",unique_suffix()),thread_id,sequence,proposal_id,task_id,stamp]).map_err(|e|e.to_string())?;
+    if materialized != 1 {
+        return Err("task_proposal_revision_conflict".into());
     }
+    tx.execute(
+        "INSERT OR IGNORE INTO task_thread_task_bindings(thread_id,task_id,proposal_id,binding_role,created_at)
+         VALUES (?1,?2,?3,'root',?4)",
+        rusqlite::params![thread_id, root_task_id, proposal_id, stamp],
+    )
+    .map_err(|e| e.to_string())?;
+    for task_id in child_task_ids {
+        tx.execute(
+            "INSERT OR IGNORE INTO task_thread_task_bindings(thread_id,task_id,proposal_id,binding_role,created_at)
+             VALUES (?1,?2,?3,'child',?4)",
+            rusqlite::params![thread_id, task_id, proposal_id, stamp],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    let binding_count: i64 = tx
+        .query_row(
+            "SELECT count(*) FROM task_thread_task_bindings
+             WHERE thread_id=?1 AND proposal_id=?2",
+            rusqlite::params![thread_id, proposal_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if binding_count != child_task_ids.len() as i64 + 1 {
+        return Err("task_proposal_revision_conflict".into());
+    }
+    tx.execute(
+        "UPDATE task_threads SET status='running',updated_at=?2 WHERE id=?1",
+        rusqlite::params![thread_id, stamp],
+    )
+    .map_err(|e| e.to_string())?;
+    let sequence: i64 = tx
+        .query_row(
+            "SELECT COALESCE(MAX(sequence),0)+1 FROM task_thread_messages WHERE thread_id=?1",
+            [thread_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    tx.execute("INSERT INTO task_thread_messages(id,thread_id,sequence,role,kind,content,proposal_id,task_id,created_at) VALUES (?1,?2,?3,'user','confirmation','确认执行',?4,?5,?6)",rusqlite::params![format!("message_{}",unique_suffix()),thread_id,sequence,proposal_id,root_task_id,stamp]).map_err(|e|e.to_string())?;
     tx.commit().map_err(|e| e.to_string())
 }
 
@@ -4859,6 +5057,16 @@ mod tests {
 
         fn arguments_for_confirm_with_success_worker(&self) -> impl Iterator<Item = String> {
             self.write_successful_decision_worker();
+            self.arguments_for_confirm()
+        }
+
+        fn arguments_for_confirm_with_failing_worker(&self) -> impl Iterator<Item = String> {
+            fs::write(&self.worker_path, "#!/bin/sh\nexit 2\n").unwrap();
+            fs::set_permissions(&self.worker_path, fs::Permissions::from_mode(0o700)).unwrap();
+            self.arguments_for_confirm()
+        }
+
+        fn arguments_for_confirm(&self) -> impl Iterator<Item = String> {
             let proposal_id = self
                 .old_proposal_id
                 .as_deref()
@@ -4931,7 +5139,13 @@ mod tests {
             .unwrap();
         connection
             .execute(
-                "INSERT INTO employee_profiles (agent_id,department,mission,responsibilities_json,boundaries_json,soul_json,base_prompt,config_version,created_at,updated_at) VALUES ('data-researcher','Research','Research','[]','[]','[]','Research',1,?1,?1)",
+                "INSERT INTO employee_profiles (agent_id,department,mission,responsibilities_json,boundaries_json,soul_json,base_prompt,config_version,created_at,updated_at) VALUES ('data-researcher','Research','Research','[]','[]','[\"Evidence first\"]','Research',1,?1,?1)",
+                [&stamp],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO personas VALUES ('data-researcher','{}','{}','{}','{}',?1,?1)",
                 [&stamp],
             )
             .unwrap();
@@ -5169,12 +5383,13 @@ mod tests {
     #[test]
     fn confirm_claim_prevents_regenerate_from_rejecting_the_proposal() {
         let fixture = proposal_generation_fixture_with_single_validated_proposal();
-        let response = task_proposal_confirm_with_hook(
+        let response = task_proposal_confirm_with_hooks(
             fixture.arguments_for_confirm_with_success_worker(),
+            |_, _, _| Ok(()),
             |thread_id, proposal_id| {
                 assert_eq!(
                     proposal_status(&fixture.database, &Some(proposal_id.to_owned())),
-                    "confirmed"
+                    "materialized"
                 );
                 let error = task_proposal_regenerate(fixture.arguments_with_failing_worker(
                     r#"{"schema_version":"1.0","error_code":"network"}"#,
@@ -5184,7 +5399,7 @@ mod tests {
                 assert_eq!(thread_id, fixture.thread_id);
                 assert_eq!(
                     proposal_status(&fixture.database, &Some(proposal_id.to_owned())),
-                    "confirmed"
+                    "materialized"
                 );
                 fixture.write_successful_decision_worker();
                 Ok(())
@@ -5196,6 +5411,218 @@ mod tests {
         assert_eq!(
             proposal_status(&fixture.database, &fixture.old_proposal_id),
             "materialized"
+        );
+        assert_eq!(
+            message_kind_count(&fixture.database, &fixture.thread_id, "confirmation"),
+            1
+        );
+    }
+
+    #[test]
+    fn old_confirm_cannot_claim_a_same_hash_regenerated_revision() {
+        let fixture = proposal_generation_fixture_with_matching_validated_proposal();
+
+        let error = task_proposal_confirm_with_hooks(
+            fixture.arguments_for_confirm_with_success_worker(),
+            |thread_id, proposal_id, expected_revision| {
+                assert_eq!(expected_revision, 1);
+                let regenerated =
+                    task_proposal_regenerate(fixture.arguments_with_success_worker())?;
+                assert_eq!(regenerated["proposal_id"], proposal_id);
+                assert_eq!(regenerated["revision"], 2);
+                assert_eq!(thread_id, fixture.thread_id);
+                Ok(())
+            },
+            |_, _| Ok(()),
+        )
+        .unwrap_err();
+
+        assert_eq!(error, "task_proposal_revision_conflict");
+        let connection = Connection::open(&fixture.database).unwrap();
+        let state: (String, i64, String) = connection
+            .query_row(
+                "SELECT proposal.status,proposal.revision,thread.status
+                 FROM task_proposals proposal JOIN task_threads thread ON thread.id=proposal.thread_id
+                 WHERE proposal.id=?1",
+                [fixture.old_proposal_id.as_deref().unwrap()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            state,
+            (
+                "validated".to_owned(),
+                2,
+                "awaiting_confirmation".to_owned()
+            )
+        );
+        assert_eq!(
+            task_proposal_current(proposal_current_arguments(
+                &fixture.database,
+                &fixture.thread_id
+            ))
+            .unwrap()["proposal_id"],
+            fixture.old_proposal_id.as_deref().unwrap()
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM tasks", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn single_confirm_recovers_the_same_prepared_task_after_start_failure() {
+        let fixture = proposal_generation_fixture_with_single_validated_proposal();
+
+        let error = task_proposal_confirm_with_hooks(
+            fixture.arguments_for_confirm_with_success_worker(),
+            |_, _, _| Ok(()),
+            |_, _| Err("simulated_start_failure".to_owned()),
+        )
+        .unwrap_err();
+        assert_eq!(error, "simulated_start_failure");
+
+        let connection = Connection::open(&fixture.database).unwrap();
+        let prepared_task: (String, String) = connection
+            .query_row(
+                "SELECT task.id,task.status FROM task_thread_task_bindings binding
+                 JOIN tasks task ON task.id=binding.task_id
+                 WHERE binding.proposal_id=?1 AND binding.binding_role='single'",
+                [fixture.old_proposal_id.as_deref().unwrap()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(prepared_task.1, "pending");
+        assert_eq!(
+            proposal_status(&fixture.database, &fixture.old_proposal_id),
+            "materialized"
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM agent_runs", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        drop(connection);
+
+        let recovered =
+            task_proposal_confirm(fixture.arguments_for_confirm_with_success_worker()).unwrap();
+        assert_eq!(recovered["execution"]["task_id"], prepared_task.0);
+        assert_eq!(recovered["execution"]["status"], "succeeded");
+        let connection = Connection::open(&fixture.database).unwrap();
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM tasks", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM agent_runs", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            message_kind_count(&fixture.database, &fixture.thread_id, "confirmation"),
+            1
+        );
+    }
+
+    #[test]
+    fn single_confirm_worker_failure_converges_the_bound_task_without_retry() {
+        let fixture = proposal_generation_fixture_with_single_validated_proposal();
+
+        let error =
+            task_proposal_confirm(fixture.arguments_for_confirm_with_failing_worker()).unwrap_err();
+        assert_eq!(error, "worker_disconnect: ");
+        assert_eq!(
+            proposal_status(&fixture.database, &fixture.old_proposal_id),
+            "materialized"
+        );
+        let connection = Connection::open(&fixture.database).unwrap();
+        let task: (String, String) = connection
+            .query_row(
+                "SELECT task.id,task.status FROM task_thread_task_bindings binding
+                 JOIN tasks task ON task.id=binding.task_id
+                 WHERE binding.proposal_id=?1 AND binding.binding_role='single'",
+                [fixture.old_proposal_id.as_deref().unwrap()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(task.1, "failed");
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM agent_runs", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        drop(connection);
+
+        let recovered =
+            task_proposal_confirm(fixture.arguments_for_confirm_with_success_worker()).unwrap();
+        assert_eq!(recovered["thread"]["root_task_id"], task.0);
+        assert_eq!(recovered["thread"]["status"], "failed");
+        let connection = Connection::open(&fixture.database).unwrap();
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM agent_runs", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn multi_confirm_recovery_reuses_one_deterministic_flow() {
+        let fixture = proposal_generation_fixture_with_matching_validated_proposal();
+        let error = task_proposal_confirm_with_hooks(
+            fixture.arguments_for_confirm_with_success_worker(),
+            |_, _, _| Ok(()),
+            |_, _| Err("simulated_materialization_failure".to_owned()),
+        )
+        .unwrap_err();
+        assert_eq!(error, "simulated_materialization_failure");
+        assert_eq!(
+            proposal_status(&fixture.database, &fixture.old_proposal_id),
+            "confirmed"
+        );
+        assert_eq!(
+            task_proposal_current(proposal_current_arguments(
+                &fixture.database,
+                &fixture.thread_id
+            ))
+            .unwrap()["proposal_id"],
+            fixture.old_proposal_id.as_deref().unwrap()
+        );
+        assert_eq!(
+            Connection::open(&fixture.database)
+                .unwrap()
+                .query_row("SELECT count(*) FROM business_flows", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+
+        let first =
+            task_proposal_confirm(fixture.arguments_for_confirm_with_success_worker()).unwrap();
+        let second =
+            task_proposal_confirm(fixture.arguments_for_confirm_with_success_worker()).unwrap();
+        assert_eq!(
+            first["thread"]["root_task_id"],
+            second["thread"]["root_task_id"]
+        );
+        let connection = Connection::open(&fixture.database).unwrap();
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM business_flows", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
         );
         assert_eq!(
             message_kind_count(&fixture.database, &fixture.thread_id, "confirmation"),
