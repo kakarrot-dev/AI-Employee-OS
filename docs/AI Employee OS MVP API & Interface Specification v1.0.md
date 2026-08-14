@@ -1357,7 +1357,7 @@ Swift：
     
 # Phase 1 Scenario / Business Flow CLI
 
-Runtime 新增 `scenario-list|get|propose|validate|save|disable` 与 `business-flow-plan|start|list|status|continue`。`scenario-propose` 只返回未持久化草案；`scenario-save` 必须显式 `--confirmed`。Plan 无写入，Start 必须携带不可变版本 Hash；同 Flow ID/Hash 幂等，不同 Hash 返回 `flow_revision_conflict`。
+Runtime 新增 `scenario-list|get|propose|validate|save|disable` 与 `business-flow-plan|start|list|status|continue`。`scenario-propose` 只返回未持久化草案；`scenario-save` 必须显式 `--confirmed`。Plan 无写入，Start 必须携带不可变版本 Hash；同 Flow ID/Hash 幂等，不同 Hash 返回 `flow_revision_conflict`。场景库直接 Start 必须在创建 Business Flow 的同一事务内创建唯一 Task Thread、Goal 消息及 Root/Child Binding，禁止提交工作库不可见的孤立 Flow；`recover-runtime` 仍须幂等补齐旧版本遗留的未绑定 Flow，并返回 `flow_threads_repaired`。
 
 Root 取消继续使用 `cancel-task`；Child 审批、用户输入和 `result_unknown` 继续使用现有 `continue-run`、`resolve-action-result`。所有 stdout 响应为 JSON，诊断写 stderr。
 
@@ -1373,3 +1373,11 @@ Root 取消继续使用 `cancel-task`；Child 审批、用户输入和 `result_u
 - `task-proposal-confirm --proposal-id --proposal-hash`
 
 `task-proposal-generate` 调用 Python 提案 Worker，但由 Rust 校验 Schema、员工状态、Skill readiness、预算与分工；返回值永远需要用户确认。`task-proposal-confirm` 重新校验 Hash、15 分钟有效期与实时 readiness：单员工进入 Generic Run Kernel；多员工生成 Root/Child Task、WorkOrder 与依赖，并复用 Business Flow Kernel。重复确认同一已物化 Proposal 返回同一 Task Thread 投影。
+
+员工生命周期使用三个独立 CLI 语义：
+
+- `employee-set-status --employee-id --status active|disabled`：幂等启用或禁用，不修改 Profile 内容。只有 `active` 且存在 ready Skill 的员工可以进入 Task Proposal catalog。Flow 启动后停用员工时，已经取得 AgentRun 的 Child 继续使用锁定快照；尚未启动的 Child 不得取得 AgentRun，WorkOrder 投影为 `waiting_user` 并产生幂等 `assignee_unavailable` 事件，恢复前需要重新启用或完成受控重分配。
+- `employee-delete-check --employee-id`：只读返回 `deletable`、`active_work_count` 与稳定 `reason`；不写数据库。
+- `employee-delete --employee-id`：在 `BEGIN IMMEDIATE` 事务内重新检查活动 Task。存在 `pending | running` Task 时以 `employee_delete_blocked_active_work` 拒绝且不得产生部分删除；否则物理删除 Employee 私有状态，保留终态工作及 `task_participant_snapshots`。
+
+`employee-delete` 不得自动降级为 `disabled`。删除成功后返回 `disposition: deleted`；删除是不可逆操作，不增加 `deleted` Employee 状态。

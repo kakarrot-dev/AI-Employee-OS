@@ -1392,6 +1392,16 @@ Evaluation Loop
 
 私聊与工作记录共用一个「归档」入口，但继续由各自 Runtime 状态负责：Conversation 使用 `status`，Task Thread 使用 `archived_at/deleted_at`。客户端不得创建统一归档表或自行推导持久化状态。工作库删除「当前/已归档」双页签，只展示当前记录；删除仅从归档页发起，并复用既有确认、Row 状态和过渡动效。该决策避免第三套状态源，同时保留私聊硬删除与工作证据软删除的不同安全语义。
 
+## ADR-040：Employee 物理删除与历史工作身份分离
+
+状态：Accepted（2026-08-14）
+
+Employee 生命周期操作固定为启用、禁用和删除。启用/禁用只改变 `agents.status`；删除物理移除原员工根记录及 Profile、Persona、Skill 绑定、私人 Conversation、员工 Memory 与权限。存在 `pending | running` Task 时必须拒绝删除，禁止客户端或 Runtime 将删除静默降级为禁用。
+
+终态工作属于工作库与审计事实，不属于可调度 Employee 私有状态。每个 Task 创建时写入不可变 `task_participant_snapshots`，Task Thread 使用快照显示历史姓名和岗位，使用 canonical Task / Action / WorkOrder 显示进度。为避免重建全部已发布历史外键，Runtime 以固定 ID `system:historical-employee` 的永久 disabled、不可见、不可调度系统主体承接 Task、Approval、Evaluation、Scenario Node 与 WorkOrder 外键；`system:` 命名空间由 Runtime 保留，Employee CRUD 与 Agent Package 均不得占用。原员工 ID 与员工记录仍必须物理删除。该系统主体不得具有 Employee Profile、Persona 或 Skill，也不得进入员工目录或 Task Proposal。
+
+Scenario Version 的定义正文与 Hash 不因员工删除而改写；`scenario_nodes.historical_agent_id` 保留确认时员工 ID，只有用于外键完整性的 `assignee_agent_id` 重绑定到系统历史主体。Audit Log 仍为追加写记录，员工外键按 canonical `ON DELETE SET NULL` 收敛，应用层不得改写既有审计事件。
+
 ## Version
 
 ```text

@@ -37,8 +37,10 @@ MVP canonical 数据模型现包含 28 张表；Conversation 扩展由追加 Mig
 - `employee_profiles` 保存部门、使命、职责、边界、Soul、基础 Prompt 和单调递增的配置版本。
 - Identity、Soul、Persona、基础 Prompt 与 Runtime 安全边界共同编译为 Effective Prompt；Swift 不拼装 System Prompt。
 - `model_call_configs` 按 ModelCall 保存员工、配置版本和 Prompt SHA-256，不保存第二份 Prompt 正文或 Secret。
-- 普通员工：有 Conversation 或 Task 历史时禁止硬删除，只能停用；无引用时允许确认后删除。
-- 默认种子员工 `ai-product-manager`：用户确认删除时可清除其关联证据后硬删，并写入 `runtime_flags.default_agent_dismissed`，此后 bootstrap 不再自动恢复。
+- 员工只有 `active | disabled` 两种持久化状态；删除不是第三种状态，而是物理移除原 `agents`、Profile、Persona、Skill 绑定、私人 Conversation、员工 Memory 与权限记录。
+- 员工存在 `pending | running` Task 时禁止删除；Runtime 必须在同一写事务内再次检查并以 `employee_delete_blocked_active_work` 拒绝，客户端不得把该错误降级成停用。
+- 已完成、失败或取消的工作继续保留 Task、Action、Handoff、Deliverable、Evaluation 与 Audit。`task_participant_snapshots` 保存任务创建时的最小历史身份，工作库不得依赖实时 Employee Profile 回放历史。
+- 默认种子员工 `ai-product-manager` 删除后写入 `runtime_flags.default_agent_dismissed`，此后 bootstrap 不再自动恢复；其历史工作遵循同一快照保留规则。
 
 此前定义的核心表如下：
 
@@ -406,7 +408,8 @@ CREATE INDEX idx_metrics_name_recorded ON metrics(name, recorded_at);
 
 | 表 | 职责 | 关键关系 | 删除策略 |
 | --- | --- | --- | --- |
-| `agents` | AI Employee 身份与包位置 | Persona、Skill、Task 的根实体 | 存在 Task、Approval 或 Evaluation 时限制删除 |
+| `agents` | 当前可管理、可调度的 AI Employee 身份与包位置 | Persona、Skill、Task 的根实体 | 活动 Task 阻止删除；终态工作外键转移至系统历史主体后物理删除原 Employee |
+| `task_participant_snapshots` | Task 创建时的最小员工历史身份 | 每个 Task 一份姓名、岗位与原员工 ID 快照 | 随 Task 级联删除；不因 Employee 删除而删除 |
 | `subjects` | User 与 Company 的最小引用主体 | Memory 与 Permission 的应用层引用目标 | 有引用时由应用层限制删除 |
 | `personas` | Agent 的沟通、思考、决策和习惯配置 | 一对一关联 Agent | Agent 删除时级联删除 |
 | `skills` | 可版本化 Skill 清单 | 与 Agent 多对多 | 已分配时限制删除 |
@@ -414,6 +417,7 @@ CREATE INDEX idx_metrics_name_recorded ON metrics(name, recorded_at);
 | `tools` | 可调用 Tool 清单 | 被 Action 引用 | 已产生 Action 时限制删除 |
 | `tasks` | 一次用户任务及其状态 | 属于 Agent，包含 Action | 有审计或审批记录时限制删除 |
 | `task_threads` | 工作库中的持续任务交互容器 | 通过 Binding 投影一个或多个 Task | `archived_at` 可恢复归档；`deleted_at` 仅从工作库软删除，不删除 Task/Action/Audit 证据 |
+| `task_thread_task_bindings` | Task Thread 与执行 Task 的唯一投影关系 | `proposal_id` 对一句话办事非空；场景库直接启动的 Business Flow 为 `NULL` | 随 Task Thread 保留；Task 与 Thread 均使用限制删除 |
 | `actions` | Agent Loop 中的单步执行 | 属于 Task，可引用 Tool | Task 删除时级联 |
 | `runtime_events` | Swift 可按 Task 与 cursor 续读的 canonical 运行事件 | 属于 Task，`sequence` 在 Task 内单调递增 | Task 删除时级联 |
 | `task_cancellation_requests` | 用户取消意图及 Runtime 确认 | 与 Task 一对一 | Task 删除时级联 |
@@ -504,6 +508,16 @@ Run phase 不增加或替代 Task/Action 状态。`waiting_user` 与 `waiting_ap
 
 多员工业务流复用 canonical `tasks`：一个 Root Task 表达编排生命周期，每个 WorkOrder 绑定一个 `parent_task_id=Root` 的 Child Task。`business_flows` 与 `work_orders` 不保存第二套状态；展示状态由 Root/Child Task、Action、Handoff 派生。
 
+每个 Business Flow 必须绑定且只能绑定一个 `task_threads` 投影，Root Task 使用 `binding_role=root`，WorkOrder Child Task 使用 `binding_role=child`。一句话办事产生的绑定保留 `proposal_id`；场景库直接启动的高级 Runbook 没有 Task Proposal，`proposal_id` 为 `NULL`。场景库直接启动必须将 Flow、Root/Child Task、Task Thread、Goal 消息和全部 Binding 作为一个事务提交；工作库不得遗漏仍会参与 Employee 删除检查的活动 Business Flow。
+
 Scenario Definition 的当前版本只指向不可变 `scenario_versions`。WorkOrder 记录员工、Capability、预算、验收与失败策略；依赖属于同一 Flow。Handoff 只能引用 verified Deliverable/Evidence，并将 `deliverable:<id>` 写入目标 Child 输入。`business_flow_outputs` 将 Root Task 映射到 Finalization verified Deliverable；Root 不创建 AgentRun。
 
 `shared_context_refs` 只保存带 Hash、Sensitivity 和 allowed agents 的引用，不保存私人 Conversation、Employee Memory、Secret 或完整 ToolResult。
+
+## Employee 物理删除与历史工作快照
+
+`agents` 只表达当前可管理、可调度的员工。创建 Task 时，Runtime 必须在同一事务内写入 `task_participant_snapshots(task_id, historical_agent_id, display_name, role, captured_at)`。历史 Task Thread 的参与员工、消息、审批、交接和交付投影以该快照为身份事实，以 Task / Action / WorkOrder 为进度事实。
+
+为保持既有历史表的外键完整性，Runtime 使用固定 ID `system:historical-employee` 的系统历史主体承接已删除员工的 Task、Approval、Evaluation、Scenario Node 与 WorkOrder 外键。`system:` 是 Runtime 保留命名空间，Employee CRUD 与 Agent Package 安装均不得创建该命名空间中的 ID。该主体无 Profile、Persona、Skill，永久 `disabled`，不是 Employee，不得出现在 `employees-list`、Task Proposal catalog、Capability readiness 或客户端通讯录中。原员工 `agents.id` 必须在删除事务结束后不存在。
+
+Scenario Version 的 `definition_json` 与 `sha256` 始终不可变；`scenario_nodes.historical_agent_id` 保存版本确认时的原始员工 ID。员工删除时仅将可校验外键 `assignee_agent_id` 重绑定到系统历史主体，`historical_agent_id`、版本正文与 Hash 均不得改写。`audit_logs` 继续遵循追加写规则，员工删除只由数据库 `ON DELETE SET NULL` 清空其可空 `agent_id`，应用层不得把既有 Audit 改写到系统历史主体。
