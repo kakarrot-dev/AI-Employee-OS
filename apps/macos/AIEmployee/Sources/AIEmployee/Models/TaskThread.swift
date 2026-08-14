@@ -126,10 +126,60 @@ struct TaskThreadRetentionResponse: Codable, Sendable {
     }
 }
 
-struct TaskProposalResponse: Codable, Sendable {
-    struct Proposal: Codable, Sendable {
-        struct Assignment: Codable, Sendable {
-            struct EmployeeSelector: Codable, Sendable {
+enum TaskProposalPresentationState: Equatable, Sendable {
+    case idle
+    case restoring
+    case recoverable(message: String)
+    case generating
+    case review(TaskProposalResponse)
+    case failed(message: String, diagnosticCode: String)
+
+    static func initial(threadStatus: String, proposal: TaskProposalResponse?) -> Self {
+        if let proposal { return .review(proposal) }
+        return threadStatus == "drafting"
+            ? .recoverable(message: "上次方案未完成，可以重新生成。")
+            : .idle
+    }
+
+    static func failure(code: String) -> Self {
+        let message: String
+        switch code {
+        case "task_proposal_provider_network":
+            message = "模型服务连接中断，请稍后重试。"
+        case "task_proposal_provider_rate_limited":
+            message = "模型服务当前请求过多，请稍后重试。"
+        case "task_proposal_provider_authentication":
+            message = "模型凭证无效或未配置，请检查设置后重试。"
+        case "task_proposal_provider_quota":
+            message = "模型服务额度不足，请检查账户额度后重试。"
+        case "task_proposal_provider_server_temporary", "task_proposal_provider_dependency_unavailable":
+            message = "模型服务暂时不可用，请稍后重试。"
+        case "task_proposal_employee_catalog_empty", "task_proposal_assignee_not_ready":
+            message = "当前没有具备所需能力的在职员工，请检查通讯录和技能库。"
+        case "task_proposal_expired", "task_proposal_stale", "task_proposal_revision_conflict":
+            message = "员工或能力状态已经变化，请重新生成方案。"
+        case "task_proposal_provider_invalid_response", "task_proposal_schema_invalid":
+            message = "方案格式未通过 Runtime 校验，请重新生成。"
+        default:
+            message = "方案生成失败，可以重新生成。"
+        }
+        return .failed(message: message, diagnosticCode: code)
+    }
+}
+
+struct TaskProposalCandidateAssignment: Identifiable, Equatable, Sendable {
+    let id: String
+    let agentID: String
+    let name: String
+    let role: String
+    let avatarPath: String?
+    let goal: String
+}
+
+struct TaskProposalResponse: Codable, Equatable, Sendable {
+    struct Proposal: Codable, Equatable, Sendable {
+        struct Assignment: Codable, Equatable, Sendable {
+            struct EmployeeSelector: Codable, Equatable, Sendable {
                 let preferredID: String?
                 let capabilities: [String]
                 enum CodingKeys: String, CodingKey { case capabilities; case preferredID = "preferred_id" }
@@ -151,7 +201,7 @@ struct TaskProposalResponse: Codable, Sendable {
         let objective: String
         let assignments: [Assignment]
         let missingInputs: [MissingInput]
-        struct MissingInput: Codable, Sendable {
+        struct MissingInput: Codable, Equatable, Sendable {
             let key: String
             let question: String
             let required: Bool
@@ -167,7 +217,7 @@ struct TaskProposalResponse: Codable, Sendable {
     let requiresConfirmation: Bool
     let resolvedAssignments: [ResolvedAssignment]
     let proposal: Proposal
-    struct ResolvedAssignment: Codable, Sendable {
+    struct ResolvedAssignment: Codable, Equatable, Sendable {
         let nodeID: String
         let agentID: String
         let skillIDs: [String]
@@ -180,6 +230,23 @@ struct TaskProposalResponse: Codable, Sendable {
         case proposalHash = "proposal_hash"
         case requiresConfirmation = "requires_confirmation"
         case resolvedAssignments = "resolved_assignments"
+    }
+
+    func candidateAssignments(employees: [Employee]) -> [TaskProposalCandidateAssignment] {
+        proposal.assignments.compactMap { assignment in
+            guard let resolved = resolvedAssignments.first(where: { $0.nodeID == assignment.nodeID }) else {
+                return nil
+            }
+            let employee = employees.first(where: { $0.id == resolved.agentID })
+            return TaskProposalCandidateAssignment(
+                id: assignment.nodeID,
+                agentID: resolved.agentID,
+                name: employee?.name ?? resolved.agentID,
+                role: employee?.role ?? "员工资料不可用",
+                avatarPath: employee?.avatarPath,
+                goal: assignment.goal
+            )
+        }
     }
 }
 

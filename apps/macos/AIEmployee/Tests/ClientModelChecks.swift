@@ -303,6 +303,71 @@ enum ClientModelChecks {
         expect(taskRoom.room.participants.first?.name == "数据搜集员工", "task room decodes participant identity")
         expect(taskRoom.room.items.first?.role == "agent" && taskRoom.room.items.first?.runID == "run-1", "task room binds agent message to canonical run")
 
+        expect(
+            TaskProposalPresentationState.initial(threadStatus: "drafting", proposal: nil)
+                == .recoverable(message: "上次方案未完成，可以重新生成。"),
+            "drafting task thread offers explicit proposal recovery"
+        )
+        expect(
+            TaskProposalPresentationState.initial(threadStatus: "running", proposal: nil) == .idle,
+            "materialized task thread does not expose proposal recovery"
+        )
+        expect(
+            TaskProposalPresentationState.failure(code: "task_proposal_provider_network")
+                == .failed(message: "模型服务连接中断，请稍后重试。", diagnosticCode: "task_proposal_provider_network"),
+            "proposal provider failures keep user copy and a stable diagnostic code"
+        )
+
+        let candidateProposal = TaskProposalResponse(
+            proposalID: "proposal-1",
+            threadID: "thread-1",
+            proposalHash: "hash-1",
+            requiresConfirmation: true,
+            resolvedAssignments: [
+                .init(nodeID: "research", agentID: "missing-researcher", skillIDs: ["web-search"]),
+                .init(nodeID: "plan", agentID: "ai-product-manager", skillIDs: ["prd-generation"]),
+            ],
+            proposal: .init(
+                intent: "work",
+                title: "产品调研",
+                objective: "完成调研并形成方案",
+                assignments: [
+                    .init(
+                        nodeID: "research",
+                        role: "researcher",
+                        employeeSelector: .init(preferredID: nil, capabilities: ["web.search"]),
+                        goal: "收集证据",
+                        dependsOn: []
+                    ),
+                    .init(
+                        nodeID: "plan",
+                        role: "planner",
+                        employeeSelector: .init(preferredID: "ai-product-manager", capabilities: ["product.plan"]),
+                        goal: "形成方案",
+                        dependsOn: ["research"]
+                    ),
+                ],
+                missingInputs: []
+            )
+        )
+        let candidates = candidateProposal.candidateAssignments(employees: [alex])
+        expect(
+            candidates.map(\.id) == ["research", "plan"],
+            "proposal candidate assignments preserve proposal order"
+        )
+        expect(
+            candidates.last?.agentID == "ai-product-manager"
+                && candidates.last?.name == "Alex"
+                && candidates.last?.role == "AI 产品经理",
+            "proposal candidate assignments join resolved agent identity to employee profiles"
+        )
+        expect(
+            candidates.first?.agentID == "missing-researcher"
+                && candidates.first?.name == "missing-researcher"
+                && candidates.first?.role == "员工资料不可用",
+            "proposal candidate assignments keep missing employee identities visible"
+        )
+
         print("client model checks passed")
     }
 

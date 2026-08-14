@@ -75,6 +75,8 @@ struct RuntimeService: Sendable {
     let taskThreadMessage: @Sendable (String, String) async throws -> TaskThreadProjection
     let taskThreadRetention: @Sendable (String, String) async throws -> TaskThreadRetentionResponse
     let taskProposalGenerate: @Sendable (String, String?) async throws -> TaskProposalResponse
+    let taskProposalCurrent: @Sendable (String) async throws -> TaskProposalResponse
+    let taskProposalRegenerate: @Sendable (String) async throws -> TaskProposalResponse
     let taskProposalConfirm: @Sendable (String, String) async throws -> TaskProposalConfirmationResponse
     let scenarioList: @Sendable () async throws -> [ScenarioSummary]
     let scenarioPropose: @Sendable (String, String) async throws -> ScenarioProposalResponse
@@ -252,6 +254,17 @@ struct RuntimeService: Sendable {
             ]
             if let preferredAgentID { arguments.append(contentsOf: ["--preferred-agent-id", preferredAgentID]) }
             return try await decodeCommand(arguments, environment: try ModelConfiguration.environment(), as: TaskProposalResponse.self)
+        }, taskProposalCurrent: { threadID in
+            try await decodeCommand([
+                "task-proposal-current", "--database", try databaseURL().path,
+                "--thread-id", threadID
+            ], as: TaskProposalResponse.self)
+        }, taskProposalRegenerate: { threadID in
+            let layout = try runtimeLayout()
+            return try await decodeCommand([
+                "task-proposal-regenerate", "--repository-root", layout.resourceRoot.path,
+                "--database", try databaseURL().path, "--thread-id", threadID
+            ], environment: try ModelConfiguration.environment(), as: TaskProposalResponse.self)
         }, taskProposalConfirm: { proposalID, proposalHash in
             let layout = try runtimeLayout()
             return try await decodeCommand([
@@ -312,6 +325,22 @@ struct RuntimeService: Sendable {
                 "--flow-id", flowID,
             ], environment: try ModelConfiguration.environment(), as: BusinessFlowContinueResponse.self)
         })
+    }
+
+    static func taskProposalErrorCode(from error: Error) -> String {
+        guard case let RuntimeError.processFailed(raw) = error else {
+            return "task_proposal_unknown"
+        }
+        let known = [
+            "task_proposal_provider_network", "task_proposal_provider_rate_limited",
+            "task_proposal_provider_authentication", "task_proposal_provider_quota",
+            "task_proposal_provider_server_temporary", "task_proposal_provider_dependency_unavailable",
+            "task_proposal_provider_invalid_response", "task_proposal_schema_invalid",
+            "task_proposal_employee_catalog_empty", "task_proposal_assignee_not_ready",
+            "task_proposal_expired", "task_proposal_stale", "task_proposal_revision_conflict",
+            "task_proposal_not_found",
+        ]
+        return known.first(where: raw.contains) ?? "task_proposal_unknown"
     }
 
     private struct CancelResponse: Codable, Sendable { let status: String }
