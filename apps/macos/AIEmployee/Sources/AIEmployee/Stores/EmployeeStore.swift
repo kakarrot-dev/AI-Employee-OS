@@ -43,11 +43,28 @@ final class EmployeeStore: ObservableObject {
         } catch { self.error = error.localizedDescription; return false }
     }
 
-    func remove(_ employee: Employee) async {
+    func setStatus(_ employee: Employee, status: String) async {
+        do {
+            _ = try await service.employeeSetStatus(employee.id, status)
+            await reload()
+            notice = UXToastNotice(message: status == "active" ? "员工已启用" : "员工已禁用", tone: .success)
+        } catch { self.error = error.localizedDescription }
+    }
+
+    func deleteCheck(_ employee: Employee) async -> EmployeeDeleteCheckResponse? {
+        do {
+            return try await service.employeeDeleteCheck(employee.id)
+        } catch {
+            self.error = error.localizedDescription
+            return nil
+        }
+    }
+
+    func delete(_ employee: Employee) async {
         do {
             _ = try await service.employeeDelete(employee.id)
             await reload()
-            notice = UXToastNotice(message: "员工资料已更新", tone: .success)
+            notice = UXToastNotice(message: "员工已永久删除", tone: .success)
         }
         catch { self.error = error.localizedDescription }
     }

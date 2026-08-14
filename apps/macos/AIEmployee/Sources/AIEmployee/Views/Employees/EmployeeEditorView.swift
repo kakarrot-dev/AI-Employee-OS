@@ -15,6 +15,7 @@ struct EmployeeEditorView: View {
     @State private var avatarError: String?
     @State private var selectedSkillIDs: Set<String> = []
     @State private var capabilityPicker: CapabilityPickerKind?
+    @State private var isCapabilityPickerBackgroundDisabled = false
     @State private var saveError: String?
     @State private var attemptedSave = false
     @State private var touchedFields: Set<EmployeeDraftField> = []
@@ -68,6 +69,8 @@ struct EmployeeEditorView: View {
                 footer
             }
         }
+        .disabled(isCapabilityPickerBackgroundDisabled)
+        .accessibilityHidden(capabilityPicker != nil)
         .frame(minWidth: 520, idealWidth: 860, minHeight: 420, idealHeight: 680)
         .background(palette.canvas)
         .onAppear {
@@ -113,11 +116,22 @@ struct EmployeeEditorView: View {
                 }
             }
         }
+        .onChange(of: capabilityPicker) { _, picker in
+            if picker != nil {
+                DispatchQueue.main.async {
+                    if capabilityPicker != nil {
+                        isCapabilityPickerBackgroundDisabled = true
+                    }
+                }
+            } else {
+                isCapabilityPickerBackgroundDisabled = false
+            }
+        }
     }
 
     private var header: some View {
         HStack(spacing: 14) {
-            EmployeeAvatar(name: employee.name.isEmpty ? "A" : employee.name, size: 42)
+            CreamAvatar(path: nil, name: employee.name.isEmpty ? "A" : employee.name, size: 42)
             VStack(alignment: .leading, spacing: 2) {
                 Text(isNew ? "新建 AI 员工" : "编辑 \(employee.name) 资料").font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
                 Text("身份、灵魂与能力配置保存后生效").font(.caption).foregroundStyle(palette.muted)
@@ -161,7 +175,7 @@ struct EmployeeEditorView: View {
         VStack(alignment: .leading, spacing: 26) {
             formHeading("基础信息", "用于 Profile、搜索和运行时身份识别。")
             HStack(spacing: 16) {
-                EmployeeAvatar(name: employee.name.isEmpty ? "A" : employee.name, avatarPath: employee.avatarPath, size: 72)
+                CreamAvatar(path: employee.avatarPath, name: employee.name.isEmpty ? "A" : employee.name, size: 72)
                 VStack(alignment: .leading, spacing: 6) {
                     Button(employee.avatarPath == nil ? "上传头像" : "更换头像") { isChoosingAvatar = true }
                         .buttonStyle(CreamSecondaryButtonStyle())
@@ -179,22 +193,6 @@ struct EmployeeEditorView: View {
                 profileField("岗位", field: .role, text: $employee.role, prompt: "AI 产品经理")
                 formDivider
                 profileField("部门", field: .department, text: $employee.department, prompt: "产品部")
-                formDivider
-                HStack(spacing: 18) {
-                    Text("状态").font(.callout).foregroundStyle(palette.muted).frame(width: 86, alignment: .leading)
-                    Text(employee.status == "active" ? "已启用" : "已停用")
-                        .font(.callout)
-                        .foregroundStyle(employee.status == "active" ? palette.body : palette.muted)
-                    Spacer()
-                    Toggle("", isOn: Binding(
-                        get: { employee.status == "active" },
-                        set: { employee.status = $0 ? "active" : "disabled" }
-                    ))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .tint(palette.primaryActive)
-                    .help(employee.status == "active" ? "停用员工" : "启用员工")
-                }.frame(minHeight: 46)
             }
         }
     }
@@ -328,7 +326,7 @@ struct EmployeeEditorView: View {
             Button(action: save) {
                 UXAsyncActionLabel(idleTitle: "保存资料", pendingTitle: "正在保存", isPending: isSaving)
             }
-            .buttonStyle(CreamPrimaryButtonStyle())
+            .buttonStyle(CreamPrimaryButtonStyle(isLoading: isSaving))
             .disabled(isSaving)
         }.padding(.horizontal, 20).frame(height: 60).background(palette.surfaceCard)
     }

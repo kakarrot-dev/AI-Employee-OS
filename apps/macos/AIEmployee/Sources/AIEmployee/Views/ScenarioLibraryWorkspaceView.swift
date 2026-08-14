@@ -7,6 +7,7 @@ struct ScenarioLibraryWorkspaceView: View {
     @State private var editorSource = "manual"
     @State private var editorTab: ScenarioEditorTab = .sop
     @State private var showsDiscardConfirmation = false
+    @State private var isDiscardBackgroundDisabled = false
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -16,6 +17,8 @@ struct ScenarioLibraryWorkspaceView: View {
             Divider().overlay(palette.hairlineSoft)
             detail
         }
+        .disabled(isDiscardBackgroundDisabled)
+        .accessibilityHidden(showsDiscardConfirmation)
         .background(palette.canvas)
         .moduleNavigationTitle("场景库（暂定）", systemImage: "point.3.connected.trianglepath.dotted")
         .task { await store.reload() }
@@ -33,36 +36,33 @@ struct ScenarioLibraryWorkspaceView: View {
                 }
             }
         }
+        .onChange(of: showsDiscardConfirmation) { _, isPresented in
+            if isPresented {
+                DispatchQueue.main.async {
+                    if showsDiscardConfirmation {
+                        isDiscardBackgroundDisabled = true
+                    }
+                }
+            } else {
+                isDiscardBackgroundDisabled = false
+            }
+        }
     }
 
     private var catalog: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("场景库（暂定）")
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(palette.ink)
-                    Text("\(store.scenarios.count)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(palette.muted)
-                    Spacer()
-                    Button(action: beginManual) {
-                        Image(systemName: "plus")
-                            .frame(width: 24, height: 24)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(palette.body)
-                    .help("新建场景")
-                    .accessibilityLabel("新建场景")
+                CreamSectionHeader("场景库（暂定）", count: filtered.count) {
+                    CreamIconButton(
+                        systemName: "plus",
+                        accessibilityLabel: "新建场景",
+                        help: "新建场景",
+                        tone: .primary,
+                        action: beginManual
+                    )
                     .disabled(employees.filter { $0.status == "active" }.isEmpty)
                 }
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(palette.mutedSoft)
-                    TextField("搜索场景", text: $query).textFieldStyle(.plain)
-                }
-                .padding(.horizontal, 10).frame(height: 34)
-                .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md))
-                .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.md).stroke(palette.hairlineSoft) }
+                CreamSearchField("搜索场景", text: $query, accessibilityLabel: "搜索场景")
             }
             .padding(16)
             Divider().overlay(palette.hairlineSoft)
@@ -130,10 +130,21 @@ struct ScenarioLibraryWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     overviewHeader
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(selected.title).font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
-                        Text("当前版本 v\(selected.currentVersion) · \(selected.status)").foregroundStyle(palette.muted)
+                        HStack(spacing: AppTheme.Spacing.xs) {
+                            Text(selected.title)
+                                .font(AppTheme.Typography.pageTitle)
+                                .foregroundStyle(palette.ink)
+                            CreamStatusBadge(
+                                title: selected.status,
+                                systemImage: "info.circle.fill",
+                                tone: .neutral
+                            )
+                        }
+                        Text("当前版本 v\(selected.currentVersion)")
+                            .font(AppTheme.Typography.metadata().monospacedDigit())
+                            .foregroundStyle(palette.muted)
                         Text("场景定义保存在这里；启动后的运行实例会进入工作库。")
-                            .font(.callout).foregroundStyle(palette.muted)
+                            .font(AppTheme.Typography.interfaceBody()).foregroundStyle(palette.muted)
                         Button("启动当前版本") { Task { await store.startSelected() } }
                             .buttonStyle(CreamPrimaryButtonStyle())
                             .disabled(store.isLoading)
@@ -164,8 +175,7 @@ struct ScenarioLibraryWorkspaceView: View {
         }
         .overlay(alignment: .bottomLeading) {
             if let error = store.errorMessage {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout).foregroundStyle(palette.error)
+                UXInlineFeedback(message: error, tone: .error)
                     .padding(20)
             }
         }
@@ -174,8 +184,9 @@ struct ScenarioLibraryWorkspaceView: View {
     private var overviewHeader: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("组织一条可验证的员工协作流程")
-                .font(.title.weight(.semibold)).foregroundStyle(palette.ink)
+                .font(AppTheme.Typography.pageTitle).foregroundStyle(palette.ink)
             Text("AI 只负责生成草案；员工分配、预算、验收和启动均由你确认。")
+                .font(AppTheme.Typography.interfaceBody())
                 .foregroundStyle(palette.muted)
         }
     }

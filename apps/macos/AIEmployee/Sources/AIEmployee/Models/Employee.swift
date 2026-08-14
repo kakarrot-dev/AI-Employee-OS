@@ -108,5 +108,19 @@ enum EmployeeDraftValidation {
 
 struct EmployeeListResponse: Codable, Sendable { let schemaVersion: String; let employees: [Employee]; enum CodingKeys: String, CodingKey { case schemaVersion = "schema_version", employees } }
 struct EmployeeSaveResponse: Codable, Sendable { let schemaVersion: String; let id: String; let saved: Bool; enum CodingKeys: String, CodingKey { case schemaVersion = "schema_version", id, saved } }
+struct EmployeeStatusResponse: Codable, Sendable { let schemaVersion: String; let id: String; let status: String; enum CodingKeys: String, CodingKey { case schemaVersion = "schema_version", id, status } }
+struct EmployeeDeleteCheckResponse: Codable, Sendable {
+    let schemaVersion: String
+    let id: String
+    let deletable: Bool
+    let activeWorkCount: Int
+    let reason: String?
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case id, deletable
+        case activeWorkCount = "active_work_count"
+        case reason
+    }
+}
 struct EmployeeDeleteResponse: Codable, Sendable { let schemaVersion: String; let id: String; let disposition: String; enum CodingKeys: String, CodingKey { case schemaVersion = "schema_version", id, disposition } }
 struct EffectivePromptResponse: Codable, Sendable { let schemaVersion: String; let employeeID: String; let configVersion: Int; let prompt: String; enum CodingKeys: String, CodingKey { case schemaVersion = "schema_version"; case employeeID = "employee_id"; case configVersion = "config_version"; case prompt } }

@@ -20,10 +20,10 @@ struct UXFeedbackStateView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
             Label(title, systemImage: systemImage)
-                .font(.headline)
+                .font(AppTheme.Typography.workspaceTitle)
                 .foregroundStyle(toneColor)
             Text(message)
-                .font(.callout)
+                .font(AppTheme.Typography.interfaceBody())
                 .foregroundStyle(palette.muted)
                 .fixedSize(horizontal: false, vertical: true)
             if let actionTitle, let action {
@@ -55,7 +55,7 @@ struct UXInlineFeedback: View {
 
     var body: some View {
         Label(message, systemImage: systemImage)
-            .font(.caption)
+            .font(AppTheme.Typography.metadata())
             .foregroundStyle(toneColor)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityLabel(message)
@@ -115,17 +115,14 @@ struct UXToastOverlay: View {
                     Image(systemName: icon(for: notice.tone))
                         .foregroundStyle(color(for: notice.tone))
                     Text(notice.message)
-                        .font(.callout.weight(.medium))
+                        .font(AppTheme.Typography.interfaceBody(weight: .medium))
                         .foregroundStyle(palette.body)
-                    Button {
-                        self.notice = nil
-                    } label: {
-                        Image(systemName: "xmark")
-                            .frame(width: 24, height: 24)
-                    }
-                    .buttonStyle(.plain)
-                    .help("关闭提示")
-                    .accessibilityLabel("关闭提示")
+                    CreamIconButton(
+                        systemName: "xmark",
+                        accessibilityLabel: "关闭提示",
+                        help: "关闭提示",
+                        action: { self.notice = nil }
+                    )
                 }
                 .padding(.leading, AppTheme.Spacing.md)
                 .padding(.trailing, AppTheme.Spacing.xs)
@@ -142,7 +139,7 @@ struct UXToastOverlay: View {
                 .accessibilityAddTraits(.isStaticText)
             }
         }
-        .animation(reduceMotion ? nil : .easeOut(duration: AppTheme.Motion.standard), value: notice)
+        .animation(reduceMotion ? nil : AppTheme.Motion.panelPresentation, value: notice)
     }
 
     private func icon(for tone: UXFeedbackTone) -> String {

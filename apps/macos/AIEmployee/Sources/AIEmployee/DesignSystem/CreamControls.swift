@@ -50,24 +50,6 @@ struct CreamProgressBar: View {
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
-private struct CreamFloatingComposerSurface: ViewModifier {
-    let focused: Bool
-    @Environment(\.colorScheme) private var colorScheme
-
-    func body(content: Content) -> some View {
-        content
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AppTheme.Elevation.composerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: AppTheme.Elevation.composerRadius, style: .continuous)
-                    .stroke(focused ? palette.primary.opacity(0.20) : palette.hairlineSoft.opacity(0.72), lineWidth: 1)
-            }
-            .shadow(color: focused ? palette.primary.opacity(0.10) : .clear, radius: 8)
-            .shadow(color: palette.shadow, radius: AppTheme.Elevation.composerRadius, y: AppTheme.Elevation.composerY)
-    }
-
-    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
-}
-
 private struct CreamSidebarRowSurface: ViewModifier {
     let isSelected: Bool
     let isHovered: Bool
@@ -75,10 +57,10 @@ private struct CreamSidebarRowSurface: ViewModifier {
 
     func body(content: Content) -> some View {
         content.background(
-            isSelected ? palette.primary.opacity(0.12)
-                : isHovered ? palette.surfaceCard.opacity(0.72)
+            isSelected ? palette.selectionFill
+                : isHovered ? palette.hoverFill
                 : Color.clear,
-            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+            in: RoundedRectangle(cornerRadius: AppTheme.Radius.selection, style: .continuous)
         )
     }
 
@@ -86,43 +68,111 @@ private struct CreamSidebarRowSurface: ViewModifier {
 }
 
 extension View {
-    func creamFloatingComposer(focused: Bool) -> some View {
-        modifier(CreamFloatingComposerSurface(focused: focused))
-    }
-
     func creamSidebarRowSurface(isSelected: Bool, isHovered: Bool) -> some View {
         modifier(CreamSidebarRowSurface(isSelected: isSelected, isHovered: isHovered))
     }
 }
 
-struct CreamPrimaryButtonStyle: ButtonStyle {
-    @Environment(\.colorScheme) private var colorScheme
+struct CreamSidebarButtonStyle: ButtonStyle {
+    let isSelected: Bool
+    let isHovered: Bool
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.callout.weight(.semibold))
+            .background(
+                isSelected ? palette.selectionFill
+                    : isHovered ? palette.hoverFill
+                    : Color.clear,
+                in: RoundedRectangle(cornerRadius: AppTheme.Radius.selection, style: .continuous)
+            )
+            .scaleEffect(configuration.isPressed && !reduceMotion ? AppTheme.Interaction.pressedScale : 1)
+            .opacity(isEnabled ? 1 : AppTheme.Interaction.disabledOpacity)
+            .animation(reduceMotion ? nil : AppTheme.Motion.pressFeedback, value: configuration.isPressed)
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+struct CreamPrimaryButtonStyle: ButtonStyle {
+    var isLoading = false
+
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.isFocused) private var isFocused
+
+    func makeBody(configuration: Configuration) -> some View {
+        ZStack {
+            configuration.label
+                .opacity(isLoading ? 0 : 1)
+            if isLoading {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(palette.onPrimary)
+                    .accessibilityHidden(true)
+            }
+        }
+            .font(AppTheme.Typography.interfaceBody(weight: .semibold))
             .foregroundStyle(palette.onPrimary)
             .padding(.horizontal, 13)
-            .frame(height: 32)
-            .background(palette.primaryActive.opacity(configuration.isPressed ? 0.82 : 1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
-            .animation(reduceMotion ? nil : .easeOut(duration: AppTheme.Motion.fast), value: configuration.isPressed)
+            .frame(height: AppTheme.Control.buttonHeight)
+            .background(
+                palette.primaryActive.opacity(configuration.isPressed ? 0.82 : 1),
+                in: RoundedRectangle(cornerRadius: AppTheme.Radius.control, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: AppTheme.Radius.control, style: .continuous)
+                    .stroke(isFocused ? palette.focusStroke : .clear, lineWidth: 1.5)
+            }
+            .scaleEffect(configuration.isPressed && !reduceMotion ? AppTheme.Interaction.pressedScale : 1)
+            .opacity(isEnabled ? 1 : AppTheme.Interaction.disabledOpacity)
+            .allowsHitTesting(!isLoading)
+            .accessibilityValue(isLoading ? "正在处理" : "")
+            .animation(reduceMotion ? nil : AppTheme.Motion.pressFeedback, value: configuration.isPressed)
     }
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
 struct CreamSecondaryButtonStyle: ButtonStyle {
+    var isLoading = false
+
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.isFocused) private var isFocused
+
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.callout.weight(.medium))
+        ZStack {
+            configuration.label
+                .opacity(isLoading ? 0 : 1)
+            if isLoading {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(palette.primaryActive)
+                    .accessibilityHidden(true)
+            }
+        }
+            .font(AppTheme.Typography.interfaceBody(weight: .medium))
             .foregroundStyle(palette.body.opacity(configuration.isPressed ? 0.72 : 1))
             .padding(.horizontal, 11)
-            .frame(height: 32)
-            .background(configuration.isPressed ? palette.surfaceSoft : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
-            .animation(reduceMotion ? nil : .easeOut(duration: AppTheme.Motion.fast), value: configuration.isPressed)
+            .frame(height: AppTheme.Control.buttonHeight)
+            .background(
+                configuration.isPressed ? palette.surfaceSoft : Color.clear,
+                in: RoundedRectangle(cornerRadius: AppTheme.Radius.control, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: AppTheme.Radius.control, style: .continuous)
+                    .stroke(isFocused ? palette.focusStroke : .clear, lineWidth: 1.5)
+            }
+            .scaleEffect(configuration.isPressed && !reduceMotion ? AppTheme.Interaction.pressedScale : 1)
+            .opacity(isEnabled ? 1 : AppTheme.Interaction.disabledOpacity)
+            .allowsHitTesting(!isLoading)
+            .accessibilityValue(isLoading ? "正在处理" : "")
+            .animation(reduceMotion ? nil : AppTheme.Motion.pressFeedback, value: configuration.isPressed)
     }
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
@@ -138,9 +188,11 @@ struct CreamMenuLabel: View {
             Spacer(minLength: 12)
             Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(palette.mutedSoft)
         }
-        .font(.callout).padding(.horizontal, 11).frame(height: 34)
-        .background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 9).stroke(palette.hairlineSoft) }
+        .font(AppTheme.Typography.interfaceBody())
+        .padding(.horizontal, 11)
+        .frame(height: AppTheme.Control.fieldHeight)
+        .background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: AppTheme.Radius.selection, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.selection).stroke(palette.hairlineSoft) }
         .contentShape(Rectangle())
     }
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
@@ -151,6 +203,7 @@ struct CreamSegmentedControl<Option: Hashable & Identifiable>: View {
     @Binding var selection: Option
     let title: (Option) -> String
     @Environment(\.colorScheme) private var colorScheme
+    @FocusState private var focusedOptionID: Option.ID?
 
     var body: some View {
         HStack(spacing: 2) {
@@ -159,24 +212,45 @@ struct CreamSegmentedControl<Option: Hashable & Identifiable>: View {
                     selection = option
                 } label: {
                     Text(title(option))
-                        .font(.caption.weight(.semibold))
+                        .font(AppTheme.Typography.metadata(weight: .semibold))
                         .foregroundStyle(selection == option ? palette.primaryActive : palette.muted)
                         .frame(maxWidth: .infinity)
                         .frame(height: 28)
-                        .background(
-                            selection == option ? palette.primary.opacity(0.11) : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        )
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(
+                    CreamSelectionButtonStyle(
+                        isSelected: selection == option,
+                        isFocused: focusedOptionID == option.id,
+                        showsSelectedFill: true
+                    )
+                )
+                .focusable()
+                .focused($focusedOptionID, equals: option.id)
+                .accessibilityAddTraits(selection == option ? .isSelected : [])
             }
         }
         .padding(3)
-        .background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: AppTheme.Radius.selection, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(palette.hairlineSoft)
+            RoundedRectangle(cornerRadius: AppTheme.Radius.selection, style: .continuous).stroke(palette.hairlineSoft)
         }
+        .onMoveCommand(perform: moveFocus)
+    }
+
+    private func moveFocus(_ direction: MoveCommandDirection) {
+        guard !options.isEmpty else { return }
+        let current = focusedOptionID.flatMap { id in options.firstIndex(where: { $0.id == id }) }
+            ?? options.firstIndex(of: selection)
+            ?? 0
+        let next: Int
+        switch direction {
+        case .left, .up: next = max(current - 1, 0)
+        case .right, .down: next = min(current + 1, options.count - 1)
+        default: return
+        }
+        selection = options[next]
+        focusedOptionID = options[next].id
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
@@ -189,16 +263,17 @@ struct CreamTabBar<Item: Identifiable & Equatable>: View {
     @Namespace private var tabIndicator
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @FocusState private var focusedItemID: Item.ID?
 
     var body: some View {
         HStack(spacing: 24) {
             ForEach(items) { item in
                 Button {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: AppTheme.Motion.standard)) { selection = item }
+                    withAnimation(reduceMotion ? nil : AppTheme.Motion.selectionMorph) { selection = item }
                 } label: {
                     VStack(spacing: 8) {
                         Text(title(item))
-                            .font(.callout.weight(selection == item ? .semibold : .medium))
+                            .font(AppTheme.Typography.interfaceBody(weight: selection == item ? .semibold : .medium))
                             .foregroundStyle(selection == item ? palette.primaryActive : palette.muted)
                             .lineLimit(1)
                         ZStack {
@@ -208,12 +283,66 @@ struct CreamTabBar<Item: Identifiable & Equatable>: View {
                             }
                         }
                     }
-                }.buttonStyle(.plain)
+                }
+                .buttonStyle(
+                    CreamSelectionButtonStyle(
+                        isSelected: selection == item,
+                        isFocused: focusedItemID == item.id,
+                        showsSelectedFill: false
+                    )
+                )
+                .focusable()
+                .focused($focusedItemID, equals: item.id)
+                .accessibilityAddTraits(selection == item ? .isSelected : [])
             }
             Spacer(minLength: 0)
         }
         .overlay(alignment: .bottom) { Rectangle().fill(palette.hairlineSoft).frame(height: 1) }
+        .onMoveCommand(perform: moveFocus)
     }
+
+    private func moveFocus(_ direction: MoveCommandDirection) {
+        guard !items.isEmpty else { return }
+        let current = focusedItemID.flatMap { id in items.firstIndex(where: { $0.id == id }) }
+            ?? items.firstIndex(of: selection)
+            ?? 0
+        let next: Int
+        switch direction {
+        case .left, .up: next = max(current - 1, 0)
+        case .right, .down: next = min(current + 1, items.count - 1)
+        default: return
+        }
+        selection = items[next]
+        focusedItemID = items[next].id
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct CreamSelectionButtonStyle: ButtonStyle {
+    let isSelected: Bool
+    let isFocused: Bool
+    let showsSelectedFill: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                showsSelectedFill && isSelected ? palette.selectionFill : Color.clear,
+                in: RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: AppTheme.Radius.sm, style: .continuous)
+                    .stroke(isFocused ? palette.focusStroke : .clear, lineWidth: 1.5)
+            }
+            .scaleEffect(configuration.isPressed && !reduceMotion ? AppTheme.Interaction.pressedScale : 1)
+            .opacity(isEnabled ? 1 : AppTheme.Interaction.disabledOpacity)
+            .animation(reduceMotion ? nil : AppTheme.Motion.pressFeedback, value: configuration.isPressed)
+    }
+
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
@@ -226,7 +355,7 @@ struct ModuleToolbarTitle: View {
     var body: some View {
         Label(title, systemImage: systemImage)
             .labelStyle(.titleAndIcon)
-            .font(.headline)
+            .font(AppTheme.Typography.workspaceTitle)
             .foregroundStyle(palette.ink)
             .imageScale(.medium)
     }
@@ -263,6 +392,7 @@ struct CreamModalOverlay<Content: View>: View {
     @ViewBuilder let content: () -> Content
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var modalFocusScope
 
     var body: some View {
         GeometryReader { proxy in
@@ -276,15 +406,97 @@ struct CreamModalOverlay<Content: View>: View {
 
                 content()
                     .frame(width: width, height: height)
-                    .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous))
+                    .background(ModalFocusRestorationBridge(close: close))
+                    .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.modal, style: .continuous))
                     .shadow(color: .black.opacity(colorScheme == .dark ? 0.34 : 0.16), radius: 24, y: 10)
                     .transition(reduceMotion ? .opacity : .scale(scale: 0.98).combined(with: .opacity))
+                    .focusScope(modalFocusScope)
+                    .focusSection()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .zIndex(100)
+        .onExitCommand(perform: close)
     }
 
+}
+
+struct ModalFocusRestorationBridge: NSViewRepresentable {
+    let close: () -> Void
+
+    func makeNSView(context: Context) -> ModalFocusRestorationView {
+        let view = ModalFocusRestorationView()
+        view.close = close
+        return view
+    }
+
+    func updateNSView(_ nsView: ModalFocusRestorationView, context: Context) {
+        nsView.close = close
+    }
+
+    static func dismantleNSView(_ nsView: ModalFocusRestorationView, coordinator: ()) {
+        nsView.restorePreviousResponder()
+    }
+}
+
+final class ModalFocusRestorationView: NSView {
+    var close: () -> Void = {}
+    private weak var previousResponder: NSResponder?
+    private weak var installedWindow: NSWindow?
+    private var capturedResponder = false
+    private var eventMonitor: Any?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard !capturedResponder, let window else { return }
+        capturedResponder = true
+        installedWindow = window
+        previousResponder = restorableResponder(from: window.firstResponder)
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self, weak window] event in
+            guard let self, event.window === window, event.keyCode == 53 else { return event }
+            close()
+            return nil
+        }
+    }
+
+    func restorePreviousResponder() {
+        removeEventMonitor()
+        guard let installedWindow else { return }
+        let previousResponder = previousResponder
+        restore(previousResponder, in: installedWindow, remainingAttempts: 3)
+    }
+
+    private func restore(_ responder: NSResponder?, in window: NSWindow, remainingAttempts: Int) {
+        DispatchQueue.main.async { [weak window] in
+            guard let window else { return }
+            if let responder, window.makeFirstResponder(responder) {
+                return
+            }
+            if remainingAttempts > 0 {
+                self.restore(responder, in: window, remainingAttempts: remainingAttempts - 1)
+                return
+            }
+            _ = window.makeFirstResponder(window.contentView)
+        }
+    }
+
+    private func restorableResponder(from responder: NSResponder?) -> NSResponder? {
+        guard let fieldEditor = responder as? NSTextView, fieldEditor.isFieldEditor else {
+            return responder
+        }
+        return fieldEditor.delegate as? NSResponder ?? responder
+    }
+
+    private func removeEventMonitor() {
+        if let eventMonitor {
+            NSEvent.removeMonitor(eventMonitor)
+            self.eventMonitor = nil
+        }
+    }
+
+    deinit {
+        removeEventMonitor()
+    }
 }
 
 struct WindowTitlebarScrim: NSViewRepresentable {

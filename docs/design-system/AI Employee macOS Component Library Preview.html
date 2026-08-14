@@ -1,0 +1,4936 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light" data-type-scale="refined">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>AI Employee OS 组件库预览</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --primary: #b7791f;
+      --primary-active: #9e6719;
+      --on-primary: #fff8f3;
+      --ink: #29271d;
+      --body: #403d36;
+      --muted: #6d675b;
+      --muted-soft: #756f63;
+      --hairline: #d8d8d3;
+      --hairline-soft: #e7e7e2;
+      --canvas: #f5f5f2;
+      --surface-soft: #efefeb;
+      --surface-card: #fcfcf9;
+      --accent-teal: #2c6f75;
+      --success: #4b6f3d;
+      --warning: #8a5e16;
+      --error: #7c1b13;
+      --shadow: rgb(57 55 47 / 9%);
+      --selection-fill: rgb(183 121 31 / 12%);
+      --hover-fill: rgb(252 252 249 / 72%);
+      --focus-stroke: rgb(183 121 31 / 32%);
+      --danger-fill: rgb(124 27 19 / 10%);
+      --sidebar-width: 222px;
+      --content-gap: 24px;
+      --section-pad: 32px;
+      --radius-sm: 6px;
+      --radius-control: 8px;
+      --radius-selection: 9px;
+      --radius-panel: 12px;
+      --radius-modal: 16px;
+      --radius-composer: 18px;
+      --ease-out: cubic-bezier(.2, .8, .2, 1);
+      --ease-in-out: cubic-bezier(.4, 0, .2, 1);
+      --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Noto Sans SC", sans-serif;
+      --font-mono: "SFMono-Regular", "SF Mono", ui-monospace, Menlo, monospace;
+      --type-display: 34px;
+      --type-section-title: 18px;
+      --type-workspace-title: 15px;
+      --type-navigation: 15px;
+      --type-sidebar-title: 14px;
+      --type-interface: 14px;
+      --type-reading: 16px;
+      --type-supporting: 13px;
+      --type-metadata: 12px;
+      --type-compact: 11px;
+      --type-code: 12.5px;
+      --type-metric: 22px;
+    }
+
+    html[data-type-scale="refined"] {
+      --type-display: 22px;
+      --type-section-title: 16px;
+      --type-workspace-title: 14px;
+      --type-navigation: 13px;
+      --type-sidebar-title: 13px;
+      --type-interface: 13px;
+      --type-reading: 14px;
+      --type-supporting: 12px;
+      --type-metadata: 11px;
+      --type-compact: 10px;
+      --type-code: 12px;
+      --type-metric: 20px;
+    }
+
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --primary: #e6bf7a;
+      --primary-active: #f0cf92;
+      --on-primary: #2a1e1b;
+      --ink: #e9e6dc;
+      --body: #ddd9cd;
+      --muted: #bbb6a8;
+      --muted-soft: #9a958a;
+      --hairline: #3d3d3a;
+      --hairline-soft: #343533;
+      --canvas: #2d2e2d;
+      --surface-soft: #2a2b2a;
+      --surface-card: #303030;
+      --accent-teal: #75b5bc;
+      --success: #9ab889;
+      --warning: #e6bf7a;
+      --error: #ea928a;
+      --shadow: rgb(0 0 0 / 24%);
+      --selection-fill: rgb(230 191 122 / 12%);
+      --hover-fill: rgb(48 48 48 / 72%);
+      --focus-stroke: rgb(230 191 122 / 32%);
+      --danger-fill: rgb(234 146 138 / 10%);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      background: var(--canvas);
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100dvh;
+      color: var(--body);
+      background: var(--canvas);
+      font-family: var(--font-sans);
+      font-size: var(--type-interface);
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button,
+    a,
+    input,
+    textarea {
+      touch-action: manipulation;
+    }
+
+    button {
+      color: inherit;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+
+    ::selection {
+      color: var(--ink);
+      background: var(--selection-fill);
+    }
+
+    .skip-link {
+      position: fixed;
+      top: 8px;
+      left: 8px;
+      z-index: 40;
+      padding: 8px 12px;
+      border-radius: var(--radius-control);
+      color: var(--on-primary);
+      background: var(--primary-active);
+      transform: translateY(-160%);
+      transition: transform 120ms var(--ease-out);
+    }
+
+    .skip-link:focus {
+      transform: translateY(0);
+    }
+
+    .app-shell {
+      display: grid;
+      grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+      min-height: 100dvh;
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      padding: 18px 12px 14px;
+      border-right: 1px solid var(--hairline-soft);
+      background: var(--surface-soft);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 44px;
+      padding: 4px 8px 14px;
+    }
+
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-selection);
+      color: var(--primary-active);
+      background: var(--selection-fill);
+      box-shadow: inset 0 0 0 1px var(--focus-stroke);
+      font-size: 12px;
+      font-weight: 750;
+      letter-spacing: -.01em;
+    }
+
+    .brand-name {
+      color: var(--ink);
+      font-size: var(--type-sidebar-title);
+      font-weight: 650;
+      line-height: 1.25;
+    }
+
+    .brand-meta {
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: var(--type-compact);
+      line-height: 1.2;
+    }
+
+    .side-nav {
+      display: grid;
+      gap: 3px;
+      margin-top: 8px;
+    }
+
+    .side-nav a {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-height: 36px;
+      padding: 0 10px;
+      border-radius: var(--radius-selection);
+      color: var(--muted);
+      font-size: var(--type-navigation);
+      text-decoration: none;
+      transition: color 120ms var(--ease-out), background-color 120ms var(--ease-out), transform 120ms var(--ease-out);
+    }
+
+    .side-nav a:hover {
+      color: var(--body);
+      background: var(--hover-fill);
+    }
+
+    .side-nav a:active {
+      transform: scale(.98);
+    }
+
+    .side-nav a[aria-current="page"] {
+      color: var(--primary-active);
+      background: var(--selection-fill);
+      font-weight: 650;
+    }
+
+    .nav-symbol {
+      display: inline-grid;
+      place-items: center;
+      width: 18px;
+      color: currentColor;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    .side-note {
+      margin-top: auto;
+      padding: 14px 10px 6px;
+      border-top: 1px solid var(--hairline-soft);
+      color: var(--muted);
+      font-size: var(--type-compact);
+      line-height: 1.6;
+    }
+
+    .side-note strong {
+      color: var(--body);
+      font-weight: 650;
+    }
+
+    .workspace {
+      min-width: 0;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 58px;
+      padding: 8px 28px;
+      border-bottom: 1px solid var(--hairline-soft);
+      background: color-mix(in srgb, var(--canvas) 94%, transparent);
+      -webkit-backdrop-filter: blur(16px);
+      backdrop-filter: blur(16px);
+    }
+
+    .topbar-title {
+      color: var(--ink);
+      font-size: var(--type-workspace-title);
+      font-weight: 650;
+    }
+
+    .topbar-subtitle {
+      margin-left: 7px;
+      color: var(--muted);
+      font-size: var(--type-metadata);
+      font-weight: 450;
+    }
+
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .theme-switch,
+    .type-switch {
+      display: flex;
+      padding: 3px;
+      border: 1px solid var(--hairline-soft);
+      border-radius: var(--radius-selection);
+      background: var(--surface-soft);
+    }
+
+    .theme-switch button,
+    .type-switch button {
+      min-width: 54px;
+      height: 28px;
+      padding: 0 9px;
+      border: 0;
+      border-radius: 7px;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      font-size: var(--type-metadata);
+      font-weight: 600;
+      transition: color 120ms var(--ease-out), background-color 120ms var(--ease-out), transform 120ms var(--ease-out);
+    }
+
+    .theme-switch button:hover,
+    .type-switch button:hover {
+      color: var(--body);
+    }
+
+    .theme-switch button:active,
+    .type-switch button:active {
+      transform: scale(.98);
+    }
+
+    .theme-switch button[aria-pressed="true"],
+    .type-switch button[aria-pressed="true"] {
+      color: var(--primary-active);
+      background: var(--selection-fill);
+    }
+
+    main {
+      width: min(100%, 1240px);
+      margin: 0 auto;
+      padding: 42px 34px 80px;
+    }
+
+    .intro {
+      display: grid;
+      grid-template-columns: minmax(0, 1.6fr) minmax(280px, .8fr);
+      gap: 44px;
+      align-items: end;
+      padding: 4px 0 38px;
+    }
+
+    .intro h1 {
+      max-width: 720px;
+      margin: 0;
+      color: var(--ink);
+      font-size: var(--type-display);
+      font-weight: 650;
+      line-height: 1.2;
+      text-wrap: balance;
+    }
+
+    .intro p {
+      max-width: 62ch;
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: var(--type-reading);
+      line-height: 1.75;
+      text-wrap: pretty;
+    }
+
+    .scope-summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-top: 1px solid var(--hairline);
+      border-bottom: 1px solid var(--hairline);
+    }
+
+    .scope-metric {
+      min-width: 0;
+      padding: 14px 16px;
+    }
+
+    .scope-metric + .scope-metric {
+      border-left: 1px solid var(--hairline-soft);
+    }
+
+    .scope-metric strong {
+      display: block;
+      color: var(--ink);
+      font-family: var(--font-mono);
+      font-size: var(--type-metric);
+      font-variant-numeric: tabular-nums;
+      line-height: 1.2;
+    }
+
+    .scope-metric span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: var(--type-compact);
+      line-height: 1.4;
+    }
+
+    .section {
+      scroll-margin-top: 76px;
+      padding: var(--section-pad) 0;
+      border-top: 1px solid var(--hairline);
+    }
+
+    .section:first-of-type {
+      border-top: 0;
+    }
+
+    .section-heading {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 20px;
+    }
+
+    .section-heading h2 {
+      margin: 0;
+      color: var(--ink);
+      font-size: var(--type-section-title);
+      font-weight: 650;
+      letter-spacing: -.006em;
+      line-height: 1.35;
+    }
+
+    .section-heading p {
+      max-width: 62ch;
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: var(--type-supporting);
+      line-height: 1.65;
+    }
+
+    .stage {
+      display: inline-flex;
+      align-items: center;
+      min-height: 25px;
+      padding: 0 8px;
+      border-radius: 999px;
+      font-size: var(--type-compact);
+      font-weight: 650;
+      white-space: nowrap;
+    }
+
+    .stage.stable {
+      color: var(--success);
+      background: color-mix(in srgb, var(--success) 10%, transparent);
+    }
+
+    .stage.pattern {
+      color: var(--accent-teal);
+      background: color-mix(in srgb, var(--accent-teal) 10%, transparent);
+    }
+
+    .stage.candidate {
+      color: var(--warning);
+      background: color-mix(in srgb, var(--warning) 10%, transparent);
+    }
+
+    .board {
+      padding: 18px;
+      border: 1px solid var(--hairline-soft);
+      border-radius: var(--radius-panel);
+      background: var(--surface-soft);
+    }
+
+    .board.flat {
+      padding: 0;
+      border-radius: 0;
+      border-right: 0;
+      border-left: 0;
+      background: transparent;
+    }
+
+    .board-label {
+      margin-bottom: 12px;
+      color: var(--muted);
+      font-size: var(--type-compact);
+      font-weight: 650;
+    }
+
+    .token-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .token {
+      overflow: hidden;
+      min-width: 0;
+      border: 1px solid var(--hairline-soft);
+      border-radius: var(--radius-control);
+      background: var(--surface-card);
+    }
+
+    .token-swatch {
+      height: 58px;
+      background: var(--swatch);
+      box-shadow: inset 0 -1px var(--hairline-soft);
+    }
+
+    .token-meta {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 9px 10px;
+    }
+
+    .token-name {
+      overflow: hidden;
+      color: var(--body);
+      font-size: var(--type-metadata);
+      font-weight: 650;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .token-value {
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: var(--type-compact);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .two-column {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--content-gap);
+    }
+
+    .three-column {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr .85fr;
+      gap: var(--content-gap);
+    }
+
+    .type-list {
+      display: grid;
+    }
+
+    .type-row {
+      display: grid;
+      grid-template-columns: minmax(110px, .55fr) minmax(0, 1.45fr);
+      gap: 18px;
+      align-items: baseline;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--hairline-soft);
+    }
+
+    .type-row:last-child {
+      border-bottom: 0;
+    }
+
+    .type-role {
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: var(--type-compact);
+    }
+
+    .type-sample {
+      color: var(--ink);
+    }
+
+    .type-sample.display-title {
+      font-size: var(--type-display);
+      font-weight: 650;
+      line-height: 1.25;
+    }
+
+    .type-sample.section-title {
+      font-size: var(--type-section-title);
+      font-weight: 650;
+    }
+
+    .type-sample.navigation {
+      font-size: var(--type-navigation);
+      font-weight: 550;
+    }
+
+    .type-sample.interface {
+      font-size: var(--type-interface);
+    }
+
+    .type-sample.reading {
+      font-size: var(--type-reading);
+      line-height: 1.8;
+    }
+
+    .type-sample.metadata {
+      color: var(--muted);
+      font-size: var(--type-metadata);
+    }
+
+    .type-sample.code {
+      font-family: var(--font-mono);
+      font-size: var(--type-code);
+    }
+
+    .measure-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .measure {
+      display: grid;
+      grid-template-columns: 82px minmax(0, 1fr) 44px;
+      align-items: center;
+      gap: 10px;
+      min-height: 24px;
+    }
+
+    .measure-name,
+    .measure-value {
+      color: var(--muted);
+      font-size: var(--type-compact);
+    }
+
+    .measure-value {
+      font-family: var(--font-mono);
+      text-align: right;
+    }
+
+    .measure-line {
+      height: 4px;
+      border-radius: 999px;
+      background: var(--primary);
+      transform: scaleX(var(--ratio));
+      transform-origin: left;
+    }
+
+    .radius-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .radius-chip {
+      display: grid;
+      place-items: center;
+      width: 74px;
+      height: 54px;
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius);
+      color: var(--muted);
+      background: var(--surface-card);
+      font-family: var(--font-mono);
+      font-size: 10px;
+    }
+
+    .component-stack {
+      display: grid;
+      gap: 22px;
+    }
+
+    .component-block + .component-block {
+      padding-top: 22px;
+      border-top: 1px solid var(--hairline-soft);
+    }
+
+    .component-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 13px;
+    }
+
+    .component-title {
+      color: var(--ink);
+      font-size: var(--type-supporting);
+      font-weight: 650;
+    }
+
+    .component-source {
+      color: var(--muted-soft);
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+    }
+
+    .sample-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .primary-button,
+    .secondary-button,
+    .quiet-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 32px;
+      padding: 0 13px;
+      border: 0;
+      border-radius: var(--radius-control);
+      cursor: pointer;
+      font-size: var(--type-supporting);
+      font-weight: 650;
+      white-space: nowrap;
+      transition: color 120ms var(--ease-out), background-color 120ms var(--ease-out), opacity 120ms var(--ease-out), transform 120ms var(--ease-out);
+    }
+
+    .primary-button {
+      color: var(--on-primary);
+      background: var(--primary-active);
+    }
+
+    .primary-button:hover {
+      background: color-mix(in srgb, var(--primary-active) 88%, var(--ink));
+    }
+
+    .secondary-button {
+      color: var(--body);
+      background: transparent;
+    }
+
+    .secondary-button:hover,
+    .quiet-button:hover {
+      background: var(--hover-fill);
+    }
+
+    .quiet-button {
+      min-height: 28px;
+      padding: 0 10px;
+      color: var(--muted);
+      background: transparent;
+    }
+
+    .primary-button:active,
+    .secondary-button:active,
+    .quiet-button:active,
+    .icon-button:active,
+    .segment button:active {
+      transform: scale(.98);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: .52;
+    }
+
+    .spinner {
+      width: 12px;
+      height: 12px;
+      border: 1.5px solid color-mix(in srgb, currentColor 28%, transparent);
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin 700ms linear infinite;
+    }
+
+    .icon-button {
+      display: inline-grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      border: 0;
+      border-radius: var(--radius-control);
+      color: var(--body);
+      background: transparent;
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 16px;
+      font-weight: 650;
+      transition: color 120ms var(--ease-out), background-color 120ms var(--ease-out), opacity 120ms var(--ease-out), transform 120ms var(--ease-out);
+    }
+
+    .icon-button:hover {
+      background: var(--hover-fill);
+    }
+
+    .icon-button.primary {
+      color: var(--primary-active);
+    }
+
+    .icon-button.danger {
+      color: var(--error);
+    }
+
+    .icon-button.danger:hover {
+      background: var(--danger-fill);
+    }
+
+    .icon-button.selected {
+      color: var(--primary-active);
+      background: var(--selection-fill);
+    }
+
+    .field {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+      padding: 0 10px;
+      border: 1px solid var(--hairline-soft);
+      border-radius: var(--radius-control);
+      background: var(--surface-card);
+      transition: border-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out), opacity 120ms var(--ease-out);
+    }
+
+    .field:focus-within {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px var(--focus-stroke);
+    }
+
+    .field-symbol {
+      color: var(--muted-soft);
+      font-family: var(--font-mono);
+      font-size: 13px;
+    }
+
+    .field input {
+      min-width: 0;
+      width: 100%;
+      height: 32px;
+      padding: 0;
+      border: 0;
+      outline: 0;
+      color: var(--body);
+      background: transparent;
+      font-size: var(--type-interface);
+    }
+
+    .field input::placeholder,
+    textarea::placeholder {
+      color: var(--muted-soft);
+      opacity: 1;
+    }
+
+    .clear-button {
+      display: none;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: 0;
+      border-radius: var(--radius-control);
+      color: var(--muted-soft);
+      background: transparent;
+      cursor: pointer;
+      font-family: var(--font-mono);
+    }
+
+    .clear-button.visible {
+      display: grid;
+    }
+
+    .clear-button:hover {
+      color: var(--body);
+      background: var(--hover-fill);
+    }
+
+    .menu-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      width: min(100%, 280px);
+      min-height: 34px;
+      padding: 0 11px;
+      border: 1px solid var(--hairline-soft);
+      border-radius: var(--radius-selection);
+      color: var(--body);
+      background: var(--surface-soft);
+    }
+
+    .menu-label small {
+      color: var(--muted-soft);
+      font-family: var(--font-mono);
+    }
+
+    .segment {
+      display: inline-flex;
+      gap: 2px;
+      padding: 3px;
+      border: 1px solid var(--hairline-soft);
+      border-radius: var(--radius-selection);
+      background: var(--surface-soft);
+    }
+
+    .segment button {
+      min-width: 82px;
+      height: 28px;
+      padding: 0 10px;
+      border: 0;
+      border-radius: 7px;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      font-size: var(--type-metadata);
+      font-weight: 650;
+      transition: color 180ms var(--ease-in-out), background-color 180ms var(--ease-in-out), transform 120ms var(--ease-out);
+    }
+
+    .segment button[aria-pressed="true"] {
+      color: var(--primary-active);
+      background: var(--selection-fill);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 24px;
+      min-height: 39px;
+      border-bottom: 1px solid var(--hairline-soft);
+    }
+
+    .tabs button {
+      position: relative;
+      min-width: 0;
+      padding: 0 0 10px;
+      border: 0;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      font-size: var(--type-supporting);
+      font-weight: 550;
+    }
+
+    .tabs button[aria-selected="true"] {
+      color: var(--primary-active);
+      font-weight: 650;
+    }
+
+    .tabs button[aria-selected="true"]::after {
+      position: absolute;
+      right: 0;
+      bottom: -1px;
+      left: 0;
+      height: 2px;
+      border-radius: 2px;
+      background: var(--primary-active);
+      content: "";
+    }
+
+    .tab-panel {
+      min-height: 54px;
+      padding-top: 13px;
+      color: var(--muted);
+      font-size: var(--type-metadata);
+    }
+
+    .section-header-demo {
+      display: flex;
+      align-items: start;
+      gap: 12px;
+    }
+
+    .section-header-demo > div:first-child {
+      min-width: 0;
+    }
+
+    .section-header-demo h3 {
+      margin: 0;
+      color: var(--ink);
+      font-size: var(--type-section-title);
+      font-weight: 650;
+      line-height: 1.35;
+    }
+
+    .section-header-demo p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: var(--type-metadata);
+      line-height: 1.55;
+    }
+
+    .section-header-demo .count {
+      margin-left: auto;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: var(--type-metadata);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      min-height: 28px;
+      padding: 0 9px;
+      border-radius: 999px;
+      font-size: var(--type-metadata);
+      font-weight: 650;
+    }
+
+    .status-badge.neutral {
+      color: var(--accent-teal);
+      background: color-mix(in srgb, var(--accent-teal) 10%, transparent);
+    }
+
+    .status-badge.success {
+      color: var(--success);
+      background: color-mix(in srgb, var(--success) 10%, transparent);
+    }
+
+    .status-badge.warning {
+      color: var(--warning);
+      background: color-mix(in srgb, var(--warning) 10%, transparent);
+    }
+
+    .status-badge.error {
+      color: var(--error);
+      background: color-mix(in srgb, var(--error) 10%, transparent);
+    }
+
+    .sidebar-demo {
+      overflow: hidden;
+      max-width: 360px;
+      border: 1px solid var(--hairline-soft);
+      border-radius: var(--radius-panel);
+      background: var(--surface-soft);
+    }
+
+    .sidebar-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: calc(100% - 12px);
+      min-height: 58px;
+      margin: 3px 6px;
+      padding: 7px 9px;
+      border: 0;
+      border-radius: var(--radius-selection);
+      color: var(--body);
+      background: transparent;
+      cursor: pointer;
+      text-align: left;
+      transition: background-color 120ms var(--ease-out), transform 120ms var(--ease-out);
+    }
+
+    .sidebar-row:hover {
+      background: var(--hover-fill);
+    }
+
+    .sidebar-row:active {
+      transform: scale(.99);
+    }
+
+    .sidebar-row.selected {
+      background: var(--selection-fill);
+    }
+
+    .avatar {
+      display: grid;
+      flex: 0 0 auto;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      color: var(--primary-active);
+      background: var(--selection-fill);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .row-copy {
+      min-width: 0;
+    }
+
+    .row-title {
+      overflow: hidden;
+      color: var(--ink);
+      font-size: var(--type-supporting);
+      font-weight: 650;
+      line-height: 1.35;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .row-detail {
+      overflow: hidden;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: var(--type-compact);
+      line-height: 1.35;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .semantic-state {
+      margin-left: auto;
+      color: var(--success);
+      font-family: var(--font-mono);
+      font-size: 10px;
+    }
+
+    .search-empty {
+      display: none;
+      padding: 30px 18px;
+      color: var(--muted);
+      text-align: center;
+      font-size: var(--type-metadata);
+    }
+
+    .feedback-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .feedback {
+      min-height: 132px;
+      padding: 16px;
+      border: 1px solid var(--hairline-soft);
+      border-radius: var(--radius-panel);
+      background: var(--surface-card);
+    }
+
+    .feedback-icon {
+      display: inline-grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      margin-bottom: 10px;
+      border-radius: 50%;
+      color: var(--accent-teal);
+      background: color-mix(in srgb, var(--accent-teal) 10%, transparent);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .feedback.error .feedback-icon {
+      color: var(--error);
+      background: var(--danger-fill);
+    }
+
+    .feedback h3 {
+      margin: 0;
+      color: var(--ink);
+      font-size: var(--type-interface);
+      font-weight: 650;
+    }
+
+    .feedback p {
+      margin: 5px 0 12px;
+      color: var(--muted);
+      font-size: var(--type-metadata);
+      line-height: 1.6;
+    }
+
+    .inline-feedback {
+      display: flex;
+      align-items: start;
+      gap: 7px;
+      margin-top: 12px;
+      color: var(--error);
+      font-size: var(--type-metadata);
+    }
+
+    .progress {
+      overflow: hidden;
+      height: 4px;
+      margin-top: 13px;
+      border-radius: 999px;
+      background: var(--surface-soft);
+    }
+
+    .progress-fill {
+      width: 100%;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--primary);
+      transform: scaleX(.58);
+      transform-origin: left;
+    }
+
+    .run-demo.running .progress-fill {
+      animation: progress-reveal 900ms var(--ease-out) both;
+    }
+
+    .run-indicator {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      margin-right: 7px;
+      border-radius: 50%;
+      background: var(--muted-soft);
+    }
+
+    .run-demo.running .run-indicator {
+      background: var(--primary-active);
+      animation: active-pulse 1150ms var(--ease-in-out) infinite alternate;
+    }
+
+    .composer {
+      padding: 13px 14px 10px;
+      border: 1px solid var(--hairline-soft);
+      border-radius: var(--radius-composer);
+      background: color-mix(in srgb, var(--surface-card) 92%, transparent);
+      box-shadow: 0 6px 18px var(--shadow);
+    }
+
+    .composer:focus-within {
+      border-color: var(--focus-stroke);
+      box-shadow: 0 0 0 2px var(--focus-stroke), 0 6px 18px var(--shadow);
+    }
+
+    .composer textarea {
+      display: block;
+      width: 100%;
+      min-height: 70px;
+      resize: vertical;
+      padding: 0;
+      border: 0;
+      outline: 0;
+      color: var(--body);
+      background: transparent;
+      font-size: var(--type-interface);
+      line-height: 1.7;
+    }
+
+    .composer-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 8px;
+      color: var(--muted-soft);
+      font-size: 10px;
+    }
+
+    .send-button {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border: 0;
+      border-radius: 50%;
+      color: var(--on-primary);
+      background: var(--primary-active);
+      cursor: pointer;
+      transition: opacity 120ms var(--ease-out), transform 120ms var(--ease-out);
+    }
+
+    .send-button:active {
+      transform: scale(.96);
+    }
+
+    .motion-list {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      border-top: 1px solid var(--hairline-soft);
+      border-left: 1px solid var(--hairline-soft);
+    }
+
+    .motion-token {
+      min-height: 96px;
+      padding: 13px;
+      border-right: 1px solid var(--hairline-soft);
+      border-bottom: 1px solid var(--hairline-soft);
+    }
+
+    .motion-token strong {
+      display: block;
+      overflow: hidden;
+      color: var(--ink);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .motion-token span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: var(--type-compact);
+    }
+
+    .motion-track {
+      position: relative;
+      height: 16px;
+      margin-top: 12px;
+    }
+
+    .motion-dot {
+      position: absolute;
+      top: 4px;
+      left: 0;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--primary-active);
+    }
+
+    .motion-token:hover .motion-dot {
+      transform: translateX(calc(100% + 34px));
+      transition: transform var(--duration) var(--curve);
+    }
+
+    .coverage-list {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 160px auto;
+      align-items: center;
+    }
+
+    .coverage-row {
+      display: contents;
+    }
+
+    .coverage-name,
+    .coverage-level,
+    .coverage-state {
+      padding: 11px 0;
+      border-bottom: 1px solid var(--hairline-soft);
+    }
+
+    .coverage-name {
+      min-width: 0;
+      color: var(--body);
+    }
+
+    .coverage-name code {
+      color: var(--ink);
+      font-family: var(--font-mono);
+      font-size: var(--type-compact);
+    }
+
+    .coverage-level {
+      padding-left: 18px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: var(--type-compact);
+    }
+
+    .coverage-state {
+      padding-left: 18px;
+      text-align: right;
+    }
+
+    .candidate-note {
+      margin-top: 18px;
+      padding: 13px 0 0;
+      border-top: 1px solid var(--hairline);
+      color: var(--muted);
+      font-size: var(--type-metadata);
+      line-height: 1.7;
+    }
+
+    .toast {
+      position: fixed;
+      top: 72px;
+      right: 22px;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-height: 44px;
+      max-width: min(380px, calc(100vw - 32px));
+      padding: 6px 8px 6px 14px;
+      border: 1px solid var(--hairline-soft);
+      border-radius: var(--radius-panel);
+      color: var(--body);
+      background: var(--surface-card);
+      box-shadow: 0 8px 24px var(--shadow);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-8px);
+      transition: opacity 220ms var(--ease-out), transform 220ms var(--ease-out);
+    }
+
+    .toast.visible {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+
+    .toast-icon {
+      color: var(--success);
+      font-family: var(--font-mono);
+      font-weight: 700;
+    }
+
+    .dialog-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: rgb(20 19 16 / 28%);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 160ms ease-in;
+    }
+
+    .dialog-backdrop.open {
+      opacity: 1;
+      pointer-events: auto;
+      transition-duration: 220ms;
+      transition-timing-function: var(--ease-out);
+    }
+
+    .dialog {
+      width: min(520px, 100%);
+      padding: 22px;
+      border: 1px solid var(--hairline-soft);
+      border-radius: var(--radius-modal);
+      background: var(--surface-card);
+      box-shadow: 0 18px 50px var(--shadow);
+      opacity: 0;
+      transform: translateY(8px) scale(.98);
+      transition: opacity 160ms ease-in, transform 160ms ease-in;
+    }
+
+    .dialog-backdrop.open .dialog {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      transition-duration: 220ms;
+      transition-timing-function: var(--ease-out);
+    }
+
+    .dialog-header {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .dialog h3 {
+      margin: 0;
+      color: var(--ink);
+      font-size: var(--type-section-title);
+      line-height: 1.4;
+    }
+
+    .dialog p {
+      margin: 7px 0 18px;
+      color: var(--muted);
+      font-size: var(--type-supporting);
+      line-height: 1.7;
+    }
+
+    .dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .footer-note {
+      padding-top: 24px;
+      border-top: 1px solid var(--hairline);
+      color: var(--muted);
+      font-size: var(--type-compact);
+    }
+
+    .footer-note a {
+      color: var(--primary-active);
+      text-underline-offset: 3px;
+    }
+
+    .client-review-note {
+      margin: -4px 0 18px;
+      color: var(--muted);
+      font-size: var(--type-metadata);
+    }
+
+    .client-preview-shell {
+      --client-stage-height: 650px;
+      --client-module-width: 168px;
+      --client-browser-width: 218px;
+      --client-work-list-width: 204px;
+      --client-inspector-width: 212px;
+      --client-nav-height: 36px;
+      --client-header-height: 52px;
+      --client-page-pad-y: 28px;
+      --client-page-pad-x: 30px;
+      --client-row-pad-y: 9px;
+      --client-row-pad-x: 9px;
+      --client-avatar-size: 30px;
+      --client-profile-avatar: 52px;
+      --client-panel-pad: 16px;
+      --client-compact-pad: 12px;
+      --client-sidebar-nav-font: var(--type-navigation);
+      --client-sidebar-heading-font: var(--type-workspace-title);
+      --client-list-title-font: var(--type-supporting);
+      --client-list-meta-font: var(--type-compact);
+      --client-list-label-font: var(--type-compact);
+      --client-sidebar-aux-font: var(--type-metadata);
+      overflow: hidden;
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius-modal);
+      background: var(--canvas);
+      box-shadow: 0 14px 34px var(--shadow);
+    }
+
+    html[data-type-scale="refined"] .client-preview-shell {
+      --type-display: 20px;
+      --type-section-title: 14px;
+      --type-workspace-title: 12.5px;
+      --type-navigation: 12px;
+      --type-sidebar-title: 12px;
+      --type-interface: 12px;
+      --type-reading: 13px;
+      --type-supporting: 11px;
+      --type-metadata: 10px;
+      --type-compact: 10px;
+      --type-code: 11px;
+      --type-metric: 18px;
+      --client-stage-height: 610px;
+      --client-module-width: 156px;
+      --client-browser-width: 202px;
+      --client-work-list-width: 188px;
+      --client-inspector-width: 196px;
+      --client-nav-height: 32px;
+      --client-header-height: 46px;
+      --client-page-pad-y: 23px;
+      --client-page-pad-x: 24px;
+      --client-row-pad-y: 7px;
+      --client-row-pad-x: 8px;
+      --client-avatar-size: 28px;
+      --client-profile-avatar: 46px;
+      --client-panel-pad: 13px;
+      --client-compact-pad: 10px;
+      --client-sidebar-nav-font: 11px;
+      --client-sidebar-heading-font: 11px;
+      --client-list-title-font: 10px;
+      --client-list-meta-font: 9.5px;
+      --client-list-label-font: 9px;
+      --client-sidebar-aux-font: 9.5px;
+    }
+
+    .client-window-bar {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      min-height: 38px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--hairline-soft);
+      background: var(--surface-soft);
+    }
+
+    .client-window-dots {
+      display: flex;
+      gap: 6px;
+    }
+
+    .client-window-dots i {
+      width: 9px;
+      height: 9px;
+      border: 1px solid var(--hairline);
+      border-radius: 50%;
+      background: var(--surface-card);
+    }
+
+    .client-window-title {
+      color: var(--muted);
+      font-size: var(--type-compact);
+      font-weight: 650;
+    }
+
+    .client-window-state {
+      justify-self: end;
+      color: var(--muted-soft);
+      font-size: var(--type-compact);
+    }
+
+    .client-stage {
+      display: grid;
+      grid-template-columns: var(--client-module-width) minmax(0, 1fr);
+      min-height: var(--client-stage-height);
+    }
+
+    .client-module-rail {
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+      padding: 14px 9px 10px;
+      border-right: 1px solid var(--hairline-soft);
+      background: var(--surface-soft);
+    }
+
+    .client-brand {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-height: 40px;
+      padding: 0 8px 11px;
+    }
+
+    .client-brand-mark {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      flex: 0 0 auto;
+      border-radius: var(--radius-selection);
+      color: var(--primary-active);
+      background: var(--selection-fill);
+      font-size: var(--type-compact);
+      font-weight: 750;
+    }
+
+    .client-brand strong,
+    .client-brand small {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .client-brand strong {
+      color: var(--ink);
+      font-size: var(--client-sidebar-heading-font);
+      line-height: 1.2;
+    }
+
+    .client-brand small {
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: var(--client-list-meta-font);
+      line-height: 1.2;
+    }
+
+    .client-module-nav {
+      display: grid;
+      gap: 2px;
+    }
+
+    .client-module-nav.bottom {
+      margin-top: auto;
+    }
+
+    .client-module-button {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      width: 100%;
+      min-height: var(--client-nav-height);
+      padding: 0 10px;
+      border: 0;
+      border-radius: var(--radius-selection);
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      font-size: var(--client-sidebar-nav-font);
+      text-align: left;
+      transition: color 120ms var(--ease-out), background-color 120ms var(--ease-out), transform 120ms var(--ease-out);
+    }
+
+    .client-module-button:hover {
+      color: var(--body);
+      background: var(--hover-fill);
+    }
+
+    .client-module-button:active {
+      transform: scale(.985);
+    }
+
+    .client-module-button[aria-selected="true"] {
+      color: var(--primary-active);
+      background: var(--selection-fill);
+      font-weight: 650;
+    }
+
+    .client-module-symbol {
+      display: inline-grid;
+      place-items: center;
+      width: 18px;
+      flex: 0 0 auto;
+      font-family: var(--font-mono);
+      font-size: var(--type-compact);
+    }
+
+    .client-page-stack {
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .client-page {
+      min-width: 0;
+      min-height: var(--client-stage-height);
+      height: 100%;
+    }
+
+    .client-page[hidden] {
+      display: none !important;
+    }
+
+    .client-page.single {
+      overflow: auto;
+      background: var(--canvas);
+    }
+
+    .client-page.browser {
+      display: grid;
+      grid-template-columns: var(--client-browser-width) minmax(0, 1fr);
+    }
+
+    .client-page.workroom {
+      display: grid;
+      grid-template-columns: var(--client-work-list-width) minmax(280px, 1fr) var(--client-inspector-width);
+    }
+
+    .client-context,
+    .client-inspector {
+      min-width: 0;
+      overflow: hidden auto;
+      background: var(--surface-soft);
+    }
+
+    .client-context {
+      border-right: 1px solid var(--hairline-soft);
+    }
+
+    .client-inspector {
+      border-left: 1px solid var(--hairline-soft);
+    }
+
+    .client-context-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: var(--client-header-height);
+      padding: 0 14px;
+      border-bottom: 1px solid var(--hairline-soft);
+    }
+
+    .client-context-header strong {
+      overflow: hidden;
+      color: var(--ink);
+      font-size: var(--client-sidebar-heading-font);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .client-context-header .client-count {
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: var(--client-list-meta-font);
+    }
+
+    .client-context-header .icon-button {
+      margin-left: auto;
+    }
+
+    .client-context-tools {
+      padding: var(--client-compact-pad);
+      border-bottom: 1px solid var(--hairline-soft);
+    }
+
+    .client-search {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 31px;
+      padding: 0 9px;
+      border: 1px solid var(--hairline-soft);
+      border-radius: var(--radius-control);
+      color: var(--muted-soft);
+      background: var(--surface-card);
+      font-size: var(--client-sidebar-aux-font);
+    }
+
+    .client-list {
+      display: grid;
+      gap: 2px;
+      padding: var(--client-row-pad-x);
+    }
+
+    .client-list-label {
+      padding: 7px 8px 4px;
+      color: var(--muted);
+      font-size: var(--client-list-label-font);
+      font-weight: 650;
+    }
+
+    .client-list-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      min-width: 0;
+      padding: var(--client-row-pad-y) var(--client-row-pad-x);
+      border-radius: var(--radius-selection);
+      color: var(--body);
+    }
+
+    .client-list-row.selected {
+      color: var(--ink);
+      background: var(--selection-fill);
+    }
+
+    .client-list-row.compact {
+      align-items: center;
+      min-height: 31px;
+      padding: 5px 8px;
+    }
+
+    .client-list-row .avatar {
+      width: var(--client-avatar-size);
+      height: var(--client-avatar-size);
+      flex-basis: var(--client-avatar-size);
+      border-radius: 9px;
+      font-size: var(--type-compact);
+    }
+
+    .client-row-copy {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .client-row-title,
+    .client-row-meta {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .client-row-title {
+      color: inherit;
+      font-size: var(--client-list-title-font);
+      font-weight: 650;
+      line-height: 1.35;
+    }
+
+    .client-row-meta {
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: var(--client-list-meta-font);
+      line-height: 1.4;
+    }
+
+    .client-status-dot {
+      width: 6px;
+      height: 6px;
+      margin-top: 5px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--success);
+    }
+
+    .client-status-dot.waiting {
+      background: var(--warning);
+    }
+
+    .client-detail {
+      min-width: 0;
+      overflow: hidden auto;
+      background: var(--canvas);
+    }
+
+    .client-detail-inner {
+      width: min(100%, 760px);
+      margin: 0 auto;
+      padding: var(--client-page-pad-y) var(--client-page-pad-x) calc(var(--client-page-pad-y) + 6px);
+    }
+
+    .client-page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: calc(var(--client-page-pad-y) - 4px);
+    }
+
+    .client-page-header h3,
+    .client-page-header p {
+      margin: 0;
+    }
+
+    .client-page-header h3 {
+      color: var(--ink);
+      font-size: var(--type-display);
+      font-weight: 650;
+      line-height: 1.25;
+    }
+
+    .client-page-header p {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: var(--type-supporting);
+      line-height: 1.6;
+    }
+
+    .client-page-actions {
+      display: flex;
+      align-items: center;
+      flex: 0 0 auto;
+      gap: 6px;
+    }
+
+    .client-section {
+      margin-top: 24px;
+    }
+
+    .client-section:first-child {
+      margin-top: 0;
+    }
+
+    .client-section-title {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 10px;
+      color: var(--ink);
+      font-size: var(--type-section-title);
+      font-weight: 650;
+    }
+
+    .client-section-title small {
+      color: var(--muted);
+      font-size: var(--type-compact);
+      font-weight: 450;
+    }
+
+    .client-task-entry {
+      padding: var(--client-panel-pad);
+      border: 1px solid var(--hairline-soft);
+      border-radius: var(--radius-panel);
+      background: var(--surface-card);
+    }
+
+    .client-task-entry h4,
+    .client-task-entry p {
+      margin: 0;
+    }
+
+    .client-task-entry h4 {
+      color: var(--ink);
+      font-size: var(--type-section-title);
+    }
+
+    .client-task-entry p {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: var(--type-metadata);
+    }
+
+    .client-usage-card {
+      padding: var(--client-panel-pad);
+      border: 1px solid var(--hairline-soft);
+      border-radius: var(--radius-panel);
+      background: var(--surface-card);
+    }
+
+    .client-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--hairline-soft);
+    }
+
+    .client-metric span,
+    .client-metric strong,
+    .client-metric small {
+      display: block;
+    }
+
+    .client-metric span {
+      color: var(--muted);
+      font-size: var(--type-compact);
+    }
+
+    .client-metric strong {
+      margin-top: 3px;
+      color: var(--ink);
+      font-family: var(--font-mono);
+      font-size: var(--type-metric);
+      font-variant-numeric: tabular-nums;
+      line-height: 1.25;
+    }
+
+    .client-metric small {
+      margin-top: 2px;
+      color: var(--muted-soft);
+      font-size: var(--type-compact);
+    }
+
+    .client-chart-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-top: 13px;
+      color: var(--body);
+      font-size: var(--type-supporting);
+      font-weight: 650;
+    }
+
+    .client-chart-legend {
+      display: flex;
+      gap: 10px;
+      color: var(--muted);
+      font-size: var(--type-compact);
+      font-weight: 450;
+    }
+
+    .client-chart {
+      display: block;
+      width: 100%;
+      height: 132px;
+      margin-top: 8px;
+    }
+
+    .client-chart .grid {
+      stroke: var(--hairline-soft);
+      stroke-width: 1;
+    }
+
+    .client-chart .input-line,
+    .client-chart .output-line {
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .client-chart .input-line {
+      stroke: var(--accent-teal);
+      stroke-width: 2.2;
+    }
+
+    .client-chart .output-line {
+      stroke: var(--primary-active);
+      stroke-width: 1.8;
+    }
+
+    .client-profile-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 13px;
+    }
+
+    .client-profile-head .avatar {
+      width: var(--client-profile-avatar);
+      height: var(--client-profile-avatar);
+      flex-basis: var(--client-profile-avatar);
+      border-radius: 14px;
+      font-size: var(--type-section-title);
+    }
+
+    .client-profile-copy {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .client-profile-copy h3 {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0;
+      color: var(--ink);
+      font-size: var(--type-display);
+      line-height: 1.25;
+    }
+
+    .client-profile-copy p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: var(--type-supporting);
+    }
+
+    .client-tabs {
+      display: flex;
+      gap: 18px;
+      margin-top: 22px;
+      border-bottom: 1px solid var(--hairline-soft);
+    }
+
+    .client-tab {
+      position: relative;
+      padding: 0 0 9px;
+      color: var(--muted);
+      font-size: var(--type-supporting);
+      font-weight: 550;
+    }
+
+    .client-tab.active {
+      color: var(--ink);
+    }
+
+    .client-tab.active::after {
+      position: absolute;
+      right: 0;
+      bottom: -1px;
+      left: 0;
+      height: 2px;
+      border-radius: 999px;
+      background: var(--primary-active);
+      content: "";
+    }
+
+    .client-document {
+      margin-top: 20px;
+      color: var(--body);
+      font-size: var(--type-reading);
+      line-height: 1.8;
+    }
+
+    .client-document h4 {
+      margin: 0 0 8px;
+      color: var(--ink);
+      font-size: var(--type-section-title);
+    }
+
+    .client-document p {
+      margin: 0 0 12px;
+    }
+
+    .client-document ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .client-room-header,
+    .client-document-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: var(--client-header-height);
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--hairline-soft);
+    }
+
+    .client-room-header strong,
+    .client-document-bar strong {
+      display: block;
+      overflow: hidden;
+      color: var(--ink);
+      font-size: var(--type-workspace-title);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .client-room-header small,
+    .client-document-bar small {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: var(--type-compact);
+    }
+
+    .cream-timeline-host {
+      --timeline-reading-measure: 680px;
+      --timeline-user-measure: 520px;
+      --timeline-inline-inset: 22px;
+      --timeline-block-start: 20px;
+      --timeline-block-end: 24px;
+      --timeline-item-gap: 20px;
+      min-width: 0;
+    }
+
+    .cream-timeline-host[data-timeline-density="compact"] {
+      --timeline-reading-measure: 660px;
+      --timeline-user-measure: 480px;
+      --timeline-block-end: 18px;
+      --timeline-item-gap: 20px;
+    }
+
+    .cream-timeline-host[data-timeline-density="regular"] {
+      --timeline-reading-measure: 700px;
+      --timeline-user-measure: 520px;
+      --timeline-block-end: 96px;
+      --timeline-item-gap: 16px;
+    }
+
+    .cream-timeline {
+      min-width: 0;
+      color: var(--body);
+    }
+
+    .cream-timeline-reading {
+      display: grid;
+      width: min(100%, var(--timeline-reading-measure));
+      gap: var(--timeline-item-gap);
+      margin: 0 auto;
+      padding: var(--timeline-block-start) var(--timeline-inline-inset) var(--timeline-block-end);
+    }
+
+    .cream-timeline-item {
+      min-width: 0;
+    }
+
+    .cream-timeline-user-message {
+      display: grid;
+      width: min(76%, var(--timeline-user-measure));
+      justify-self: end;
+      gap: 5px;
+    }
+
+    .cream-timeline-user-bubble {
+      width: fit-content;
+      max-width: 100%;
+      justify-self: end;
+      padding: 9px 12px;
+      border-radius: 12px;
+      color: var(--body);
+      background: var(--surface-soft);
+      font-size: var(--type-reading);
+      line-height: 1.68;
+      overflow-wrap: anywhere;
+    }
+
+    .cream-timeline-message-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 3px;
+      min-height: 24px;
+      color: var(--muted-soft);
+      font-family: var(--font-mono);
+      font-size: var(--type-compact);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .cream-timeline-message-controls {
+      display: flex;
+      gap: 3px;
+      opacity: 0;
+      transition: opacity 120ms var(--ease-out);
+    }
+
+    .cream-timeline-user-message:hover .cream-timeline-message-controls,
+    .cream-timeline-user-message:focus-within .cream-timeline-message-controls {
+      opacity: 1;
+    }
+
+    .cream-timeline-agent-row {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .cream-timeline-avatar {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 9px;
+      color: var(--primary-active);
+      background: var(--selection-fill);
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .cream-timeline-agent-content,
+    .cream-timeline-body {
+      min-width: 0;
+    }
+
+    .cream-timeline-message-head {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 24px;
+      margin-bottom: 5px;
+    }
+
+    .cream-timeline-author {
+      color: var(--ink);
+      font-size: var(--type-supporting);
+      font-weight: 650;
+    }
+
+    .cream-timeline-status {
+      display: inline-grid;
+      place-items: center;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      color: var(--success);
+      background: color-mix(in srgb, var(--success) 10%, transparent);
+      font-family: var(--font-mono);
+      font-size: 8px;
+      font-weight: 700;
+    }
+
+    .cream-timeline-status.waiting {
+      color: var(--warning);
+      background: color-mix(in srgb, var(--warning) 10%, transparent);
+    }
+
+    .cream-timeline-time {
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: var(--type-compact);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .cream-timeline-message-head .cream-timeline-icon-button {
+      margin-left: auto;
+    }
+
+    .cream-timeline-icon-button {
+      display: inline-grid;
+      place-items: center;
+      width: 26px;
+      height: 26px;
+      padding: 0;
+      border: 0;
+      border-radius: var(--radius-sm);
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      transition: color 120ms var(--ease-out), background-color 120ms var(--ease-out), transform 120ms var(--ease-out);
+    }
+
+    .cream-timeline-icon-button:hover {
+      color: var(--body);
+      background: var(--hover-fill);
+    }
+
+    .cream-timeline-icon-button:active {
+      transform: scale(.96);
+    }
+
+    .cream-timeline-icon-button.copied {
+      color: var(--success);
+      background: color-mix(in srgb, var(--success) 10%, transparent);
+    }
+
+    .cream-timeline-markdown {
+      min-width: 0;
+      color: var(--body);
+      font-size: var(--type-reading);
+      line-height: 1.72;
+      overflow-wrap: anywhere;
+    }
+
+    .cream-timeline-markdown h1,
+    .cream-timeline-markdown h2,
+    .cream-timeline-markdown h3,
+    .cream-timeline-markdown p,
+    .cream-timeline-markdown ul,
+    .cream-timeline-markdown ol,
+    .cream-timeline-markdown blockquote,
+    .cream-timeline-markdown pre,
+    .cream-timeline-markdown table {
+      margin-top: 0;
+    }
+
+    .cream-timeline-markdown h1,
+    .cream-timeline-markdown h2,
+    .cream-timeline-markdown h3 {
+      color: var(--ink);
+      font-weight: 650;
+      line-height: 1.35;
+    }
+
+    .cream-timeline-markdown h1 {
+      margin-bottom: 9px;
+      font-size: calc(var(--type-reading) + 5px);
+    }
+
+    .cream-timeline-markdown h2 {
+      margin-bottom: 7px;
+      font-size: calc(var(--type-reading) + 2px);
+    }
+
+    .cream-timeline-markdown h3 {
+      margin-bottom: 6px;
+      font-size: var(--type-reading);
+    }
+
+    .cream-timeline-markdown p {
+      margin-bottom: 9px;
+    }
+
+    .cream-timeline-markdown strong {
+      color: var(--ink);
+      font-weight: 650;
+    }
+
+    .cream-timeline-markdown a {
+      color: var(--primary-active);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+
+    .cream-timeline-markdown ul,
+    .cream-timeline-markdown ol {
+      display: grid;
+      gap: 4px;
+      margin-bottom: 10px;
+      padding-left: 19px;
+    }
+
+    .cream-timeline-markdown li::marker {
+      color: var(--primary-active);
+      font-size: .82em;
+    }
+
+    .cream-timeline-markdown blockquote {
+      margin-right: 0;
+      margin-bottom: 10px;
+      margin-left: 0;
+      padding: 2px 0 2px 12px;
+      border-left: 1px solid color-mix(in srgb, var(--primary) 48%, transparent);
+      color: var(--muted);
+    }
+
+    .cream-timeline-markdown code {
+      padding: 1px 4px;
+      border-radius: 4px;
+      color: var(--body);
+      background: var(--surface-soft);
+      font-family: var(--font-mono);
+      font-size: var(--type-code);
+    }
+
+    .cream-timeline-code-block {
+      overflow: hidden;
+      margin-bottom: 11px;
+      border: 1px solid var(--hairline-soft);
+      border-radius: var(--radius-control);
+      background: var(--surface-soft);
+    }
+
+    .cream-timeline-code-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 27px;
+      padding: 0 7px 0 10px;
+      border-bottom: 1px solid var(--hairline-soft);
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: var(--type-compact);
+    }
+
+    .cream-timeline-markdown pre {
+      overflow: auto;
+      margin-bottom: 0;
+      padding: 10px 12px 12px;
+      color: var(--body);
+      font-family: var(--font-mono);
+      font-size: var(--type-code);
+      line-height: 1.65;
+      white-space: pre;
+    }
+
+    .cream-timeline-markdown pre code {
+      padding: 0;
+      border-radius: 0;
+      background: transparent;
+      font-size: inherit;
+    }
+
+    .cream-timeline-table-wrap {
+      overflow-x: auto;
+      margin-bottom: 11px;
+      border-top: 1px solid var(--hairline-soft);
+      border-bottom: 1px solid var(--hairline-soft);
+    }
+
+    .cream-timeline-markdown table {
+      width: 100%;
+      margin-bottom: 0;
+      border-collapse: collapse;
+      font-size: var(--type-supporting);
+      line-height: 1.5;
+    }
+
+    .cream-timeline-markdown th,
+    .cream-timeline-markdown td {
+      padding: 7px 9px;
+      border-bottom: 1px solid var(--hairline-soft);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .cream-timeline-markdown th {
+      color: var(--ink);
+      background: var(--surface-soft);
+      font-weight: 650;
+    }
+
+    .cream-timeline-markdown tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .cream-timeline-markdown hr {
+      height: 1px;
+      margin: 13px 0;
+      border: 0;
+      background: var(--hairline-soft);
+    }
+
+    .cream-timeline-runtime-event {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: var(--radius-control);
+      color: var(--muted);
+      background: var(--surface-soft);
+      font-size: var(--type-supporting);
+      line-height: 1.55;
+    }
+
+    .cream-timeline-runtime-event strong {
+      color: var(--body);
+      font-weight: 650;
+    }
+
+    .cream-timeline-streaming {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      min-height: 22px;
+      color: var(--muted);
+      font-size: var(--type-supporting);
+    }
+
+    .cream-timeline-streaming-dots {
+      display: inline-flex;
+      gap: 3px;
+    }
+
+    .cream-timeline-streaming-dots i {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: currentColor;
+      animation: timeline-streaming 900ms var(--ease-in-out) infinite alternate;
+    }
+
+    .cream-timeline-streaming-dots i:nth-child(2) { animation-delay: 120ms; }
+    .cream-timeline-streaming-dots i:nth-child(3) { animation-delay: 240ms; }
+
+    .timeline-showcase {
+      display: grid;
+      grid-template-columns: minmax(0, 1.8fr) minmax(220px, .72fr);
+      overflow: hidden;
+      border: 1px solid var(--hairline-soft);
+      border-radius: var(--radius-panel);
+      background: var(--surface-card);
+      box-shadow: 0 8px 24px var(--shadow);
+    }
+
+    .timeline-showcase-main {
+      min-width: 0;
+      background: var(--canvas);
+    }
+
+    .timeline-showcase-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 46px;
+      padding: 7px 10px 7px 14px;
+      border-bottom: 1px solid var(--hairline-soft);
+      background: var(--surface-soft);
+    }
+
+    .timeline-showcase-toolbar strong {
+      display: block;
+      color: var(--ink);
+      font-size: var(--type-supporting);
+    }
+
+    .timeline-showcase-toolbar small {
+      display: block;
+      margin-top: 1px;
+      color: var(--muted);
+      font-size: var(--type-compact);
+    }
+
+    .timeline-density-switch {
+      display: inline-flex;
+      padding: 2px;
+      border-radius: var(--radius-control);
+      background: var(--canvas);
+    }
+
+    .timeline-density-switch button {
+      min-width: 54px;
+      min-height: 26px;
+      padding: 0 8px;
+      border: 0;
+      border-radius: var(--radius-sm);
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      font-size: var(--type-compact);
+      transition: color 120ms var(--ease-out), background-color 120ms var(--ease-out), transform 120ms var(--ease-out);
+    }
+
+    .timeline-density-switch button:hover {
+      color: var(--body);
+    }
+
+    .timeline-density-switch button:active {
+      transform: scale(.96);
+    }
+
+    .timeline-density-switch button[aria-pressed="true"] {
+      color: var(--ink);
+      background: var(--surface-card);
+      box-shadow: 0 1px 3px var(--shadow);
+      font-weight: 650;
+    }
+
+    .timeline-showcase-canvas {
+      min-height: 520px;
+    }
+
+    .timeline-showcase-canvas .cream-timeline-host {
+      --timeline-block-end: 28px;
+    }
+
+    .timeline-contract-panel {
+      padding: 18px 16px 20px;
+      border-left: 1px solid var(--hairline-soft);
+      background: var(--surface-soft);
+    }
+
+    .timeline-contract-panel h3,
+    .timeline-contract-panel p {
+      margin-top: 0;
+    }
+
+    .timeline-contract-panel h3 {
+      margin-bottom: 5px;
+      color: var(--ink);
+      font-size: var(--type-workspace-title);
+    }
+
+    .timeline-contract-panel > p {
+      margin-bottom: 16px;
+      color: var(--muted);
+      font-size: var(--type-metadata);
+      line-height: 1.6;
+    }
+
+    .timeline-contract-list {
+      margin: 0;
+    }
+
+    .timeline-contract-list > div {
+      padding: 10px 0;
+      border-top: 1px solid var(--hairline-soft);
+    }
+
+    .timeline-contract-list dt {
+      color: var(--ink);
+      font-family: var(--font-mono);
+      font-size: var(--type-compact);
+      font-weight: 650;
+    }
+
+    .timeline-contract-list dd {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: var(--type-compact);
+      line-height: 1.55;
+    }
+
+    .timeline-usage-map {
+      display: grid;
+      gap: 7px;
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid var(--hairline-soft);
+      color: var(--muted);
+      font-size: var(--type-compact);
+    }
+
+    .timeline-usage-map span {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .timeline-usage-map code {
+      color: var(--body);
+      font-size: inherit;
+    }
+
+    .client-work-timeline {
+      min-height: 0;
+    }
+
+    .client-proposal {
+      padding: var(--client-panel-pad);
+      border: 1px solid var(--hairline-soft);
+      border-radius: var(--radius-panel);
+      background: var(--surface-card);
+    }
+
+    .client-proposal-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .client-proposal h4,
+    .client-proposal p {
+      margin: 0;
+    }
+
+    .client-proposal h4 {
+      color: var(--ink);
+      font-size: var(--type-supporting);
+    }
+
+    .client-proposal p {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: var(--type-compact);
+    }
+
+    .client-assignment {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--hairline-soft);
+    }
+
+    .client-assignment .avatar {
+      width: 28px;
+      height: 28px;
+      flex-basis: 28px;
+      border-radius: 8px;
+    }
+
+    .client-room-composer {
+      position: sticky;
+      bottom: 0;
+      padding: 8px 16px 14px;
+      background: color-mix(in srgb, var(--canvas) 92%, transparent);
+      backdrop-filter: blur(12px);
+    }
+
+    .client-inspector-inner {
+      padding: var(--client-panel-pad) var(--client-compact-pad);
+    }
+
+    .client-inspector h4 {
+      margin: 0;
+      color: var(--ink);
+      font-size: var(--client-sidebar-heading-font);
+    }
+
+    .client-inspector-section {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--hairline-soft);
+    }
+
+    .client-inspector-label {
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: var(--client-list-label-font);
+      font-weight: 650;
+    }
+
+    .client-progress {
+      overflow: hidden;
+      height: 4px;
+      margin-top: 9px;
+      border-radius: 999px;
+      background: var(--hairline-soft);
+    }
+
+    .client-progress i {
+      display: block;
+      width: 38%;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--primary-active);
+    }
+
+    .client-key-value {
+      display: grid;
+      grid-template-columns: 74px minmax(0, 1fr);
+      gap: 8px;
+      padding: 7px 0;
+      border-bottom: 1px solid var(--hairline-soft);
+      font-size: var(--client-sidebar-aux-font);
+    }
+
+    .client-key-value span:first-child {
+      color: var(--muted);
+    }
+
+    .client-key-value span:last-child {
+      overflow-wrap: anywhere;
+      color: var(--body);
+    }
+
+    .client-folder {
+      width: 14px;
+      flex: 0 0 auto;
+      color: var(--primary-active);
+      font-family: var(--font-mono);
+      font-size: var(--client-list-meta-font);
+    }
+
+    .client-document-body {
+      width: min(100%, 700px);
+      margin: 0 auto;
+      padding: var(--client-page-pad-y) var(--client-page-pad-x) calc(var(--client-page-pad-y) + 6px);
+    }
+
+    .client-document-body h3,
+    .client-document-body h4,
+    .client-document-body p {
+      margin-top: 0;
+    }
+
+    .client-document-body h3 {
+      color: var(--ink);
+      font-size: var(--type-display);
+    }
+
+    .client-document-body h4 {
+      margin-bottom: 7px;
+      color: var(--ink);
+      font-size: var(--type-section-title);
+    }
+
+    .client-document-body p,
+    .client-document-body li {
+      color: var(--body);
+      font-size: var(--type-reading);
+      line-height: 1.8;
+    }
+
+    .client-package-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: var(--client-page-pad-y) var(--client-page-pad-x) 0;
+    }
+
+    .client-package-icon {
+      display: grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      flex: 0 0 auto;
+      border-radius: 12px;
+      color: var(--primary-active);
+      background: var(--selection-fill);
+      font-family: var(--font-mono);
+      font-size: var(--type-metadata);
+      font-weight: 700;
+    }
+
+    .client-package-copy {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .client-package-copy h3,
+    .client-package-copy p {
+      margin: 0;
+    }
+
+    .client-package-copy h3 {
+      color: var(--ink);
+      font-size: var(--type-section-title);
+    }
+
+    .client-package-copy p {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: var(--type-metadata);
+    }
+
+    .client-package-tabs {
+      margin: 17px 24px 0;
+    }
+
+    .client-package-body {
+      display: grid;
+      grid-template-columns: 184px minmax(0, 1fr);
+      min-height: 500px;
+      margin-top: 0;
+      border-top: 1px solid var(--hairline-soft);
+    }
+
+    .client-package-tree {
+      padding: 10px 8px;
+      border-right: 1px solid var(--hairline-soft);
+      background: var(--surface-soft);
+    }
+
+    .client-code {
+      margin: 10px 0 0;
+      padding: 12px;
+      border-radius: var(--radius-control);
+      color: var(--body);
+      background: var(--surface-soft);
+      font-family: var(--font-mono);
+      font-size: var(--type-code);
+      line-height: 1.7;
+      white-space: pre-wrap;
+    }
+
+    .client-archive-list {
+      display: grid;
+      gap: 3px;
+    }
+
+    .client-archive-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 54px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--hairline-soft);
+    }
+
+    .client-archive-row:last-child {
+      border-bottom: 0;
+    }
+
+    .client-archive-row .avatar {
+      width: 34px;
+      height: 34px;
+      flex-basis: 34px;
+      border-radius: 10px;
+    }
+
+    .client-archive-actions {
+      display: flex;
+      margin-left: auto;
+      gap: 4px;
+    }
+
+    .client-settings-page {
+      width: min(100%, 620px);
+      margin: 0 auto;
+      padding: var(--client-page-pad-y) var(--client-page-pad-x);
+    }
+
+    .client-settings-card {
+      border-top: 1px solid var(--hairline-soft);
+      border-bottom: 1px solid var(--hairline-soft);
+    }
+
+    .client-setting-row {
+      display: grid;
+      grid-template-columns: 104px minmax(0, 1fr);
+      align-items: center;
+      min-height: 48px;
+      border-bottom: 1px solid var(--hairline-soft);
+      font-size: var(--type-supporting);
+    }
+
+    .client-setting-row:last-child {
+      border-bottom: 0;
+    }
+
+    .client-setting-row span:first-child {
+      color: var(--muted);
+    }
+
+    .client-setting-row span:last-child {
+      color: var(--ink);
+    }
+
+    .client-footnote {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: var(--type-compact);
+      line-height: 1.6;
+    }
+
+    .client-source-map {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+      color: var(--muted-soft);
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+    }
+
+    .client-source-map span {
+      padding: 3px 7px;
+      border: 1px solid var(--hairline-soft);
+      border-radius: 999px;
+    }
+
+    .client-module-button.contextual {
+      width: calc(100% - 14px);
+      min-height: 28px;
+      margin-left: 14px;
+      padding-left: 8px;
+      color: var(--muted-soft);
+      font-size: var(--client-list-meta-font);
+    }
+
+    .client-page.chat {
+      height: var(--client-stage-height);
+      min-height: var(--client-stage-height);
+    }
+
+    .client-chat-detail {
+      display: flex;
+      min-width: 0;
+      min-height: 0;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--canvas);
+    }
+
+    .client-chat-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: var(--client-header-height);
+      padding: 0 14px;
+      border-bottom: 1px solid var(--hairline-soft);
+    }
+
+    .client-chat-avatar {
+      display: grid;
+      place-items: center;
+      width: 26px;
+      height: 26px;
+      flex: 0 0 auto;
+      border-radius: 8px;
+      color: var(--primary-active);
+      background: var(--selection-fill);
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .client-chat-title {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .client-chat-title strong,
+    .client-chat-title small {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .client-chat-title strong {
+      color: var(--ink);
+      font-size: var(--type-workspace-title);
+      line-height: 1.25;
+    }
+
+    .client-chat-title small {
+      margin-top: 1px;
+      color: var(--muted);
+      font-size: var(--type-compact);
+      line-height: 1.25;
+    }
+
+    .client-chat-toolbar {
+      display: flex;
+      gap: 3px;
+    }
+
+    .client-chat-icon-button {
+      display: inline-grid;
+      place-items: center;
+      width: 26px;
+      height: 26px;
+      padding: 0;
+      border: 0;
+      border-radius: var(--radius-sm);
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      transition: color 120ms var(--ease-out), background-color 120ms var(--ease-out), transform 120ms var(--ease-out);
+    }
+
+    .client-chat-icon-button:hover {
+      color: var(--body);
+      background: var(--hover-fill);
+    }
+
+    .client-chat-icon-button:active {
+      transform: scale(.96);
+    }
+
+    .client-chat-icon-button.copied {
+      color: var(--success);
+      background: color-mix(in srgb, var(--success) 10%, transparent);
+    }
+
+    .client-chat-stream {
+      min-height: 0;
+      flex: 1;
+      overflow: hidden auto;
+      padding: 0;
+    }
+
+    .client-chat-composer-wrap {
+      padding: 7px 18px 13px;
+      background: color-mix(in srgb, var(--canvas) 94%, transparent);
+    }
+
+    .client-shared-composer {
+      width: 100%;
+      padding: 10px 11px 7px;
+      border: 1px solid var(--hairline-soft);
+      border-radius: var(--radius-composer);
+      background: var(--surface-card);
+      box-shadow: 0 5px 16px var(--shadow);
+    }
+
+    .client-shared-composer:focus-within {
+      border-color: var(--focus-stroke);
+      box-shadow: 0 0 0 2px var(--focus-stroke), 0 5px 16px var(--shadow);
+    }
+
+    .client-shared-composer.expanded {
+      margin-top: 12px;
+      padding: 11px 12px 8px;
+    }
+
+    .client-shared-composer.compact {
+      width: min(100%, 660px);
+      margin: 0 auto;
+    }
+
+    .client-shared-composer textarea {
+      display: block;
+      width: 100%;
+      min-height: 34px;
+      resize: none;
+      padding: 0;
+      border: 0;
+      outline: 0;
+      color: var(--body);
+      background: transparent;
+      font-size: var(--type-interface);
+      line-height: 1.6;
+    }
+
+    .client-shared-composer.regular textarea {
+      min-height: 38px;
+    }
+
+    .client-shared-composer.expanded textarea {
+      min-height: 46px;
+    }
+
+    .client-shared-composer-footer {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 5px;
+      color: var(--muted-soft);
+      font-size: var(--type-compact);
+    }
+
+    .client-shared-composer-footer .spacer {
+      flex: 1;
+    }
+
+    .client-shared-composer-footer .send-button {
+      width: 30px;
+      height: 30px;
+      margin-left: 3px;
+    }
+
+    @keyframes timeline-streaming {
+      from { opacity: .35; transform: scale(.82); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes progress-reveal {
+      from { transform: scaleX(.08); }
+      to { transform: scaleX(.76); }
+    }
+
+    @keyframes active-pulse {
+      from { opacity: .45; transform: scale(.88); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    @media (max-width: 1040px) {
+      .client-stage {
+        grid-template-columns: 152px minmax(0, 1fr);
+      }
+
+      .client-page.browser {
+        grid-template-columns: 194px minmax(0, 1fr);
+      }
+
+      .client-page.workroom {
+        grid-template-columns: 184px minmax(260px, 1fr);
+      }
+
+      .client-page.workroom .client-inspector {
+        display: none;
+      }
+
+      .client-detail-inner {
+        padding-right: 24px;
+        padding-left: 24px;
+      }
+
+      .client-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .token-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .three-column {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .motion-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 820px) {
+      :root {
+        --section-pad: 26px;
+      }
+
+      .app-shell {
+        display: block;
+      }
+
+      .client-stage {
+        display: block;
+        min-height: 0;
+      }
+
+      .client-module-rail {
+        display: block;
+        padding: 9px;
+        border-right: 0;
+        border-bottom: 1px solid var(--hairline-soft);
+      }
+
+      .client-brand {
+        min-height: 34px;
+        padding-bottom: 8px;
+      }
+
+      .client-module-nav,
+      .client-module-nav.bottom {
+        display: flex;
+        overflow-x: auto;
+        gap: 3px;
+        margin: 0;
+        scrollbar-width: none;
+      }
+
+      .client-module-nav::-webkit-scrollbar {
+        display: none;
+      }
+
+      .client-module-nav.bottom {
+        margin-top: 3px;
+      }
+
+      .client-module-button {
+        width: auto;
+        min-width: max-content;
+        min-height: 32px;
+      }
+
+      .client-page,
+      .client-page.single {
+        min-height: 620px;
+      }
+
+      .client-page.browser,
+      .client-page.workroom {
+        display: block;
+      }
+
+      .client-page.chat {
+        height: auto;
+        min-height: 0;
+      }
+
+      .client-page.chat .client-context {
+        max-height: 210px;
+      }
+
+      .client-chat-detail {
+        min-height: 580px;
+      }
+
+      .client-chat-stream {
+        max-height: 560px;
+        padding: 0;
+      }
+
+      .cream-timeline-host {
+        --timeline-inline-inset: 14px;
+        --timeline-item-gap: 16px;
+      }
+
+      .cream-timeline-user-message {
+        width: min(88%, var(--timeline-user-measure));
+      }
+
+      .client-chat-composer-wrap {
+        padding: 7px 10px 12px;
+      }
+
+      .client-context {
+        max-height: 230px;
+        border-right: 0;
+        border-bottom: 1px solid var(--hairline-soft);
+      }
+
+      .client-page.workroom .client-inspector {
+        display: block;
+        border-top: 1px solid var(--hairline-soft);
+        border-left: 0;
+      }
+
+      .client-detail {
+        min-height: 500px;
+      }
+
+      .client-page-header,
+      .client-profile-head {
+        display: grid;
+      }
+
+      .client-page-actions {
+        justify-self: start;
+      }
+
+      .client-detail-inner,
+      .client-settings-page {
+        padding: 22px 18px 28px;
+      }
+
+      .client-package-body {
+        display: block;
+      }
+
+      .client-package-tree {
+        max-height: 180px;
+        overflow: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--hairline-soft);
+      }
+
+      .client-window-state {
+        display: none;
+      }
+
+      .sidebar {
+        position: static;
+        display: block;
+        width: 100%;
+        height: auto;
+        padding: 10px 14px;
+        border-right: 0;
+        border-bottom: 1px solid var(--hairline-soft);
+      }
+
+      .brand {
+        min-height: 38px;
+        padding: 0;
+      }
+
+      .brand-mark {
+        width: 28px;
+        height: 28px;
+      }
+
+      .side-nav {
+        display: flex;
+        overflow-x: auto;
+        gap: 4px;
+        margin: 9px -2px 0;
+        padding-bottom: 2px;
+        scrollbar-width: none;
+      }
+
+      .side-nav::-webkit-scrollbar {
+        display: none;
+      }
+
+      .side-nav a {
+        flex: 0 0 auto;
+        min-height: 32px;
+        padding: 0 9px;
+        white-space: nowrap;
+      }
+
+      .side-note {
+        display: none;
+      }
+
+      .topbar {
+        top: 0;
+        padding: 8px 16px;
+      }
+
+      main {
+        padding: 30px 20px 64px;
+      }
+
+      .intro {
+        grid-template-columns: 1fr;
+        gap: 24px;
+      }
+
+      .two-column,
+      .three-column {
+        grid-template-columns: 1fr;
+      }
+
+      .timeline-showcase {
+        grid-template-columns: 1fr;
+      }
+
+      .timeline-contract-panel {
+        border-top: 1px solid var(--hairline-soft);
+        border-left: 0;
+      }
+
+      .timeline-showcase-canvas {
+        min-height: 0;
+      }
+    }
+
+    @media (max-width: 600px) {
+      .topbar {
+        position: static;
+        align-items: start;
+        flex-direction: column;
+      }
+
+      .topbar-subtitle {
+        display: block;
+        margin: 1px 0 0;
+      }
+
+      .topbar-actions {
+        width: 100%;
+      }
+
+      .theme-switch,
+      .type-switch {
+        width: 100%;
+      }
+
+      .theme-switch button,
+      .type-switch button {
+        flex: 1;
+      }
+
+      main {
+        padding-right: 16px;
+        padding-left: 16px;
+      }
+
+      .intro h1 {
+        font-size: var(--type-display);
+      }
+
+      .scope-summary {
+        grid-template-columns: 1fr;
+      }
+
+      .scope-metric + .scope-metric {
+        border-top: 1px solid var(--hairline-soft);
+        border-left: 0;
+      }
+
+      .section-heading {
+        align-items: start;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .token-grid,
+      .feedback-grid,
+      .motion-list {
+        grid-template-columns: 1fr;
+      }
+
+      .type-row {
+        grid-template-columns: 1fr;
+        gap: 3px;
+      }
+
+      .component-source {
+        display: none;
+      }
+
+      .timeline-showcase-toolbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .tabs {
+        overflow-x: auto;
+      }
+
+      .coverage-list {
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+
+      .coverage-level {
+        display: none;
+      }
+    }
+
+    @media (hover: none) {
+      .motion-token .motion-dot {
+        transform: translateX(34px);
+      }
+
+      .cream-timeline-message-controls {
+        opacity: 1;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+
+      *,
+      *::before,
+      *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="组件目录">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">AI</div>
+        <div>
+          <div class="brand-name">AI Employee OS</div>
+          <div class="brand-meta">macOS Component Library</div>
+        </div>
+      </div>
+
+      <nav class="side-nav">
+        <a href="#overview" aria-current="page"><span class="nav-symbol">⌂</span>总览</a>
+        <a href="#screens"><span class="nav-symbol">▣</span>页面映射</a>
+        <a href="#tokens"><span class="nav-symbol">#</span>Token</a>
+        <a href="#controls"><span class="nav-symbol">□</span>控件</a>
+        <a href="#navigation"><span class="nav-symbol">≡</span>导航与列表</a>
+        <a href="#timeline"><span class="nav-symbol">↳</span>Timeline</a>
+        <a href="#feedback"><span class="nav-symbol">i</span>反馈状态</a>
+        <a href="#composer"><span class="nav-symbol">+</span>Composer</a>
+        <a href="#motion"><span class="nav-symbol">›</span>动效</a>
+        <a href="#coverage"><span class="nav-symbol">✓</span>覆盖状态</a>
+      </nav>
+
+      <div class="side-note">
+        <strong>事实源</strong><br>
+        AppTheme.swift<br>
+        CreamControls.swift<br>
+        CreamTimeline.swift<br>
+        Component Contract v1.0
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div>
+          <span class="topbar-title">组件库预览</span>
+          <span class="topbar-subtitle">当前工作区实现</span>
+        </div>
+        <div class="topbar-actions">
+          <div class="type-switch" role="group" aria-label="排印方案">
+            <button type="button" data-type-choice="current" aria-pressed="false">当前字号</button>
+            <button type="button" data-type-choice="refined" aria-pressed="true">精致版</button>
+          </div>
+          <div class="theme-switch" role="group" aria-label="外观模式">
+            <button type="button" data-theme-choice="system" aria-pressed="false">系统</button>
+            <button type="button" data-theme-choice="light" aria-pressed="true">浅色</button>
+            <button type="button" data-theme-choice="dark" aria-pressed="false">深色</button>
+          </div>
+        </div>
+      </header>
+
+      <main id="main-content">
+        <section class="intro" id="overview">
+          <div>
+            <h1>Claude Cream 原生组件样式台</h1>
+            <p>用于比较当前 SwiftUI Token、组件状态和复用边界。这里展示的是 HTML 等价预览，组件行为与业务事实仍以 macOS 客户端实现为准。</p>
+          </div>
+          <div class="scope-summary" aria-label="组件库范围">
+            <div class="scope-metric">
+              <strong>4</strong>
+              <span>新增 Primitive</span>
+            </div>
+            <div class="scope-metric">
+              <strong>3</strong>
+              <span>已迁移视图</span>
+            </div>
+            <div class="scope-metric">
+              <strong>AA</strong>
+              <span>文字对比门禁</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="screens">
+          <div class="section-heading">
+            <div>
+              <h2>客户端菜单页面映射</h2>
+              <p>按当前 SwiftUI 路由重建 8 个主菜单和员工聊天上下文页，用于逐页比较信息密度、排印、间距和组件复用。点击左侧菜单直接切换页面。</p>
+            </div>
+            <span class="stage candidate">评审中</span>
+          </div>
+          <p class="client-review-note">内容为静态示例投影，不连接 Runtime，也不代表真实员工、Token 或费用数据。页面事实和行为边界仍以客户端源码为准。</p>
+
+          <div class="client-preview-shell" data-client-preview>
+            <div class="client-window-bar">
+              <span class="client-window-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="client-window-title">AI Employee OS</span>
+              <span class="client-window-state">精致密度 · 静态示例</span>
+            </div>
+
+            <div class="client-stage">
+              <aside class="client-module-rail" aria-label="客户端菜单">
+                <div class="client-brand">
+                  <span class="client-brand-mark" aria-hidden="true">AI</span>
+                  <span><strong>AI Employee OS</strong><small>本地 AI 员工工作台</small></span>
+                </div>
+                <nav class="client-module-nav" aria-label="主要页面">
+                  <button class="client-module-button" type="button" data-client-page="office" aria-selected="true" aria-controls="client-page-office"><span class="client-module-symbol" aria-hidden="true">⌂</span>办公室</button>
+                  <button class="client-module-button" type="button" data-client-page="contacts" aria-selected="false" aria-controls="client-page-contacts"><span class="client-module-symbol" aria-hidden="true">◎</span>通讯录</button>
+                  <button class="client-module-button contextual" type="button" data-client-page="chat" aria-selected="false" aria-controls="client-page-chat"><span class="client-module-symbol" aria-hidden="true">↳</span>员工聊天</button>
+                  <button class="client-module-button" type="button" data-client-page="work" aria-selected="false" aria-controls="client-page-work"><span class="client-module-symbol" aria-hidden="true">◷</span>工作库</button>
+                  <button class="client-module-button" type="button" data-client-page="knowledge" aria-selected="false" aria-controls="client-page-knowledge"><span class="client-module-symbol" aria-hidden="true">▤</span>知识库</button>
+                  <button class="client-module-button" type="button" data-client-page="skills" aria-selected="false" aria-controls="client-page-skills"><span class="client-module-symbol" aria-hidden="true">✦</span>技能库</button>
+                  <button class="client-module-button" type="button" data-client-page="tools" aria-selected="false" aria-controls="client-page-tools"><span class="client-module-symbol" aria-hidden="true">◇</span>工具库</button>
+                </nav>
+                <nav class="client-module-nav bottom" aria-label="辅助页面">
+                  <button class="client-module-button" type="button" data-client-page="archive" aria-selected="false" aria-controls="client-page-archive"><span class="client-module-symbol" aria-hidden="true">□</span>归档</button>
+                  <button class="client-module-button" type="button" data-client-page="settings" aria-selected="false" aria-controls="client-page-settings"><span class="client-module-symbol" aria-hidden="true">⚙</span>设置</button>
+                </nav>
+              </aside>
+
+              <div class="client-page-stack">
+                <section class="client-page single" id="client-page-office" data-client-panel="office" aria-label="办公室页面预览">
+                  <div class="client-detail-inner">
+                    <header class="client-page-header">
+                      <div><h3>办公室</h3><p>查看最近 7 天的模型调用、Token 消耗与预估成本。</p></div>
+                      <span class="status-badge neutral">8 月 14 日 星期五</span>
+                    </header>
+                    <div class="client-task-entry">
+                      <h4>交代一项工作</h4>
+                      <p>直接描述目标。系统会先提出单员工或多员工方案，确认后才执行。</p>
+                      <div class="client-shared-composer expanded" data-composer-size="expanded">
+                        <textarea aria-label="描述工作目标" placeholder="例如：调研同类产品，并整理成一份产品决策文档"></textarea>
+                        <div class="client-shared-composer-footer">
+                          <span class="spacer"></span>
+                          <button class="send-button" type="button" aria-label="提出任务方案" title="提出任务方案">↑</button>
+                        </div>
+                      </div>
+                    </div>
+                    <section class="client-section">
+                      <div class="client-section-title">用量概览 <small>最近 7 天 · 暂无模型调用</small></div>
+                      <div class="client-usage-card">
+                        <div class="client-metrics">
+                          <div class="client-metric"><span>总 Token</span><strong>0</strong><small>输入 + 输出</small></div>
+                          <div class="client-metric"><span>输入</span><strong>0</strong><small>上下文与提示词</small></div>
+                          <div class="client-metric"><span>输出</span><strong>0</strong><small>模型生成内容</small></div>
+                          <div class="client-metric"><span>预估成本</span><strong>¥0.00</strong><small>暂无定价口径</small></div>
+                        </div>
+                        <div class="client-chart-title"><span>Token 趋势</span><span class="client-chart-legend">尚无调用记录</span></div>
+                        <svg class="client-chart" viewBox="0 0 640 132" role="img" aria-label="暂无 Token 调用记录">
+                          <path class="grid" d="M32 18H628M32 48H628M32 78H628M32 108H628"></path>
+                          <path class="input-line" d="M32 108C130 108 185 108 282 108S466 108 628 108" opacity=".28"></path>
+                          <path class="output-line" d="M32 108C150 108 210 108 330 108S510 108 628 108" opacity=".20"></path>
+                        </svg>
+                      </div>
+                    </section>
+                    <div class="client-source-map"><span>OfficeWorkspaceView.swift</span><span>CreamComposer.expanded</span><span>AdaptivePage.office</span><span>OfficeSnapshot</span></div>
+                  </div>
+                </section>
+
+                <section class="client-page browser" id="client-page-contacts" data-client-panel="contacts" aria-label="通讯录页面预览" hidden>
+                  <aside class="client-context">
+                    <div class="client-context-header"><strong>AI 员工</strong><span class="client-count">3</span><button class="icon-button primary" type="button" aria-label="新建员工" title="新建员工">＋</button></div>
+                    <div class="client-context-tools"><div class="client-search"><span aria-hidden="true">⌕</span><span>搜索姓名、岗位或部门</span></div></div>
+                    <div class="client-list">
+                      <div class="client-list-label">产品部</div>
+                      <div class="client-list-row selected"><span class="avatar">A</span><span class="client-row-copy"><span class="client-row-title">Alex</span><span class="client-row-meta">产品经理 · 可用</span></span><i class="client-status-dot"></i></div>
+                      <div class="client-list-row"><span class="avatar">研</span><span class="client-row-copy"><span class="client-row-title">研究助理</span><span class="client-row-meta">行业研究员 · 可用</span></span><i class="client-status-dot"></i></div>
+                      <div class="client-list-label">内容部</div>
+                      <div class="client-list-row"><span class="avatar">文</span><span class="client-row-copy"><span class="client-row-title">文档助理</span><span class="client-row-meta">技术撰稿人 · 已停用</span></span><i class="client-status-dot waiting"></i></div>
+                    </div>
+                  </aside>
+                  <div class="client-detail">
+                    <div class="client-detail-inner">
+                      <div class="client-profile-head">
+                        <span class="avatar">A</span>
+                        <div class="client-profile-copy"><h3>Alex <span class="status-badge success">启用</span></h3><p>产品经理 · 产品部</p></div>
+                        <div class="client-page-actions"><button class="primary-button" type="button">编辑资料</button><button class="secondary-button" type="button">私人聊聊</button><button class="icon-button" type="button" aria-label="更多员工操作" title="更多员工操作">•••</button></div>
+                      </div>
+                      <div class="client-tabs" aria-label="员工资料页签"><span class="client-tab active">身份</span><span class="client-tab">灵魂</span><span class="client-tab">能力与权限</span></div>
+                      <article class="client-document">
+                        <h4>身份提示词</h4>
+                        <p>定义这名 AI 员工是谁、负责什么，以及必须遵守的工作边界。</p>
+                        <p>你是一名产品经理，负责把目标澄清为可验证的产品决策与执行计划。优先确认事实、约束和验收标准。</p>
+                        <ul><li>识别目标用户、核心问题和成功标准</li><li>区分事实、推测与待确认信息</li><li>输出可追踪的结论与下一步</li></ul>
+                      </article>
+                      <div class="client-source-map"><span>EmployeeDirectoryView.swift</span><span>EmployeeProfileView</span><span>AdaptiveBrowser.contacts</span></div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="client-page browser chat" id="client-page-chat" data-client-panel="chat" aria-label="员工聊天页面预览" hidden>
+                  <aside class="client-context">
+                    <div class="client-context-header"><strong>员工会话</strong><span class="client-count">3</span><button class="icon-button primary" type="button" aria-label="新建会话" title="新建会话">＋</button></div>
+                    <div class="client-context-tools"><div class="client-search"><span aria-hidden="true">⌕</span><span>搜索员工或会话</span></div></div>
+                    <div class="client-list">
+                      <div class="client-list-label">今天</div>
+                      <div class="client-list-row selected"><span class="avatar">A</span><span class="client-row-copy"><span class="client-row-title">Alex</span><span class="client-row-meta">已整理组件统一建议 · 刚刚</span></span><i class="client-status-dot"></i></div>
+                      <div class="client-list-row"><span class="avatar">研</span><span class="client-row-copy"><span class="client-row-title">研究助理</span><span class="client-row-meta">竞品资料待你确认 · 10:24</span></span><i class="client-status-dot"></i></div>
+                      <div class="client-list-label">昨天</div>
+                      <div class="client-list-row"><span class="avatar">文</span><span class="client-row-copy"><span class="client-row-title">文档助理</span><span class="client-row-meta">规范文档已经归档 · 昨天</span></span><i class="client-status-dot waiting"></i></div>
+                    </div>
+                  </aside>
+
+                  <div class="client-chat-detail">
+                    <header class="client-chat-header">
+                      <span class="client-chat-avatar" aria-hidden="true">A</span>
+                      <div class="client-chat-title"><strong>Alex</strong><small>产品经理 · 可用</small></div>
+                      <div class="client-chat-toolbar">
+                        <button class="client-chat-icon-button" type="button" aria-label="归档当前会话" title="归档当前会话">□</button>
+                        <button class="client-chat-icon-button" type="button" aria-label="更多会话操作" title="更多会话操作">•••</button>
+                      </div>
+                    </header>
+
+                    <div class="client-chat-stream cream-timeline-host" data-timeline-source="chat" data-timeline-density="compact" data-timeline-label="Alex 员工聊天时间线"></div>
+
+                    <div class="client-chat-composer-wrap">
+                      <div class="client-shared-composer compact" data-composer-size="compact">
+                        <textarea aria-label="给 Alex 发消息" placeholder="给 Alex 发消息…"></textarea>
+                        <div class="client-shared-composer-footer">
+                          <span class="spacer"></span>
+                          <button class="send-button" type="button" aria-label="发送消息" title="发送消息">↑</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="client-page workroom" id="client-page-work" data-client-panel="work" aria-label="工作库页面预览" hidden>
+                  <aside class="client-context">
+                    <div class="client-context-header"><strong>工作库</strong><span class="client-count">3</span></div>
+                    <div class="client-list">
+                      <div class="client-list-row selected"><span class="client-row-copy"><span class="client-row-title">调研同类 AI 产品</span><span class="client-row-meta">2 位员工 · 等待确认</span></span><i class="client-status-dot waiting"></i></div>
+                      <div class="client-list-row"><span class="client-row-copy"><span class="client-row-title">整理产品边界文档</span><span class="client-row-meta">Alex · 执行中</span></span><i class="client-status-dot"></i></div>
+                      <div class="client-list-row"><span class="client-row-copy"><span class="client-row-title">输出周度复盘</span><span class="client-row-meta">文档助理 · 已完成</span></span></div>
+                    </div>
+                  </aside>
+                  <div class="client-detail">
+                    <div class="client-room-header"><span><strong>调研同类 AI 产品</strong><small>2 位员工 · 等待确认</small></span><button class="icon-button" type="button" aria-label="显示任务详情" title="显示任务详情">▥</button></div>
+                    <div class="client-work-timeline cream-timeline-host" data-timeline-source="work" data-timeline-density="regular" data-timeline-label="任务协作时间线"></div>
+                    <div class="client-room-composer"><div class="client-shared-composer regular" data-composer-size="regular"><textarea aria-label="补充任务信息" placeholder="补充任务所需信息…"></textarea><div class="client-shared-composer-footer"><span class="spacer"></span><button class="send-button" type="button" aria-label="发送任务消息" title="发送任务消息">↑</button></div></div></div>
+                  </div>
+                  <aside class="client-inspector">
+                    <div class="client-inspector-inner">
+                      <h4>任务进度</h4><div class="client-progress" aria-label="任务进度 38%"><i></i></div>
+                      <div class="client-inspector-section"><div class="client-inspector-label">拟参与员工</div><div class="client-list-row compact"><span class="avatar">研</span><span class="client-row-copy"><span class="client-row-title">研究助理</span></span></div><div class="client-list-row compact"><span class="avatar">A</span><span class="client-row-copy"><span class="client-row-title">Alex</span></span></div></div>
+                      <div class="client-inspector-section"><div class="client-inspector-label">任务详情</div><div class="client-key-value"><span>状态</span><span>等待确认</span></div><div class="client-key-value"><span>并发</span><span>固定为 1</span></div><div class="client-key-value"><span>执行内核</span><span>Generic Run Kernel</span></div></div>
+                      <div class="client-source-map"><span>TaskThreadWorkspaceView.swift</span><span>CreamTimelineLayout</span><span>CreamTimelineUserMessage</span><span>CreamTimelineAgentRow</span><span>CreamTimelineMarkdownBody</span><span>CreamComposer.regular</span><span>AdaptiveWorkspace.work</span></div>
+                    </div>
+                  </aside>
+                </section>
+
+                <section class="client-page browser" id="client-page-knowledge" data-client-panel="knowledge" aria-label="知识库页面预览" hidden>
+                  <aside class="client-context">
+                    <div class="client-context-header"><strong>知识库</strong><span class="client-count">4</span></div>
+                    <div class="client-context-tools"><div class="client-search"><span aria-hidden="true">⌕</span><span>搜索文档</span></div></div>
+                    <div class="client-list">
+                      <div class="client-list-row compact"><span class="client-folder">⌄</span><span class="client-row-copy"><span class="client-row-title">产品</span></span></div>
+                      <div class="client-list-row compact selected" style="padding-left:22px"><span class="client-folder">§</span><span class="client-row-copy"><span class="client-row-title">产品边界.md</span></span></div>
+                      <div class="client-list-row compact" style="padding-left:22px"><span class="client-folder">§</span><span class="client-row-copy"><span class="client-row-title">MVP 验收.md</span></span></div>
+                      <div class="client-list-row compact"><span class="client-folder">⌄</span><span class="client-row-copy"><span class="client-row-title">研究</span></span></div>
+                      <div class="client-list-row compact" style="padding-left:22px"><span class="client-folder">§</span><span class="client-row-copy"><span class="client-row-title">竞品观察.md</span></span></div>
+                    </div>
+                  </aside>
+                  <div class="client-detail">
+                    <div class="client-document-bar"><span><strong>knowledge://产品/产品边界.md</strong><small>Runtime 知识来源</small></span><span class="status-badge success">索引：ready</span></div>
+                    <article class="client-document-body"><h3>AI Employee OS 产品边界</h3><p>系统以 Local-first 的 macOS 客户端、Rust Runtime 与 Python Agent Worker 组成清晰的权限边界。</p><h4>当前主验证路径</h4><ul><li>编辑员工 Identity、Soul 与 Persona</li><li>完成可恢复的多轮对话</li><li>通过 Task Thread 执行工作并保留证据</li></ul><h4>事实源</h4><p>只有 Runtime 写入 knowledge_sources 的内容会出现在这里，文件目录本身不是知识库事实源。</p><div class="client-source-map"><span>KnowledgeLibraryWorkspaceView.swift</span><span>KnowledgeLibraryStore</span><span>AdaptiveBrowser.knowledge</span></div></article>
+                  </div>
+                </section>
+
+                <section class="client-page browser" id="client-page-skills" data-client-panel="skills" aria-label="技能库页面预览" hidden>
+                  <aside class="client-context">
+                    <div class="client-context-header"><strong>技能库</strong><span class="client-count">2</span></div>
+                    <div class="client-context-tools"><div class="client-search"><span aria-hidden="true">⌕</span><span>搜索技能</span></div></div>
+                    <div class="client-list">
+                      <div class="client-list-row selected"><span class="client-package-icon">SK</span><span class="client-row-copy"><span class="client-row-title">local-file-operations</span><span class="client-row-meta">v2.0.0 · 可用</span></span></div>
+                      <div class="client-list-row"><span class="client-package-icon">SK</span><span class="client-row-copy"><span class="client-row-title">web-search</span><span class="client-row-meta">v2.0.0 · 需要外部依赖</span></span></div>
+                    </div>
+                  </aside>
+                  <div class="client-detail">
+                    <div class="client-package-head"><span class="client-package-icon">SK</span><div class="client-package-copy"><h3>local-file-operations <span class="client-count">v2.0.0</span></h3><p>在授权目录内读取、创建与精确编辑 UTF-8 文件。</p></div><span class="status-badge success">可用</span></div>
+                    <div class="client-tabs client-package-tabs"><span class="client-tab active">技能文件</span><span class="client-tab">依赖信息</span></div>
+                    <div class="client-package-body">
+                      <div class="client-package-tree"><div class="client-list-row compact selected"><span class="client-folder">§</span><span class="client-row-title">SKILL.md</span></div><div class="client-list-row compact"><span class="client-folder">◇</span><span class="client-row-title">manifest.json</span></div><div class="client-list-row compact"><span class="client-folder">⌄</span><span class="client-row-title">references</span></div><div class="client-list-row compact" style="padding-left:22px"><span class="client-folder">§</span><span class="client-row-title">file-editing.md</span></div></div>
+                      <article class="client-document-body"><h3>Local File Operations</h3><p>所有文件副作用必须经过 Rust ToolExecutor，并在需要时进入审批状态。</p><h4>可执行动作</h4><ul><li>读取授权目录内的 UTF-8 文件</li><li>创建新文件</li><li>对现有文件进行精确编辑</li></ul><p class="client-footnote">此页面仅用于查看，客户端不提供创建 Package 的入口。</p><div class="client-source-map"><span>CapabilityLibraryWorkspaceView</span><span>SkillPackageBrowser</span><span>scope.skills</span></div></article>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="client-page browser" id="client-page-tools" data-client-panel="tools" aria-label="工具库页面预览" hidden>
+                  <aside class="client-context">
+                    <div class="client-context-header"><strong>工具库</strong><span class="client-count">2</span></div>
+                    <div class="client-context-tools"><div class="client-search"><span aria-hidden="true">⌕</span><span>搜索工具</span></div></div>
+                    <div class="client-list">
+                      <div class="client-list-row selected"><span class="client-package-icon">TL</span><span class="client-row-copy"><span class="client-row-title">file-tool</span><span class="client-row-meta">v2.0.0 · 可用</span></span></div>
+                      <div class="client-list-row"><span class="client-package-icon">TL</span><span class="client-row-copy"><span class="client-row-title">agent-reach-tool</span><span class="client-row-meta">v2.0.0 · 待验证</span></span></div>
+                    </div>
+                  </aside>
+                  <div class="client-detail">
+                    <div class="client-package-head"><span class="client-package-icon">TL</span><div class="client-package-copy"><h3>file-tool <span class="client-count">v2.0.0</span></h3><p>授权目录内的受控文件操作。</p></div><span class="status-badge success">可用</span></div>
+                    <div class="client-tabs client-package-tabs"><span class="client-tab active">说明文档</span><span class="client-tab">能力信息</span><span class="client-tab">权限与风险</span></div>
+                    <article class="client-document-body"><h4>能力信息</h4><div class="client-setting-row"><span>读取文件</span><span>只读，低风险</span></div><div class="client-setting-row"><span>创建文件</span><span>需要授权目录</span></div><div class="client-setting-row"><span>精确编辑</span><span>写入前一次性审批</span></div><h4 style="margin-top:24px">安全边界</h4><p>客户端不直接执行 Tool。所有调用由 Rust ToolExecutor 校验 Skill、Tool、Action、权限与幂等键。</p><div class="client-code">skill_id: local-file-operations
+tool_id: file-tool
+action: edit_file
+approval: required</div><div class="client-source-map"><span>CapabilityDetailView</span><span>CapabilitySecurityView</span><span>scope.tools</span></div></article>
+                  </div>
+                </section>
+
+                <section class="client-page single" id="client-page-archive" data-client-panel="archive" aria-label="归档页面预览" hidden>
+                  <div class="client-detail-inner">
+                    <header class="client-page-header"><div><h3>归档</h3><p>私聊会话和工作记录统一归档，删除语义保持不同。</p></div></header>
+                    <section class="client-section"><div class="client-section-title">私聊会话 <small>2</small></div><div class="client-archive-list"><div class="client-archive-row"><span class="avatar">A</span><span class="client-row-copy"><span class="client-row-title">Alex <small>私聊</small></span><span class="client-row-meta">上次讨论了产品边界与验收标准</span></span><div class="client-archive-actions"><button class="icon-button" type="button" aria-label="恢复私聊" title="恢复">↥</button><button class="icon-button danger" type="button" aria-label="永久删除私聊" title="永久删除">×</button></div></div><div class="client-archive-row"><span class="avatar">研</span><span class="client-row-copy"><span class="client-row-title">研究助理 <small>私聊</small></span><span class="client-row-meta">公开资料整理已完成</span></span><div class="client-archive-actions"><button class="icon-button" type="button" aria-label="恢复私聊" title="恢复">↥</button><button class="icon-button danger" type="button" aria-label="永久删除私聊" title="永久删除">×</button></div></div></div></section>
+                    <section class="client-section"><div class="client-section-title">工作记录 <small>1</small></div><div class="client-archive-list"><div class="client-archive-row"><span class="client-package-icon">WK</span><span class="client-row-copy"><span class="client-row-title">输出周度复盘 <small>工作</small></span><span class="client-row-meta">记录可从界面移除，底层执行与 Audit 证据保留</span></span><div class="client-archive-actions"><button class="icon-button" type="button" aria-label="恢复工作记录" title="恢复">↥</button><button class="icon-button danger" type="button" aria-label="删除工作记录" title="删除记录">×</button></div></div></div></section>
+                    <div class="client-source-map"><span>ArchiveWorkspaceView.swift</span><span>ArchiveStore</span><span>archivedTaskThreads</span></div>
+                  </div>
+                </section>
+
+                <section class="client-page browser" id="client-page-settings" data-client-panel="settings" aria-label="设置页面预览" hidden>
+                  <aside class="client-context">
+                    <div class="client-context-header"><strong>设置</strong></div>
+                    <div class="client-list">
+                      <div class="client-list-row compact"><span class="client-folder">≡</span><span class="client-row-title">通用</span></div>
+                      <div class="client-list-row compact selected"><span class="client-folder">◎</span><span class="client-row-title">模型</span></div>
+                      <div class="client-list-row compact"><span class="client-folder">◇</span><span class="client-row-title">Runtime 与连接</span></div>
+                      <div class="client-list-row compact"><span class="client-folder">□</span><span class="client-row-title">权限与审批</span></div>
+                      <div class="client-list-row compact"><span class="client-folder">◐</span><span class="client-row-title">外观</span></div>
+                      <div class="client-list-row compact"><span class="client-folder">i</span><span class="client-row-title">关于</span></div>
+                    </div>
+                  </aside>
+                  <div class="client-detail">
+                    <div class="client-settings-page">
+                      <header class="client-page-header"><div><h3>模型</h3><p>选择当前可用的模型配置。</p></div></header>
+                      <div class="client-settings-card"><div class="client-setting-row"><span>服务商</span><span>DeepSeek　⌃⌄</span></div><div class="client-setting-row"><span>模型</span><span>deepseek-chat　⌃⌄</span></div></div>
+                      <p class="client-footnote">API Key 不在客户端展示或保存。未配置时明确显示缺失状态，不使用静默降级。</p>
+                      <div class="client-source-map"><span>SettingsView.swift</span><span>SettingsSidebarView.swift</span><span>AdaptiveBrowser.settings</span></div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="tokens">
+          <div class="section-heading">
+            <div>
+              <h2>颜色、排印与几何 Token</h2>
+              <p>颜色直接映射 AppTheme。切换外观时，色值和实际样式一起更新。</p>
+            </div>
+            <span class="stage stable">已标准化</span>
+          </div>
+
+          <div class="token-grid" aria-label="Claude Cream 色彩">
+            <div class="token" data-light="#F5F5F2" data-dark="#2D2E2D">
+              <div class="token-swatch" style="--swatch: var(--canvas)"></div>
+              <div class="token-meta"><span class="token-name">canvas</span><span class="token-value">#F5F5F2</span></div>
+            </div>
+            <div class="token" data-light="#EFEFEB" data-dark="#2A2B2A">
+              <div class="token-swatch" style="--swatch: var(--surface-soft)"></div>
+              <div class="token-meta"><span class="token-name">surfaceSoft</span><span class="token-value">#EFEFEB</span></div>
+            </div>
+            <div class="token" data-light="#FCFCF9" data-dark="#303030">
+              <div class="token-swatch" style="--swatch: var(--surface-card)"></div>
+              <div class="token-meta"><span class="token-name">surfaceCard</span><span class="token-value">#FCFCF9</span></div>
+            </div>
+            <div class="token" data-light="#29271D" data-dark="#E9E6DC">
+              <div class="token-swatch" style="--swatch: var(--ink)"></div>
+              <div class="token-meta"><span class="token-name">ink</span><span class="token-value">#29271D</span></div>
+            </div>
+            <div class="token" data-light="#403D36" data-dark="#DDD9CD">
+              <div class="token-swatch" style="--swatch: var(--body)"></div>
+              <div class="token-meta"><span class="token-name">body</span><span class="token-value">#403D36</span></div>
+            </div>
+            <div class="token" data-light="#6D675B" data-dark="#BBB6A8">
+              <div class="token-swatch" style="--swatch: var(--muted)"></div>
+              <div class="token-meta"><span class="token-name">muted</span><span class="token-value">#6D675B</span></div>
+            </div>
+            <div class="token" data-light="#756F63" data-dark="#9A958A">
+              <div class="token-swatch" style="--swatch: var(--muted-soft)"></div>
+              <div class="token-meta"><span class="token-name">mutedSoft</span><span class="token-value">#756F63</span></div>
+            </div>
+            <div class="token" data-light="#B7791F" data-dark="#E6BF7A">
+              <div class="token-swatch" style="--swatch: var(--primary)"></div>
+              <div class="token-meta"><span class="token-name">primary</span><span class="token-value">#B7791F</span></div>
+            </div>
+            <div class="token" data-light="#9E6719" data-dark="#F0CF92">
+              <div class="token-swatch" style="--swatch: var(--primary-active)"></div>
+              <div class="token-meta"><span class="token-name">primaryActive</span><span class="token-value">#9E6719</span></div>
+            </div>
+            <div class="token" data-light="#2C6F75" data-dark="#75B5BC">
+              <div class="token-swatch" style="--swatch: var(--accent-teal)"></div>
+              <div class="token-meta"><span class="token-name">accentTeal</span><span class="token-value">#2C6F75</span></div>
+            </div>
+            <div class="token" data-light="#4B6F3D" data-dark="#9AB889">
+              <div class="token-swatch" style="--swatch: var(--success)"></div>
+              <div class="token-meta"><span class="token-name">success</span><span class="token-value">#4B6F3D</span></div>
+            </div>
+            <div class="token" data-light="#8A5E16" data-dark="#E6BF7A">
+              <div class="token-swatch" style="--swatch: var(--warning)"></div>
+              <div class="token-meta"><span class="token-name">warning</span><span class="token-value">#8A5E16</span></div>
+            </div>
+            <div class="token" data-light="#7C1B13" data-dark="#EA928A">
+              <div class="token-swatch" style="--swatch: var(--error)"></div>
+              <div class="token-meta"><span class="token-name">error</span><span class="token-value">#7C1B13</span></div>
+            </div>
+          </div>
+
+          <div class="two-column" style="margin-top: 24px">
+            <div class="board">
+              <div class="component-title-row">
+                <span class="board-label" style="margin-bottom:0">Typography</span>
+                <span class="stage stable" id="type-scale-status">精致版 10-22px</span>
+              </div>
+              <div class="type-list">
+                <div class="type-row"><span class="type-role" data-current="34 / Semibold Rounded" data-refined="22 / Semibold">22 / Semibold</span><span class="type-sample display-title">页面主标题</span></div>
+                <div class="type-row"><span class="type-role" data-current="18 / Semibold" data-refined="16 / Semibold">16 / Semibold</span><span class="type-sample section-title">页面区标题</span></div>
+                <div class="type-row"><span class="type-role" data-current="15 / Medium" data-refined="13 / Medium">13 / Medium</span><span class="type-sample navigation">主导航与工作区标题</span></div>
+                <div class="type-row"><span class="type-role" data-current="14 / Regular" data-refined="13 / Regular">13 / Regular</span><span class="type-sample interface">界面正文与输入字段</span></div>
+                <div class="type-row"><span class="type-role" data-current="15-16 / Regular" data-refined="14 / Regular">14 / Regular</span><span class="type-sample reading">消息正文保持适合中文阅读的行距。</span></div>
+                <div class="type-row"><span class="type-role" data-current="12 / Regular" data-refined="11 / Regular">11 / Regular</span><span class="type-sample metadata">时间、角色、状态与计数</span></div>
+                <div class="type-row"><span class="type-role" data-current="12.5 / Regular" data-refined="12 / Regular">12 / Regular</span><span class="type-sample code">task_run_01 · 2,480 tokens</span></div>
+              </div>
+            </div>
+
+            <div class="board">
+              <div class="board-label">Spacing and Radius</div>
+              <div class="measure-list">
+                <div class="measure"><span class="measure-name">xxs</span><span class="measure-line" style="--ratio:.08"></span><span class="measure-value">4</span></div>
+                <div class="measure"><span class="measure-name">xs</span><span class="measure-line" style="--ratio:.16"></span><span class="measure-value">8</span></div>
+                <div class="measure"><span class="measure-name">sm</span><span class="measure-line" style="--ratio:.25"></span><span class="measure-value">12</span></div>
+                <div class="measure"><span class="measure-name">md</span><span class="measure-line" style="--ratio:.33"></span><span class="measure-value">16</span></div>
+                <div class="measure"><span class="measure-name">lg</span><span class="measure-line" style="--ratio:.5"></span><span class="measure-value">24</span></div>
+                <div class="measure"><span class="measure-name">xl</span><span class="measure-line" style="--ratio:.67"></span><span class="measure-value">32</span></div>
+                <div class="measure"><span class="measure-name">xxl</span><span class="measure-line" style="--ratio:1"></span><span class="measure-value">48</span></div>
+              </div>
+              <div class="radius-list">
+                <div class="radius-chip" style="--radius:6px">sm 6</div>
+                <div class="radius-chip" style="--radius:8px">control 8</div>
+                <div class="radius-chip" style="--radius:12px">panel 12</div>
+                <div class="radius-chip" style="--radius:16px">modal 16</div>
+                <div class="radius-chip" style="--radius:18px">composer 18</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="controls">
+          <div class="section-heading">
+            <div>
+              <h2>操作与输入控件</h2>
+              <p>包含真实交互状态。可使用 Tab 键检查 Focus，点击组件检查 Press 与状态切换。</p>
+            </div>
+            <span class="stage stable">Primitive</span>
+          </div>
+
+          <div class="component-stack">
+            <div class="component-block">
+              <div class="component-title-row">
+                <span class="component-title">Button styles</span>
+                <span class="component-source">CreamControls.swift</span>
+              </div>
+              <div class="sample-row">
+                <button class="primary-button" type="button">确认执行</button>
+                <button class="secondary-button" type="button">返回修改</button>
+                <button class="primary-button" type="button" disabled>不可用</button>
+                <button class="primary-button" type="button"><span class="spinner" aria-hidden="true"></span>正在保存</button>
+              </div>
+            </div>
+
+            <div class="component-block">
+              <div class="component-title-row">
+                <span class="component-title">CreamIconButton</span>
+                <span class="component-source">CreamComponentLibrary.swift</span>
+              </div>
+              <div class="sample-row">
+                <button class="icon-button" type="button" aria-label="返回" title="返回">←</button>
+                <button class="icon-button primary" type="button" aria-label="新建员工" title="新建员工">＋</button>
+                <button class="icon-button selected" type="button" aria-label="已选择" title="已选择">✓</button>
+                <button class="icon-button danger" type="button" aria-label="删除" title="删除">×</button>
+                <button class="icon-button" type="button" aria-label="更多操作" title="更多操作" disabled>•••</button>
+              </div>
+            </div>
+
+            <div class="component-block">
+              <div class="component-title-row">
+                <span class="component-title">CreamSearchField</span>
+                <span class="component-source">CreamComponentLibrary.swift</span>
+              </div>
+              <label class="field" for="component-search">
+                <span class="field-symbol" aria-hidden="true">⌕</span>
+                <input id="component-search" type="search" placeholder="搜索员工或会话" autocomplete="off">
+                <button class="clear-button" id="clear-search" type="button" aria-label="清除搜索" title="清除搜索">×</button>
+              </label>
+            </div>
+
+            <div class="component-block">
+              <div class="component-title-row">
+                <span class="component-title">Menu, segmented control and tabs</span>
+                <span class="component-source">CreamControls.swift</span>
+              </div>
+              <div class="sample-row">
+                <button class="menu-label" type="button" aria-label="选择员工">
+                  <span>悟空，产品助理</span><small>⌃⌄</small>
+                </button>
+                <div class="segment" role="group" aria-label="视图密度">
+                  <button type="button" data-segment="comfortable" aria-pressed="true">舒适</button>
+                  <button type="button" data-segment="compact" aria-pressed="false">紧凑</button>
+                </div>
+              </div>
+              <div style="margin-top:18px">
+                <div class="tabs" role="tablist" aria-label="能力详情">
+                  <button type="button" role="tab" id="tab-files" aria-selected="true" aria-controls="tab-content">技能文件</button>
+                  <button type="button" role="tab" id="tab-dependencies" aria-selected="false" aria-controls="tab-content">依赖信息</button>
+                  <button type="button" role="tab" id="tab-security" aria-selected="false" aria-controls="tab-content">权限与风险</button>
+                </div>
+                <div class="tab-panel" id="tab-content" role="tabpanel" aria-labelledby="tab-files">展示 Package 目录和只读文档预览。</div>
+              </div>
+            </div>
+
+            <div class="component-block">
+              <div class="component-title-row">
+                <span class="component-title">CreamSectionHeader</span>
+                <span class="component-source">CreamComponentLibrary.swift</span>
+              </div>
+              <div class="section-header-demo">
+                <div>
+                  <h3>员工会话</h3>
+                  <p>恢复最近对话并显示真实工作状态。</p>
+                </div>
+                <span class="count">3</span>
+                <button class="icon-button primary" type="button" aria-label="新建员工" title="新建员工">＋</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="navigation">
+          <div class="section-heading">
+            <div>
+              <h2>状态、导航与列表行</h2>
+              <p>颜色只辅助状态，图标或明确文字同时保留。列表行使用连续表面，不默认包裹 Card。</p>
+            </div>
+            <span class="stage pattern">共享 Pattern</span>
+          </div>
+
+          <div class="two-column">
+            <div class="board">
+              <div class="component-title-row">
+                <span class="component-title">CreamStatusBadge</span>
+                <span class="component-source">4 tones</span>
+              </div>
+              <div class="badge-row">
+                <span class="status-badge neutral"><span aria-hidden="true">i</span>只读</span>
+                <span class="status-badge success"><span aria-hidden="true">✓</span>可用</span>
+                <span class="status-badge warning"><span aria-hidden="true">!</span>等待审批</span>
+                <span class="status-badge error"><span aria-hidden="true">×</span>执行失败</span>
+              </div>
+              <div class="inline-feedback"><span aria-hidden="true">!</span><span>需要先授权目标目录，现有数据没有被修改。</span></div>
+            </div>
+
+            <div class="board">
+              <div class="component-title-row">
+                <span class="component-title">CreamProgressBar</span>
+                <span class="component-source">value 0...1</span>
+              </div>
+              <div class="run-demo" id="run-demo">
+                <div><span class="run-indicator" aria-hidden="true"></span><span id="run-label">已准备</span></div>
+                <div class="progress" role="progressbar" aria-label="示例进度" aria-valuenow="58" aria-valuemin="0" aria-valuemax="100">
+                  <div class="progress-fill"></div>
+                </div>
+                <button class="quiet-button" id="run-motion" type="button" style="margin-top:12px">演示运行状态</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="board" style="margin-top:24px">
+            <div class="component-title-row">
+              <span class="component-title">creamSidebarRowSurface</span>
+              <span class="component-source">Default, Hover, Selected</span>
+            </div>
+            <div class="two-column">
+              <div class="sidebar-demo" id="search-results">
+                <button class="sidebar-row selected" type="button" data-search-row="悟空 产品助理">
+                  <span class="avatar">悟</span>
+                  <span class="row-copy">
+                    <span class="row-title">悟空</span>
+                    <span class="row-detail">产品助理，正在整理需求边界</span>
+                  </span>
+                  <span class="semantic-state">运行中</span>
+                </button>
+                <button class="sidebar-row" type="button" data-search-row="数据搜集员工 数据研究员">
+                  <span class="avatar">数</span>
+                  <span class="row-copy">
+                    <span class="row-title">数据搜集员工</span>
+                    <span class="row-detail">数据研究员，最近完成公开资料整理</span>
+                  </span>
+                </button>
+                <button class="sidebar-row" type="button" data-search-row="文档编写员工 文档撰稿人">
+                  <span class="avatar">文</span>
+                  <span class="row-copy">
+                    <span class="row-title">文档编写员工</span>
+                    <span class="row-detail">文档撰稿人，当前可接受工作</span>
+                  </span>
+                </button>
+                <div class="search-empty" id="search-empty">没有匹配的员工或会话。</div>
+              </div>
+              <div class="candidate-note" style="margin-top:0; padding-top:0; border-top:0">
+                <strong style="color:var(--ink)">复用边界</strong><br>
+                共享层只负责 Hover、Selected、Focus 与命中区域。员工状态、预览文案和路由行为继续由 Feature 层提供。
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="timeline">
+          <div class="section-heading">
+            <div>
+              <h2>Shared Timeline 消息与工作记录</h2>
+              <p>组件展台、员工聊天和 Task Thread 由同一个 HTML 模板与渲染器生成。页面只传入内容数据和 compact / regular 密度，不再维护第二套消息结构。</p>
+            </div>
+            <span class="stage stable">共享实现</span>
+          </div>
+
+          <div class="timeline-showcase">
+            <div class="timeline-showcase-main">
+              <div class="timeline-showcase-toolbar">
+                <div>
+                  <strong>Timeline 状态预览</strong>
+                  <small id="timeline-density-status">compact，员工聊天密度</small>
+                </div>
+                <div class="timeline-density-switch" role="group" aria-label="Timeline 密度">
+                  <button type="button" data-timeline-density-choice="compact" aria-pressed="true">紧凑</button>
+                  <button type="button" data-timeline-density-choice="regular" aria-pressed="false">常规</button>
+                </div>
+              </div>
+              <div class="timeline-showcase-canvas">
+                <div class="cream-timeline-host" data-timeline-source="gallery" data-timeline-density="compact" data-timeline-label="共享 Timeline 组件状态预览"></div>
+              </div>
+            </div>
+
+            <aside class="timeline-contract-panel" aria-label="Timeline 组件契约">
+              <h3>一套结构，四类状态</h3>
+              <p>内容语义属于页面，头像、作者、时间、操作、Markdown 与阅读宽度属于共享组件。</p>
+              <dl class="timeline-contract-list">
+                <div><dt>CreamTimelineLayout</dt><dd>统一阅读宽度、水平留白和消息间距。</dd></div>
+                <div><dt>CreamTimelineUserMessage</dt><dd>右对齐弱背景气泡，时间常驻，操作按需出现。</dd></div>
+                <div><dt>CreamTimelineAgentRow</dt><dd>统一头像、作者、状态、时间和尾部操作。</dd></div>
+                <div><dt>CreamTimelineMarkdownBody</dt><dd>标题、列表、引用、代码和表格共享排印规则。</dd></div>
+              </dl>
+              <div class="timeline-usage-map" aria-label="页面尺寸映射">
+                <span><code>EmployeeChat</code><strong>compact</strong></span>
+                <span><code>TaskThread</code><strong>regular</strong></span>
+                <span><code>Preview Gallery</code><strong>可切换</strong></span>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="section" id="feedback">
+          <div class="section-heading">
+            <div>
+              <h2>反馈与恢复状态</h2>
+              <p>Loading、Empty、Failure、Blocked 和 Result Unknown 保持不同语义，不合并成一个通用错误框。</p>
+            </div>
+            <span class="stage stable">已标准化</span>
+          </div>
+
+          <div class="feedback-grid">
+            <div class="feedback">
+              <span class="feedback-icon" aria-hidden="true">i</span>
+              <h3>还没有知识来源</h3>
+              <p>Runtime 导入内容后会显示在这里，文件目录本身不是知识库事实源。</p>
+              <button class="secondary-button" type="button">查看导入说明</button>
+            </div>
+            <div class="feedback error">
+              <span class="feedback-icon" aria-hidden="true">!</span>
+              <h3>无法读取技能库</h3>
+              <p>已安装 Package 没有被修改。检查 Runtime 后可以安全重试。</p>
+              <button class="secondary-button" type="button">重试</button>
+            </div>
+            <div class="feedback">
+              <span class="feedback-icon" aria-hidden="true">?</span>
+              <h3>需要人工核验</h3>
+              <p>结果状态未知，系统不会自动重放可能产生副作用的操作。</p>
+              <button class="secondary-button" type="button">查看证据</button>
+            </div>
+            <div class="feedback">
+              <span class="feedback-icon" aria-hidden="true">✓</span>
+              <h3>反馈 Toast</h3>
+              <p>仅用于短暂结果确认，不替代页面内错误或恢复信息。</p>
+              <button class="primary-button" id="show-toast" type="button">显示提示</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="composer">
+          <div class="section-heading">
+            <div>
+              <h2>Shared Composer 与 Modal</h2>
+              <p>办公室、员工聊天和 Task Thread 复用同一个 CreamComposer，仅以 compact / regular / expanded 尺寸变体区分输入高度与容器宽度。Modal 只用于需要 Focus Lock 的确认或编辑流程。</p>
+            </div>
+            <span class="stage pattern">共享 Pattern</span>
+          </div>
+
+          <div class="two-column">
+            <div>
+              <div class="component-title-row">
+                <span class="component-title">CreamComposer.compact</span>
+                <span class="component-source">compact / regular / expanded</span>
+              </div>
+              <div class="client-shared-composer compact" data-composer-size="compact">
+                <textarea aria-label="给员工发消息" placeholder="给悟空发消息…"></textarea>
+                <div class="client-shared-composer-footer">
+                  <span class="spacer"></span>
+                  <button class="send-button" type="button" aria-label="发送消息" title="发送消息">↑</button>
+                </div>
+              </div>
+            </div>
+            <div class="board">
+              <div class="component-title-row">
+                <span class="component-title">CreamModalOverlay</span>
+                <span class="component-source">Panel 220ms</span>
+              </div>
+              <p style="margin:0 0 14px; color:var(--muted); font-size:var(--type-metadata)">用于确认、编辑和高风险操作。普通详情优先放在 Inspector 或页面内。</p>
+              <button class="secondary-button" id="open-dialog" type="button">打开示例 Modal</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="motion">
+          <div class="section-heading">
+            <div>
+              <h2>语义动效 Token</h2>
+              <p>将指针移到每个 Token 上查看速度差异。键盘高频导航不播放动画。</p>
+            </div>
+            <span class="stage stable">已标准化</span>
+          </div>
+
+          <div class="motion-list">
+            <div class="motion-token" style="--duration:120ms; --curve:var(--ease-out)"><strong>pressFeedback</strong><span>120ms · ease out</span><div class="motion-track"><i class="motion-dot"></i></div></div>
+            <div class="motion-token" style="--duration:120ms; --curve:var(--ease-out)"><strong>hoverReveal</strong><span>120ms · ease out</span><div class="motion-track"><i class="motion-dot"></i></div></div>
+            <div class="motion-token" style="--duration:180ms; --curve:var(--ease-in-out)"><strong>selectionMorph</strong><span>180ms · ease in out</span><div class="motion-track"><i class="motion-dot"></i></div></div>
+            <div class="motion-token" style="--duration:180ms; --curve:var(--ease-out)"><strong>stateCrossfade</strong><span>180ms · ease out</span><div class="motion-track"><i class="motion-dot"></i></div></div>
+            <div class="motion-token" style="--duration:220ms; --curve:var(--ease-out)"><strong>panelPresentation</strong><span>220ms · ease out</span><div class="motion-track"><i class="motion-dot"></i></div></div>
+            <div class="motion-token" style="--duration:160ms; --curve:ease-in"><strong>panelDismissal</strong><span>160ms · ease in</span><div class="motion-track"><i class="motion-dot"></i></div></div>
+            <div class="motion-token" style="--duration:900ms; --curve:var(--ease-out)"><strong>metricReveal</strong><span>900ms · ease out</span><div class="motion-track"><i class="motion-dot"></i></div></div>
+            <div class="motion-token" style="--duration:1150ms; --curve:var(--ease-in-out)"><strong>activePulse</strong><span>1150ms · repeat</span><div class="motion-track"><i class="motion-dot"></i></div></div>
+          </div>
+        </section>
+
+        <section class="section" id="coverage">
+          <div class="section-heading">
+            <div>
+              <h2>当前标准化覆盖状态</h2>
+              <p>预览存在不代表已进入 DesignSystem。以下状态来自当前工作区代码审计。</p>
+            </div>
+            <span class="stage stable">已完成当前范围</span>
+          </div>
+
+          <div class="board flat">
+            <div class="coverage-list">
+              <div class="coverage-row" data-coverage-status="standardized" data-component-level="Foundation"><div class="coverage-name"><code>Palette / Typography / Radius / Motion</code></div><div class="coverage-level">Foundation</div><div class="coverage-state"><span class="stage stable">已标准化</span></div></div>
+              <div class="coverage-row" data-coverage-status="standardized" data-component-level="Native Primitive"><div class="coverage-name"><code>CreamSearchField / IconButton / SectionHeader / StatusBadge</code></div><div class="coverage-level">Native Primitive</div><div class="coverage-state"><span class="stage stable">已标准化</span></div></div>
+              <div class="coverage-row" data-coverage-status="standardized" data-component-level="Native Primitive"><div class="coverage-name"><code>CreamPrimaryButtonStyle / CreamSecondaryButtonStyle</code></div><div class="coverage-level">Native Primitive</div><div class="coverage-state"><span class="stage stable">状态已闭环</span></div></div>
+              <div class="coverage-row" data-coverage-status="standardized" data-component-level="Native Primitive"><div class="coverage-name"><code>CreamTabBar / CreamSegmentedControl</code></div><div class="coverage-level">Native Primitive</div><div class="coverage-state"><span class="stage stable">状态已闭环</span></div></div>
+              <div class="coverage-row" data-coverage-status="standardized" data-component-level="Business Pattern"><div class="coverage-name"><code>CreamModalOverlay</code></div><div class="coverage-level">Business Pattern</div><div class="coverage-state"><span class="stage stable">焦点已闭环</span></div></div>
+              <div class="coverage-row" data-coverage-status="standardized" data-component-level="Business Pattern"><div class="coverage-name"><code>CreamTimelineLayout / UserMessage / AgentRow / MarkdownBody</code></div><div class="coverage-level">Business Pattern</div><div class="coverage-state"><span class="stage stable">已复用</span></div></div>
+              <div class="coverage-row" data-coverage-status="standardized" data-component-level="Business Pattern"><div class="coverage-name"><code>CreamComposer compact / regular / expanded</code></div><div class="coverage-level">Business Pattern</div><div class="coverage-state"><span class="stage stable">已复用</span></div></div>
+              <div class="coverage-row" data-coverage-status="standardized" data-component-level="Native Primitive"><div class="coverage-name"><code>Feedback / Toast / Async Action</code></div><div class="coverage-level">Native Primitive</div><div class="coverage-state"><span class="stage stable">已标准化</span></div></div>
+              <div class="coverage-row" data-coverage-status="standardized" data-component-level="Feature Adoption"><div class="coverage-name"><code>EmployeeDirectory 全部搜索、Header、Status</code></div><div class="coverage-level">Feature Adoption</div><div class="coverage-state"><span class="stage stable">迁移完成</span></div></div>
+              <div class="coverage-row" data-coverage-status="standardized" data-component-level="Feature Adoption"><div class="coverage-name"><code>ScenarioLibrary 搜索与状态表面</code></div><div class="coverage-level">Feature Adoption</div><div class="coverage-state"><span class="stage stable">迁移完成</span></div></div>
+              <div class="coverage-row" data-coverage-status="standardized" data-component-level="Specialized Pattern"><div class="coverage-name"><code>CreamCommandPaletteSearchField</code></div><div class="coverage-level">Specialized Pattern</div><div class="coverage-state"><span class="stage stable">键盘契约已闭环</span></div></div>
+            </div>
+          </div>
+          <p class="candidate-note">完成状态与组件层级分别表达。Specialized Pattern 是已验收的业务专用契约，不代表待迁移；后续新增调用点必须继续通过状态矩阵与残留实现扫描。</p>
+        </section>
+
+        <p class="footer-note">
+          HTML 仅用于视觉评审。SwiftUI 事实源见
+          <a href="./AI%20Employee%20macOS%20UI%20Token%20%26%20Component%20Contract%20v1.0.md">UI Token &amp; Component Contract v1.0</a>。
+        </p>
+      </main>
+    </div>
+  </div>
+
+  <template id="cream-timeline-template">
+    <div class="cream-timeline" data-cream-timeline>
+      <div class="cream-timeline-reading" role="feed" data-timeline-items></div>
+    </div>
+  </template>
+
+  <div class="toast" id="toast" role="status" aria-live="polite">
+    <span class="toast-icon" aria-hidden="true">✓</span>
+    <span id="toast-message">组件状态已更新</span>
+    <button class="icon-button" id="close-toast" type="button" aria-label="关闭提示" title="关闭提示">×</button>
+  </div>
+
+  <div class="dialog-backdrop" id="dialog-backdrop" aria-hidden="true">
+    <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title" tabindex="-1">
+      <div class="dialog-header">
+        <div>
+          <h3 id="dialog-title">确认执行这项工作</h3>
+          <p>员工将按当前方案创建可追踪的 Task Thread。执行中的 Tool 调用仍受权限与审批约束。</p>
+        </div>
+        <button class="icon-button" id="close-dialog" type="button" aria-label="关闭 Modal" title="关闭">×</button>
+      </div>
+      <div class="dialog-actions">
+        <button class="secondary-button" id="cancel-dialog" type="button">返回修改</button>
+        <button class="primary-button" type="button">确认执行</button>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var typeButtons = Array.from(document.querySelectorAll("[data-type-choice]"));
+      var typeRoles = Array.from(document.querySelectorAll(".type-role[data-current]"));
+      var typeScaleStatus = document.getElementById("type-scale-status");
+      var themeButtons = Array.from(document.querySelectorAll("[data-theme-choice]"));
+      var clientPageButtons = Array.from(document.querySelectorAll("[data-client-page]"));
+      var clientPagePanels = Array.from(document.querySelectorAll("[data-client-panel]"));
+      var sectionLinks = Array.from(document.querySelectorAll(".side-nav a[href^='#']"));
+      var media = window.matchMedia("(prefers-color-scheme: dark)");
+      var timelineTemplate = document.getElementById("cream-timeline-template");
+      var timelineSources = {
+        chat: {
+          items: [
+            {
+              kind: "user",
+              text: "聊天页面的字体、按钮和 Markdown 渲染需要统一，整体再精致一些。",
+              metadata: "14:32",
+              editable: true
+            },
+            {
+              kind: "agent",
+              avatar: "A",
+              author: "Alex",
+              metadata: "刚刚",
+              copyText: "统一建议：消息正文使用共享排印，标题保持三级层级，高频操作统一为图标按钮。",
+              bodyType: "markdown",
+              html: `
+                <h2>统一建议</h2>
+                <p>聊天页应保持连续阅读面，不把每一条回复都包成 Card。用户消息使用弱背景气泡，员工回复直接落在画布上，让视线集中在内容而不是容器。</p>
+                <ol>
+                  <li><strong>排印：</strong>正文统一使用 reading Token，中文行高为 1.72。</li>
+                  <li><strong>按钮：</strong>复制、编辑、归档等高频操作统一为图标按钮。</li>
+                  <li><strong>反馈：</strong>Hover 只改变文字与弱背景，Press 缩放到 0.96。</li>
+                </ol>
+                <blockquote>聊天内容可以自由表达，但 Tool 调用、文件写入和外部副作用仍由 Runtime 权限与审批边界裁决。</blockquote>
+                <h3>Markdown 排印规则</h3>
+                <div class="cream-timeline-table-wrap">
+                  <table>
+                    <thead><tr><th>元素</th><th>精致版</th><th>视觉处理</th></tr></thead>
+                    <tbody>
+                      <tr><td>H1 / H2 / H3</td><td>19 / 16 / 14px</td><td>只提高层级，不增加装饰容器</td></tr>
+                      <tr><td>正文 / 列表</td><td>14px</td><td>中文行高 1.72，段间距 9px</td></tr>
+                      <tr><td>行内代码</td><td>12px Mono</td><td>弱背景与 4px 圆角</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="cream-timeline-code-block">
+                  <div class="cream-timeline-code-head"><span>swift</span><button class="cream-timeline-icon-button" type="button" aria-label="复制代码" title="复制代码" data-timeline-copy data-copy-text="struct TimelineStyle { let body: CGFloat = 14; let lineHeight: CGFloat = 1.72 }">⧉</button></div>
+                  <pre><code>struct TimelineStyle {
+    let body: CGFloat = 14
+    let lineHeight: CGFloat = 1.72
+}</code></pre>
+                </div>
+                <p>组件层统一使用 <code>CreamTimelineUserMessage</code>、<code>CreamTimelineAgentRow</code>、<code>CreamTimelineMarkdownBody</code> 与共享时间格式。</p>
+              `
+            }
+          ],
+          sourceMap: ["EmployeeChatWorkspaceView.swift", "CreamTimelineLayout", "CreamTimelineUserMessage", "CreamTimelineAgentRow", "CreamTimelineMarkdownBody", "CreamComposer.compact"]
+        },
+        work: {
+          items: [
+            {
+              kind: "user",
+              text: "调研同类 AI 产品的协作方式，并整理成一份产品决策文档。",
+              metadata: "14:38"
+            },
+            {
+              kind: "agent",
+              avatar: "协",
+              author: "任务协调器",
+              metadata: "刚刚",
+              status: "!",
+              statusTone: "waiting",
+              bodyType: "custom",
+              html: `
+                <div class="client-proposal">
+                  <div class="client-proposal-head"><div><h4>执行方案</h4><p>多员工协作 · 2 个分工</p></div><div class="client-page-actions"><button class="secondary-button" type="button">返回修改</button><button class="primary-button" type="button">确认执行</button></div></div>
+                  <div class="client-assignment"><span class="avatar">研</span><span class="client-row-copy"><span class="client-row-title">研究助理</span><span class="client-row-meta">收集产品资料并提炼差异</span></span></div>
+                  <div class="client-assignment"><span class="avatar">A</span><span class="client-row-copy"><span class="client-row-title">Alex</span><span class="client-row-meta">汇总结论并形成决策文档</span></span></div>
+                </div>
+              `
+            },
+            {
+              kind: "agent",
+              avatar: "系",
+              author: "系统",
+              metadata: "刚刚",
+              status: "i",
+              bodyType: "runtime",
+              html: "<strong>方案已生成。</strong>确认前不会创建 Tool 副作用，后续执行仍受权限与审批约束。"
+            }
+          ]
+        },
+        gallery: {
+          items: [
+            {
+              kind: "user",
+              text: "把员工聊天与工作记录统一成同一套 Timeline 组件。",
+              metadata: "14:42",
+              editable: true
+            },
+            {
+              kind: "agent",
+              avatar: "A",
+              author: "Alex",
+              metadata: "刚刚",
+              status: "✓",
+              copyText: "已统一 Timeline 的布局、用户消息、员工消息与 Markdown 样式。",
+              bodyType: "markdown",
+              html: "<h3>组件已经统一</h3><p>聊天和工作记录共享相同的头像、作者、时间、操作与正文排印。</p><ul><li>页面只传入消息数据。</li><li>compact 与 regular 只改变尺寸 Token。</li></ul>"
+            },
+            {
+              kind: "agent",
+              avatar: "研",
+              author: "研究助理",
+              metadata: "生成中",
+              bodyType: "streaming"
+            },
+            {
+              kind: "agent",
+              avatar: "系",
+              author: "系统",
+              metadata: "刚刚",
+              status: "i",
+              bodyType: "runtime",
+              html: "<strong>Runtime Event</strong> 工具调用正在等待目录授权，没有产生文件副作用。"
+            }
+          ],
+          sourceMap: ["cream-timeline-template", "renderCreamTimeline", "compact / regular"]
+        }
+      };
+
+      function timelineIconButton(label, symbol, copyText, editable) {
+        var button = document.createElement("button");
+        button.className = "cream-timeline-icon-button";
+        button.type = "button";
+        button.setAttribute("aria-label", label);
+        button.title = label;
+        button.textContent = symbol;
+        if (copyText !== undefined) {
+          button.dataset.timelineCopy = "";
+          button.dataset.copyText = copyText;
+        }
+        if (editable) button.dataset.timelineEdit = "";
+        return button;
+      }
+
+      function renderTimelineUserMessage(item) {
+        var article = document.createElement("article");
+        article.className = "cream-timeline-item cream-timeline-user-message";
+        article.setAttribute("aria-label", "你：" + item.text);
+
+        var bubble = document.createElement("div");
+        bubble.className = "cream-timeline-user-bubble";
+        bubble.textContent = item.text;
+        article.appendChild(bubble);
+
+        var actions = document.createElement("div");
+        actions.className = "cream-timeline-message-actions";
+        var metadata = document.createElement("span");
+        metadata.textContent = item.metadata;
+        actions.appendChild(metadata);
+
+        var controls = document.createElement("span");
+        controls.className = "cream-timeline-message-controls";
+        controls.appendChild(timelineIconButton("复制用户消息", "⧉", item.text));
+        if (item.editable) controls.appendChild(timelineIconButton("编辑用户消息", "⌁", undefined, true));
+        actions.appendChild(controls);
+        article.appendChild(actions);
+        return article;
+      }
+
+      function renderTimelineAgentRow(item) {
+        var article = document.createElement("article");
+        article.className = "cream-timeline-item cream-timeline-agent-row";
+        article.setAttribute("aria-label", item.author + "：" + item.metadata);
+
+        var avatar = document.createElement("span");
+        avatar.className = "cream-timeline-avatar";
+        avatar.setAttribute("aria-hidden", "true");
+        avatar.textContent = item.avatar;
+        article.appendChild(avatar);
+
+        var content = document.createElement("div");
+        content.className = "cream-timeline-agent-content";
+        var head = document.createElement("div");
+        head.className = "cream-timeline-message-head";
+
+        var author = document.createElement("span");
+        author.className = "cream-timeline-author";
+        author.textContent = item.author;
+        head.appendChild(author);
+
+        if (item.status) {
+          var status = document.createElement("span");
+          status.className = "cream-timeline-status" + (item.statusTone ? " " + item.statusTone : "");
+          status.setAttribute("aria-hidden", "true");
+          status.textContent = item.status;
+          head.appendChild(status);
+        }
+
+        var time = document.createElement("span");
+        time.className = "cream-timeline-time";
+        time.textContent = "· " + item.metadata;
+        head.appendChild(time);
+        if (item.copyText) head.appendChild(timelineIconButton("复制 " + item.author + " 的回复", "⧉", item.copyText));
+        content.appendChild(head);
+
+        var body = document.createElement("div");
+        body.className = "cream-timeline-body";
+        if (item.bodyType === "markdown") body.classList.add("cream-timeline-markdown");
+        if (item.bodyType === "runtime") body.classList.add("cream-timeline-runtime-event");
+        if (item.bodyType === "streaming") {
+          body.classList.add("cream-timeline-streaming");
+          body.innerHTML = '<span>正在整理内容</span><span class="cream-timeline-streaming-dots" aria-hidden="true"><i></i><i></i><i></i></span>';
+          article.setAttribute("aria-busy", "true");
+        } else {
+          body.innerHTML = item.html || "";
+        }
+        content.appendChild(body);
+        article.appendChild(content);
+        return article;
+      }
+
+      function renderCreamTimeline(host, source) {
+        var fragment = timelineTemplate.content.cloneNode(true);
+        var feed = fragment.querySelector("[data-timeline-items]");
+        feed.setAttribute("aria-label", host.dataset.timelineLabel || "消息时间线");
+        source.items.forEach(function (item) {
+          feed.appendChild(item.kind === "user" ? renderTimelineUserMessage(item) : renderTimelineAgentRow(item));
+        });
+        if (source.sourceMap) {
+          var sourceMap = document.createElement("div");
+          sourceMap.className = "client-source-map";
+          sourceMap.setAttribute("aria-label", "组件来源");
+          source.sourceMap.forEach(function (name) {
+            var tag = document.createElement("span");
+            tag.textContent = name;
+            sourceMap.appendChild(tag);
+          });
+          feed.appendChild(sourceMap);
+        }
+        host.replaceChildren(fragment);
+      }
+
+      function renderCreamTimelineHosts() {
+        document.querySelectorAll(".cream-timeline-host[data-timeline-source]").forEach(function (host) {
+          renderCreamTimeline(host, timelineSources[host.dataset.timelineSource]);
+        });
+      }
+
+      function applyTypeScale(choice) {
+        root.dataset.typeScale = choice;
+        typeButtons.forEach(function (button) {
+          button.setAttribute("aria-pressed", String(button.dataset.typeChoice === choice));
+        });
+        typeRoles.forEach(function (role) {
+          role.textContent = role.dataset[choice];
+        });
+        typeScaleStatus.textContent = choice === "refined" ? "精致版 10-22px" : "当前 11-34px";
+      }
+
+      typeButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+          applyTypeScale(button.dataset.typeChoice);
+        });
+      });
+
+      function resolvedTheme(choice) {
+        return choice === "system" ? (media.matches ? "dark" : "light") : choice;
+      }
+
+      function applyTheme(choice) {
+        var resolved = resolvedTheme(choice);
+        root.dataset.theme = resolved;
+        root.dataset.themeChoice = choice;
+        themeButtons.forEach(function (button) {
+          button.setAttribute("aria-pressed", String(button.dataset.themeChoice === choice));
+        });
+        document.querySelectorAll(".token").forEach(function (token) {
+          var value = resolved === "dark" ? token.dataset.dark : token.dataset.light;
+          token.querySelector(".token-value").textContent = value;
+        });
+      }
+
+      themeButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+          applyTheme(button.dataset.themeChoice);
+        });
+      });
+
+      media.addEventListener("change", function () {
+        if (root.dataset.themeChoice === "system") applyTheme("system");
+      });
+
+      renderCreamTimelineHosts();
+      var timelineDensityButtons = Array.from(document.querySelectorAll("[data-timeline-density-choice]"));
+      var timelineGallery = document.querySelector('.cream-timeline-host[data-timeline-source="gallery"]');
+      var timelineDensityStatus = document.getElementById("timeline-density-status");
+      timelineDensityButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+          var density = button.dataset.timelineDensityChoice;
+          timelineGallery.dataset.timelineDensity = density;
+          timelineDensityButtons.forEach(function (item) {
+            item.setAttribute("aria-pressed", String(item === button));
+          });
+          timelineDensityStatus.textContent = density === "compact" ? "compact，员工聊天密度" : "regular，Task Thread 密度";
+        });
+      });
+
+      function applyClientPage(choice) {
+        root.dataset.clientPreviewPage = choice;
+        clientPageButtons.forEach(function (button) {
+          button.setAttribute("aria-selected", String(button.dataset.clientPage === choice));
+        });
+        clientPagePanels.forEach(function (panel) {
+          panel.hidden = panel.dataset.clientPanel !== choice;
+          if (!panel.hidden) {
+            panel.querySelectorAll(".client-detail, .client-context, .client-inspector, .client-chat-stream").forEach(function (region) {
+              region.scrollTop = 0;
+            });
+          }
+        });
+      }
+
+      clientPageButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+          applyClientPage(button.dataset.clientPage);
+        });
+      });
+
+      function syncSectionNavigation() {
+        var current = window.location.hash || "#overview";
+        sectionLinks.forEach(function (link) {
+          if (link.getAttribute("href") === current) {
+            link.setAttribute("aria-current", "page");
+          } else {
+            link.removeAttribute("aria-current");
+          }
+        });
+      }
+
+      window.addEventListener("hashchange", syncSectionNavigation);
+
+      var segmentButtons = Array.from(document.querySelectorAll("[data-segment]"));
+      segmentButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+          segmentButtons.forEach(function (item) {
+            item.setAttribute("aria-pressed", String(item === button));
+          });
+        });
+      });
+
+      var tabCopy = {
+        "tab-files": "展示 Package 目录和只读文档预览。",
+        "tab-dependencies": "展示 Skill 与 Tool 的依赖、版本和 readiness。",
+        "tab-security": "展示权限、风险等级和审批边界。"
+      };
+      var tabButtons = Array.from(document.querySelectorAll("[role='tab']"));
+      var tabPanel = document.getElementById("tab-content");
+      tabButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+          tabButtons.forEach(function (item) {
+            item.setAttribute("aria-selected", String(item === button));
+          });
+          tabPanel.textContent = tabCopy[button.id];
+          tabPanel.setAttribute("aria-labelledby", button.id);
+        });
+      });
+
+      var search = document.getElementById("component-search");
+      var clearSearch = document.getElementById("clear-search");
+      var resultRows = Array.from(document.querySelectorAll("[data-search-row]"));
+      var emptySearch = document.getElementById("search-empty");
+
+      function updateSearch() {
+        var query = search.value.trim().toLocaleLowerCase("zh-CN");
+        var visibleCount = 0;
+        clearSearch.classList.toggle("visible", query.length > 0);
+        resultRows.forEach(function (row) {
+          var matches = !query || row.dataset.searchRow.toLocaleLowerCase("zh-CN").includes(query);
+          row.hidden = !matches;
+          if (matches) visibleCount += 1;
+        });
+        emptySearch.style.display = visibleCount === 0 ? "block" : "none";
+      }
+
+      search.addEventListener("input", updateSearch);
+      clearSearch.addEventListener("click", function () {
+        search.value = "";
+        updateSearch();
+        search.focus();
+      });
+
+      resultRows.forEach(function (row) {
+        row.addEventListener("click", function () {
+          resultRows.forEach(function (item) {
+            item.classList.toggle("selected", item === row);
+          });
+        });
+      });
+
+      var toast = document.getElementById("toast");
+      var toastMessage = document.getElementById("toast-message");
+      var toastTimer;
+      function hideToast() {
+        toast.classList.remove("visible");
+      }
+      function showToastMessage(message) {
+        window.clearTimeout(toastTimer);
+        toastMessage.textContent = message;
+        toast.classList.add("visible");
+        toastTimer = window.setTimeout(hideToast, 3000);
+      }
+      document.getElementById("show-toast").addEventListener("click", function () {
+        showToastMessage("组件状态已更新");
+      });
+      document.getElementById("close-toast").addEventListener("click", hideToast);
+
+      function copyPreviewText(value) {
+        if (navigator.clipboard && window.isSecureContext) {
+          return navigator.clipboard.writeText(value);
+        }
+        var helper = document.createElement("textarea");
+        helper.value = value;
+        helper.setAttribute("readonly", "");
+        helper.style.position = "fixed";
+        helper.style.opacity = "0";
+        document.body.appendChild(helper);
+        helper.select();
+        var copied = document.execCommand("copy");
+        helper.remove();
+        return copied ? Promise.resolve() : Promise.reject(new Error("copy_failed"));
+      }
+
+      document.querySelectorAll("[data-timeline-copy]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          var originalLabel = button.textContent;
+          copyPreviewText(button.dataset.copyText || "").then(function () {
+            button.classList.add("copied");
+            button.textContent = "✓";
+            showToastMessage("已复制");
+            window.setTimeout(function () {
+              button.classList.remove("copied");
+              button.textContent = originalLabel;
+            }, 1200);
+          }).catch(function () {
+            showToastMessage("复制失败，请重试");
+          });
+        });
+      });
+
+      document.querySelectorAll("[data-timeline-edit]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          showToastMessage("编辑入口使用 CreamTimelineUserMessage 统一处理");
+        });
+      });
+
+      var runDemo = document.getElementById("run-demo");
+      var runLabel = document.getElementById("run-label");
+      var runButton = document.getElementById("run-motion");
+      var runTimer;
+      runButton.addEventListener("click", function () {
+        window.clearTimeout(runTimer);
+        runDemo.classList.remove("running");
+        void runDemo.offsetWidth;
+        runDemo.classList.add("running");
+        runLabel.textContent = "正在执行";
+        runButton.textContent = "重新演示";
+        runTimer = window.setTimeout(function () {
+          runDemo.classList.remove("running");
+          runLabel.textContent = "已完成";
+        }, 1800);
+      });
+
+      var backdrop = document.getElementById("dialog-backdrop");
+      var dialog = backdrop.querySelector(".dialog");
+      var openDialog = document.getElementById("open-dialog");
+      var closeDialog = document.getElementById("close-dialog");
+      var cancelDialog = document.getElementById("cancel-dialog");
+      var previousFocus = null;
+
+      function showDialog() {
+        previousFocus = document.activeElement;
+        backdrop.classList.add("open");
+        backdrop.setAttribute("aria-hidden", "false");
+        window.setTimeout(function () { dialog.focus(); }, 0);
+      }
+
+      function hideDialog() {
+        backdrop.classList.remove("open");
+        backdrop.setAttribute("aria-hidden", "true");
+        if (previousFocus) previousFocus.focus();
+      }
+
+      openDialog.addEventListener("click", showDialog);
+      closeDialog.addEventListener("click", hideDialog);
+      cancelDialog.addEventListener("click", hideDialog);
+      backdrop.addEventListener("click", function (event) {
+        if (event.target === backdrop) hideDialog();
+      });
+      document.addEventListener("keydown", function (event) {
+        if (!backdrop.classList.contains("open")) return;
+        if (event.key === "Escape") {
+          hideDialog();
+          return;
+        }
+        if (event.key !== "Tab") return;
+
+        var focusable = Array.from(dialog.querySelectorAll("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])"))
+          .filter(function (element) { return !element.disabled && element.getClientRects().length > 0; });
+        if (focusable.length === 0) {
+          event.preventDefault();
+          dialog.focus();
+          return;
+        }
+
+        var first = focusable[0];
+        var last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      });
+
+      applyTypeScale("refined");
+      applyTheme("light");
+      var requestedClientPage = new URLSearchParams(window.location.search).get("client");
+      var initialClientPage = clientPagePanels.some(function (panel) {
+        return panel.dataset.clientPanel === requestedClientPage;
+      }) ? requestedClientPage : "office";
+      applyClientPage(initialClientPage);
+      syncSectionNavigation();
+      updateSearch();
+    }());
+  </script>
+</body>
+</html>

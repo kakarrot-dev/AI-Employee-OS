@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// A narrow AppKit bridge for native macOS text interaction inside the SwiftUI message stream.
+/// A shared AppKit bridge for native macOS text interaction inside Cream timelines.
 /// One NSTextView owns the complete message so the insertion cursor and selection can cross Markdown blocks.
 struct SelectableMarkdownTextView: NSViewRepresentable {
     let source: String
@@ -150,7 +150,8 @@ struct SelectableMarkdownTextView: NSViewRepresentable {
                     spacingAfter: MarkdownTypography.paragraphSpacing
                 )
             case .spacing:
-                output.append(NSAttributedString(string: "\n"))
+                // Block spacing is owned by the preceding paragraph style. Emitting another
+                // newline here doubles the visual gap for ordinary Markdown blank lines.
                 continue
             }
             if !isLast { output.append(NSAttributedString(string: "\n")) }
@@ -178,9 +179,22 @@ struct SelectableMarkdownTextView: NSViewRepresentable {
         let mutable = NSMutableAttributedString(attributedString: value)
         let range = NSRange(location: 0, length: mutable.length)
         mutable.addAttribute(.foregroundColor, value: color, range: range)
-        mutable.enumerateAttribute(.font, in: range) { existing, range, _ in
-            if existing == nil { mutable.addAttribute(.font, value: font, range: range) }
+        mutable.enumerateAttribute(.inlinePresentationIntent, in: range) { value, inlineRange, _ in
+            let presentationIntent = (value as? NSNumber)?.intValue ?? 0
+            mutable.addAttribute(
+                .font,
+                value: MarkdownTypography.inlineFont(base: font, presentationIntent: presentationIntent),
+                range: inlineRange
+            )
+            if presentationIntent & 8 != 0 {
+                mutable.addAttribute(
+                    .strikethroughStyle,
+                    value: NSUnderlineStyle.single.rawValue,
+                    range: inlineRange
+                )
+            }
         }
+        mutable.removeAttribute(.inlinePresentationIntent, range: range)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = lineSpacing
         paragraph.paragraphSpacingBefore = spacingBefore
@@ -224,26 +238,42 @@ struct SelectableMarkdownTextView: NSViewRepresentable {
 }
 
 private enum MarkdownTypography {
-    static let bodyFont = NSFont.systemFont(ofSize: 16, weight: .regular)
-    static let listFont = NSFont.systemFont(ofSize: 15.5, weight: .regular)
-    static let codeFont = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
-    static let bodyLineSpacing: CGFloat = 6
-    static let listLineSpacing: CGFloat = 5
-    static let codeLineSpacing: CGFloat = 4
+    static let bodyFont = NSFont.systemFont(ofSize: AppTheme.Typography.assistantBodySize, weight: .regular)
+    static let listFont = NSFont.systemFont(ofSize: AppTheme.Typography.assistantBodySize, weight: .regular)
+    static let codeFont = NSFont.monospacedSystemFont(ofSize: AppTheme.Typography.codeSize, weight: .regular)
+    static let bodyLineSpacing = AppTheme.Typography.assistantLineSpacing
+    static let listLineSpacing = AppTheme.Typography.assistantListLineSpacing
+    static let codeLineSpacing = AppTheme.Typography.codeLineSpacing
     static let headingLineSpacing: CGFloat = 2
-    static let paragraphSpacing: CGFloat = 8
-    static let listSpacing: CGFloat = 4
-    static let blockSpacing: CGFloat = 12
-    static let headingSpacingBefore: CGFloat = 12
-    static let headingSpacingAfter: CGFloat = 6
+    static let paragraphSpacing = AppTheme.Typography.assistantParagraphSpacing
+    static let listSpacing = AppTheme.Typography.listSpacing
+    static let blockSpacing = AppTheme.Typography.blockSpacing
+    static let headingSpacingBefore = AppTheme.Typography.assistantParagraphSpacing
+    static let headingSpacingAfter: CGFloat = 4
     static let codeKern: CGFloat = 0.1
 
     static func headingFont(_ level: Int) -> NSFont {
         switch level {
-        case 1: .systemFont(ofSize: 21, weight: .semibold)
-        case 2: .systemFont(ofSize: 18, weight: .semibold)
-        default: .systemFont(ofSize: 16, weight: .semibold)
+        case 1: .systemFont(ofSize: 20, weight: .semibold)
+        case 2: .systemFont(ofSize: 17, weight: .semibold)
+        default: .systemFont(ofSize: AppTheme.Typography.assistantBodySize, weight: .semibold)
         }
+    }
+
+    static func inlineFont(base: NSFont, presentationIntent: Int) -> NSFont {
+        var resolved = presentationIntent & 4 == 0
+            ? base
+            : NSFont.monospacedSystemFont(
+                ofSize: max(AppTheme.Typography.codeSize, base.pointSize - 1),
+                weight: .regular
+            )
+        if presentationIntent & 2 != 0 {
+            resolved = NSFontManager.shared.convert(resolved, toHaveTrait: .boldFontMask)
+        }
+        if presentationIntent & 1 != 0 {
+            resolved = NSFontManager.shared.convert(resolved, toHaveTrait: .italicFontMask)
+        }
+        return resolved
     }
 }
 
@@ -302,13 +332,13 @@ private struct MarkdownColors {
 
     static let light = MarkdownColors(
         ink: NSColor(hex: 0x29271D), body: NSColor(hex: 0x403D36), muted: NSColor(hex: 0x6D675B),
-        accent: NSColor(hex: 0x9F6819), codeBackground: NSColor(hex: 0xEFEFEB),
-        quoteAccent: NSColor(hex: 0xB7791F).withAlphaComponent(0.48), divider: NSColor(hex: 0x8D8575).withAlphaComponent(0.55)
+        accent: NSColor(hex: 0x9E6719), codeBackground: NSColor(hex: 0xEFEFEB),
+        quoteAccent: NSColor(hex: 0xB7791F).withAlphaComponent(0.48), divider: NSColor(hex: 0x756F63).withAlphaComponent(0.55)
     )
     static let dark = MarkdownColors(
         ink: NSColor(hex: 0xE9E6DC), body: NSColor(hex: 0xDDD9CD), muted: NSColor(hex: 0xBBB6A8),
         accent: NSColor(hex: 0xF0CF92), codeBackground: NSColor(hex: 0x292A29),
-        quoteAccent: NSColor(hex: 0xE6BF7A).withAlphaComponent(0.52), divider: NSColor(hex: 0x8C887E).withAlphaComponent(0.62)
+        quoteAccent: NSColor(hex: 0xE6BF7A).withAlphaComponent(0.52), divider: NSColor(hex: 0x9A958A).withAlphaComponent(0.62)
     )
 }
 

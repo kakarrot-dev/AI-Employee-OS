@@ -9,7 +9,6 @@ struct TaskThreadWorkspaceView: View {
     @State private var compactShowsRoom = false
     @State private var roomDraft = ""
     @State private var pendingDeletion: TaskThreadProjection?
-    @FocusState private var composerFocused: Bool
 
     var body: some View {
         AdaptiveWorkspace(
@@ -103,7 +102,12 @@ struct TaskThreadWorkspaceView: View {
             roomHeader(thread, showsBack: showsBack, layout: layout)
             Divider()
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
+                CreamTimelineLayout(
+                    density: .regular,
+                    horizontalInset: layout.isCompact ? 16 : 28,
+                    topInset: 22,
+                    bottomInset: 22
+                ) {
                     switch store.proposalState {
                     case .recoverable(let message):
                         proposalRecoveryCard(message: message)
@@ -118,10 +122,6 @@ struct TaskThreadWorkspaceView: View {
                     }
                     ForEach(thread.room.items) { item in timelineItem(item, thread: thread) }
                 }
-                .padding(.horizontal, layout.isCompact ? 16 : 28)
-                .padding(.vertical, 22)
-                .frame(maxWidth: 820)
-                .frame(maxWidth: .infinity)
             }
             composer(thread, layout: layout)
         }
@@ -132,9 +132,9 @@ struct TaskThreadWorkspaceView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
                     Label("执行方案", systemImage: "list.bullet.clipboard")
-                        .font(.callout.weight(.semibold)).foregroundStyle(palette.ink)
+                        .font(AppTheme.Typography.interfaceBody(weight: .semibold)).foregroundStyle(palette.ink)
                     Text(proposal.proposal.intent == "multi_agent_task" ? "多员工协作 · \(proposal.proposal.assignments.count) 个分工" : "单员工执行")
-                        .font(.caption).foregroundStyle(palette.muted)
+                        .font(AppTheme.Typography.metadata()).foregroundStyle(palette.muted)
                 }
                 Spacer()
                 Button("返回修改", action: store.cancelWorkConfirmation).buttonStyle(CreamSecondaryButtonStyle())
@@ -144,16 +144,16 @@ struct TaskThreadWorkspaceView: View {
             }
             ForEach(proposal.proposal.missingInputs, id: \.key) { item in
                 Label(item.question, systemImage: "questionmark.circle")
-                    .font(.callout).foregroundStyle(palette.warning)
+                    .font(AppTheme.Typography.interfaceBody()).foregroundStyle(palette.warning)
             }
-            Text("方案匹配").font(.caption.weight(.semibold)).foregroundStyle(palette.muted)
+            Text("方案匹配").font(AppTheme.Typography.metadata(weight: .semibold)).foregroundStyle(palette.muted)
             ForEach(proposal.candidateAssignments(employees: employeeStore.employees)) { candidate in
                 HStack(spacing: 10) {
                     CreamAvatar(path: candidate.avatarPath, name: candidate.name, size: 32)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(candidate.name).font(.callout.weight(.medium)).foregroundStyle(palette.ink)
+                        Text(candidate.name).font(AppTheme.Typography.interfaceBody(weight: .medium)).foregroundStyle(palette.ink)
                         Text("\(candidate.role) · \(candidate.goal)")
-                            .font(.caption).foregroundStyle(palette.muted)
+                            .font(AppTheme.Typography.metadata()).foregroundStyle(palette.muted)
                     }
                 }
             }
@@ -183,8 +183,8 @@ struct TaskThreadWorkspaceView: View {
     private func proposalRetryCard(title: String, systemImage: String, message: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Label(title, systemImage: systemImage)
-                .font(.callout.weight(.semibold)).foregroundStyle(palette.ink)
-            Text(message).font(.callout).foregroundStyle(palette.body)
+                .font(AppTheme.Typography.interfaceBody(weight: .semibold)).foregroundStyle(palette.ink)
+            Text(message).font(AppTheme.Typography.interfaceBody()).foregroundStyle(palette.body)
             Button("重新生成方案", action: store.regenerateProposal)
                 .buttonStyle(CreamPrimaryButtonStyle())
                 .disabled(store.isSubmitting)
@@ -198,7 +198,7 @@ struct TaskThreadWorkspaceView: View {
     private func proposalLoadingCard() -> some View {
         HStack(spacing: 10) {
             ProgressView().controlSize(.small)
-            Text("正在匹配员工…").font(.callout.weight(.medium)).foregroundStyle(palette.body)
+            Text("正在匹配员工…").font(AppTheme.Typography.interfaceBody(weight: .medium)).foregroundStyle(palette.body)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -221,14 +221,14 @@ struct TaskThreadWorkspaceView: View {
                 .accessibilityLabel("返回工作列表")
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text(thread.title).font(.headline).foregroundStyle(palette.ink)
+                Text(thread.title).font(AppTheme.Typography.workspaceTitle).foregroundStyle(palette.ink)
                 HStack(spacing: -5) {
                     ForEach(thread.room.participants.prefix(5)) { participant in
                         CreamAvatar(path: participant.avatarPath, name: participant.name, size: 24)
                             .overlay(Circle().stroke(palette.canvas, lineWidth: 2))
                     }
                     Text("\(participantSummary) · \(statusLabel(thread.status))")
-                        .font(.caption).foregroundStyle(palette.muted).padding(.leading, 10)
+                        .font(AppTheme.Typography.metadata()).foregroundStyle(palette.muted).padding(.leading, 10)
                 }
             }
             Spacer()
@@ -247,14 +247,18 @@ struct TaskThreadWorkspaceView: View {
     @ViewBuilder
     private func timelineItem(_ item: TaskRoomTimelineItem, thread: TaskThreadProjection) -> some View {
         if item.role == "user" {
-            UserMessageBlock(text: item.content, createdAt: item.createdAt)
+            CreamTimelineUserMessage(
+                text: item.content,
+                metadata: TaskPresentation.time(item.createdAt)
+            )
         } else if item.role == "agent" {
-            AgentTimelineBlock(
+            CreamTimelineAgentRow(
                 employeeName: item.agentName ?? "员工",
                 employeeAvatarPath: item.avatarPath,
-                metadata: TaskPresentation.time(item.createdAt)
+                metadata: TaskPresentation.time(item.createdAt),
+                copyText: item.content
             ) {
-                ChatMarkdownBody(source: item.content)
+                CreamTimelineMarkdownBody(source: item.content)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else if ["approval", "handoff", "deliverable", "activity"].contains(item.kind) {
@@ -275,8 +279,12 @@ struct TaskThreadWorkspaceView: View {
         HStack {
             VStack(alignment: .leading, spacing: 9) {
                 Label(cardTitle(item), systemImage: systemIcon(item.kind))
-                    .font(.callout.weight(.semibold)).foregroundStyle(palette.ink)
-                Text(cardContent(item)).font(.callout).foregroundStyle(palette.body).textSelection(.enabled)
+                    .font(AppTheme.Typography.interfaceBody(weight: .semibold)).foregroundStyle(palette.ink)
+                Text(cardContent(item))
+                    .font(AppTheme.Typography.interfaceBody())
+                    .foregroundStyle(palette.body)
+                    .lineSpacing(4)
+                    .textSelection(.enabled)
                 if item.kind == "approval", item.status == "pending",
                    let execution = thread.execution,
                    let work = execution.workOrders.first(where: { $0.actionID == item.actionID }) {
@@ -302,37 +310,22 @@ struct TaskThreadWorkspaceView: View {
     }
 
     private func composer(_ thread: TaskThreadProjection, layout: ResolvedLayout) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            TextField(composerPlaceholder(thread), text: $roomDraft, axis: .vertical)
-                .textFieldStyle(.plain).font(.body).lineLimit(1...6)
-                .frame(minHeight: 36, alignment: .topLeading)
-                .focused($composerFocused)
-                .onSubmit {
-                    guard canSubmit(thread) else { return }
-                    sendRoomMessage()
-                }
-                .disabled(!canSendMessage(thread))
-            HStack(spacing: 8) {
-                Image(systemName: "plus").foregroundStyle(palette.muted).frame(width: 28, height: 28)
-                Spacer()
-                Text("Enter 发送 · Shift+Enter 换行").font(.caption2).foregroundStyle(palette.mutedSoft)
-                Button(action: sendRoomMessage) {
-                    Image(systemName: "arrow.up").font(.callout.weight(.bold))
-                        .foregroundStyle(canSubmit(thread) ? palette.surfaceCard : palette.mutedSoft)
-                        .frame(width: 32, height: 32)
-                        .background(canSubmit(thread) ? palette.ink : palette.hairlineSoft, in: Circle())
-                }
-                .buttonStyle(.plain).disabled(!canSubmit(thread)).accessibilityLabel("发送任务消息")
-            }
-        }
-        .padding(.horizontal, AppTheme.Spacing.md).padding(.top, AppTheme.Spacing.md).padding(.bottom, AppTheme.Spacing.xs)
-        .creamFloatingComposer(focused: composerFocused)
-        .frame(maxWidth: AppLayoutProfile.work.primary.maxWidth)
-        .frame(maxWidth: .infinity)
+        CreamComposer(
+            composerPlaceholder(thread),
+            text: $roomDraft,
+            accessibilityLabel: thread.status == "awaiting_input" ? "补充任务信息" : "任务执行状态输入区",
+            size: .regular,
+            maxWidth: AppLayoutProfile.work.primary.maxWidth,
+            isInputEnabled: canSendMessage(thread),
+            actionState: store.isSubmitting ? .loading : .submit,
+            isActionEnabled: canSubmit(thread),
+            actionHelp: store.isSubmitting ? "正在发送任务消息" : "发送任务消息",
+            onAction: sendRoomMessage,
+            leadingActions: { EmptyView() },
+            status: { EmptyView() }
+        )
         .padding(.horizontal, layout.isCompact ? 16 : AppTheme.Spacing.lg)
         .padding(.bottom, AppTheme.Spacing.md)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(thread.status == "awaiting_input" ? "补充任务信息" : "任务执行状态输入区")
     }
 
     private func canSubmit(_ thread: TaskThreadProjection) -> Bool {
@@ -373,10 +366,10 @@ struct TaskThreadWorkspaceView: View {
             VStack(alignment: .leading, spacing: 22) {
                 VStack(alignment: .leading, spacing: 9) {
                     HStack {
-                        Text("任务进度").font(.headline).foregroundStyle(palette.ink)
+                        Text("任务进度").font(AppTheme.Typography.workspaceTitle).foregroundStyle(palette.ink)
                         Spacer()
                         Text(overallProgressLabel(thread))
-                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .font(AppTheme.Typography.metadata(weight: .semibold).monospacedDigit())
                             .foregroundStyle(palette.muted)
                     }
                     if let progress = overallProgress(thread) {
@@ -386,26 +379,26 @@ struct TaskThreadWorkspaceView: View {
 
                 VStack(alignment: .leading, spacing: 14) {
                     Text(candidateAssignments.isEmpty ? "参与员工" : "拟参与员工")
-                        .font(.caption.weight(.semibold)).foregroundStyle(palette.muted)
+                        .font(AppTheme.Typography.metadata(weight: .semibold)).foregroundStyle(palette.muted)
                     if thread.room.participants.isEmpty {
                         if candidateAssignments.isEmpty {
                             Text("尚未匹配员工")
-                                .font(.callout.weight(.medium)).foregroundStyle(palette.ink)
+                                .font(AppTheme.Typography.interfaceBody(weight: .medium)).foregroundStyle(palette.ink)
                             Text("方案生成后将在这里显示")
-                                .font(.caption).foregroundStyle(palette.muted)
+                                .font(AppTheme.Typography.metadata()).foregroundStyle(palette.muted)
                         } else {
                             ForEach(candidateAssignments) { candidate in
                                 HStack(spacing: 10) {
                                     CreamAvatar(path: candidate.avatarPath, name: candidate.name, size: 34)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(candidate.name)
-                                            .font(.callout.weight(.medium)).foregroundStyle(palette.ink).lineLimit(1)
+                                            .font(AppTheme.Typography.interfaceBody(weight: .medium)).foregroundStyle(palette.ink).lineLimit(1)
                                         Text(candidate.role)
-                                            .font(.caption).foregroundStyle(palette.muted).lineLimit(1)
+                                            .font(AppTheme.Typography.metadata()).foregroundStyle(palette.muted).lineLimit(1)
                                     }
                                     Spacer(minLength: 6)
                                     Text("待确认")
-                                        .font(.caption2.weight(.medium))
+                                        .font(AppTheme.Typography.compactMetadata(weight: .medium))
                                         .foregroundStyle(palette.warning)
                                 }
                             }
@@ -416,12 +409,12 @@ struct TaskThreadWorkspaceView: View {
                                 HStack(spacing: 10) {
                                     CreamAvatar(path: participant.avatarPath, name: participant.name, size: 34)
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(participant.name).font(.callout.weight(.medium)).foregroundStyle(palette.ink).lineLimit(1)
-                                        Text(participant.role).font(.caption).foregroundStyle(palette.muted).lineLimit(1)
+                                        Text(participant.name).font(AppTheme.Typography.interfaceBody(weight: .medium)).foregroundStyle(palette.ink).lineLimit(1)
+                                        Text(participant.role).font(AppTheme.Typography.metadata()).foregroundStyle(palette.muted).lineLimit(1)
                                     }
                                     Spacer(minLength: 6)
                                     Text(statusLabel(participantStatus(participant, in: thread)))
-                                        .font(.caption2.weight(.medium))
+                                        .font(AppTheme.Typography.compactMetadata(weight: .medium))
                                         .foregroundStyle(statusColor(participantStatus(participant, in: thread)))
                                 }
                                 if let progress = participantProgress(participant, in: thread) {
@@ -520,14 +513,14 @@ private struct TaskThreadSidebarRow: View {
         Button(action: select) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(thread.title)
-                    .font(.callout.weight(.semibold))
+                    .font(AppTheme.Typography.sidebarTitle())
                     .foregroundStyle(palette.ink)
                     .lineLimit(1)
                 HStack(spacing: 5) {
                     Circle().fill(statusColor).frame(width: 6, height: 6)
-                    Text(statusLabel).font(.caption2).foregroundStyle(palette.muted)
+                    Text(statusLabel).font(AppTheme.Typography.metadata()).foregroundStyle(palette.muted)
                     if let latest = thread.room.items.last?.content {
-                        Text("· \(latest)").font(.caption2).foregroundStyle(palette.muted).lineLimit(1)
+                        Text("· \(latest)").font(AppTheme.Typography.metadata()).foregroundStyle(palette.muted).lineLimit(1)
                     }
                 }
             }
@@ -539,7 +532,7 @@ private struct TaskThreadSidebarRow: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        .animation(.easeOut(duration: AppTheme.Motion.fast), value: isHovered)
+        .animation(AppTheme.Motion.hoverReveal, value: isHovered)
         .contextMenu {
             if thread.archivedAt == nil {
                 Button("归档", systemImage: "archivebox", action: archive)

@@ -21,15 +21,17 @@ struct ContextSidebarView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Text(selection.title)
-                .font(.title3.weight(.semibold))
+                .font(AppTheme.Typography.sectionTitle)
                 .foregroundStyle(palette.ink)
             Spacer()
             if selection == .contacts {
-                Button(action: employeeStore.create) { Image(systemName: "person.badge.plus") }
-                    .buttonStyle(.plain)
-                    .frame(width: 40, height: 40)
-                    .help("新建员工")
-                    .accessibilityLabel("新建员工")
+                CreamIconButton(
+                    systemName: "person.badge.plus",
+                    accessibilityLabel: "新建员工",
+                    help: "新建员工",
+                    tone: .primary,
+                    action: employeeStore.create
+                )
             }
         }
         .foregroundStyle(palette.body)
@@ -73,31 +75,8 @@ struct WorkConversationList: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("员工会话")
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(palette.ink)
-                    Spacer()
-                    Text("\(employees.count)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(palette.muted)
-                }
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(palette.mutedSoft)
-                    TextField("搜索员工或会话", text: $query).textFieldStyle(.plain)
-                    if !query.isEmpty {
-                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
-                            .buttonStyle(.plain)
-                            .frame(width: 40, height: 40)
-                            .foregroundStyle(palette.mutedSoft)
-                            .help("清除搜索")
-                            .accessibilityLabel("清除搜索")
-                    }
-                }
-                .padding(.horizontal, 11)
-                .frame(height: 34)
-                .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                .overlay { RoundedRectangle(cornerRadius: 9).stroke(palette.hairlineSoft) }
+                CreamSectionHeader("员工会话", count: employees.count)
+                CreamSearchField("搜索员工或会话", text: $query, accessibilityLabel: "搜索员工或会话")
             }
             .padding(16)
 
@@ -132,7 +111,7 @@ struct WorkConversationList: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         Text("持续会话")
-                            .font(.caption.weight(.semibold))
+                            .font(AppTheme.Typography.metadata(weight: .semibold))
                             .foregroundStyle(palette.muted)
                             .padding(.horizontal, 16)
                             .padding(.top, 14)
@@ -231,15 +210,26 @@ private struct WorkConversationRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            EmployeeAvatar(name: employee.name, avatarPath: employee.avatarPath, size: 34)
+            CreamAvatar(path: employee.avatarPath, name: employee.name, size: 34)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text(employee.name).font(.callout.weight(.semibold)).foregroundStyle(palette.ink).lineLimit(1)
+                    Text(employee.name)
+                        .font(AppTheme.Typography.sidebarTitle())
+                        .foregroundStyle(palette.ink)
+                        .lineLimit(1)
                     Circle().fill(stateColor).frame(width: 6, height: 6)
                     Spacer(minLength: 0)
-                    if let relativeTime { Text(relativeTime).font(.caption2.monospacedDigit()).foregroundStyle(palette.mutedSoft) }
+                    if let relativeTime {
+                        Text(relativeTime)
+                            .font(AppTheme.Typography.compactMetadata().monospacedDigit())
+                            .foregroundStyle(palette.mutedSoft)
+                    }
                 }
-                Text(preview).font(.caption).foregroundStyle(palette.muted).lineLimit(2)
+                Text(preview)
+                    .font(AppTheme.Typography.metadata())
+                    .foregroundStyle(palette.muted)
+                    .lineSpacing(2)
+                    .lineLimit(2)
             }
         }
         .padding(.horizontal, 11)
@@ -247,7 +237,7 @@ private struct WorkConversationRow: View {
         .contentShape(Rectangle())
         .creamSidebarRowSurface(isSelected: isSelected, isHovered: isHovered)
         .onHover { isHovered = $0 }
-        .animation(.easeOut(duration: AppTheme.Motion.fast), value: isHovered)
+        .animation(AppTheme.Motion.hoverReveal, value: isHovered)
     }
 
     private var stateColor: Color {
@@ -272,11 +262,11 @@ struct EmployeeContextRow: View {
                 .frame(width: 34, height: 34)
                 .overlay { Text(employee.name.prefix(1)).font(.caption.weight(.semibold)).foregroundStyle(palette.primaryActive) }
             VStack(alignment: .leading, spacing: 2) {
-                Text(employee.name).font(.callout.weight(.medium)).lineLimit(1)
+                Text(employee.name).font(AppTheme.Typography.interfaceBody(weight: .medium)).lineLimit(1)
                 HStack(spacing: 5) {
                     Circle().fill(employee.status == "active" ? palette.success : palette.muted).frame(width: 5, height: 5)
                     Text("\(employee.role) · \(employee.status == "active" ? "可用" : "已停用")")
-                        .font(.caption)
+                        .font(AppTheme.Typography.metadata())
                         .foregroundStyle(palette.muted)
                         .lineLimit(1)
                 }

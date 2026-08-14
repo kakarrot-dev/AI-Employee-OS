@@ -22,6 +22,9 @@ struct RuntimeService: Sendable {
         }
 
         private static func userFacingRuntimeFailure(_ message: String) -> String {
+            if message.contains("employee_delete_blocked_active_work") {
+                return "该员工正在参与工作，请先完成或取消相关任务后再删除。"
+            }
             if message.contains("task_proposal_provider_network") {
                 return "模型服务连接中断，请稍后重试提出方案。任务草稿已经保存。"
             }
@@ -62,6 +65,8 @@ struct RuntimeService: Sendable {
     let archiveList: @Sendable () async throws -> ArchiveListResponse
     let employeeList: @Sendable () async throws -> EmployeeListResponse
     let employeeSave: @Sendable (Employee) async throws -> EmployeeSaveResponse
+    let employeeSetStatus: @Sendable (String, String) async throws -> EmployeeStatusResponse
+    let employeeDeleteCheck: @Sendable (String) async throws -> EmployeeDeleteCheckResponse
     let employeeDelete: @Sendable (String) async throws -> EmployeeDeleteResponse
     let effectivePrompt: @Sendable (String) async throws -> EffectivePromptResponse
     let capabilities: @Sendable () async throws -> RuntimeCapabilities
@@ -196,6 +201,16 @@ struct RuntimeService: Sendable {
             let data = try JSONEncoder().encode(employee)
             let payload = String(decoding: data, as: UTF8.self)
             return try await decodeCommand(["employee-save", "--database", try databaseURL().path, "--payload", payload], as: EmployeeSaveResponse.self)
+        }, employeeSetStatus: { id, status in
+            try await decodeCommand([
+                "employee-set-status", "--database", try databaseURL().path,
+                "--employee-id", id, "--status", status
+            ], as: EmployeeStatusResponse.self)
+        }, employeeDeleteCheck: { id in
+            try await decodeCommand([
+                "employee-delete-check", "--database", try databaseURL().path,
+                "--employee-id", id
+            ], as: EmployeeDeleteCheckResponse.self)
         }, employeeDelete: { id in
             try await decodeCommand(["employee-delete", "--database", try databaseURL().path, "--employee-id", id], as: EmployeeDeleteResponse.self)
         }, effectivePrompt: { id in

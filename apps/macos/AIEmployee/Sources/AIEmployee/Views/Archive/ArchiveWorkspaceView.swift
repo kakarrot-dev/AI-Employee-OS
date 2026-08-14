@@ -36,8 +36,8 @@ struct ArchiveWorkspaceView: View {
                 }
             }
             .padding(.bottom, 24)
-            .animation(.easeInOut(duration: AppTheme.Motion.standard), value: store.conversations.map(\.id))
-            .animation(.easeInOut(duration: AppTheme.Motion.standard), value: taskStore.archivedTaskThreads.map(\.id))
+            .animation(AppTheme.Motion.stateCrossfade, value: store.conversations.map(\.id))
+            .animation(AppTheme.Motion.stateCrossfade, value: taskStore.archivedTaskThreads.map(\.id))
         }
         .background(palette.canvas)
         .moduleNavigationTitle(.archive)
@@ -86,7 +86,7 @@ private struct ArchivedConversationRow: View {
         }
         .padding(11).creamSidebarRowSurface(isSelected: false, isHovered: hovered).onHover { hovered = $0 }
         .contextMenu { Button("恢复", systemImage: "tray.and.arrow.up", action: restore); Divider(); Button("删除", systemImage: "trash", role: .destructive, action: delete) }
-        .animation(.easeOut(duration: AppTheme.Motion.fast), value: hovered)
+        .animation(AppTheme.Motion.hoverReveal, value: hovered)
     }
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
@@ -109,7 +109,7 @@ private struct ArchivedTaskRow: View {
         }
         .padding(11).creamSidebarRowSurface(isSelected: false, isHovered: hovered).onHover { hovered = $0 }
         .contextMenu { Button("恢复", systemImage: "tray.and.arrow.up", action: restore); Divider(); Button("删除", systemImage: "trash", role: .destructive, action: delete) }
-        .animation(.easeOut(duration: AppTheme.Motion.fast), value: hovered)
+        .animation(AppTheme.Motion.hoverReveal, value: hovered)
     }
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }

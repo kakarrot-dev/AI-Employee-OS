@@ -8,10 +8,10 @@ struct SettingsPageHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.title2.weight(.semibold))
+                .font(AppTheme.Typography.pageTitle)
                 .foregroundStyle(palette.ink)
             Text(detail)
-                .font(.callout)
+                .font(AppTheme.Typography.interfaceBody())
                 .foregroundStyle(palette.muted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -48,11 +48,11 @@ struct SettingsInfoRow: View {
     var body: some View {
         HStack(spacing: 18) {
             Text(label)
-                .font(.callout)
+                .font(AppTheme.Typography.interfaceBody())
                 .foregroundStyle(palette.muted)
                 .frame(width: 96, alignment: .leading)
             Text(value)
-                .font(.callout)
+                .font(AppTheme.Typography.interfaceBody())
                 .foregroundStyle(palette.body)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -73,7 +73,7 @@ struct SettingsFootnote: View {
 
     var body: some View {
         Text(text)
-            .font(.caption)
+            .font(AppTheme.Typography.metadata())
             .foregroundStyle(color)
             .frame(maxWidth: .infinity, alignment: .leading)
     }

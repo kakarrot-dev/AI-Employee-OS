@@ -1,5 +1,4 @@
 import SwiftUI
-import AppKit
 
 struct EmployeeDirectoryView: View {
     @ObservedObject var store: EmployeeStore
@@ -8,7 +7,8 @@ struct EmployeeDirectoryView: View {
     let editDemoEmployee: (Employee) -> Void
     @State private var query = ""
     @State private var compactShowsProfile = false
-    @State private var confirmingRemoval: Employee?
+    @State private var confirmingDeletion: Employee?
+    @State private var hoveredEmployeeID: String?
     @Environment(\.colorScheme) private var colorScheme
 
     private var demo: ContactsDemoData? { ContactsDemoData.current }
@@ -33,18 +33,14 @@ struct EmployeeDirectoryView: View {
         .alert("无法完成操作", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) {
             Button("好") { store.error = nil }
         } message: { Text(store.error ?? "") }
-        .confirmationDialog("停用或删除 \(confirmingRemoval?.name ?? "员工")？", isPresented: Binding(get: { confirmingRemoval != nil }, set: { if !$0 { confirmingRemoval = nil } })) {
-            Button(confirmingRemoval?.id == "ai-product-manager" ? "彻底删除" : "继续", role: .destructive) {
-                if let employee = confirmingRemoval { Task { await store.remove(employee) } }
-                confirmingRemoval = nil
+        .confirmationDialog("永久删除 \(confirmingDeletion?.name ?? "员工")？", isPresented: Binding(get: { confirmingDeletion != nil }, set: { if !$0 { confirmingDeletion = nil } })) {
+            Button("永久删除", role: .destructive) {
+                if let employee = confirmingDeletion { Task { await store.delete(employee) } }
+                confirmingDeletion = nil
             }
-            Button("取消", role: .cancel) { confirmingRemoval = nil }
+            Button("取消", role: .cancel) { confirmingDeletion = nil }
         } message: {
-            if confirmingRemoval?.id == "ai-product-manager" {
-                Text("默认员工会被彻底删除，相关对话与任务一并清除，且不会在下次启动时自动恢复。")
-            } else {
-                Text("没有历史记录时会删除；存在对话或任务记录时只会停用，以保留证据。")
-            }
+            Text("员工资料、能力配置和私人对话将被物理删除；工作库中的历史工作、参与者进度和交付结果会继续保留。此操作无法撤销。")
         }
         .onAppear {
             if let demo, !demo.employees.contains(where: { $0.id == store.selection }) {
@@ -56,33 +52,21 @@ struct EmployeeDirectoryView: View {
     private var directory: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 8) {
-                    Text("AI 员工").font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
-                    Text("\(employees.count)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(palette.muted)
-                    Spacer()
+                CreamSectionHeader("AI 员工", count: employees.count) {
+                    HStack(spacing: AppTheme.Spacing.xs) {
                     if demo != nil {
-                        Text("演示数据").font(.caption2.weight(.medium)).foregroundStyle(palette.warning)
-                            .padding(.horizontal, 7).padding(.vertical, 3).background(palette.primary.opacity(0.10), in: Capsule())
+                            CreamStatusBadge(title: "演示数据", systemImage: "sparkles", tone: .warning)
                     }
-                    Button {
-                        if demo == nil { store.create() } else { editDemoEmployee(.draft()) }
-                    } label: {
-                        Image(systemName: "person.badge.plus")
-                            .frame(width: 24, height: 24)
+                        CreamIconButton(
+                            systemName: "person.badge.plus",
+                            accessibilityLabel: "新建员工",
+                            help: "新建员工",
+                            tone: .primary,
+                            action: { if demo == nil { store.create() } else { editDemoEmployee(.draft()) } }
+                        )
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(palette.body)
-                    .help("新建员工")
                 }
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(palette.mutedSoft)
-                    TextField("搜索姓名、岗位或部门", text: $query).textFieldStyle(.plain)
-                }
-                .padding(.horizontal, 11).frame(height: 34)
-                .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                .overlay { RoundedRectangle(cornerRadius: 9).stroke(palette.hairlineSoft) }
+                CreamSearchField("搜索姓名、岗位或部门", text: $query, accessibilityLabel: "搜索员工")
             }
             .padding(16)
 
@@ -134,28 +118,47 @@ struct EmployeeDirectoryView: View {
             compactShowsProfile = true
         } label: {
             HStack(spacing: 11) {
-                EmployeeAvatar(name: employee.name, avatarPath: employee.avatarPath, size: 36)
+                CreamAvatar(path: employee.avatarPath, name: employee.name, size: 36)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
-                        Text(employee.name).font(.callout.weight(.semibold)).foregroundStyle(palette.ink)
-                        if employee.status != "active" { Text("已停用").font(.caption2).foregroundStyle(palette.muted) }
+                        Text(employee.name)
+                            .font(AppTheme.Typography.sidebarTitle())
+                            .foregroundStyle(palette.ink)
                     }
-                    Text(employee.role).font(.caption).foregroundStyle(palette.muted).lineLimit(1)
+                    Text(employee.role)
+                        .font(AppTheme.Typography.metadata())
+                        .foregroundStyle(palette.muted)
+                        .lineLimit(1)
                 }
                 Spacer(minLength: 4)
-                Circle().fill(employee.status == "active" ? palette.success : palette.mutedSoft).frame(width: 7, height: 7)
+                Text(employee.status == "active" ? "可用" : "已停用")
+                    .font(AppTheme.Typography.compactMetadata(weight: .semibold))
+                    .foregroundStyle(employee.status == "active" ? palette.success : palette.mutedSoft)
             }
-            .padding(.horizontal, 12).frame(height: 56)
-            .background(store.selection == employee.id ? palette.primary.opacity(0.11) : .clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(.horizontal, 12)
+            .frame(height: 56)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain).padding(.horizontal, 8)
+        .buttonStyle(
+            CreamSidebarButtonStyle(
+                isSelected: store.selection == employee.id,
+                isHovered: hoveredEmployeeID == employee.id
+            )
+        )
+        .onHover { hovered in
+            hoveredEmployeeID = hovered ? employee.id : nil
+        }
+        .padding(.horizontal, 8)
         .contextMenu {
             if demo == nil {
                 Button("编辑资料") { store.edit(employee) }
                 Button("私人聊聊") { openChat(employee) }
                 Divider()
-                Button(employee.status == "active" ? "停用或删除" : "删除", role: .destructive) { confirmingRemoval = employee }
+                Button(employee.status == "active" ? "禁用" : "启用") {
+                    Task { await store.setStatus(employee, status: employee.status == "active" ? "disabled" : "active") }
+                }
+                Divider()
+                Button("删除", role: .destructive) { requestDeletion(employee) }
             } else {
                 Text("演示数据不可修改")
             }
@@ -177,7 +180,15 @@ struct EmployeeDirectoryView: View {
                 edit: {
                     if demo == nil { store.edit(employee) } else { editDemoEmployee(employee) }
                 },
-                openChat: { if demo == nil { openChat(employee) } }
+                openChat: { if demo == nil { openChat(employee) } },
+                setStatus: {
+                    guard demo == nil else { return }
+                    Task { await store.setStatus(employee, status: employee.status == "active" ? "disabled" : "active") }
+                },
+                deleteEmployee: {
+                    guard demo == nil else { return }
+                    requestDeletion(employee)
+                }
             )
         } else {
             VStack(spacing: 14) {
@@ -195,7 +206,7 @@ struct EmployeeDirectoryView: View {
                 Button("新建 AI 员工") {
                     if demo == nil { store.create() } else { editDemoEmployee(.draft()) }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(CreamPrimaryButtonStyle())
                 .padding(.top, 4)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -209,12 +220,26 @@ struct EmployeeDirectoryView: View {
         return employees.filter { [$0.name, $0.role, $0.department].contains { $0.localizedCaseInsensitiveContains(needle) } }
     }
     private var departments: [String] { Array(Set(filteredEmployees.map(\.department))).sorted() }
+
+    private func requestDeletion(_ employee: Employee) {
+        Task {
+            guard let check = await store.deleteCheck(employee) else { return }
+            if check.deletable {
+                confirmingDeletion = employee
+            } else {
+                let count = check.activeWorkCount
+                store.error = "\(employee.name) 正在参与 \(count) 项工作，请先完成或取消相关任务后再删除。"
+            }
+        }
+    }
+
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 
 struct EmployeeDirectorySidebar: View {
     @ObservedObject var store: EmployeeStore
     @State private var query = ""
+    @State private var hoveredEmployeeID: String?
     @Environment(\.colorScheme) private var colorScheme
 
     private var employees: [Employee] {
@@ -234,23 +259,8 @@ struct EmployeeDirectorySidebar: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("AI 员工")
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(palette.ink)
-                    Spacer()
-                    Text("\(employees.count)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(palette.muted)
-                }
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(palette.mutedSoft)
-                    TextField("搜索姓名、岗位或部门", text: $query).textFieldStyle(.plain)
-                }
-                .padding(.horizontal, 11)
-                .frame(height: 34)
-                .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                .overlay { RoundedRectangle(cornerRadius: 9).stroke(palette.hairlineSoft) }
+                CreamSectionHeader("AI 员工", count: employees.count)
+                CreamSearchField("搜索姓名、岗位或部门", text: $query, accessibilityLabel: "搜索员工")
             }
             .padding(16)
 
@@ -295,14 +305,16 @@ struct EmployeeDirectorySidebar: View {
                                             .padding(.vertical, 7)
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                             .contentShape(Rectangle())
-                                            .background(
-                                                store.selection == employee.id
-                                                    ? palette.primary.opacity(0.12)
-                                                    : Color.clear,
-                                                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                            )
                                     }
-                                    .buttonStyle(.plain)
+                                    .buttonStyle(
+                                        CreamSidebarButtonStyle(
+                                            isSelected: store.selection == employee.id,
+                                            isHovered: hoveredEmployeeID == employee.id
+                                        )
+                                    )
+                                    .onHover { hovered in
+                                        hoveredEmployeeID = hovered ? employee.id : nil
+                                    }
                                     .padding(.horizontal, 8)
                                 }
                             }
@@ -342,6 +354,8 @@ private struct EmployeeProfileView: View {
     let back: () -> Void
     let edit: () -> Void
     let openChat: () -> Void
+    let setStatus: () -> Void
+    let deleteEmployee: () -> Void
     @State private var tab: EmployeeProfileTab = .identity
     @Environment(\.colorScheme) private var colorScheme
 
@@ -380,28 +394,58 @@ private struct EmployeeProfileView: View {
 
     private var profileHeader: some View {
         HStack(alignment: .top, spacing: 16) {
-            EmployeeAvatar(name: employee.name, avatarPath: employee.avatarPath, size: compact ? 52 : 64)
+            CreamAvatar(path: employee.avatarPath, name: employee.name, size: compact ? 52 : 64)
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 9) {
-                    Text(employee.name).font(.system(size: compact ? 25 : 30, weight: .semibold, design: .rounded)).foregroundStyle(palette.ink)
-                    Text(employee.status == "active" ? "启用" : "停用")
-                        .font(.caption.weight(.medium)).foregroundStyle(employee.status == "active" ? palette.success : palette.muted)
-                        .padding(.horizontal, 8).padding(.vertical, 3).background(palette.surfaceSoft, in: Capsule())
+                    Text(employee.name)
+                        .font(AppTheme.Typography.pageTitle)
+                        .foregroundStyle(palette.ink)
+                    CreamStatusBadge(
+                        title: employee.status == "active" ? "启用" : "停用",
+                        systemImage: employee.status == "active" ? "checkmark.circle.fill" : "pause.circle.fill",
+                        tone: employee.status == "active" ? .success : .neutral
+                    )
                 }
-                Text("\(employee.role) · \(employee.department)").font(.callout).foregroundStyle(palette.muted)
+                Text("\(employee.role) · \(employee.department)")
+                    .font(AppTheme.Typography.supporting())
+                    .foregroundStyle(palette.muted)
             }
             Spacer(minLength: 8)
             if !compact {
                 Button("编辑资料", action: edit).buttonStyle(CreamPrimaryButtonStyle())
                 Button("私人聊聊", action: openChat).buttonStyle(CreamSecondaryButtonStyle()).disabled(isDemo)
+                if !isDemo {
+                    Menu {
+                        Button(employee.status == "active" ? "禁用" : "启用", action: setStatus)
+                        Divider()
+                        Button("删除", role: .destructive, action: deleteEmployee)
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .help("员工操作")
+                }
+            } else {
+                Menu {
+                    Button("编辑资料", action: edit)
+                    Button("私人聊聊", action: openChat).disabled(isDemo)
+                    if !isDemo {
+                        Divider()
+                        Button(employee.status == "active" ? "禁用" : "启用", action: setStatus)
+                        Divider()
+                        Button("删除", role: .destructive, action: deleteEmployee)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
             }
-            else { Menu { Button("编辑资料", action: edit); Button("私人聊聊", action: openChat).disabled(isDemo) } label: { Image(systemName: "ellipsis.circle") } }
         }
     }
 
     private func promptPage(title: String, detail: String, markdown: String) -> some View {
         VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 5) { Text(title).font(.title2.weight(.semibold)).foregroundStyle(palette.ink); Text(detail).font(.callout).foregroundStyle(palette.muted) }
+            CreamSectionHeader(title, subtitle: detail)
             MarkdownDocumentView(source: markdown)
         }
     }
@@ -410,14 +454,14 @@ private struct EmployeeProfileView: View {
         VStack(alignment: .leading, spacing: 30) {
             HStack(spacing: 8) {
                 if !isDemo {
-                    Text(tasksEnabled ? "Runtime 已接通" : "尚未接通 Runtime")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(tasksEnabled ? palette.success : palette.warning)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background((tasksEnabled ? palette.success : palette.warning).opacity(0.12), in: Capsule())
+                    CreamStatusBadge(
+                        title: tasksEnabled ? "Runtime 已接通" : "尚未接通 Runtime",
+                        systemImage: tasksEnabled ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
+                        tone: tasksEnabled ? .success : .warning
+                    )
                 }
                 Text("在「编辑资料」中选择 Skill/Tool；此页只读展示。")
-                    .font(.caption)
+                    .font(AppTheme.Typography.metadata())
                     .foregroundStyle(palette.muted)
             }
             capabilitySection(
@@ -441,11 +485,11 @@ private struct EmployeeProfileView: View {
     private func capabilitySection(title: String, description: String, items: [EmployeeCapabilityItem]) -> some View {
         profileSection(title) {
             VStack(alignment: .leading, spacing: 14) {
-                Text(description).font(.callout).foregroundStyle(palette.muted)
+                Text(description).font(AppTheme.Typography.interfaceBody()).foregroundStyle(palette.muted)
                 if items.isEmpty {
                     HStack(spacing: 12) {
                         Image(systemName: title == "技能" ? "sparkles" : "wrench.and.screwdriver").foregroundStyle(palette.primaryActive)
-                        Text("当前未配置\(title)").font(.callout).foregroundStyle(palette.body)
+                        Text("当前未配置\(title)").font(AppTheme.Typography.interfaceBody()).foregroundStyle(palette.body)
                     }.padding(.vertical, 10)
                 } else {
                     VStack(spacing: 0) {
@@ -455,11 +499,11 @@ private struct EmployeeProfileView: View {
                                     .foregroundStyle(palette.primaryActive).frame(width: 22)
                                 VStack(alignment: .leading, spacing: 3) {
                                     HStack(spacing: 7) {
-                                        Text(item.name).font(.callout.weight(.semibold)).foregroundStyle(palette.ink)
-                                        Text("v\(item.version)").font(.caption.monospaced()).foregroundStyle(palette.muted)
+                                        Text(item.name).font(AppTheme.Typography.interfaceBody(weight: .semibold)).foregroundStyle(palette.ink)
+                                        Text("v\(item.version)").font(AppTheme.Typography.metadata().monospaced()).foregroundStyle(palette.muted)
                                     }
-                                    Text(item.detail).font(.caption).foregroundStyle(palette.muted).lineLimit(2)
-                                    Text(item.metadata).font(.caption2).foregroundStyle(palette.mutedSoft)
+                                    Text(item.detail).font(AppTheme.Typography.metadata()).foregroundStyle(palette.muted).lineLimit(2)
+                                    Text(item.metadata).font(AppTheme.Typography.compactMetadata()).foregroundStyle(palette.mutedSoft)
                                 }
                                 Spacer()
                             }
@@ -484,12 +528,12 @@ private struct EmployeeProfileView: View {
                         HStack(alignment: .top, spacing: 12) {
                             Image(systemName: "lock.shield").foregroundStyle(palette.primaryActive).frame(width: 22)
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(permission.name).font(.callout.weight(.semibold)).foregroundStyle(palette.ink)
-                                Text("\(permission.resource) · 来源：\(permission.source)").font(.caption).foregroundStyle(palette.muted)
-                                if let confirmation = permission.confirmation { Text("执行确认：\(confirmation)").font(.caption2).foregroundStyle(palette.mutedSoft) }
+                                Text(permission.name).font(AppTheme.Typography.interfaceBody(weight: .semibold)).foregroundStyle(palette.ink)
+                                Text("\(permission.resource) · 来源：\(permission.source)").font(AppTheme.Typography.metadata()).foregroundStyle(palette.muted)
+                                if let confirmation = permission.confirmation { Text("执行确认：\(confirmation)").font(AppTheme.Typography.compactMetadata()).foregroundStyle(palette.mutedSoft) }
                             }
                             Spacer()
-                            Text(permission.effect).font(.caption.weight(.semibold)).foregroundStyle(permission.effect == "允许" ? palette.success : palette.error)
+                            Text(permission.effect).font(AppTheme.Typography.metadata(weight: .semibold)).foregroundStyle(permission.effect == "允许" ? palette.success : palette.error)
                         }.padding(.vertical, 12)
                         if index < capabilityProfile.permissions.count - 1 { Divider().overlay(palette.hairlineSoft) }
                     }
@@ -498,27 +542,12 @@ private struct EmployeeProfileView: View {
         }
     }
 
-    private func profileSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View { VStack(alignment: .leading, spacing: 12) { Text(title).font(.headline).foregroundStyle(palette.ink); content() }.frame(maxWidth: .infinity, alignment: .leading) }
-    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
-}
-
-struct EmployeeAvatar: View {
-    let name: String
-    var avatarPath: String? = nil
-    let size: CGFloat
-    @Environment(\.colorScheme) private var colorScheme
-    var body: some View {
-        Group {
-            if let avatarPath, let image = NSImage(contentsOfFile: avatarPath) {
-                Image(nsImage: image).resizable().scaledToFill()
-            } else {
-                Text(String(name.prefix(1)).uppercased()).font(.system(size: size * 0.34, weight: .semibold)).foregroundStyle(palette.primaryActive)
-            }
+    private func profileSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).font(AppTheme.Typography.workspaceTitle).foregroundStyle(palette.ink)
+            content()
         }
-        .frame(width: size, height: size)
-        .background(palette.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: size * 0.28).stroke(palette.primary.opacity(0.12)) }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
@@ -561,7 +590,8 @@ struct CapabilityPickerSheet: View {
         VStack(spacing: 0) {
             HStack { VStack(alignment: .leading, spacing: 3) { Text(kind.title).font(.title2.weight(.semibold)); Text("为 \(employeeName) 选择，保存后显示在 Profile 中").font(.caption).foregroundStyle(palette.muted) }; Spacer() }.padding(20)
             Divider().overlay(palette.hairlineSoft)
-            HStack { Image(systemName: "magnifyingglass"); TextField("搜索技能库", text: $query).textFieldStyle(.plain) }.foregroundStyle(palette.muted).padding(.horizontal, 12).frame(height: 36).background(palette.surfaceSoft, in: RoundedRectangle(cornerRadius: 9)).padding(16)
+            CreamSearchField("搜索技能库", text: $query, accessibilityLabel: "搜索技能库")
+                .padding(16)
             if filteredItems.isEmpty {
                 ContentUnavailableView(kind.emptyTitle, systemImage: kind.icon, description: Text("安装并启用后，目录内容会出现在这里。"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

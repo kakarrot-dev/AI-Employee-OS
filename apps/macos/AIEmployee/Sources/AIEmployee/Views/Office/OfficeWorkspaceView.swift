@@ -10,7 +10,6 @@ struct OfficeWorkspaceView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var contentVisible = false
     @State private var dataAnimationProgress = 0.0
-    @FocusState private var taskComposerFocused: Bool
 
     private var snapshot: OfficeSnapshot {
         if let scene = OfficeDemoScene.current { return scene.snapshot }
@@ -40,7 +39,7 @@ struct OfficeWorkspaceView: View {
                 }
             }
             .padding(.bottom, compact ? 24 : 36)
-            .animation(reduceMotion ? nil : .easeOut(duration: AppTheme.Motion.standard), value: snapshotRevision)
+            .animation(reduceMotion ? nil : AppTheme.Motion.stateCrossfade, value: snapshotRevision)
         }
         .background(palette.canvas)
         .moduleNavigationTitle(.office)
@@ -50,7 +49,7 @@ struct OfficeWorkspaceView: View {
                 contentVisible = true
                 dataAnimationProgress = 1
             } else {
-                withAnimation(.easeOut(duration: AppTheme.Motion.standard)) {
+                withAnimation(AppTheme.Motion.panelPresentation) {
                     contentVisible = true
                 }
                 replayDataAnimation()
@@ -69,39 +68,26 @@ struct OfficeWorkspaceView: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("交代一项工作")
-                    .font(.title3.weight(.semibold))
+                    .font(AppTheme.Typography.sectionTitle)
                     .foregroundStyle(palette.ink)
                 Text("直接描述目标。系统会先提出单员工或多员工方案，确认后才执行。")
-                    .font(.caption)
+                    .font(AppTheme.Typography.metadata())
                     .foregroundStyle(palette.muted)
             }
 
-            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
-                TextField("例如：调研同类产品，并整理成一份产品决策文档", text: $store.draft, axis: .vertical)
-                    .textFieldStyle(.plain).font(.body).lineLimit(1...6)
-                    .frame(minHeight: 38, alignment: .topLeading)
-                    .focused($taskComposerFocused)
-                    .onSubmit(submitWork)
-                HStack(spacing: AppTheme.Spacing.xs) {
-                    Image(systemName: "plus").foregroundStyle(palette.muted).frame(width: 28, height: 28)
-                    Spacer()
-                    Text("Enter 提交 · Shift+Enter 换行").font(.caption2).foregroundStyle(palette.mutedSoft)
-                    Button(action: submitWork) {
-                        Group {
-                            if store.isSubmitting { ProgressView().controlSize(.small) }
-                            else { Image(systemName: "arrow.up").font(.callout.weight(.bold)) }
-                        }
-                        .foregroundStyle(canSubmitWork ? palette.surfaceCard : palette.mutedSoft)
-                        .frame(width: 32, height: 32)
-                        .background(canSubmitWork ? palette.ink : palette.hairlineSoft, in: Circle())
-                    }
-                    .buttonStyle(.plain).disabled(!canSubmitWork)
-                    .help("提出任务方案").accessibilityLabel("提出任务方案")
-                }
-            }
-            .padding(.horizontal, AppTheme.Spacing.md).padding(.top, AppTheme.Spacing.md).padding(.bottom, AppTheme.Spacing.xs)
-            .creamFloatingComposer(focused: taskComposerFocused)
-            .frame(maxWidth: .infinity)
+            CreamComposer(
+                "例如：调研同类产品，并整理成一份产品决策文档",
+                text: $store.draft,
+                accessibilityLabel: "描述工作目标",
+                size: .expanded,
+                isInputEnabled: !store.isSubmitting,
+                actionState: store.isSubmitting ? .loading : .submit,
+                isActionEnabled: canSubmitWork,
+                actionHelp: store.isSubmitting ? "正在生成任务方案" : "提出任务方案",
+                onAction: submitWork,
+                leadingActions: { EmptyView() },
+                status: { EmptyView() }
+            )
         }
         .padding(compact ? 16 : 20)
         .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.xl, style: .continuous))
@@ -124,25 +110,25 @@ struct OfficeWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 7) {
                     HStack(spacing: 10) {
                         Text("办公室")
-                            .font(.system(size: compact ? 27 : 34, weight: .semibold, design: .rounded))
+                            .font(AppTheme.Typography.pageTitle)
                             .foregroundStyle(palette.ink)
                         if snapshot.isDemo {
                             Text("演示")
-                                .font(.caption2.weight(.semibold))
+                                .font(AppTheme.Typography.compactMetadata(weight: .semibold))
                                 .foregroundStyle(palette.warning)
                                 .padding(.horizontal, 7).padding(.vertical, 3)
                                 .background(palette.primary.opacity(0.10), in: Capsule())
                         }
                     }
                     Text("查看最近 7 天的模型调用、Token 消耗与预估成本。")
-                        .font(.body)
+                        .font(AppTheme.Typography.interfaceBody())
                         .foregroundStyle(palette.muted)
                         .lineSpacing(3)
                 }
                 Spacer(minLength: 12)
                 if !compact {
                     Text(Self.dayFormatter.string(from: Date()))
-                        .font(.callout)
+                        .font(AppTheme.Typography.metadata().monospacedDigit())
                         .foregroundStyle(palette.mutedSoft)
                         .padding(.top, 7)
                 }
@@ -171,7 +157,7 @@ struct OfficeWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Text("Token 趋势")
-                            .font(.callout.weight(.semibold))
+                            .font(AppTheme.Typography.supporting(weight: .semibold))
                             .foregroundStyle(palette.body)
                         Spacer()
                         if hasData {
@@ -180,7 +166,7 @@ struct OfficeWorkspaceView: View {
                                 chartLegend("输出", color: palette.primaryActive)
                             }
                         } else {
-                            Text("尚无调用记录").font(.caption2).foregroundStyle(palette.mutedSoft)
+                            Text("尚无调用记录").font(AppTheme.Typography.compactMetadata()).foregroundStyle(palette.mutedSoft)
                         }
                     }
                     Group {
@@ -206,11 +192,11 @@ struct OfficeWorkspaceView: View {
         formatter: @escaping (Double) -> String
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.caption).foregroundStyle(palette.muted)
+            Text(label).font(AppTheme.Typography.metadata()).foregroundStyle(palette.muted)
             CountingMetricText(value: value * dataAnimationProgress, formatter: formatter)
-                .font(.system(size: 22, weight: .semibold, design: .rounded).monospacedDigit())
+                .font(AppTheme.Typography.metric)
                 .foregroundStyle(palette.ink)
-            Text(note).font(.caption2).foregroundStyle(palette.mutedSoft).lineLimit(1)
+            Text(note).font(AppTheme.Typography.compactMetadata()).foregroundStyle(palette.mutedSoft).lineLimit(1)
         }
     }
 
@@ -325,7 +311,7 @@ struct OfficeWorkspaceView: View {
         }
         dataAnimationProgress = 0
         DispatchQueue.main.async {
-            withAnimation(.easeOut(duration: 0.9)) {
+            withAnimation(AppTheme.Motion.metricReveal) {
                 dataAnimationProgress = 1
             }
         }
@@ -333,17 +319,14 @@ struct OfficeWorkspaceView: View {
 
     private func section<Content: View>(title: String, subtitle: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.title3.weight(.semibold)).foregroundStyle(palette.ink)
-                Text(subtitle).font(.caption).foregroundStyle(palette.muted)
-            }
+            CreamSectionHeader(title, subtitle: subtitle)
             content()
         }
     }
 
     private func runtimeBanner(_ message: String) -> some View {
         Label(message, systemImage: "bolt.horizontal.circle")
-            .font(.callout).foregroundStyle(palette.error).padding(12).frame(maxWidth: .infinity, alignment: .leading)
+            .font(AppTheme.Typography.interfaceBody()).foregroundStyle(palette.error).padding(12).frame(maxWidth: .infinity, alignment: .leading)
             .background(palette.error.opacity(0.08), in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg))
     }
 

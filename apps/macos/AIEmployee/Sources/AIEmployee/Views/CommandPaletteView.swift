@@ -62,16 +62,11 @@ struct CommandPaletteView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: AppTheme.Spacing.sm) {
-                Image(systemName: "magnifyingglass").foregroundStyle(palette.muted)
-                TextField("搜索员工、工作或命令", text: $query)
-                    .textFieldStyle(.plain)
-                    .font(.title3)
-                    .focused($searchFocused)
-                    .onSubmit(performSelected)
-                Text("⌘K").font(.caption.monospaced()).foregroundStyle(palette.mutedSoft)
-            }
-            .padding(AppTheme.Spacing.md)
+            CreamCommandPaletteSearchField(
+                text: $query,
+                isFocused: $searchFocused,
+                onSubmit: performSelected
+            )
 
             Divider().overlay(palette.hairlineSoft)
 
@@ -93,7 +88,7 @@ struct CommandPaletteView: View {
                                 let sectionCommands = indexedCommands.filter { $0.command.section == section }
                                 if !sectionCommands.isEmpty {
                                     Text(section.title)
-                                        .font(.caption.weight(.semibold))
+                                        .font(AppTheme.Typography.metadata(weight: .semibold))
                                         .foregroundStyle(palette.muted)
                                         .padding(.horizontal, AppTheme.Spacing.xs)
                                     ForEach(sectionCommands, id: \.command.id) { entry in
@@ -114,7 +109,11 @@ struct CommandPaletteView: View {
         }
         .frame(width: 640, height: 420)
         .background(.ultraThinMaterial)
-        .task { searchFocused = true }
+        .onAppear {
+            DispatchQueue.main.async {
+                searchFocused = true
+            }
+        }
         .onChange(of: query) { _, _ in selectedIndex = 0 }
         .onExitCommand(perform: close)
         .onMoveCommand { direction in
@@ -140,12 +139,20 @@ struct CommandPaletteView: View {
                     .foregroundStyle(selectedIndex == index ? palette.primaryActive : palette.muted)
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                    Text(command.title).foregroundStyle(palette.ink).lineLimit(1)
-                    Text(command.subtitle).font(.caption).foregroundStyle(palette.muted).lineLimit(1)
+                    Text(command.title)
+                        .font(AppTheme.Typography.interfaceBody(weight: .medium))
+                        .foregroundStyle(palette.ink)
+                        .lineLimit(1)
+                    Text(command.subtitle)
+                        .font(AppTheme.Typography.metadata())
+                        .foregroundStyle(palette.muted)
+                        .lineLimit(1)
                 }
                 Spacer()
                 if selectedIndex == index {
-                    Image(systemName: "return").font(.caption).foregroundStyle(palette.mutedSoft)
+                    Image(systemName: "return")
+                        .font(AppTheme.Typography.compactMetadata(weight: .semibold))
+                        .foregroundStyle(palette.mutedSoft)
                 }
             }
             .contentShape(Rectangle())
@@ -156,6 +163,7 @@ struct CommandPaletteView: View {
         .buttonStyle(.plain)
         .onHover { if $0 { selectedIndex = index } }
         .accessibilityAddTraits(selectedIndex == index ? .isSelected : [])
+        .accessibilityValue(selectedIndex == index ? "当前命令" : "")
     }
 
     private func performSelected() {
@@ -182,6 +190,51 @@ struct CommandPaletteView: View {
 
     private func newTask() { newWork(); close() }
     private func settings() { close(); openSettings() }
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+/// Command Palette 的专用搜索 Pattern。它保留外部焦点所有权，确保方向键和 Return
+/// 继续由命令列表路由，不与普通页面搜索的提交语义混用。
+struct CreamCommandPaletteSearchField: View {
+    @Binding var text: String
+    @FocusState.Binding var isFocused: Bool
+    let onSubmit: () -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: AppTheme.Spacing.sm) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(palette.muted)
+                .accessibilityHidden(true)
+
+            TextField("搜索员工、工作或命令", text: $text)
+                .textFieldStyle(.plain)
+                .font(AppTheme.Typography.interfaceBody())
+                .foregroundStyle(palette.body)
+                .focused($isFocused)
+                .onSubmit(onSubmit)
+                .accessibilityLabel("搜索命令")
+
+            if !text.isEmpty {
+                CreamIconButton(
+                    systemName: "xmark.circle.fill",
+                    accessibilityLabel: "清除命令搜索",
+                    help: "清除命令搜索",
+                    action: { text = "" }
+                )
+            }
+
+            Text("⌘K")
+                .font(AppTheme.Typography.compactMetadata().monospaced())
+                .foregroundStyle(palette.mutedSoft)
+                .accessibilityLabel("快捷键 Command K")
+        }
+        .padding(.leading, AppTheme.Spacing.md)
+        .padding(.trailing, text.isEmpty ? AppTheme.Spacing.md : AppTheme.Spacing.xs)
+        .frame(minHeight: 56)
+    }
+
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
 }
 

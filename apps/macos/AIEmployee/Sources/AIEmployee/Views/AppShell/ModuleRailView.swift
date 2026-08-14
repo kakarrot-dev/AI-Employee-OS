@@ -45,10 +45,10 @@ struct MainSidebarView: View {
             ApplicationLogo(size: 34)
             VStack(alignment: .leading, spacing: 1) {
                 Text("AI Employee OS")
-                    .font(.callout.weight(.semibold))
+                    .font(AppTheme.Typography.sidebarTitle())
                     .foregroundStyle(palette.ink)
                 Text("本地 AI 员工工作台")
-                    .font(.caption2)
+                    .font(AppTheme.Typography.metadata())
                     .foregroundStyle(palette.muted)
             }
             Spacer(minLength: 0)
@@ -59,32 +59,50 @@ struct MainSidebarView: View {
     }
 
     private func navigationButton(_ destination: AppDestination) -> some View {
-        let selected = selection == destination
-        return Button {
-            selection = destination
-        } label: {
+        MainSidebarNavigationButton(
+            destination: destination,
+            isSelected: selection == destination,
+            select: { selection = destination }
+        )
+    }
+
+    private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
+}
+
+private struct MainSidebarNavigationButton: View {
+    let destination: AppDestination
+    let isSelected: Bool
+    let select: () -> Void
+
+    @State private var isHovered = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Button(action: select) {
             HStack(spacing: 11) {
                 Image(systemName: destination.systemImage)
-                    .font(.system(size: 14, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? palette.primaryActive : palette.muted)
+                    .font(.system(size: AppTheme.Typography.navigationSize, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? palette.primaryActive : palette.muted)
                     .frame(width: 18, alignment: .center)
                 Text(destination.title)
-                    .font(.callout.weight(selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? palette.ink : palette.body)
+                    .font(AppTheme.Typography.navigation(weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? palette.ink : palette.body)
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, AppTheme.Spacing.sm)
-            .frame(maxWidth: .infinity, minHeight: 36, maxHeight: 36, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 40, maxHeight: 40, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .background(
-            selected ? palette.primary.opacity(0.12) : .clear,
-            in: RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous)
-        )
+        .buttonStyle(CreamSidebarButtonStyle(isSelected: isSelected, isHovered: isHovered))
+        .onHover { hovered in
+            withAnimation(reduceMotion ? nil : AppTheme.Motion.hoverReveal) {
+                isHovered = hovered
+            }
+        }
         .accessibilityLabel(destination.title)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }

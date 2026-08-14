@@ -79,22 +79,12 @@ struct CapabilityLibraryWorkspaceView: View {
     private var catalogList: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(scope.title).font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
-                    Spacer()
-                    Text("\(filteredCapabilities.count)").font(.caption.monospacedDigit()).foregroundStyle(palette.muted)
-                }
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(palette.mutedSoft)
-                    TextField(scope == .skills ? "搜索技能" : "搜索工具", text: $query).textFieldStyle(.plain)
-                    if !query.isEmpty {
-                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
-                            .buttonStyle(.plain).foregroundStyle(palette.mutedSoft).help("清除搜索")
-                    }
-                }
-                .padding(.horizontal, 11).frame(height: 34)
-                .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
-                .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.md).stroke(palette.hairlineSoft) }
+                CreamSectionHeader(scope.title, count: filteredCapabilities.count)
+                CreamSearchField(
+                    scope == .skills ? "搜索技能" : "搜索工具",
+                    text: $query,
+                    accessibilityLabel: scope == .skills ? "搜索技能" : "搜索工具"
+                )
             }
             .padding(16)
 
@@ -226,8 +216,12 @@ private struct CapabilityDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top, spacing: 14) {
                     if showsBack {
-                        Button(action: close) { Image(systemName: "chevron.left") }
-                            .buttonStyle(.plain).foregroundStyle(palette.body).help("返回列表")
+                        CreamIconButton(
+                            systemName: "chevron.left",
+                            accessibilityLabel: "返回列表",
+                            help: "返回列表",
+                            action: close
+                        )
                     }
                     Image(systemName: item.icon).font(.system(size: 20, weight: .medium)).foregroundStyle(palette.primaryActive)
                         .frame(width: 46, height: 46).background(palette.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: 13))
@@ -239,8 +233,11 @@ private struct CapabilityDetailView: View {
                         Text(item.summary).font(.callout).foregroundStyle(palette.muted)
                     }
                     Spacer()
-                    Text(item.status).font(.caption.weight(.semibold)).foregroundStyle(item.statusColor(palette))
-                        .padding(.horizontal, 9).frame(height: 25).background(item.statusColor(palette).opacity(0.09), in: Capsule())
+                    CreamStatusBadge(
+                        title: item.status,
+                        systemImage: item.status == "可用" ? "checkmark.circle.fill" : "exclamationmark.circle.fill",
+                        tone: item.status == "可用" ? .success : .warning
+                    )
                 }
                 CreamTabBar(items: tabs, selection: $tab, title: \ .title)
             }
@@ -387,8 +384,12 @@ private struct SkillPackageBrowser: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 if showsBack {
-                    Button { compactShowsDocument = false } label: { Image(systemName: "chevron.left") }
-                        .buttonStyle(.plain).foregroundStyle(palette.body).help("返回目录")
+                    CreamIconButton(
+                        systemName: "chevron.left",
+                        accessibilityLabel: "返回目录",
+                        help: "返回目录",
+                        action: { compactShowsDocument = false }
+                    )
                 }
                 Image(systemName: "doc.richtext").foregroundStyle(palette.primaryActive)
                 Text(selectedName).font(.callout.weight(.semibold)).foregroundStyle(palette.ink)
@@ -466,8 +467,11 @@ private struct AgentReachDataSourcesView: View {
                             Text("员工可调用").font(.caption2.weight(.semibold)).foregroundStyle(palette.primaryActive)
                         }
                         Spacer()
-                        Label(statusTitle(source.status), systemImage: statusIcon(source.status))
-                            .font(.caption.weight(.semibold)).foregroundStyle(statusColor(source.status))
+                        CreamStatusBadge(
+                            title: statusTitle(source.status),
+                            systemImage: statusIcon(source.status),
+                            tone: statusTone(source.status)
+                        )
                     }
                     metadata("后端", source.activeBackend ?? source.backends.joined(separator: "、"))
                     metadata("凭据", credentialTitle(source.credentialState, type: source.credentialType))
@@ -484,7 +488,7 @@ private struct AgentReachDataSourcesView: View {
     private func metadata(_ label: String, _ value: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Text(label).foregroundStyle(palette.muted).frame(width: 48, alignment: .leading)
-            Text(value.isEmpty ? "—" : value).foregroundStyle(palette.body).frame(maxWidth: .infinity, alignment: .leading)
+            Text(value.isEmpty ? "未提供" : value).foregroundStyle(palette.body).frame(maxWidth: .infinity, alignment: .leading)
         }.font(.caption)
     }
 
@@ -494,8 +498,8 @@ private struct AgentReachDataSourcesView: View {
     private func statusIcon(_ status: String) -> String {
         status == "ready" ? "checkmark.circle.fill" : status == "configured_unverified" ? "questionmark.circle.fill" : "exclamationmark.circle.fill"
     }
-    private func statusColor(_ status: String) -> Color {
-        status == "ready" ? palette.success : status == "configured_unverified" ? palette.warning : palette.error
+    private func statusTone(_ status: String) -> UXFeedbackTone {
+        status == "ready" ? .success : status == "configured_unverified" ? .warning : .error
     }
     private func credentialTitle(_ state: String, type: String) -> String {
         switch state {

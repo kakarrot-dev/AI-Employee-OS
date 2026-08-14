@@ -4,6 +4,8 @@
 
 > 交互状态事实源：加载、空白、错误、恢复、表单验证、Command Palette、动效和可访问性以 [AI Employee macOS UX State & Interaction Standard v1.0](./AI%20Employee%20macOS%20UX%20State%20%26%20Interaction%20Standard%20v1.0.md) 为准。
 
+> 组件级事实源：Token 分层、语义动效、通用组件 API、复用门禁与组件状态矩阵以 [AI Employee macOS UI Token & Component Contract v1.0](./AI%20Employee%20macOS%20UI%20Token%20%26%20Component%20Contract%20v1.0.md) 为准。
+
 ## 定位
 
 AI Employee macOS Client 使用 Claude Cream 作为唯一自定义视觉 Token。SwiftUI 继续保留原生 Sidebar、Toolbar、Sheet、Alert、菜单和辅助功能行为，不以自绘控件替代系统交互。
@@ -14,9 +16,11 @@ AI Employee macOS Client 使用 Claude Cream 作为唯一自定义视觉 Token�
 | --- | --- | --- |
 | Canvas | `#f5f5f2` | `#2d2e2d` |
 | Primary | `#b7791f` | `#e6bf7a` |
+| Primary Active | `#9e6719` | `#f0cf92` |
 | Ink | `#29271d` | `#e9e6dc` |
 | Body | `#403d36` | `#ddd9cd` |
 | Muted | `#6d675b` | `#bbb6a8` |
+| Muted Soft | `#756f63` | `#9a958a` |
 | Hairline | `#d8d8d3` | `#3d3d3a` |
 | Surface Soft | `#efefeb` | `#2a2b2a` |
 | Surface Card | `#fcfcf9` | `#303030` |
@@ -25,7 +29,24 @@ AI Employee macOS Client 使用 Claude Cream 作为唯一自定义视觉 Token�
 | Warning | `#8a5e16` | `#e6bf7a` |
 | Error | `#7c1b13` | `#ea928a` |
 
-间距只使用 `4 / 8 / 12 / 16 / 24 / 32 / 48`。连续内容表面使用 `12`，唯一主锚点允许使用 `16`；普通按钮、输入和窗口控件服从 macOS 系统样式。中文使用系统字体，正文基准为 16pt。Claude Cream 的暖色只用于品牌、焦点和关键状态，Canvas 使用低彩度中性底，避免整窗泛黄。
+间距只使用 `4 / 8 / 12 / 16 / 24 / 32 / 48`。连续内容表面使用 `12`，唯一主锚点允许使用 `16`；普通按钮、输入和窗口控件服从 macOS 系统样式。中文使用系统字体。Claude Cream 的暖色只用于品牌、焦点和关键状态，Canvas 使用低彩度中性底，避免整窗泛黄。
+
+### 排印尺度
+
+采用与 Codex 桌面端相同方向的高密度系统排印：Latin 使用 SF Pro，中文由 PingFang SC 系统回退；不安装或捆绑自定义字体，不对中文使用负字距。
+
+| 语义 | 字号 / 字重 | 间距与用途 |
+| --- | --- | --- |
+| 页面主标题 | `22pt Semibold` | 页面或 Profile 的唯一主锚点 |
+| 页面区标题 | `16pt Semibold` | Section 与空状态主标题 |
+| 工作区标题 | `14pt Semibold` | 主阅读区 Header 与 Inspector 标题 |
+| 主导航 / 侧栏条目 | `13pt Regular / Semibold` | 导航行高 `40pt`，一行标题，选中态提高字重 |
+| 员工回复 / 用户消息 / 长文正文 | `14pt Regular` | 中文阅读行距由角色和内容类型分别控制，正文宽度上限 `820pt` |
+| 界面正文 / 输入 | `13pt Regular / Medium` | 状态、表单与 Composer |
+| 辅助正文 | `12pt Regular / Semibold` | 作者、列表说明和次级标签 |
+| 元信息 | `11pt Regular / Medium` | 时间、角色、状态和两行预览；空间受限标签可用 `10pt` |
+
+消息时间线的块间距统一为 `24pt`。Markdown 空行不得再生成一整行空白，员工回复的段落分隔只由 `8pt` 段后距表达，避免中文长文出现松散断层。
 
 ## 通用页面规则
 

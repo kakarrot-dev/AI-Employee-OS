@@ -215,23 +215,8 @@ struct KnowledgeLibraryWorkspaceView: View {
     private var documentList: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("知识库").font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
-                    Spacer()
-                    Text("\(filteredDocuments.count)").font(.caption.monospacedDigit()).foregroundStyle(palette.muted)
-                }
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(palette.mutedSoft)
-                    TextField("搜索文档", text: $query).textFieldStyle(.plain)
-                    if !query.isEmpty {
-                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
-                            .buttonStyle(.plain).foregroundStyle(palette.mutedSoft)
-                            .help("清除搜索").accessibilityLabel("清除搜索")
-                    }
-                }
-                .padding(.horizontal, 11).frame(height: 34)
-                .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.md, style: .continuous))
-                .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.md).stroke(palette.hairlineSoft) }
+                CreamSectionHeader("知识库", count: filteredDocuments.count)
+                CreamSearchField("搜索文档", text: $query, accessibilityLabel: "搜索文档")
             }
             .padding(16)
 
@@ -289,14 +274,25 @@ struct KnowledgeLibraryWorkspaceView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 if showsBack {
-                    Button { compactShowsDocument = false } label: { Image(systemName: "chevron.left") }
-                        .buttonStyle(.plain).foregroundStyle(palette.body)
-                        .help("返回目录").accessibilityLabel("返回目录")
+                    CreamIconButton(
+                        systemName: "chevron.left",
+                        accessibilityLabel: "返回目录",
+                        help: "返回目录",
+                        action: { compactShowsDocument = false }
+                    )
                 }
                 Image(systemName: "doc.richtext").foregroundStyle(palette.primaryActive)
                 Text(selected?.relativePath ?? "选择文档").font(.callout.weight(.semibold)).foregroundStyle(palette.ink).lineLimit(1)
                 Spacer()
-                Text(selected.map { "索引：\($0.indexStatus)" } ?? "只读预览").font(.caption).foregroundStyle(palette.mutedSoft)
+                if let selected {
+                    CreamStatusBadge(
+                        title: "索引：\(selected.indexStatus)",
+                        systemImage: selected.indexStatus == "ready" ? "checkmark.circle.fill" : "clock.fill",
+                        tone: selected.indexStatus == "ready" ? .success : .warning
+                    )
+                } else {
+                    Text("只读预览").font(.caption).foregroundStyle(palette.mutedSoft)
+                }
             }
             .padding(.horizontal, 20).frame(height: 42)
             Divider().overlay(palette.hairlineSoft)

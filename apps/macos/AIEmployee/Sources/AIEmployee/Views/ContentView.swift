@@ -9,9 +9,9 @@ struct ContentView: View {
     @StateObject private var archiveStore = ArchiveStore()
     @StateObject private var layoutCoordinator = AppLayoutCoordinator()
     @AppStorage("appDestination") private var destinationRaw = AppDestination.office.rawValue
-    @SceneStorage("workComposerPresented") private var workComposerPresented = false
     @SceneStorage("globalSidebarPreferred") private var globalSidebarPreferred = true
     @State private var demoEditorEmployee: Employee?
+    @State private var isModalBackgroundDisabled = false
     @Environment(\.colorScheme) private var colorScheme
 
     private var destination: Binding<AppDestination> {
@@ -35,6 +35,8 @@ struct ContentView: View {
                 workspace
             }
             .tint(AppTheme.palette(for: colorScheme).primary)
+            .disabled(isModalBackgroundDisabled)
+            .accessibilityHidden(isModalPresented)
 
             if store.isCommandPalettePresented {
                 CreamModalOverlay(close: { store.isCommandPalettePresented = false }, preferredWidth: 640, preferredHeight: 420) {
@@ -92,6 +94,17 @@ struct ContentView: View {
         .onChange(of: employeeStore.selection) { _, _ in
             if let employee = employeeStore.selected { conversationStore.select(employee: employee) }
         }
+        .onChange(of: isModalPresented) { _, isPresented in
+            if isPresented {
+                DispatchQueue.main.async {
+                    if isModalPresented {
+                        isModalBackgroundDisabled = true
+                    }
+                }
+            } else {
+                isModalBackgroundDisabled = false
+            }
+        }
         .onAppear {
 #if DEBUG
             let arguments = ProcessInfo.processInfo.arguments
@@ -135,7 +148,6 @@ struct ContentView: View {
                 employeeStore: employeeStore,
                 capabilityStore: capabilityStore,
                 employee: selectedEmployee,
-                isCreatingWork: $workComposerPresented,
                 openArchive: { destination.wrappedValue = .archive }
             )
         case .skills:
@@ -174,7 +186,6 @@ struct ContentView: View {
 
     private func beginWork() {
         destination.wrappedValue = .office
-        workComposerPresented = false
     }
 
     private var isModalPresented: Bool {
