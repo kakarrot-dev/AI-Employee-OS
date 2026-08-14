@@ -39,7 +39,7 @@ struct EmployeeDirectoryView: View {
             }
             Button("取消", role: .cancel) { confirmingDeletion = nil }
         } message: {
-            Text("员工资料、能力配置和私人对话将被物理删除；工作库中的历史工作、参与者进度和交付结果会继续保留。此操作无法撤销。")
+            Text("员工资料、技能配置和私聊将被永久删除；工作库中的历史记录、参与者进度和交付结果会继续保留。此操作无法撤销。")
         }
         .onAppear {
             if let demo, !demo.employees.contains(where: { $0.id == store.selection }) {
@@ -160,9 +160,9 @@ struct EmployeeDirectoryView: View {
         .contextMenu {
             if demo == nil {
                 Button("编辑资料") { store.edit(employee) }
-                Button("私人聊聊") { openChat(employee) }
+                Button("开始对话") { openChat(employee) }
                 Divider()
-                Button(employee.status == "active" ? "禁用" : "启用") {
+                Button(employee.status == "active" ? "停用" : "启用") {
                     Task { await store.setStatus(employee, status: employee.status == "active" ? "disabled" : "active") }
                 }
                 Divider()
@@ -202,10 +202,10 @@ struct EmployeeDirectoryView: View {
             VStack(spacing: 14) {
                 CreamSymbol(systemName: "person.text.rectangle", scale: .emptyState)
                     .foregroundStyle(palette.primaryActive)
-                Text("AI 员工 Profile")
+                Text("AI 员工资料")
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(palette.ink)
-                Text("选择一名员工，查看 Identity、Soul、能力与权限。")
+                Text("选择一名员工，查看身份、灵魂、技能与权限。")
                     .font(.callout)
                     .foregroundStyle(palette.muted)
                     .multilineTextAlignment(.center)
@@ -288,7 +288,7 @@ struct EmployeeDirectorySidebar: View {
             } else if employees.isEmpty {
                 UXFeedbackStateView(
                     title: query.isEmpty ? "还没有 AI 员工" : "没有匹配的员工",
-                    message: query.isEmpty ? "创建员工后，会在这里管理他的 Profile。" : "尝试其他姓名、岗位或部门。",
+                    message: query.isEmpty ? "创建员工后，会在这里管理他的资料。" : "尝试其他姓名、岗位或部门。",
                     systemImage: query.isEmpty ? "person.2" : "magnifyingglass",
                     actionTitle: query.isEmpty ? "新建 AI 员工" : "清除搜索",
                     action: query.isEmpty ? store.create : { query = "" }
@@ -376,7 +376,7 @@ private struct EmployeeProfileView: View {
                         CreamTabbedDetailHeader(
                             title: employee.name,
                             subtitle: "\(employee.role) · \(employee.department)",
-                            statusTitle: employee.status == "active" ? "启用" : "停用",
+                            statusTitle: employee.status == "active" ? "可用" : "已停用",
                             statusSystemImage: employee.status == "active" ? "checkmark.circle.fill" : "pause.circle.fill",
                             statusTone: employee.status == "active" ? .success : .neutral,
                             tabs: EmployeeProfileTab.allCases,
@@ -416,8 +416,8 @@ private struct EmployeeProfileView: View {
                 )
                 CreamIconButton(
                     systemName: "bubble.left",
-                    accessibilityLabel: "私人聊聊",
-                    help: "与\(employee.name)私人聊聊",
+                    accessibilityLabel: "开始对话",
+                    help: "与\(employee.name)开始对话",
                     action: openChat
                 )
                 .disabled(isDemo)
@@ -427,7 +427,7 @@ private struct EmployeeProfileView: View {
                         accessibilityLabel: "更多员工操作",
                         help: "更多员工操作"
                     ) {
-                        Button(employee.status == "active" ? "禁用" : "启用", action: setStatus)
+                        Button(employee.status == "active" ? "停用" : "启用", action: setStatus)
                         Divider()
                         Button("删除", role: .destructive, action: deleteEmployee)
                     }
@@ -440,10 +440,10 @@ private struct EmployeeProfileView: View {
                 help: "员工操作"
             ) {
                 Button("编辑资料", action: edit)
-                Button("私人聊聊", action: openChat).disabled(isDemo)
+                Button("开始对话", action: openChat).disabled(isDemo)
                 if !isDemo {
                     Divider()
-                    Button(employee.status == "active" ? "禁用" : "启用", action: setStatus)
+                    Button(employee.status == "active" ? "停用" : "启用", action: setStatus)
                     Divider()
                     Button("删除", role: .destructive, action: deleteEmployee)
                 }
@@ -462,12 +462,12 @@ private struct EmployeeProfileView: View {
             HStack(spacing: 8) {
                 if !isDemo {
                     CreamStatusBadge(
-                        title: tasksEnabled ? "Runtime 已接通" : "尚未接通 Runtime",
+                        title: tasksEnabled ? "运行环境已连接" : "运行环境未连接",
                         systemImage: tasksEnabled ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
                         tone: tasksEnabled ? .success : .warning
                     )
                 }
-                Text("在「编辑资料」中选择 Skill/Tool；此页只读展示。")
+                Text("技能可在「编辑资料」中调整；工具由系统统一管理。")
                     .font(AppTheme.Typography.metadata())
                     .foregroundStyle(palette.muted)
             }
@@ -475,14 +475,14 @@ private struct EmployeeProfileView: View {
                 title: "技能",
                 description: capabilityProfile.selectedSkills.isEmpty
                     ? "尚未绑定技能。打开编辑资料进行选择。"
-                    : "已绑定到该员工的 Skill Package。",
+                    : "已分配给这名员工的技能。",
                 items: capabilityProfile.selectedSkills
             )
             capabilitySection(
                 title: "工具",
                 description: capabilityProfile.selectedTools.isEmpty
-                    ? "当前没有全局安装的 Tool Package。"
-                    : "全局已安装的 Tool Package；员工通过已绑定 Skill 的声明获得调用能力。",
+                    ? "当前没有可用工具。"
+                    : "系统可用的工具；员工只能通过已绑定技能调用所需工具。",
                 items: capabilityProfile.selectedTools
             )
             permissionSection
@@ -527,7 +527,7 @@ private struct EmployeeProfileView: View {
     private var permissionSection: some View {
         profileSection("权限") {
             if capabilityProfile.permissions.isEmpty {
-                Label(isDemo ? "尚无可配置权限" : "客户端暂不展示 Runtime 权限明细", systemImage: "lock.shield")
+                Label(isDemo ? "尚无可配置权限" : "客户端暂不展示详细权限", systemImage: "lock.shield")
                     .foregroundStyle(palette.body)
                     .padding(.vertical, 10)
             } else {
@@ -597,7 +597,7 @@ struct CapabilityPickerSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack { VStack(alignment: .leading, spacing: 3) { Text(kind.title).font(.title2.weight(.semibold)); Text("为 \(employeeName) 选择，保存后显示在 Profile 中").font(.caption).foregroundStyle(palette.muted) }; Spacer() }.padding(20)
+            HStack { VStack(alignment: .leading, spacing: 3) { Text(kind.title).font(.title2.weight(.semibold)); Text("为 \(employeeName) 选择，保存后显示在员工资料中").font(.caption).foregroundStyle(palette.muted) }; Spacer() }.padding(20)
             Divider().overlay(palette.hairlineSoft)
             CreamSearchField("搜索技能库", text: $query, accessibilityLabel: "搜索技能库")
                 .padding(16)

@@ -49,11 +49,13 @@ struct CreamTimelineLayout<Content: View>: View {
         LazyVStack(alignment: .leading, spacing: density.itemSpacing) {
             content()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, horizontalInset)
         .padding(.top, topInset)
         .padding(.bottom, bottomInset)
-        .frame(maxWidth: min(AppTheme.Typography.readingMeasure, density.readingMeasure), alignment: .leading)
-        .frame(maxWidth: .infinity, alignment: .center)
+        .containerRelativeFrame(.horizontal, alignment: .center) { availableWidth, _ in
+            min(availableWidth, min(AppTheme.Typography.readingMeasure, density.readingMeasure))
+        }
         .environment(\.creamTimelineDensity, density)
     }
 }
@@ -98,6 +100,7 @@ struct CreamTimelineAgentRow<Content: View>: View {
                 content()
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())

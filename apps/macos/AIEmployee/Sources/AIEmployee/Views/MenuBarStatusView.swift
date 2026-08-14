@@ -11,11 +11,11 @@ struct MenuBarStatusView: View {
     var body: some View {
         Label(statusTitle, systemImage: runningCount > 0 ? "progress.indicator" : "checkmark.circle")
         Divider()
-        Button("打开 AI Employee") {
+        Button("打开 AI Employee OS") {
             openWindow(id: "main")
             NSApp.activate(ignoringOtherApps: true)
         }
-        Button("打开员工工作区") {
+        Button("打开工作库") {
             destinationRaw = AppDestination.work.rawValue
             openWindow(id: "main")
             NSApp.activate(ignoringOtherApps: true)
@@ -26,6 +26,6 @@ struct MenuBarStatusView: View {
     }
 
     private var statusTitle: String {
-        runningCount > 0 ? "AI 员工正在处理工作" : "AI 员工可以接受新工作"
+        runningCount > 0 ? "正在执行 \(runningCount) 项工作" : "AI 员工已就绪"
     }
 }

@@ -118,8 +118,8 @@ final class CapabilityStore: ObservableObject {
                     id: item.id,
                     name: item.name,
                     version: item.version,
-                    summary: item.summary.isEmpty ? "已安装 Skill Package" : item.summary,
-                    category: "\(item.category) · 已安装",
+                    summary: item.summary.isEmpty ? "已安装技能" : item.summary,
+                    category: "\(Self.categoryTitle(item.category)) · 已安装",
                     status: item.available ? "可用" : "不可用",
                     icon: "sparkles",
                     markdown: documents[skillDocumentID] ?? "# \(item.name)\n\n\(item.summary)",
@@ -127,7 +127,7 @@ final class CapabilityStore: ObservableObject {
                     documents: documents,
                     dependencySections: [
                         .init(title: "安装信息", rows: [
-                            .init(label: "状态", value: item.status),
+                            .init(label: "状态", value: Self.readinessTitle(item.status)),
                             .init(label: "版本", value: item.version)
                         ])
                     ],
@@ -143,14 +143,14 @@ final class CapabilityStore: ObservableObject {
                 let displayName = ToolPresentation.displayName(id: item.id, fallback: item.name)
                 let displaySummary = ToolPresentation.displaySummary(id: item.id, fallback: item.summary)
                 let markdown = documentation.isEmpty
-                    ? "# \(displayName)\n\n\(displaySummary)\n\n类型：\(item.type)\n版本：\(item.version)\n\n此页面只读。Tool 需在仓库 `packages/tools` 中创建并安装，客户端不提供创建入口。"
+                    ? "# \(displayName)\n\n\(displaySummary)\n\n类型：\(Self.toolTypeTitle(item.type))\n版本：\(item.version)\n\n此页面只读。工具需先在仓库中安装，客户端不提供创建入口。"
                     : documentation
                 return CapabilityLibraryItem(
                     id: item.id,
                     name: displayName,
                     version: item.version,
                     summary: displaySummary,
-                    category: "\(item.category) · 已安装",
+                    category: "\(Self.categoryTitle(item.category)) · 已安装",
                     status: item.available ? "可用" : "不可用",
                     icon: "wrench.and.screwdriver",
                     markdown: markdown,
@@ -158,8 +158,8 @@ final class CapabilityStore: ObservableObject {
                     documents: [:],
                     dependencySections: [
                         .init(title: "安装信息", rows: [
-                            .init(label: "类型", value: item.type),
-                            .init(label: "状态", value: item.status),
+                            .init(label: "类型", value: Self.toolTypeTitle(item.type)),
+                            .init(label: "状态", value: Self.readinessTitle(item.status)),
                             .init(label: "版本", value: item.version)
                         ])
                     ],
@@ -201,8 +201,8 @@ final class CapabilityStore: ObservableObject {
     private static func skillItem(_ item: RuntimeSkillItem) -> EmployeeCapabilityItem {
         EmployeeCapabilityItem(
             id: item.id, kind: .skill, name: item.name, version: item.version,
-            detail: item.summary.isEmpty ? "已安装 Skill" : item.summary,
-            metadata: item.category, isAvailable: item.available
+            detail: item.summary.isEmpty ? "已安装技能" : item.summary,
+            metadata: categoryTitle(item.category), isAvailable: item.available
         )
     }
 
@@ -213,8 +213,37 @@ final class CapabilityStore: ObservableObject {
             name: ToolPresentation.displayName(id: item.id, fallback: item.name),
             version: item.version,
             detail: ToolPresentation.displaySummary(id: item.id, fallback: item.summary),
-            metadata: item.type,
+            metadata: toolTypeTitle(item.type),
             isAvailable: item.available
         )
+    }
+
+    private static func categoryTitle(_ category: String) -> String {
+        switch category {
+        case "general": "通用"
+        case "research": "研究"
+        case "productivity": "效率"
+        case "rust-native-v1", "native": "本机内置"
+        default: "其他"
+        }
+    }
+
+    private static func readinessTitle(_ status: String) -> String {
+        switch status {
+        case "ready", "active", "installed": "可用"
+        case "disabled": "已停用"
+        case "missing_dependency": "缺少依赖"
+        case "incompatible": "版本不兼容"
+        case "invalid_package": "安装内容无效"
+        default: "状态待确认"
+        }
+    }
+
+    private static func toolTypeTitle(_ type: String) -> String {
+        switch type {
+        case "native", "rust-native-v1": "本机内置"
+        case "mcp": "外部连接"
+        default: "其他"
+        }
     }
 }

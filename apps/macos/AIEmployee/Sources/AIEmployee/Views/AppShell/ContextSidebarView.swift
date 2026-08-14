@@ -74,8 +74,8 @@ struct WorkConversationList: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
-                CreamSectionHeader("员工会话", count: employees.count)
-                CreamSearchField("搜索员工或会话", text: $query, accessibilityLabel: "搜索员工或会话")
+                CreamSectionHeader("对话", count: employees.count)
+                CreamSearchField("搜索员工或消息", text: $query, accessibilityLabel: "搜索员工或消息")
             }
             .padding(16)
 
@@ -109,7 +109,7 @@ struct WorkConversationList: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        Text("持续会话")
+                        Text("AI 员工")
                             .font(AppTheme.Typography.metadata(weight: .semibold))
                             .foregroundStyle(palette.muted)
                             .padding(.horizontal, 16)
@@ -118,7 +118,7 @@ struct WorkConversationList: View {
                         ForEach(employees) { employee in
                             CreamInteractiveRow(
                                 isSelected: employeeStore.selection == employee.id,
-                                accessibilityLabel: "与\(employee.name)的持续会话",
+                                accessibilityLabel: "与\(employee.name)对话",
                                 action: {
                                     employeeStore.selection = employee.id
                                     conversationStore.select(employee: employee)

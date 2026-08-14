@@ -174,11 +174,11 @@ struct KnowledgeLibraryWorkspaceView: View {
     var body: some View {
         Group {
             if store.isLoading && store.documents.isEmpty {
-                ProgressView("正在读取 Runtime 知识索引…")
+                ProgressView("正在读取知识库…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = store.loadError, store.documents.isEmpty {
                 UXFeedbackStateView(
-                    title: "无法读取 Runtime 知识索引",
+                    title: "无法读取知识库",
                     message: error,
                     systemImage: "exclamationmark.triangle.fill",
                     tone: .error,
@@ -225,7 +225,7 @@ struct KnowledgeLibraryWorkspaceView: View {
             if filteredDocuments.isEmpty {
                 UXFeedbackStateView(
                     title: "没有匹配结果",
-                    message: "换一个文件名、路径或正文关键词试试。",
+                    message: "换一个标题、来源路径或正文关键词试试。",
                     systemImage: "magnifyingglass",
                     actionTitle: "清除搜索",
                     action: { query = "" }
@@ -286,13 +286,24 @@ struct KnowledgeLibraryWorkspaceView: View {
                 }
                 CreamSymbol(systemName: "doc.richtext")
                     .foregroundStyle(palette.primaryActive)
-                Text(selected?.relativePath ?? "选择文档").font(.callout.weight(.semibold)).foregroundStyle(palette.ink).lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(selected?.name ?? "选择文档")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(palette.ink)
+                        .lineLimit(1)
+                    if let selected {
+                        Text(selected.relativePath)
+                            .font(AppTheme.Typography.compactMetadata().monospaced())
+                            .foregroundStyle(palette.mutedSoft)
+                            .lineLimit(1)
+                    }
+                }
                 Spacer()
                 if let selected {
                     CreamStatusBadge(
-                        title: "索引：\(selected.indexStatus)",
-                        systemImage: selected.indexStatus == "ready" ? "checkmark.circle.fill" : "clock.fill",
-                        tone: selected.indexStatus == "ready" ? .success : .warning
+                        title: indexTitle(selected.indexStatus),
+                        systemImage: indexSystemImage(selected.indexStatus),
+                        tone: indexTone(selected.indexStatus)
                     )
                 } else {
                     Text("只读预览").font(.caption).foregroundStyle(palette.mutedSoft)
@@ -320,8 +331,8 @@ struct KnowledgeLibraryWorkspaceView: View {
             CreamSymbol(systemName: "books.vertical", scale: .emptyState)
                 .foregroundStyle(palette.primaryActive)
             VStack(alignment: .leading, spacing: 6) {
-                Text("Runtime 知识库中还没有来源").font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
-                Text("只有通过 Runtime 导入并写入 knowledge_sources 的内容会在这里显示；文件目录本身不是知识库事实源。")
+                Text("还没有知识来源").font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
+                Text("导入并完成索引的内容会显示在这里。当前客户端只提供浏览。")
                     .foregroundStyle(palette.muted).frame(maxWidth: 460, alignment: .leading)
             }
         }
@@ -353,6 +364,32 @@ struct KnowledgeLibraryWorkspaceView: View {
     private func treePath(for row: KnowledgeTreeRow) -> String {
         if row.isFolder { return folderPath(for: row) + "/" }
         return row.documentID ?? row.id
+    }
+
+    private func indexTitle(_ status: String) -> String {
+        switch status {
+        case "ready", "indexed": "已索引"
+        case "pending", "indexing": "正在索引"
+        case "failed": "索引失败"
+        default: "状态待确认"
+        }
+    }
+
+    private func indexSystemImage(_ status: String) -> String {
+        switch status {
+        case "ready", "indexed": "checkmark.circle.fill"
+        case "failed": "exclamationmark.triangle.fill"
+        default: "clock.fill"
+        }
+    }
+
+    private func indexTone(_ status: String) -> UXFeedbackTone {
+        switch status {
+        case "ready", "indexed": .success
+        case "failed": .error
+        case "pending", "indexing": .warning
+        default: .neutral
+        }
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }

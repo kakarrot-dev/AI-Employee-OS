@@ -17,7 +17,7 @@ archive = source("apps/macos/AIEmployee/Sources/AIEmployee/Views/Archive/Archive
 
 assert 'item.role == "user"' in view and 'item.role == "agent"' in view
 assert 'item.kind == "approval"' in view and 'case "handoff"' in view
-assert 'Button("批准")' in view and 'Button("拒绝")' in view
+assert 'Button("允许一次")' in view and 'Button("拒绝")' in view
 assert 'Text("任务进度")' in view
 assert "CreamAvatar(" in view and "CreamProgressBar(" in view
 assert "struct CreamAvatar" in controls and "struct CreamProgressBar" in controls

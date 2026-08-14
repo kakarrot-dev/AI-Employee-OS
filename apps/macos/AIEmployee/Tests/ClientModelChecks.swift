@@ -94,6 +94,14 @@ enum ClientModelChecks {
             TaskPresentation.isChronologicallyBefore("1785982643", "2026-08-06T02:54:20.944Z"),
             "mixed Runtime and ISO timestamps sort chronologically"
         )
+        let elapsedAt = ISO8601DateFormatter().date(from: "2026-08-06T02:55:25Z")!
+        expect(
+            TaskPresentation.elapsed("2026-08-06T02:54:20Z", at: elapsedAt) == "1 分 5 秒",
+            "elapsed work time interpolates minutes and seconds"
+        )
+        expect(TaskPresentation.threadStatus("failed") == "未能完成", "failed work status uses user-facing language")
+        expect(TaskPresentation.threadStatus("future_state") == "状态待确认", "unknown work status fails closed without exposing raw state")
+        expect(TaskPresentation.runPhase("future_phase", waitingReason: nil) == "正在处理", "unknown run phase does not expose raw state")
         expect(
             AppDestination.allCases == [.office, .contacts, .work, .knowledge, .skills, .tools, .archive, .settings],
             "main shell exposes only the approved user-facing destinations"

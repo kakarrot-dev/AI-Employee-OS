@@ -42,10 +42,10 @@ struct ContentView: View {
                 CreamModalOverlay(close: { store.isCommandPalettePresented = false }, preferredWidth: 640, preferredHeight: 420) {
                     CommandPaletteView(
                         employees: ContactsDemoData.current?.employees ?? employeeStore.employees,
-                        recentRuns: store.runs,
+                        recentThreads: store.taskThreads,
                         navigate: { destination.wrappedValue = $0 },
                         openEmployee: { openConversation($0) },
-                        openRun: { openRun($0) },
+                        openThread: { openThread($0) },
                         newWork: { beginWork() },
                         openSettings: { destination.wrappedValue = .settings },
                         close: { store.isCommandPalettePresented = false }
@@ -140,7 +140,11 @@ struct ContentView: View {
         case .work:
             TaskThreadWorkspaceView(store: store, employeeStore: employeeStore)
         case .archive:
-            ArchiveWorkspaceView(store: archiveStore, taskStore: store)
+            ArchiveWorkspaceView(
+                store: archiveStore,
+                taskStore: store,
+                openWork: { destination.wrappedValue = .work }
+            )
         case .employeeChat:
             EmployeeChatWorkspaceView(
                 store: store,
@@ -167,12 +171,8 @@ struct ContentView: View {
         destination.wrappedValue = .employeeChat
     }
 
-    private func openRun(_ run: TaskRun) {
-        store.selection = run.id
-        if let employee = (ContactsDemoData.current?.employees ?? employeeStore.employees).first(where: { $0.id == run.agentID }) {
-            employeeStore.selection = employee.id
-            conversationStore.select(employee: employee)
-        }
+    private func openThread(_ thread: TaskThreadProjection) {
+        store.selectThread(thread)
         destination.wrappedValue = .work
     }
 

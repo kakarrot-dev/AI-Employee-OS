@@ -67,10 +67,10 @@ struct OfficeWorkspaceView: View {
     private func unifiedTaskEntry(compact: Bool) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("交代一项工作")
+                Text("交代工作")
                     .font(AppTheme.Typography.sectionTitle)
                     .foregroundStyle(palette.ink)
-                Text("直接描述目标。系统会先提出单员工或多员工方案，确认后才执行。")
+                Text("描述目标。系统会先给出员工分工，确认后再执行。")
                     .font(AppTheme.Typography.metadata())
                     .foregroundStyle(palette.muted)
             }
@@ -83,7 +83,7 @@ struct OfficeWorkspaceView: View {
                 isInputEnabled: !store.isSubmitting,
                 actionState: store.isSubmitting ? .loading : .submit,
                 isActionEnabled: canSubmitWork,
-                actionHelp: store.isSubmitting ? "正在生成任务方案" : "提出任务方案",
+                actionHelp: store.isSubmitting ? "正在生成方案" : "生成工作方案",
                 onAction: submitWork,
                 leadingActions: { EmptyView() },
                 status: { EmptyView() }
@@ -116,7 +116,7 @@ struct OfficeWorkspaceView: View {
                             CreamStatusBadge(title: "演示数据", systemImage: "sparkles", tone: .warning)
                         }
                     }
-                    Text("查看最近 7 天的模型调用、Token 消耗与预估成本。")
+                    Text("从一个清晰目标开始，确认方案后再交给员工执行。")
                         .font(AppTheme.Typography.interfaceBody())
                         .foregroundStyle(palette.muted)
                         .lineSpacing(3)

@@ -7,7 +7,7 @@ enum CapabilityLibraryScope: Equatable {
     var subtitle: String { self == .skills ? "浏览已安装技能的说明与目录" : "查看工具能力、权限与风险" }
     var icon: String { self == .skills ? "sparkles" : "wrench.and.screwdriver" }
     var emptyTitle: String { self == .skills ? "还没有已安装技能" : "还没有可用工具" }
-    var emptyDetail: String { self == .skills ? "安装 Skill 后，可以在这里阅读说明文档和查看包目录。" : "Runtime 注册 Tool 后，可以在这里查看能力、权限和风险。" }
+    var emptyDetail: String { self == .skills ? "安装技能后，可以在这里阅读说明并查看文件目录。" : "安装工具后，可以在这里查看能力、权限和风险。" }
 }
 
 struct CapabilityLibraryWorkspaceView: View {
@@ -48,7 +48,7 @@ struct CapabilityLibraryWorkspaceView: View {
             } else if let error = capabilityStore.loadError, capabilities.isEmpty {
                 UXFeedbackStateView(
                     title: scope == .skills ? "无法读取技能" : "无法读取工具",
-                    message: "已安装 Package 没有被修改。\(error)",
+                    message: "已安装内容没有被修改。\(error)",
                     systemImage: "exclamationmark.triangle.fill",
                     tone: .error,
                     actionTitle: "重试",
@@ -132,7 +132,7 @@ struct CapabilityLibraryWorkspaceView: View {
                 CreamSymbol(systemName: scope.icon, scale: .emptyState)
                     .foregroundStyle(palette.primaryActive)
                 CreamStatusBadge(
-                    title: "尚未接通 Runtime",
+                    title: "运行环境未连接",
                     systemImage: "exclamationmark.triangle.fill",
                     tone: .warning
                 )
@@ -140,8 +140,8 @@ struct CapabilityLibraryWorkspaceView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(scope.emptyTitle).font(.title2.weight(.semibold)).foregroundStyle(palette.ink)
                 Text(scope == .skills
-                     ? "当前没有已安装的 Skill Package。请在仓库 packages/skills 中创建并安装后，这里会只读展示。"
-                     : "当前没有已安装的 Tool Package。请在仓库 packages/tools 中创建并安装后，这里会只读展示。")
+                     ? "当前没有已安装的技能。请先在仓库中安装，然后重新打开此页面。"
+                     : "当前没有已安装的工具。请先在仓库中安装，然后重新打开此页面。")
                     .foregroundStyle(palette.muted).frame(maxWidth: 440, alignment: .leading)
             }
             Text("此页面仅用于查看，客户端不提供创建入口。")
@@ -196,10 +196,10 @@ private enum CapabilityDetailTab: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .document: "说明文档"
-        case .structure: "技能文件"
-        case .dependencies: "依赖信息"
-        case .capabilities: "能力信息"
+        case .document: "说明"
+        case .structure: "文件"
+        case .dependencies: "依赖"
+        case .capabilities: "能力"
         case .security: "权限与风险"
         }
     }
@@ -295,21 +295,21 @@ private struct CapabilityDetailView: View {
 
     private var tabContentTitle: String {
         switch tab {
-        case .document: "说明文档"
-        case .dependencies: "依赖信息"
-        case .capabilities: "能力信息"
+        case .document: "说明"
+        case .dependencies: "依赖"
+        case .capabilities: "能力"
         case .security: "权限与风险"
-        case .structure: "技能文件"
+        case .structure: "文件"
         }
     }
 
     private var tabContentSubtitle: String {
         switch tab {
-        case .document: "了解这个 Tool Package 的用途、边界与运行方式。"
-        case .dependencies: "查看这个 Skill Package 的安装状态、版本与运行依赖。"
-        case .capabilities: "查看这个 Tool Package 暴露的动作、执行约束与可用数据源。"
+        case .document: "了解这个工具的用途、边界与运行方式。"
+        case .dependencies: "查看这个技能的安装状态、版本与运行依赖。"
+        case .capabilities: "查看这个工具提供的动作、执行约束与可用数据源。"
         case .security: "查看调用动作的权限、审批、副作用与敏感参数。"
-        case .structure: "浏览 Package 中的目录与只读文档。"
+        case .structure: "浏览技能包中的目录与只读文档。"
         }
     }
 
@@ -399,7 +399,7 @@ private struct SkillPackageBrowser: View {
     private var directory: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("包目录").font(.callout.weight(.semibold)).foregroundStyle(palette.ink)
+                Text("文件目录").font(.callout.weight(.semibold)).foregroundStyle(palette.ink)
                 Spacer()
                 Text("\(item.directory.count) 项").font(.caption).foregroundStyle(palette.mutedSoft)
             }.padding(.horizontal, 16).frame(height: 42)

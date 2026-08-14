@@ -2,10 +2,10 @@ import SwiftUI
 
 struct CommandPaletteView: View {
     let employees: [Employee]
-    let recentRuns: [TaskRun]
+    let recentThreads: [TaskThreadProjection]
     let navigate: (AppDestination) -> Void
     let openEmployee: (Employee) -> Void
-    let openRun: (TaskRun) -> Void
+    let openThread: (TaskThreadProjection) -> Void
     let newWork: () -> Void
     let openSettings: () -> Void
     let close: () -> Void
@@ -17,7 +17,7 @@ struct CommandPaletteView: View {
 
     private var commands: [PaletteCommand] {
         var all = [
-            PaletteCommand(id: "action-new-work", section: .actions, title: "新建工作", subtitle: "在办公室描述目标，由系统匹配员工", image: "plus", searchTerms: "新建 委派 工作", action: newTask)
+            PaletteCommand(id: "action-new-work", section: .actions, title: "交代工作", subtitle: "在办公室描述目标，确认员工分工后执行", image: "plus", searchTerms: "新建 交代 委派 工作", action: newTask)
         ]
         all.append(contentsOf: employees.prefix(6).map { employee in
             PaletteCommand(
@@ -30,25 +30,25 @@ struct CommandPaletteView: View {
                 action: { openEmployeeCommand(employee) }
             )
         })
-        all.append(contentsOf: recentRuns.prefix(5).map { run in
+        all.append(contentsOf: recentThreads.prefix(5).map { thread in
             PaletteCommand(
-                id: "run-\(run.id)",
+                id: "thread-\(thread.id)",
                 section: .recentWork,
-                title: run.input,
-                subtitle: "\(run.status.title) · 最近工作",
-                image: run.status.systemImage,
-                searchTerms: "\(run.input) \(run.status.title)",
-                action: { openRunCommand(run) }
+                title: thread.title,
+                subtitle: "\(TaskPresentation.threadStatus(thread.status)) · 最近工作",
+                image: TaskPresentation.threadStatusSystemImage(thread.status),
+                searchTerms: "\(thread.title) \(TaskPresentation.threadStatus(thread.status))",
+                action: { openThreadCommand(thread) }
             )
         })
         all.append(contentsOf: [
-            destination("打开办公室", "查看模型调用与 Token 用量", "building.2", .office),
+            destination("打开办公室", "交代工作并查看模型用量", "building.2", .office),
             destination("打开通讯录", "按部门查找员工", "person.2", .contacts),
             destination("打开工作库", "查看所有员工的工作历史", "clock.arrow.circlepath", .work),
-            destination("打开技能库", "查看已安装的 Skills", "sparkles", .skills),
-            destination("打开知识库", "浏览本地 Markdown 知识文档", "books.vertical", .knowledge),
-            destination("打开工具库", "查看 Tools、权限与连接状态", "wrench.and.screwdriver", .tools),
-            PaletteCommand(id: "settings", section: .navigation, title: "打开设置", subtitle: "配置模型、隐私与应用选项", image: "gearshape", searchTerms: "设置 模型 API Key 外观", action: settings)
+            destination("打开技能库", "查看已安装的技能", "sparkles", .skills),
+            destination("打开知识库", "浏览已索引的知识来源", "books.vertical", .knowledge),
+            destination("打开工具库", "查看工具能力、权限与连接状态", "wrench.and.screwdriver", .tools),
+            PaletteCommand(id: "settings", section: .navigation, title: "打开设置", subtitle: "配置模型、权限与应用外观", image: "gearshape", searchTerms: "设置 模型 API Key 外观", action: settings)
         ])
 
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -182,8 +182,8 @@ struct CommandPaletteView: View {
         close()
     }
 
-    private func openRunCommand(_ run: TaskRun) {
-        openRun(run)
+    private func openThreadCommand(_ thread: TaskThreadProjection) {
+        openThread(thread)
         close()
     }
 

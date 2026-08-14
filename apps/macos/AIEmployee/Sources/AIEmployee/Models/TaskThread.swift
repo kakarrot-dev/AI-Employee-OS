@@ -159,7 +159,7 @@ enum TaskProposalPresentationState: Equatable, Sendable {
         case "task_proposal_expired", "task_proposal_stale", "task_proposal_revision_conflict":
             message = "员工或能力状态已经变化，请重新生成方案。"
         case "task_proposal_provider_invalid_response", "task_proposal_schema_invalid":
-            message = "方案格式未通过 Runtime 校验，请重新生成。"
+            message = "方案格式未通过安全校验，请重新生成。"
         default:
             message = "方案生成失败，可以重新生成。"
         }

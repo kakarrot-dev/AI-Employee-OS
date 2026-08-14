@@ -64,7 +64,7 @@ struct TaskInspectorView: View {
                 HStack(spacing: AppTheme.Spacing.sm) {
                     Button("拒绝") { store.resolveApproval(for: run, approve: false) }
                         .buttonStyle(CreamSecondaryButtonStyle())
-                    Button(store.isResolvingApproval(for: run) ? "处理中…" : "批准并继续") {
+                    Button(store.isResolvingApproval(for: run) ? "处理中…" : "允许一次") {
                         store.resolveApproval(for: run, approve: true)
                     }
                         .buttonStyle(CreamPrimaryButtonStyle())
@@ -82,7 +82,7 @@ struct TaskInspectorView: View {
 
             if let unknown = run.actions.first(where: { $0.status == "result_unknown" }) {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.sm) {
-                    Text("工具结果无法自动确认，Runtime 不会自动重试。请核验实际结果后再继续。")
+                    Text("工具结果无法自动确认，系统不会自动重试。请核验实际结果后再继续。")
                         .font(.caption)
                         .foregroundStyle(palette.warning)
                     HStack(spacing: AppTheme.Spacing.sm) {
@@ -382,13 +382,13 @@ struct TaskInspectorView: View {
         if run.actions.contains(where: { $0.status == "result_unknown" }) { return "工具执行结果尚未确认" }
         if run.runPhase == "waiting_approval" { return "工作正在等待权限批准" }
         if run.runPhase == "waiting_user" { return "工作需要你补充信息" }
-        if run.stopReason?.contains("decision_schema_invalid") == true { return "执行结果格式不符合 Runtime 协议" }
+        if run.stopReason?.contains("decision_schema_invalid") == true { return "执行结果格式不符合安全要求" }
         if run.stopReason?.contains("worker_disconnect") == true { return "执行进程未能正常返回结果" }
         return "这项工作未能完成"
     }
 
     private func diagnosticSuggestion(_ run: TaskRun) -> String {
-        if run.actions.contains(where: { $0.status == "result_unknown" }) { return "请核验实际副作用，Runtime 不会自动重试。" }
+        if run.actions.contains(where: { $0.status == "result_unknown" }) { return "请核验实际影响，系统不会自动重试。" }
         if run.runPhase == "waiting_approval" { return "检查影响范围后批准或拒绝。" }
         if run.runPhase == "waiting_user" { return "请回到对话中回答员工提出的问题。" }
         return "请重新发起这项工作；若持续失败，可展开并复制技术详情。"

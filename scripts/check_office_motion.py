@@ -19,8 +19,11 @@ missing = [name for name, marker in required.items() if marker not in text]
 if missing:
     raise SystemExit(f"office motion contract missing: {', '.join(missing)}")
 
-assert "查看最近 7 天的模型调用、Token 消耗与预估成本。" in text, (
-    "office header must explain the usage overview in plain language"
+assert "从一个清晰目标开始，确认方案后再交给员工执行。" in text, (
+    "office header must explain the primary task handoff in plain language"
+)
+assert 'section(title: "用量概览", subtitle: hasData ? "最近 7 天的模型调用与 Token 消耗"' in text, (
+    "office usage section must explain the seven-day overview in plain language"
 )
 for removed_copy in ["当前工作", "进行中的工作", "需要你处理", "正在推进"]:
     assert removed_copy not in text, f"office must not render work status copy: {removed_copy}"

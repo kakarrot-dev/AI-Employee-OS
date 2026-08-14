@@ -23,6 +23,36 @@ extension TaskRunStatus {
 }
 
 enum TaskPresentation {
+    static func threadStatus(_ status: String) -> String {
+        switch status {
+        case "drafting": "草拟中"
+        case "awaiting_input": "等待补充"
+        case "awaiting_confirmation": "等待确认"
+        case "pending": "等待开始"
+        case "running": "执行中"
+        case "waiting_dependency": "等待依赖"
+        case "waiting_approval": "等待审批"
+        case "approved": "已允许"
+        case "rejected": "已拒绝"
+        case "accepted": "已交接"
+        case "verified": "已验证"
+        case "started": "已开始"
+        case "succeeded": "已完成"
+        case "failed": "未能完成"
+        case "cancelled": "已取消"
+        default: "状态待确认"
+        }
+    }
+
+    static func threadStatusSystemImage(_ status: String) -> String {
+        switch status {
+        case "succeeded", "verified", "approved", "accepted": "checkmark.circle.fill"
+        case "failed", "rejected", "cancelled": "xmark.circle.fill"
+        case "running", "started": "play.circle.fill"
+        default: "clock.fill"
+        }
+    }
+
     static func runPhase(_ phase: String, waitingReason: String?) -> String {
         switch phase {
         case "preflight": "正在检查运行条件"
@@ -35,7 +65,7 @@ enum TaskPresentation {
         case "validate_output": "正在验证输出"
         case "evaluate": "正在评估交付质量"
         case "terminal": "运行已收敛"
-        default: phase
+        default: "正在处理"
         }
     }
 
@@ -59,11 +89,11 @@ enum TaskPresentation {
         case "pending": "等待中"
         case "running": "执行中"
         case "succeeded": "已完成"
-        case "failed": "失败"
+        case "failed": "未能完成"
         case "blocked": "等待授权"
         case "result_unknown": "结果待核验"
         case "cancelled": "已取消"
-        default: "未知状态"
+        default: "状态待确认"
         }
     }
 
@@ -76,7 +106,7 @@ enum TaskPresentation {
         case "task_succeeded": "任务已完成"
         case "task_failed": "任务未能完成"
         case "task_cancelled": "任务已取消"
-        default: type
+        default: "工作状态已更新"
         }
     }
 
@@ -100,8 +130,8 @@ enum TaskPresentation {
     static func elapsed(_ startedAt: String, at date: Date = .now) -> String {
         guard let start = parsedDate(startedAt) else { return "" }
         let seconds = max(0, Int(date.timeIntervalSince(start)))
-        if seconds < 60 { return "(seconds) 秒" }
-        return "(seconds / 60) 分 (seconds % 60) 秒"
+        if seconds < 60 { return "\(seconds) 秒" }
+        return "\(seconds / 60) 分 \(seconds % 60) 秒"
     }
 
     private static func parsedDate(_ value: String) -> Date? {

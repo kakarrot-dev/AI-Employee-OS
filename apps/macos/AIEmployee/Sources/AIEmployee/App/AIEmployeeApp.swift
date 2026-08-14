@@ -35,15 +35,14 @@ struct AIEmployeeApp: App {
                     .keyboardShortcut(",")
             }
             CommandGroup(after: .newItem) {
-                Button("打开工作") { destinationRaw = AppDestination.work.rawValue }
+                Button("交代新工作") { destinationRaw = AppDestination.office.rawValue }
                     .keyboardShortcut("n")
             }
             CommandMenu("AI Employee") {
                 Button("打开命令面板") { store.presentCommandPalette() }
                     .keyboardShortcut("k")
                 Divider()
-                Button("打开员工工作区") { destinationRaw = AppDestination.work.rawValue }
-                    .keyboardShortcut("n", modifiers: [.command, .shift])
+                Button("打开工作库") { destinationRaw = AppDestination.work.rawValue }
                     .disabled(store.isSubmitting)
             }
         }

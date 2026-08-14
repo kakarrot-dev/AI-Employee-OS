@@ -84,8 +84,8 @@ struct EmployeeChatWorkspaceView: View {
                 ToolbarItem(placement: .navigation) {
                     CreamIconButton(
                         systemName: "chevron.left",
-                        accessibilityLabel: "返回员工会话列表",
-                        help: "返回员工会话列表",
+                        accessibilityLabel: "返回对话列表",
+                        help: "返回对话列表",
                         action: { compactShowsPrimary = false }
                     )
                 }
@@ -179,7 +179,7 @@ private struct EmployeeToolbarTitle: View {
                     systemImage: employee?.status == "active" ? "checkmark.circle.fill" : "pause.circle.fill",
                     tone: employee?.status == "active" ? .success : .neutral
                 )
-                Text("消息和工作会保留在这名员工的持续会话中。")
+                Text("消息和工作会保留在与这名员工的对话中。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -603,9 +603,9 @@ private struct TaskConversationBlock: View {
 
     private func statusText(at date: Date) -> String {
         switch run.status {
-        case .pending: "等待 Runtime 开始 · (TaskPresentation.elapsed(run.createdAt, at: date))"
-        case .running where run.isCancellationRequested: "正在停止 · (TaskPresentation.elapsed(run.createdAt, at: date))"
-        case .running: "(runtimePhase) · 已运行 (TaskPresentation.elapsed(run.createdAt, at: date))"
+        case .pending: "等待开始 · \(TaskPresentation.elapsed(run.createdAt, at: date))"
+        case .running where run.isCancellationRequested: "正在停止 · \(TaskPresentation.elapsed(run.createdAt, at: date))"
+        case .running: "\(runtimePhase) · 已运行 \(TaskPresentation.elapsed(run.createdAt, at: date))"
         case .succeeded: "已完成这项工作"
         case .failed where run.artifactPath != nil || run.verifiedArtifactPath != nil:
             "文件已生成，但最终回复未完成"
@@ -864,7 +864,7 @@ private struct LiveActionApprovalBar: View {
                         approvalFact("原因", rationale)
                     }
                 }
-                Text("允许一次只对当前工作生效；拒绝会结束本次工作。所有 Tool 调用仍由 Runtime 经过权限与审计检查后执行。")
+                Text("允许一次只对当前工作生效；拒绝会结束本次工作。系统仍会在执行前检查权限，并保留审计记录。")
                     .font(.caption)
                     .foregroundStyle(palette.muted)
             }
@@ -1075,7 +1075,7 @@ private struct WorkingStatusBar: View {
         if let running = run.actions.first(where: { $0.status == "running" }) {
             return TaskPresentation.actionTitle(running.stepID)
         }
-        return "等待 Runtime 更新进度"
+        return "等待新的进度"
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }
@@ -1092,7 +1092,7 @@ private struct WorkSubmissionConfirmationBar: View {
             if expanded {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                     Text(store.draft).foregroundStyle(palette.body).textSelection(.enabled)
-                    Text("确认后将创建一项可追踪工作。Skill、Tool、权限和副作用仍由 Runtime 按实际执行步骤校验。")
+                    Text("确认后将创建一项可追踪工作。系统会在每一步执行前核对所需技能、工具、权限和可能产生的影响。")
                         .foregroundStyle(palette.muted)
                 }
                 .font(.caption)

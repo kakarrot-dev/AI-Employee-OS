@@ -177,7 +177,7 @@ struct EmployeeEditorView: View {
 
     private var profileForm: some View {
         VStack(alignment: .leading, spacing: 26) {
-            formHeading("基础信息", "用于 Profile、搜索和运行时身份识别。")
+            formHeading("基础信息", "用于员工资料、搜索和运行时身份识别。")
             HStack(spacing: 16) {
                 CreamAvatar(path: employee.avatarPath, name: employee.name.isEmpty ? "A" : employee.name, size: 72)
                 VStack(alignment: .leading, spacing: 6) {
@@ -206,9 +206,9 @@ struct EmployeeEditorView: View {
         VStack(alignment: .leading, spacing: 26) {
             formHeading("能力配置", isDemo
                         ? "演示模式下可选择技能与工具，仅影响本页展示。"
-                        : "从已安装 Package 中为该员工绑定 Skill；Tool 全局安装，并由 Skill 声明调用依赖。")
+                        : "为员工选择可使用的技能；所需工具由系统统一管理。")
             if !isDemo {
-                Text(capabilityStore.tasksEnabled ? "Runtime 已接通" : "尚未接通 Runtime 时，可先选择，保存时再写入绑定。")
+                Text(capabilityStore.tasksEnabled ? "运行环境已连接" : "运行环境未连接；可以先选择技能，连接后再保存。")
                     .font(.caption)
                     .foregroundStyle(capabilityStore.tasksEnabled ? palette.success : palette.warning)
             }

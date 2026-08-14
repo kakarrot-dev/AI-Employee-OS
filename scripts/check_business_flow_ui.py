@@ -78,7 +78,7 @@ assert "conversationRuns" in chat and "conversationID" in chat
 assert "ModelConfiguration.environment()" in service
 assert "restorePendingRun" in store and "runPhase" in source("apps/macos/AIEmployee/Sources/AIEmployee/Models/Scenario.swift")
 assert "BusinessFlowHistoryBar" not in chat and "scenarioStore" not in chat
-assert 'Button("批准")' in task_room and 'Button("拒绝")' in task_room
+assert 'Button("允许一次")' in task_room and 'Button("拒绝")' in task_room
 assert "effective_prompt" not in view.lower()
 assert "reasoning" not in view.lower()
 

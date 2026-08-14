@@ -71,13 +71,13 @@ assert '"--stream-events"' in Path(
 assert 'employee?.name ?? "Alex"' not in workspace and 'employee?.role ?? "AI 产品经理"' not in workspace, (
     "missing employee data must not be disguised as the default seed employee"
 )
-assert "交给 Alex 新工作" not in command_palette and "在办公室描述目标，由系统匹配员工" in command_palette, (
+assert "交给 Alex 新工作" not in command_palette and "在办公室描述目标，确认员工分工后执行" in command_palette, (
     "the command palette must route generic work through the unified Office entry"
 )
-assert "查看员工与工作状态" not in command_palette and "查看模型调用与 Token 用量" in command_palette, (
+assert "查看员工与工作状态" not in command_palette and "交代工作并查看模型用量" in command_palette, (
     "the Office command description must match its usage-only responsibility"
 )
-assert "SecureField" not in settings and "API Key 仅从项目根目录 .env 读取" in settings, (
+assert "SecureField" not in settings and "模型凭证由本机配置提供，客户端不会显示或保存。" in settings, (
     "model credentials must not be exposed in the client"
 )
 assert "streamingContent += delta" in store, "stream deltas must update the visible assistant response"

@@ -41,7 +41,7 @@ struct TaskThreadWorkspaceView: View {
             }
             Button("取消", role: .cancel) { pendingDeletion = nil }
         } message: {
-            Text("记录会从工作库移除；底层 Task、Action 与 Audit 证据仍由 Runtime 保留。")
+            Text("这条记录会从工作库移除，但执行与审计证据仍会保留。")
         }
     }
 
@@ -89,7 +89,7 @@ struct TaskThreadWorkspaceView: View {
             ContentUnavailableView(
                 "还没有工作",
                 systemImage: "tray",
-                description: Text("在办公室描述目标后，Task 会持续保存在这里。")
+                description: Text("在办公室交代工作后，工作记录会持续保存在这里。")
             )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -286,7 +286,7 @@ struct TaskThreadWorkspaceView: View {
                    let execution = thread.execution,
                    let work = execution.workOrders.first(where: { $0.actionID == item.actionID }) {
                     HStack(spacing: 8) {
-                        Button("批准") { store.resolveApproval(for: work, in: execution, approve: true) }
+                        Button("允许一次") { store.resolveApproval(for: work, in: execution, approve: true) }
                             .buttonStyle(CreamPrimaryButtonStyle())
                         Button("拒绝") { store.resolveApproval(for: work, in: execution, approve: false) }
                             .buttonStyle(CreamSecondaryButtonStyle())
@@ -441,9 +441,9 @@ struct TaskThreadWorkspaceView: View {
 
     private func systemLabel(_ item: TaskRoomTimelineItem) -> String {
         switch item.kind {
-        case "proposal": "系统提出方案：\(item.content)"
+        case "proposal": "系统提出方案：\(userFacingSystemContent(item.content))"
         case "confirmation": "已确认执行"
-        default: item.content
+        default: userFacingSystemContent(item.content)
         }
     }
 
@@ -457,9 +457,16 @@ struct TaskThreadWorkspaceView: View {
     }
 
     private func cardContent(_ item: TaskRoomTimelineItem) -> String {
-        guard item.kind == "approval", let action = item.action else { return item.content }
+        guard item.kind == "approval", let action = item.action else { return userFacingSystemContent(item.content) }
         let actionName = ["search_web": "搜索网页", "create_file": "创建文件", "edit_file": "编辑文件", "read_file": "读取文件"][action] ?? action
         return item.status == "pending" ? "\(item.agentName ?? "员工") 请求执行：\(actionName)" : "\(actionName) · \(statusLabel(item.status ?? ""))"
+    }
+
+    private func userFacingSystemContent(_ content: String) -> String {
+        content.replacingOccurrences(
+            of: "上游交付物已通过 Runtime 证据校验",
+            with: "上游交付物已通过系统核验"
+        )
     }
 
     private func participantStatus(_ participant: TaskRoomParticipant, in thread: TaskThreadProjection) -> String {
@@ -490,7 +497,7 @@ struct TaskThreadWorkspaceView: View {
     }
 
     private func statusLabel(_ status: String) -> String {
-        ["drafting": "草拟中", "awaiting_input": "等待补充", "awaiting_confirmation": "等待确认", "pending": "等待开始", "running": "执行中", "waiting_dependency": "等待依赖", "waiting_approval": "等待审批", "approved": "已批准", "rejected": "已拒绝", "accepted": "已交接", "verified": "已验证", "started": "已开始", "succeeded": "已完成", "failed": "失败", "cancelled": "已取消"].first(where: { $0.key == status })?.value ?? status
+        TaskPresentation.threadStatus(status)
     }
 
     private func statusColor(_ status: String) -> Color {
@@ -498,12 +505,7 @@ struct TaskThreadWorkspaceView: View {
     }
 
     private func statusSymbol(_ status: String) -> String {
-        switch status {
-        case "succeeded", "verified", "approved", "accepted": "checkmark.circle.fill"
-        case "failed", "rejected", "cancelled": "xmark.circle.fill"
-        case "running", "started": "play.circle.fill"
-        default: "clock.fill"
-        }
+        TaskPresentation.threadStatusSystemImage(status)
     }
 
     private func statusTone(_ status: String) -> UXFeedbackTone {
@@ -562,16 +564,11 @@ private struct TaskThreadSidebarRow: View {
     }
 
     private var statusLabel: String {
-        ["drafting": "草拟中", "awaiting_input": "等待补充", "awaiting_confirmation": "等待确认", "pending": "等待开始", "running": "执行中", "succeeded": "已完成", "failed": "失败", "cancelled": "已取消"][thread.status] ?? thread.status
+        TaskPresentation.threadStatus(thread.status)
     }
 
     private var statusIcon: String {
-        switch thread.status {
-        case "succeeded": "checkmark.circle.fill"
-        case "failed", "cancelled": "xmark.circle.fill"
-        case "running": "play.circle.fill"
-        default: "clock.fill"
-        }
+        TaskPresentation.threadStatusSystemImage(thread.status)
     }
 
     private var statusTone: UXFeedbackTone {

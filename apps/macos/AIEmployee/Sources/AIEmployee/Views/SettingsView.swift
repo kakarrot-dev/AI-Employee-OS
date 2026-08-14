@@ -120,35 +120,38 @@ struct SettingsView: View {
             }
 
             Label(
-                ModelConfiguration.models.isEmpty ? "未在 .env 中发现可用模型" : "已从 .env 读取 \(ModelConfiguration.models.count) 个模型配置",
+                ModelConfiguration.models.isEmpty ? "未找到可用的本机模型配置" : "已找到 \(ModelConfiguration.models.count) 个本机模型配置",
                 systemImage: ModelConfiguration.models.isEmpty ? "exclamationmark.triangle" : "checkmark.circle.fill"
             )
             .font(.caption)
             .foregroundStyle(ModelConfiguration.models.isEmpty ? palette.warning : palette.success)
-            SettingsFootnote(text: "API Key 仅从项目根目录 .env 读取，不在客户端展示或保存。")
+            SettingsFootnote(text: "模型凭证由本机配置提供，客户端不会显示或保存。")
         }
     }
 
     private var runtimeSettings: some View {
-        SettingsCard {
-            SettingsInfoRow(label: "执行边界", value: "Rust Runtime")
-            SettingsRowDivider()
-            SettingsInfoRow(label: "Agent Worker", value: "Python")
-            SettingsRowDivider()
-            SettingsInfoRow(label: "连接方式", value: "本机进程")
+        VStack(alignment: .leading, spacing: 12) {
+            SettingsCard {
+                SettingsInfoRow(label: "执行位置", value: "本机")
+                SettingsRowDivider()
+                SettingsInfoRow(label: "安全边界", value: "受控执行环境")
+                SettingsRowDivider()
+                SettingsInfoRow(label: "推理方式", value: "独立进程")
+            }
+            SettingsFootnote(text: "工具操作由本机运行环境校验权限、审批与审计后执行。")
         }
     }
 
     private var permissionsSettings: some View {
         VStack(alignment: .leading, spacing: 12) {
             SettingsCard {
-                SettingsInfoRow(label: "Tool 调用", value: "全部经过 Runtime")
+                SettingsInfoRow(label: "工具使用", value: "由运行环境统一执行")
                 SettingsRowDivider()
-                SettingsInfoRow(label: "文件写入", value: "一次性审批")
+                SettingsInfoRow(label: "文件写入", value: "每次确认")
                 SettingsRowDivider()
-                SettingsInfoRow(label: "未知权限", value: "默认拒绝")
+                SettingsInfoRow(label: "未知权限", value: "拒绝执行")
             }
-            SettingsFootnote(text: "客户端不会直接执行 Tool，也不会绕过审批和审计。")
+            SettingsFootnote(text: "客户端不会直接执行工具，也不会绕过审批与审计。")
         }
     }
 
@@ -181,11 +184,11 @@ struct SettingsView: View {
     private var aboutSettings: some View {
         VStack(alignment: .leading, spacing: 12) {
             SettingsCard {
-                SettingsInfoRow(label: "运行方式", value: "Local-first")
+                SettingsInfoRow(label: "运行方式", value: "本地优先")
                 SettingsRowDivider()
-                SettingsInfoRow(label: "客户端", value: "SwiftUI for macOS")
+                SettingsInfoRow(label: "平台", value: "macOS")
             }
-            SettingsFootnote(text: "接收任务、规划、调用工具、产出 PRD、保存经验。")
+            SettingsFootnote(text: "在同一个本地工作台管理员工对话、协作任务、技能与交付。")
         }
     }
 
@@ -210,7 +213,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general: "通用"
         case .model: "模型"
-        case .runtime: "Runtime 与连接"
+        case .runtime: "运行环境"
         case .permissions: "权限与审批"
         case .appearance: "外观"
         case .about: "关于"
@@ -220,9 +223,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var detail: String {
         switch self {
         case .general: "窗口与语言偏好"
-        case .model: "从 .env 选择模型配置"
-        case .runtime: "本机执行边界说明"
-        case .permissions: "Tool 与审批策略"
+        case .model: "选择当前使用的模型"
+        case .runtime: "本机执行与连接方式"
+        case .permissions: "工具权限与确认规则"
         case .appearance: "主题与配色"
         case .about: "产品与运行方式"
         }

@@ -1093,7 +1093,7 @@ pub fn advance_after_child_success(
             source_work_order_id,
             &successor,
             deliverable_id,
-            "上游交付物已通过 Runtime 证据校验",
+            "上游交付物已通过系统核验",
             now,
         )?;
         append_root_event(

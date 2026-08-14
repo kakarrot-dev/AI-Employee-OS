@@ -21,7 +21,7 @@ enum AppDestination: String, CaseIterable, Identifiable {
         case .contacts: "通讯录"
         case .work: "工作库"
         case .archive: "归档"
-        case .employeeChat: "员工聊天"
+        case .employeeChat: "对话"
         case .knowledge: "知识库"
         case .skills: "技能库"
         case .tools: "工具库"

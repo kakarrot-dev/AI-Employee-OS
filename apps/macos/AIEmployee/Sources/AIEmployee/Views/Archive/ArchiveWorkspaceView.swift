@@ -3,6 +3,7 @@ import SwiftUI
 struct ArchiveWorkspaceView: View {
     @ObservedObject var store: ArchiveStore
     @ObservedObject var taskStore: TaskStore
+    let openWork: () -> Void
     @Environment(\.colorScheme) private var colorScheme
     @State private var pendingConversationDeletion: ArchivedConversation?
     @State private var pendingThreadDeletion: TaskThreadProjection?
@@ -31,7 +32,14 @@ struct ArchiveWorkspaceView: View {
                     }
                 }
                 if store.conversations.isEmpty, taskStore.archivedTaskThreads.isEmpty, !store.isLoading {
-                    ContentUnavailableView("还没有归档", systemImage: "archivebox", description: Text("私聊会话和工作记录归档后会统一显示在这里。"))
+                    ContentUnavailableView {
+                        Label("还没有归档", systemImage: "archivebox")
+                    } description: {
+                        Text("私聊和工作记录归档后会统一显示在这里。")
+                    } actions: {
+                        Button("前往工作库", action: openWork)
+                            .buttonStyle(CreamPrimaryButtonStyle())
+                    }
                         .frame(maxWidth: .infinity).padding(.top, 90)
                 }
             }
@@ -55,7 +63,7 @@ struct ArchiveWorkspaceView: View {
                 pendingThreadDeletion = nil
             }
             Button("取消", role: .cancel) { pendingThreadDeletion = nil }
-        } message: { Text("记录会从界面移除；底层 Task、Action 与 Audit 证据仍由 Runtime 保留。") }
+        } message: { Text("这条记录会从界面移除，但执行与审计证据仍会保留。") }
     }
 
     private func archiveSection<Content: View>(_ title: String, count: Int, @ViewBuilder content: () -> Content) -> some View {
