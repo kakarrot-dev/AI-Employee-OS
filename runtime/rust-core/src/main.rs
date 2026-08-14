@@ -94,6 +94,7 @@ fn command() -> Result<serde_json::Value, String> {
         Some("task-thread-timeline") => task_thread_timeline(arguments),
         Some("task-thread-retention") => task_thread_retention(arguments),
         Some("task-proposal-generate") => task_proposal_generate(arguments),
+        Some("task-proposal-regenerate") => task_proposal_regenerate(arguments),
         Some("task-proposal-current") => task_proposal_current(arguments),
         Some("task-proposal-confirm") => task_proposal_confirm(arguments),
         Some("scenario-list") => scenario_list(arguments),
@@ -847,7 +848,23 @@ fn timeline_sort_time(value: &str) -> i128 {
     }
 }
 
-fn task_proposal_generate(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+enum ProposalGenerationMode {
+    Initial,
+    Regenerate,
+}
+
+fn task_proposal_generate(arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    task_proposal_generation_command(arguments, ProposalGenerationMode::Initial)
+}
+
+fn task_proposal_regenerate(arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    task_proposal_generation_command(arguments, ProposalGenerationMode::Regenerate)
+}
+
+fn task_proposal_generation_command(
+    mut arguments: impl Iterator<Item = String>,
+    mode: ProposalGenerationMode,
+) -> Result<Value, String> {
     let mut database = None;
     let mut repository_root = None;
     let mut thread_id = None;
@@ -864,9 +881,76 @@ fn task_proposal_generate(mut arguments: impl Iterator<Item = String>) -> Result
         }
     }
     let thread_id = thread_id.ok_or_else(usage)?;
+    let root = repository_root.ok_or_else(usage)?;
     let mut connection =
         Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
     migrate(&mut connection).map_err(|e| e.to_string())?;
+    connection
+        .query_row(
+            "SELECT m.content FROM task_threads t JOIN task_thread_messages m ON m.thread_id=t.id
+         WHERE t.id=?1 AND t.deleted_at IS NULL AND m.kind='goal' ORDER BY m.sequence LIMIT 1",
+            [&thread_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|_| "task_thread_not_found".to_owned())?;
+    match generate_task_proposal(
+        &mut connection,
+        &root,
+        &python,
+        &thread_id,
+        preferred_agent_id,
+        mode,
+    ) {
+        Ok(response) => Ok(response),
+        Err(error) => {
+            let safe_code = safe_task_proposal_error_code(&error);
+            record_task_proposal_failure(&mut connection, &thread_id, safe_code)?;
+            Err(error)
+        }
+    }
+}
+
+fn generate_task_proposal(
+    connection: &mut Connection,
+    root: &Path,
+    python: &Path,
+    thread_id: &str,
+    preferred_agent_id: Option<String>,
+    mode: ProposalGenerationMode,
+) -> Result<Value, String> {
+    if matches!(mode, ProposalGenerationMode::Regenerate) {
+        let stamp = now();
+        let current_epoch_seconds = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+            .to_string();
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|error| error.to_string())?;
+        let old_count = tx
+            .execute(
+                "UPDATE task_proposals SET status=CASE WHEN expires_at<?2 THEN 'expired' ELSE 'rejected' END,updated_at=?3
+                 WHERE thread_id=?1 AND status IN ('awaiting_input','validated')",
+                rusqlite::params![thread_id, current_epoch_seconds, stamp],
+            )
+            .map_err(|error| error.to_string())?;
+        if old_count > 0 {
+            tx.execute(
+                "UPDATE task_threads SET status='drafting',current_revision=current_revision+1,updated_at=?2 WHERE id=?1",
+                rusqlite::params![thread_id, stamp],
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        tx.commit().map_err(|error| error.to_string())?;
+    }
+    let revision: i64 = connection
+        .query_row(
+            "SELECT current_revision FROM task_threads WHERE id=?1",
+            [thread_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
     let objective:String=connection.query_row("SELECT content FROM task_thread_messages WHERE thread_id=?1 AND kind='goal' ORDER BY sequence LIMIT 1",[&thread_id],|r|r.get(0)).map_err(|_|"task_thread_not_found".to_owned())?;
     let mut statement=connection.prepare("SELECT a.id,a.name FROM agents a JOIN employee_profiles p ON p.agent_id=a.id WHERE a.status='active' ORDER BY a.id").map_err(|e|e.to_string())?;
     let employees = statement
@@ -887,11 +971,10 @@ fn task_proposal_generate(mut arguments: impl Iterator<Item = String>) -> Result
     if catalog.is_empty() {
         return Err("task_proposal_employee_catalog_empty".into());
     }
-    let mut context_statement=connection.prepare("SELECT role,kind,content FROM task_thread_messages WHERE thread_id=?1 AND kind!='goal' ORDER BY sequence").map_err(|e|e.to_string())?;
+    let mut context_statement=connection.prepare("SELECT role,kind,content FROM task_thread_messages WHERE thread_id=?1 AND kind IN ('clarification') ORDER BY sequence").map_err(|e|e.to_string())?;
     let thread_context=context_statement.query_map([&thread_id],|r|Ok(json!({"role":r.get::<_,String>(0)?,"kind":r.get::<_,String>(1)?,"content":r.get::<_,String>(2)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
     drop(context_statement);
     let request = json!({"schema_version":"1.0.0","objective":objective,"thread_context":thread_context,"employee_catalog":catalog.clone(),"preferred_agent_id":preferred_agent_id});
-    let root = repository_root.ok_or_else(usage)?;
     let worker_root = root.join("runtime/python-agent");
     let mut child = Command::new(python)
         .args(["-m", "app.task_proposal_worker"])
@@ -949,13 +1032,6 @@ fn task_proposal_generate(mut arguments: impl Iterator<Item = String>) -> Result
         .as_secs()
         + 900)
         .to_string();
-    let revision: i64 = connection
-        .query_row(
-            "SELECT current_revision FROM task_threads WHERE id=?1",
-            [&thread_id],
-            |r| r.get(0),
-        )
-        .map_err(|e| e.to_string())?;
     let status = if proposal["missing_inputs"]
         .as_array()
         .is_some_and(|items| items.iter().any(|item| item["required"] == true))
@@ -995,6 +1071,60 @@ fn task_proposal_generate(mut arguments: impl Iterator<Item = String>) -> Result
     object.insert("revision".into(), json!(revision));
     object.insert("expires_at".into(), json!(expires_at));
     Ok(response)
+}
+
+fn safe_task_proposal_error_code(error: &str) -> &'static str {
+    match error {
+        "task_proposal_provider_network" => "task_proposal_provider_network",
+        "task_proposal_provider_rate_limited" => "task_proposal_provider_rate_limited",
+        "task_proposal_provider_authentication" => "task_proposal_provider_authentication",
+        "task_proposal_provider_quota" => "task_proposal_provider_quota",
+        "task_proposal_provider_server_temporary" => "task_proposal_provider_server_temporary",
+        "task_proposal_provider_dependency_unavailable" => {
+            "task_proposal_provider_dependency_unavailable"
+        }
+        "task_proposal_provider_invalid_response" => "task_proposal_provider_invalid_response",
+        "task_proposal_schema_invalid" => "task_proposal_schema_invalid",
+        "task_proposal_employee_catalog_empty" => "task_proposal_employee_catalog_empty",
+        "task_proposal_assignee_not_ready" => "task_proposal_assignee_not_ready",
+        "task_proposal_expired" => "task_proposal_expired",
+        "task_proposal_stale" => "task_proposal_stale",
+        "task_proposal_revision_conflict" => "task_proposal_revision_conflict",
+        "task_proposal_not_found" => "task_proposal_not_found",
+        _ => "task_proposal_unknown",
+    }
+}
+
+fn record_task_proposal_failure(
+    connection: &mut Connection,
+    thread_id: &str,
+    error_code: &str,
+) -> Result<(), String> {
+    let safe_code = safe_task_proposal_error_code(error_code);
+    let stamp = now();
+    let tx = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    let sequence: i64 = tx
+        .query_row(
+            "SELECT COALESCE(MAX(sequence),0)+1 FROM task_thread_messages WHERE thread_id=?1",
+            [thread_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    tx.execute(
+        "INSERT INTO task_thread_messages(id,thread_id,sequence,role,kind,content,created_at)
+         VALUES (?1,?2,?3,'system','error',?4,?5)",
+        rusqlite::params![
+            format!("message_{}", unique_suffix()),
+            thread_id,
+            sequence,
+            safe_code,
+            stamp
+        ],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.commit().map_err(|error| error.to_string())
 }
 
 fn task_proposal_current(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
@@ -3820,7 +3950,7 @@ fn task_command_arguments(
 }
 
 fn usage() -> String {
-    "usage: ai-employee-runtime employees-list|employee-save|employee-delete|effective-prompt|capabilities|capability-readiness|skills-list|tools-list|install-tool|install-skill|bind-skill|unbind-skill|knowledge-import|knowledge-list|knowledge-search|chat-history|chat-send|chat-abort|chat-delete|chat-retention|archive-list|run-task|run-skill|run-status|continue-run|resolve-action-result|list-tasks|usage-summary|cancel-task|events|task-thread-create|task-thread-list|task-thread-get|task-thread-message|task-thread-timeline|task-thread-retention|task-proposal-generate|task-proposal-current|task-proposal-confirm|scenario-list|scenario-propose|scenario-get|scenario-validate|scenario-save|scenario-disable|business-flow-plan|business-flow-start|business-flow-list|business-flow-status|business-flow-continue".to_owned()
+    "usage: ai-employee-runtime employees-list|employee-save|employee-delete|effective-prompt|capabilities|capability-readiness|skills-list|tools-list|install-tool|install-skill|bind-skill|unbind-skill|knowledge-import|knowledge-list|knowledge-search|chat-history|chat-send|chat-abort|chat-delete|chat-retention|archive-list|run-task|run-skill|run-status|continue-run|resolve-action-result|list-tasks|usage-summary|cancel-task|events|task-thread-create|task-thread-list|task-thread-get|task-thread-message|task-thread-timeline|task-thread-retention|task-proposal-generate|task-proposal-regenerate|task-proposal-current|task-proposal-confirm|scenario-list|scenario-propose|scenario-get|scenario-validate|scenario-save|scenario-disable|business-flow-plan|business-flow-start|business-flow-list|business-flow-status|business-flow-continue".to_owned()
 }
 
 fn usage_summary(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {
@@ -4573,6 +4703,209 @@ fn knowledge_search_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    const VALID_TWO_ASSIGNMENT_PROPOSAL: &str = r#"{"schema_version":"1.0.0","intent":"multi_agent_task","title":"Research and write","objective":"Research and write a summary","missing_inputs":[],"deliverable":{"type":"structured_result","description":"Research summary","target_path":null},"assignments":[{"node_id":"research","role":"owner","employee_selector":{"preferred_id":"data-researcher","capabilities":["web-search"]},"goal":"Research the current topic","depends_on":[],"acceptance_criteria":[{"criterion_id":"sources","description":"Includes sources","evidence_type":"structured_output","required":true}]},{"node_id":"write","role":"finalizer","employee_selector":{"preferred_id":"ai-product-manager","capabilities":["local-file-operations"]},"goal":"Write the final summary","depends_on":["research"],"acceptance_criteria":[{"criterion_id":"summary","description":"Produces the final summary","evidence_type":"artifact","required":true}]}],"acceptance_criteria":[{"criterion_id":"complete","description":"Research and summary are complete","evidence_type":"evaluation","required":true}],"requested_resources":[],"budget_hint":{"input_tokens":0,"output_tokens":0,"tool_rounds":0,"wall_clock_ms":0}}"#;
+    static PROPOSAL_FIXTURE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    struct ProposalGenerationFixture {
+        database: PathBuf,
+        thread_id: String,
+        repository_root: PathBuf,
+        worker_path: PathBuf,
+        old_proposal_id: Option<String>,
+    }
+
+    impl ProposalGenerationFixture {
+        fn arguments_with_failing_worker(&self, stderr: &str) -> impl Iterator<Item = String> {
+            let escaped_stderr = stderr.replace('\'', "'\\''");
+            fs::write(
+                &self.worker_path,
+                format!("#!/bin/sh\nprintf '%s\\n' '{escaped_stderr}' >&2\nexit 2\n"),
+            )
+            .unwrap();
+            fs::set_permissions(&self.worker_path, fs::Permissions::from_mode(0o700)).unwrap();
+            self.arguments()
+        }
+
+        fn arguments_with_success_worker(&self) -> impl Iterator<Item = String> {
+            let escaped_proposal = VALID_TWO_ASSIGNMENT_PROPOSAL.replace('\'', "'\\''");
+            fs::write(
+                &self.worker_path,
+                format!("#!/bin/sh\nprintf '%s\\n' '{escaped_proposal}'\nexit 0\n"),
+            )
+            .unwrap();
+            fs::set_permissions(&self.worker_path, fs::Permissions::from_mode(0o700)).unwrap();
+            self.arguments()
+        }
+
+        fn arguments(&self) -> impl Iterator<Item = String> {
+            vec![
+                "--database".to_owned(),
+                self.database.display().to_string(),
+                "--repository-root".to_owned(),
+                self.repository_root.display().to_string(),
+                "--thread-id".to_owned(),
+                self.thread_id.clone(),
+                "--python".to_owned(),
+                self.worker_path.display().to_string(),
+            ]
+            .into_iter()
+        }
+    }
+
+    impl Drop for ProposalGenerationFixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.worker_path);
+            let _ = fs::remove_file(&self.database);
+        }
+    }
+
+    fn proposal_generation_fixture() -> ProposalGenerationFixture {
+        let fixture_id = format!(
+            "{}-{}",
+            unique_suffix(),
+            PROPOSAL_FIXTURE_COUNTER.fetch_add(1, Ordering::Relaxed)
+        );
+        let database =
+            env::temp_dir().join(format!("ai-employee-proposal-generation-{fixture_id}.db"));
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let worker_path =
+            env::temp_dir().join(format!("ai-employee-proposal-worker-{fixture_id}.sh"));
+        let mut connection = Connection::open(&database).unwrap();
+        migrate(&mut connection).unwrap();
+        ensure_default_agent(&mut connection, &repository_root).unwrap();
+        let stamp = now();
+        connection
+            .execute(
+                "INSERT INTO agents VALUES ('data-researcher','Data Researcher','researcher','user','active',?1,?1)",
+                [&stamp],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO employee_profiles (agent_id,department,mission,responsibilities_json,boundaries_json,soul_json,base_prompt,config_version,created_at,updated_at) VALUES ('data-researcher','Research','Research','[]','[]','[]','Research',1,?1,?1)",
+                [&stamp],
+            )
+            .unwrap();
+        bind_skill(
+            &connection,
+            "data-researcher",
+            "web-search",
+            "1.0.0",
+            &stamp,
+        )
+        .unwrap();
+        let thread_id = "thread_proposal_generation".to_owned();
+        connection.execute("INSERT INTO task_threads(id,title,status,current_revision,created_at,updated_at) VALUES (?1,'Research and write','drafting',1,?2,?2)", rusqlite::params![thread_id,stamp]).unwrap();
+        connection.execute("INSERT INTO task_thread_messages(id,thread_id,sequence,role,kind,content,created_at) VALUES ('message_generation_goal',?1,1,'user','goal','Research and write a summary',?2),('message_generation_clarification',?1,2,'user','clarification','Use public sources',?2)", rusqlite::params![thread_id,stamp]).unwrap();
+        drop(connection);
+        ProposalGenerationFixture {
+            database,
+            thread_id,
+            repository_root,
+            worker_path,
+            old_proposal_id: None,
+        }
+    }
+
+    fn proposal_generation_fixture_with_validated_proposal() -> ProposalGenerationFixture {
+        let mut fixture = proposal_generation_fixture();
+        let connection = Connection::open(&fixture.database).unwrap();
+        let proposal_id = "proposal_generation_old".to_owned();
+        let hash = format!(
+            "{:x}",
+            Sha256::digest(VALID_TWO_ASSIGNMENT_PROPOSAL.as_bytes())
+        );
+        let stamp = now();
+        connection.execute("INSERT INTO task_proposals(id,thread_id,revision,status,proposal_json,proposal_sha256,expires_at,created_at,updated_at) VALUES (?1,?2,1,'validated',?3,?4,?5,?6,?6)", rusqlite::params![proposal_id,fixture.thread_id,VALID_TWO_ASSIGNMENT_PROPOSAL,hash,future_expiry(),stamp]).unwrap();
+        connection
+            .execute(
+                "UPDATE task_threads SET status='awaiting_confirmation' WHERE id=?1",
+                [&fixture.thread_id],
+            )
+            .unwrap();
+        drop(connection);
+        fixture.old_proposal_id = Some(proposal_id);
+        fixture
+    }
+
+    fn proposal_status(database: &Path, proposal_id: &Option<String>) -> String {
+        Connection::open(database)
+            .unwrap()
+            .query_row(
+                "SELECT status FROM task_proposals WHERE id=?1",
+                [proposal_id.as_deref().expect("fixture has an old proposal")],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    fn message_kind_count(database: &Path, thread_id: &str, kind: &str) -> i64 {
+        Connection::open(database)
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM task_thread_messages WHERE thread_id=?1 AND kind=?2",
+                rusqlite::params![thread_id, kind],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    fn goal_count(database: &Path, thread_id: &str) -> i64 {
+        message_kind_count(database, thread_id, "goal")
+    }
+
+    fn clarification_count(database: &Path, thread_id: &str) -> i64 {
+        message_kind_count(database, thread_id, "clarification")
+    }
+
+    #[test]
+    fn task_proposal_failure_persists_only_a_safe_error_code() {
+        let fixture = proposal_generation_fixture();
+        let error = task_proposal_generate(fixture.arguments_with_failing_worker(
+            r#"{"schema_version":"1.0","error_code":"network","detail":"sk-secret /Users/private"}"#,
+        ))
+        .unwrap_err();
+        assert_eq!(error, "task_proposal_provider_network");
+
+        let connection = Connection::open(&fixture.database).unwrap();
+        let content: String = connection
+            .query_row(
+                "SELECT content FROM task_thread_messages WHERE thread_id=?1 AND kind='error' ORDER BY sequence DESC LIMIT 1",
+                [&fixture.thread_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(content, "task_proposal_provider_network");
+        assert!(!content.contains("sk-secret"));
+        assert!(!content.contains("/Users/private"));
+    }
+
+    #[test]
+    fn regenerate_rejects_old_proposal_and_increments_revision_once() {
+        let fixture = proposal_generation_fixture_with_validated_proposal();
+        let response = task_proposal_regenerate(fixture.arguments_with_success_worker()).unwrap();
+        assert_eq!(response["revision"], 2);
+        assert_eq!(
+            proposal_status(&fixture.database, &fixture.old_proposal_id),
+            "rejected"
+        );
+        assert_eq!(goal_count(&fixture.database, &fixture.thread_id), 1);
+        assert_eq!(
+            clarification_count(&fixture.database, &fixture.thread_id),
+            1
+        );
+    }
+
+    #[test]
+    fn regenerate_legacy_draft_without_proposal_keeps_revision() {
+        let fixture = proposal_generation_fixture();
+        let response = task_proposal_regenerate(fixture.arguments_with_success_worker()).unwrap();
+        assert_eq!(response["revision"], 1);
+        assert_eq!(goal_count(&fixture.database, &fixture.thread_id), 1);
+    }
 
     fn future_expiry() -> String {
         (SystemTime::now()
