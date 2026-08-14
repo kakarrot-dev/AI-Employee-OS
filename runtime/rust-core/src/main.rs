@@ -919,11 +919,8 @@ fn task_proposal_generate(mut arguments: impl Iterator<Item = String>) -> Result
     }
     let proposal: Value = serde_json::from_slice(&output.stdout)
         .map_err(|e| format!("task_proposal_schema_invalid:{e}"))?;
-    let schema: Value =
-        serde_json::from_str(include_str!("../../../contracts/task-proposal.schema.json"))
-            .map_err(|e| e.to_string())?;
-    ai_employee_runtime::json_schema::validate(&schema, &proposal)
-        .map_err(|e| format!("task_proposal_schema_invalid:{e}"))?;
+    validate_task_proposal_schema(&proposal)
+        .map_err(|error| format!("task_proposal_schema_invalid:{error}"))?;
     let assignments = proposal["assignments"]
         .as_array()
         .ok_or("task_proposal_assignments_invalid")?;
@@ -1025,6 +1022,7 @@ fn task_proposal_current(mut arguments: impl Iterator<Item = String>) -> Result<
         return Err("task_proposal_expired".into());
     }
     let proposal: Value = serde_json::from_str(&raw).map_err(|_| "task_proposal_invalid")?;
+    validate_task_proposal_schema(&proposal).map_err(|_| "task_proposal_schema_invalid")?;
     let resolved_assignments = resolve_all_assignments(&connection, &proposal)
         .map_err(|_| "task_proposal_stale".to_owned())?;
     Ok(task_proposal_response(
@@ -1049,6 +1047,13 @@ fn parse_database_and_thread_id(
         }
     }
     Ok((database.ok_or_else(usage)?, thread_id.ok_or_else(usage)?))
+}
+
+fn validate_task_proposal_schema(proposal: &Value) -> Result<(), String> {
+    let schema: Value =
+        serde_json::from_str(include_str!("../../../contracts/task-proposal.schema.json"))
+            .map_err(|error| error.to_string())?;
+    ai_employee_runtime::json_schema::validate(&schema, proposal)
 }
 
 fn resolve_all_assignments(
@@ -4693,6 +4698,22 @@ mod tests {
         let error =
             task_proposal_current(proposal_current_arguments(&database, &thread_id)).unwrap_err();
         assert_eq!(error, "task_proposal_stale");
+        fs::remove_file(database).unwrap();
+    }
+
+    #[test]
+    fn task_proposal_current_rejects_unknown_schema_version() {
+        let (database, thread_id, _) = proposal_recovery_fixture("validated", future_expiry());
+        Connection::open(&database)
+            .unwrap()
+            .execute(
+                "UPDATE task_proposals SET proposal_json=replace(proposal_json, '\"schema_version\":\"1.0.0\"', '\"schema_version\":\"9.0.0\"')",
+                [],
+            )
+            .unwrap();
+        let error =
+            task_proposal_current(proposal_current_arguments(&database, &thread_id)).unwrap_err();
+        assert_eq!(error, "task_proposal_schema_invalid");
         fs::remove_file(database).unwrap();
     }
 
