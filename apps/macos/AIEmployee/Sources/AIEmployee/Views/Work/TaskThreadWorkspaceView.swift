@@ -3,6 +3,7 @@ import SwiftUI
 
 struct TaskThreadWorkspaceView: View {
     @ObservedObject var store: TaskStore
+    @ObservedObject var employeeStore: EmployeeStore
     @Environment(\.colorScheme) private var colorScheme
     @SceneStorage("workInspectorPreferred") private var inspectorPreferred = true
     @State private var compactShowsRoom = false
@@ -103,10 +104,17 @@ struct TaskThreadWorkspaceView: View {
             Divider()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.xl) {
-                    if let proposal = store.activeProposal,
-                       proposal.threadID == thread.id,
-                       store.awaitingWorkConfirmation {
+                    switch store.proposalState {
+                    case .recoverable(let message):
+                        proposalRecoveryCard(message: message)
+                    case .generating, .restoring:
+                        proposalLoadingCard()
+                    case .review(let proposal) where proposal.threadID == thread.id:
                         proposalReview(proposal)
+                    case .failed(let message, let code):
+                        proposalFailureCard(message: message, code: code)
+                    case .idle, .review:
+                        EmptyView()
                     }
                     ForEach(thread.room.items) { item in timelineItem(item, thread: thread) }
                 }
@@ -119,33 +127,33 @@ struct TaskThreadWorkspaceView: View {
         }
     }
 
-    private func proposalReview(_ response: TaskProposalResponse) -> some View {
+    private func proposalReview(_ proposal: TaskProposalResponse) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
                     Label("执行方案", systemImage: "list.bullet.clipboard")
                         .font(.callout.weight(.semibold)).foregroundStyle(palette.ink)
-                    Text(response.proposal.intent == "multi_agent_task" ? "多员工协作 · \(response.proposal.assignments.count) 个分工" : "单员工执行")
+                    Text(proposal.proposal.intent == "multi_agent_task" ? "多员工协作 · \(proposal.proposal.assignments.count) 个分工" : "单员工执行")
                         .font(.caption).foregroundStyle(palette.muted)
                 }
                 Spacer()
                 Button("返回修改", action: store.cancelWorkConfirmation).buttonStyle(CreamSecondaryButtonStyle())
                 Button("确认执行", action: store.confirmAndRun)
                     .buttonStyle(CreamPrimaryButtonStyle())
-                    .disabled(store.isSubmitting || response.proposal.missingInputs.contains(where: \.required))
+                    .disabled(store.isSubmitting || proposal.proposal.missingInputs.contains(where: \.required))
             }
-            ForEach(response.proposal.missingInputs, id: \.key) { item in
+            ForEach(proposal.proposal.missingInputs, id: \.key) { item in
                 Label(item.question, systemImage: "questionmark.circle")
                     .font(.callout).foregroundStyle(palette.warning)
             }
-            ForEach(response.proposal.assignments, id: \.nodeID) { assignment in
-                HStack(alignment: .firstTextBaseline, spacing: 9) {
-                    Image(systemName: assignment.role == "finalizer" ? "checkmark.seal" : "person.crop.circle")
-                        .foregroundStyle(palette.primary)
+            Text("方案匹配").font(.caption.weight(.semibold)).foregroundStyle(palette.muted)
+            ForEach(proposal.candidateAssignments(employees: employeeStore.employees)) { candidate in
+                HStack(spacing: 10) {
+                    CreamAvatar(path: candidate.avatarPath, name: candidate.name, size: 32)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(assignment.goal).font(.callout).foregroundStyle(palette.body)
-                        Text(assignment.employeeSelector.preferredID ?? "由 Runtime 按能力匹配")
-                            .font(.caption2).foregroundStyle(palette.mutedSoft)
+                        Text(candidate.name).font(.callout.weight(.medium)).foregroundStyle(palette.ink)
+                        Text("\(candidate.role) · \(candidate.goal)")
+                            .font(.caption).foregroundStyle(palette.muted)
                     }
                 }
             }
@@ -156,8 +164,51 @@ struct TaskThreadWorkspaceView: View {
         .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg).stroke(palette.hairlineSoft) }
     }
 
+    private func proposalRecoveryCard(message: String) -> some View {
+        proposalRetryCard(
+            title: "需要重新匹配",
+            systemImage: "arrow.triangle.2.circlepath",
+            message: message
+        )
+    }
+
+    private func proposalFailureCard(message: String, code _: String) -> some View {
+        proposalRetryCard(
+            title: "方案未生成",
+            systemImage: "exclamationmark.triangle",
+            message: message
+        )
+    }
+
+    private func proposalRetryCard(title: String, systemImage: String, message: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(title, systemImage: systemImage)
+                .font(.callout.weight(.semibold)).foregroundStyle(palette.ink)
+            Text(message).font(.callout).foregroundStyle(palette.body)
+            Button("重新生成方案", action: store.regenerateProposal)
+                .buttonStyle(CreamPrimaryButtonStyle())
+                .disabled(store.isSubmitting)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg).stroke(palette.hairlineSoft) }
+    }
+
+    private func proposalLoadingCard() -> some View {
+        HStack(spacing: 10) {
+            ProgressView().controlSize(.small)
+            Text("正在匹配员工…").font(.callout.weight(.medium)).foregroundStyle(palette.body)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.surfaceCard, in: RoundedRectangle(cornerRadius: AppTheme.Radius.lg, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg).stroke(palette.hairlineSoft) }
+    }
+
     private func roomHeader(_ thread: TaskThreadProjection, showsBack: Bool, layout: ResolvedLayout) -> some View {
-        HStack(spacing: 12) {
+        let participantSummary = thread.room.participants.isEmpty ? "尚未匹配员工" : "\(thread.room.participants.count) 位员工"
+        return HStack(spacing: 12) {
             if showsBack {
                 Button {
                     compactShowsRoom = false
@@ -176,7 +227,7 @@ struct TaskThreadWorkspaceView: View {
                         CreamAvatar(path: participant.avatarPath, name: participant.name, size: 24)
                             .overlay(Circle().stroke(palette.canvas, lineWidth: 2))
                     }
-                    Text("\(thread.room.participants.count) 位员工 · \(statusLabel(thread.status))")
+                    Text("\(participantSummary) · \(statusLabel(thread.status))")
                         .font(.caption).foregroundStyle(palette.muted).padding(.leading, 10)
                 }
             }
@@ -322,21 +373,28 @@ struct TaskThreadWorkspaceView: View {
 
                 VStack(alignment: .leading, spacing: 14) {
                     Text("参与员工").font(.caption.weight(.semibold)).foregroundStyle(palette.muted)
-                    ForEach(thread.room.participants) { participant in
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 10) {
-                                CreamAvatar(path: participant.avatarPath, name: participant.name, size: 34)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(participant.name).font(.callout.weight(.medium)).foregroundStyle(palette.ink).lineLimit(1)
-                                    Text(participant.role).font(.caption).foregroundStyle(palette.muted).lineLimit(1)
+                    if thread.room.participants.isEmpty {
+                        Text("尚未匹配员工")
+                            .font(.callout.weight(.medium)).foregroundStyle(palette.ink)
+                        Text("确认方案后显示正式参与员工")
+                            .font(.caption).foregroundStyle(palette.muted)
+                    } else {
+                        ForEach(thread.room.participants) { participant in
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 10) {
+                                    CreamAvatar(path: participant.avatarPath, name: participant.name, size: 34)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(participant.name).font(.callout.weight(.medium)).foregroundStyle(palette.ink).lineLimit(1)
+                                        Text(participant.role).font(.caption).foregroundStyle(palette.muted).lineLimit(1)
+                                    }
+                                    Spacer(minLength: 6)
+                                    Text(statusLabel(participantStatus(participant, in: thread)))
+                                        .font(.caption2.weight(.medium))
+                                        .foregroundStyle(statusColor(participantStatus(participant, in: thread)))
                                 }
-                                Spacer(minLength: 6)
-                                Text(statusLabel(participantStatus(participant, in: thread)))
-                                    .font(.caption2.weight(.medium))
-                                    .foregroundStyle(statusColor(participantStatus(participant, in: thread)))
-                            }
-                            if let progress = participantProgress(participant, in: thread) {
-                                CreamProgressBar(value: progress)
+                                if let progress = participantProgress(participant, in: thread) {
+                                    CreamProgressBar(value: progress)
+                                }
                             }
                         }
                     }

@@ -125,7 +125,7 @@ struct ContentView: View {
                 editDemoEmployee: { demoEditorEmployee = $0 }
             )
         case .work:
-            TaskThreadWorkspaceView(store: store)
+            TaskThreadWorkspaceView(store: store, employeeStore: employeeStore)
         case .archive:
             ArchiveWorkspaceView(store: archiveStore, taskStore: store)
         case .employeeChat:
