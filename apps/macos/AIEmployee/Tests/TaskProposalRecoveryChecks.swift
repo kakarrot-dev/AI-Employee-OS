@@ -185,6 +185,8 @@ private func makeService(
         archiveList: { throw TestFailure.unimplemented },
         employeeList: { throw TestFailure.unimplemented },
         employeeSave: { _ in throw TestFailure.unimplemented },
+        employeeSetStatus: { _, _ in throw TestFailure.unimplemented },
+        employeeDeleteCheck: { _ in throw TestFailure.unimplemented },
         employeeDelete: { _ in throw TestFailure.unimplemented },
         effectivePrompt: { _ in throw TestFailure.unimplemented },
         capabilities: { throw TestFailure.unimplemented },

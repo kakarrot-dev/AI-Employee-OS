@@ -125,6 +125,12 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-business-flow-") as directo
     flow = run("business-flow-start", "--database", str(database), "--flow-id", "flow-multi", "--scenario-id", "multi-employee", "--plan-hash", plan["plan_hash"])
     assert saved["sha256"] == plan["plan_hash"]
     assert [item["assignee_agent_id"] for item in flow["work_orders"]] == ["researcher-001", "writer-002", "researcher-001"]
+    threads = run("task-thread-list", "--database", str(database))
+    assert len(threads) == 1, "direct Business Flow must be visible in Work Library"
+    assert threads[0]["root_task_id"] == flow["root_task_id"]
+    assert {item["agent_id"] for item in threads[0]["room"]["participants"]} == {"researcher-001", "writer-002"}
+    researcher_delete_check = run("employee-delete-check", "--database", str(database), "--employee-id", "researcher-001")
+    assert researcher_delete_check["active_work_count"] == 1, "one visible Business Flow must count as one active work item"
 
     research = run(
         "business-flow-continue", *common, "--flow-id", "flow-multi",
@@ -161,6 +167,35 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-business-flow-") as directo
     with sqlite3.connect(database) as connection:
         after_recovery = tuple(connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0] for table in ("agent_runs", "tool_executions", "handoffs"))
     assert before_recovery == after_recovery
+
+    # Disabling a pending assignee must converge to waiting_user without claiming
+    # the Child Task or appending a fake work_order.started event.
+    with sqlite3.connect(database) as connection:
+        runs_before_disable = connection.execute("SELECT count(*) FROM agent_runs").fetchone()[0]
+        starts_before_disable = connection.execute(
+            """SELECT count(*) FROM runtime_events
+               WHERE task_id='flow-multi:root' AND event_type='work_order.started'
+                 AND json_extract(payload_json,'$.work_order_id')='flow-multi:work:write'"""
+        ).fetchone()[0]
+    run("employee-set-status", "--database", str(database), "--employee-id", "writer-002", "--status", "disabled")
+    disabled_projection = run("business-flow-continue", *common, "--flow-id", "flow-multi")
+    assert disabled_projection["work_orders"][1]["status"] == "waiting_user"
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT status FROM tasks WHERE id='flow-multi:task:write'").fetchone() == ("pending",)
+        assert connection.execute("SELECT count(*) FROM agent_runs").fetchone()[0] == runs_before_disable
+        assert connection.execute(
+            """SELECT count(*) FROM runtime_events
+               WHERE task_id='flow-multi:root' AND event_type='work_order.started'
+                 AND json_extract(payload_json,'$.work_order_id')='flow-multi:work:write'"""
+        ).fetchone()[0] == starts_before_disable
+        assert connection.execute(
+            """SELECT count(*) FROM runtime_events
+               WHERE task_id='flow-multi:root' AND event_type='business_flow.waiting_user'
+                 AND json_extract(payload_json,'$.work_order_id')='flow-multi:work:write'
+                 AND json_extract(payload_json,'$.reason')='assignee_unavailable'"""
+        ).fetchone() == (1,)
+    run("employee-set-status", "--database", str(database), "--employee-id", "writer-002", "--status", "active")
+    assert run("business-flow-status", "--database", str(database), "--flow-id", "flow-multi")["work_orders"][1]["status"] == "ready"
 
     writing = run(
         "business-flow-continue", *common, "--flow-id", "flow-multi",

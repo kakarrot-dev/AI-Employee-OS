@@ -21,6 +21,18 @@ def run(database: Path, *arguments: str) -> dict:
     return json.loads(result.stdout)
 
 
+def run_failed(database: Path, *arguments: str) -> str:
+    result = subprocess.run(
+        [BINARY, *arguments, "--database", database],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    return result.stderr
+
+
 with tempfile.TemporaryDirectory() as directory:
     database = Path(directory) / "runtime.db"
     listed = run(database, "employees-list", "--repository-root", str(ROOT))
@@ -176,18 +188,119 @@ with tempfile.TemporaryDirectory() as directory:
     assert "更新后的灵魂" in prompt_after["prompt"]
     assert long_identity not in prompt_after["prompt"]
 
+    disabled = run(
+        database,
+        "employee-set-status",
+        "--employee-id",
+        "content-operator",
+        "--status",
+        "disabled",
+    )
+    assert disabled["status"] == "disabled"
+    assert next(
+        item for item in run(database, "employees-list")["employees"] if item["id"] == "content-operator"
+    )["status"] == "disabled"
+    enabled = run(
+        database,
+        "employee-set-status",
+        "--employee-id",
+        "content-operator",
+        "--status",
+        "active",
+    )
+    assert enabled["status"] == "active"
+
     with sqlite3.connect(database) as connection:
         connection.execute(
             "INSERT INTO conversations VALUES ('conversation_luna','content-operator','测试','active','t','t')"
         )
-    disposition = run(database, "employee-delete", "--employee-id", "content-operator")
-    assert disposition["disposition"] == "disabled"
-    assert (
-        next(item for item in run(database, "employees-list")["employees"] if item["id"] == "content-operator")[
-            "status"
-        ]
-        == "disabled"
+        connection.execute(
+            "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('luna-finished','content-operator','历史工作','succeeded','t1','t2')"
+        )
+        connection.execute(
+            "INSERT INTO audit_logs VALUES ('audit-luna','content-operator','luna-finished',NULL,'task.complete','luna-finished','succeeded','t2')"
+        )
+        connection.execute(
+            "INSERT INTO scenario_definitions VALUES ('scenario-luna','历史场景','', 'active',1,'t1','t1')"
+        )
+        connection.execute(
+            "INSERT INTO scenario_versions VALUES ('scenario-luna:v1','scenario-luna',1,'manual',?, ?,NULL,'t1','t1')",
+            ('{"owner":"content-operator"}', "b" * 64),
+        )
+        connection.execute(
+            """INSERT INTO scenario_nodes(
+                 id,scenario_version_id,node_key,role,goal,assignee_agent_id,
+                 required_capabilities_json,input_refs_json,acceptance_json,budget_json,
+                 failure_policy,position
+               ) VALUES (
+                 'scenario-luna:v1:write','scenario-luna:v1','write','executor','撰写内容',
+                 'content-operator','[]','[]','[]','{}','stop',0
+               )"""
+        )
+        connection.execute(
+            "INSERT INTO task_threads(id,title,status,current_revision,created_at,updated_at) VALUES ('thread-luna','历史工作','succeeded',1,'t1','t2')"
+        )
+        connection.execute(
+            "INSERT INTO task_proposals(id,thread_id,revision,status,proposal_json,proposal_sha256,expires_at,confirmed_at,created_at,updated_at) VALUES ('proposal-luna','thread-luna',1,'materialized','{}',?,'9','t1','t1','t2')",
+            ("a" * 64,),
+        )
+        connection.execute(
+            "INSERT INTO task_thread_task_bindings(thread_id,task_id,proposal_id,binding_role,created_at) VALUES ('thread-luna','luna-finished','proposal-luna','single','t1')"
+        )
+        connection.execute(
+            "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('luna-running','content-operator','进行中工作','running','t2','t2')"
+        )
+        connection.commit()
+    blocked = run(database, "employee-delete-check", "--employee-id", "content-operator")
+    assert blocked["deletable"] is False
+    assert blocked["active_work_count"] == 1
+    assert "employee_delete_blocked_active_work" in run_failed(
+        database, "employee-delete", "--employee-id", "content-operator"
     )
+    assert any(item["id"] == "content-operator" for item in run(database, "employees-list")["employees"])
+    with sqlite3.connect(database) as connection:
+        connection.execute("UPDATE tasks SET status='cancelled' WHERE id='luna-running'")
+        connection.commit()
+    deletable = run(database, "employee-delete-check", "--employee-id", "content-operator")
+    assert deletable["deletable"] is True
+    disposition = run(database, "employee-delete", "--employee-id", "content-operator")
+    assert disposition["disposition"] == "deleted"
+    assert all(item["id"] != "content-operator" for item in run(database, "employees-list")["employees"])
+    historical_thread = run(database, "task-thread-get", "--thread-id", "thread-luna")
+    assert historical_thread["status"] == "succeeded"
+    assert historical_thread["room"]["participants"] == [
+        {
+            "agent_id": "content-operator",
+            "avatar_path": None,
+            "name": "Luna",
+            "role": "AI 内容运营",
+            "status": "succeeded",
+        }
+    ]
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT count(*) FROM agents WHERE id='content-operator'").fetchone() == (0,)
+        assert connection.execute(
+            "SELECT count(*) FROM agents WHERE id='system:historical-employee' AND status='disabled'"
+        ).fetchone() == (1,)
+        assert connection.execute(
+            "SELECT historical_agent_id,display_name,role FROM task_participant_snapshots WHERE task_id='luna-finished'"
+        ).fetchone() == ("content-operator", "Luna", "AI 内容运营")
+        assert connection.execute("SELECT agent_id FROM tasks WHERE id='luna-finished'").fetchone() == (
+            "system:historical-employee",
+        )
+        assert connection.execute(
+            "SELECT assignee_agent_id,historical_agent_id FROM scenario_nodes WHERE id='scenario-luna:v1:write'"
+        ).fetchone() == ("system:historical-employee", "content-operator")
+        assert connection.execute(
+            "SELECT status FROM scenario_definitions WHERE id='scenario-luna'"
+        ).fetchone() == ("disabled",)
+        assert connection.execute(
+            "SELECT definition_json,sha256 FROM scenario_versions WHERE id='scenario-luna:v1'"
+        ).fetchone() == ('{"owner":"content-operator"}', "b" * 64)
+        assert connection.execute(
+            "SELECT agent_id FROM audit_logs WHERE id='audit-luna'"
+        ).fetchone() == (None,)
+        assert connection.execute("SELECT count(*) FROM conversations WHERE agent_id='content-operator'").fetchone() == (0,)
 
     deleted = run(database, "employee-delete", "--employee-id", "ai-product-manager")
     assert deleted["disposition"] == "deleted"

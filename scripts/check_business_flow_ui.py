@@ -30,7 +30,15 @@ assert "AI 正在根据 SOP 组织节点…" in view and "if store.isProposing" 
 assert "selectedTab = .nodes\n        Task" in view
 assert "private func makeNode(" in view and "private func hasRunnableNodes(" in view
 assert 'draft.nodes.removeAll { $0.role == "finalization" }' in view
-assert 'Image(systemName: "plus")' in view and '.help("新建场景")' in view
+assert all(
+    marker in view
+    for marker in [
+        "CreamIconButton(",
+        'accessibilityLabel: "新建场景"',
+        'help: "新建场景"',
+        "tone: .primary",
+    ]
+)
 assert 'Button("编写业务 SOP")' not in view
 assert view.count('Button("新建场景")') == 1
 assert 'Text(store.scenarios.isEmpty ? "暂无场景"' in view

@@ -10,6 +10,9 @@ python3 scripts/check_skill_evals.py
 python3 scripts/check_keychain_boundaries.py
 python3 scripts/check_chat_feedback.py
 python3 scripts/check_office_motion.py
+python3 scripts/check_ui_design_system.py
+python3 scripts/check_composer_reuse.py
+python3 scripts/check_timeline_reuse.py
 python3 scripts/check_signing_identity.py
 python3 scripts/check_employee_runtime.py
 python3 scripts/check_generic_runtime.py

@@ -91,7 +91,12 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-scenario-") as directory:
             connection.execute("SELECT count(*) FROM tool_executions").fetchone()[0],
         )
     recovery = run("recover-runtime", *common)
-    assert recovery == {"schema_version": "1.0", "safe_failures": 0, "result_unknown": 0}
+    assert recovery == {
+        "schema_version": "1.0",
+        "flow_threads_repaired": 0,
+        "safe_failures": 0,
+        "result_unknown": 0,
+    }
     with sqlite3.connect(database) as connection:
         counts_after_recovery = (
             connection.execute("SELECT count(*) FROM agent_runs").fetchone()[0],

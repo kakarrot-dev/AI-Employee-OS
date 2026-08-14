@@ -19,8 +19,8 @@ HELPER_BINARY="$APP_CONTENTS/Helpers/AIEmployeeCredentialBroker"
 RUNTIME_RESOURCES="$APP_CONTENTS/Resources/AIEmployeeRuntime"
 SIGNING_IDENTITY_NAME="${AI_EMPLOYEE_SIGNING_IDENTITY:-AI Employee OS Local Development}"
 
-if [[ -d /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk ]]; then
-  export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk
+if [[ -z "${SDKROOT:-}" ]]; then
+  export SDKROOT="$(/usr/bin/xcrun --sdk macosx --show-sdk-path)"
 fi
 
 SIGNING_IDENTITY="$({ /usr/bin/security find-identity -v -p codesigning 2>/dev/null || true; } \

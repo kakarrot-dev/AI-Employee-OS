@@ -30,11 +30,11 @@ assert "OfficeSnapshot.EmployeeItem(id: \"alex\"" not in snapshot and "demo-runn
 assert "USAGE_PRICING_VERSION" in runtime and '"pricing_version": USAGE_PRICING_VERSION' in runtime, (
     "estimated cost must expose the exact pricing configuration version"
 )
-assert ".creamFloatingComposer(focused: taskComposerFocused)" in text, (
-    "office task entry must reuse the canonical floating chat composer surface"
+assert "CreamComposer(" in text and "size: .expanded" in text, (
+    "office task entry must reuse the expanded shared Composer"
 )
-assert ".creamFloatingComposer(focused: taskComposerFocused)\n            .frame(maxWidth: .infinity)" in text, (
-    "office task composer must fill its task-entry container instead of inheriting chat reading width"
+assert ".creamFloatingComposer(" not in text, (
+    "office must not bypass the shared Composer with a local surface implementation"
 )
 assert "任务已保存" not in text and "任务已交给 Runtime 执行" not in text, (
     "office must not duplicate Task persistence status"

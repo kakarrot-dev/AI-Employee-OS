@@ -10,6 +10,7 @@ def source(relative: str) -> str:
 
 view = source("apps/macos/AIEmployee/Sources/AIEmployee/Views/Work/TaskThreadWorkspaceView.swift")
 controls = source("apps/macos/AIEmployee/Sources/AIEmployee/DesignSystem/CreamControls.swift")
+composer = source("apps/macos/AIEmployee/Sources/AIEmployee/DesignSystem/CreamComposer.swift")
 model = source("apps/macos/AIEmployee/Sources/AIEmployee/Models/TaskThread.swift")
 runtime = source("runtime/rust-core/src/main.rs")
 archive = source("apps/macos/AIEmployee/Sources/AIEmployee/Views/Archive/ArchiveWorkspaceView.swift")
@@ -20,10 +21,12 @@ assert 'Button("批准")' in view and 'Button("拒绝")' in view
 assert 'Text("任务进度")' in view
 assert "CreamAvatar(" in view and "CreamProgressBar(" in view
 assert "struct CreamAvatar" in controls and "struct CreamProgressBar" in controls
-assert "creamFloatingComposer" in controls and ".creamFloatingComposer" in view
+assert "creamFloatingComposer" in composer and "CreamFloatingComposerSurface" in composer
+assert "CreamComposer(" in view and "size: .regular" in view
 assert "ThreadScope" not in view and "CreamTabBar" not in view
 assert "TaskThreadSidebarRow(" in view and ".creamSidebarRowSurface" in view
-assert "UserMessageBlock(text:" in view and "AgentTimelineBlock(" in view
+assert "CreamTimelineUserMessage(" in view and "CreamTimelineAgentRow(" in view
+assert "CreamTimelineLayout(" in view and "CreamTimelineMarkdownBody(" in view
 assert "proposal.threadID == thread.id" in view and 'Button("确认执行"' in view
 assert 'Text(candidateAssignments.isEmpty ? "参与员工" : "拟参与员工")' in view
 assert 'Button("重新生成方案", action: store.regenerateProposal)' in view
@@ -38,8 +41,8 @@ assert 'Text("待确认")' in view
 assert 'private var proposalStateAllowsRoomInput: Bool' in view
 assert 'case .recoverable, .failed, .restoring, .generating:' in view
 assert 'case .idle, .review:' in view
-assert '.disabled(!canSendMessage(thread))' in view
-assert 'guard canSubmit(thread) else { return }' in view
+assert 'isInputEnabled: canSendMessage(thread)' in view
+assert 'isActionEnabled: canSubmit(thread)' in view
 assert 'guard let thread = store.activeThread, canSubmit(thread) else { return }' in view
 assert 'Button("归档"' in view
 assert 'Button("删除"' in archive and "taskThreadRetention" in source("apps/macos/AIEmployee/Sources/AIEmployee/Services/RuntimeService.swift")
