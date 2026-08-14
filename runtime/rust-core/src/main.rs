@@ -34,7 +34,9 @@ use ai_employee_runtime::skill_package::install_skill_package;
 use ai_employee_runtime::skill_resolver::readiness as skill_readiness;
 use ai_employee_runtime::storage::migrate;
 use ai_employee_runtime::tool_package::install_tool_package;
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, types::Type};
+use rusqlite::{
+    Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior, types::Type,
+};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -92,6 +94,7 @@ fn command() -> Result<serde_json::Value, String> {
         Some("task-thread-timeline") => task_thread_timeline(arguments),
         Some("task-thread-retention") => task_thread_retention(arguments),
         Some("task-proposal-generate") => task_proposal_generate(arguments),
+        Some("task-proposal-current") => task_proposal_current(arguments),
         Some("task-proposal-confirm") => task_proposal_confirm(arguments),
         Some("scenario-list") => scenario_list(arguments),
         Some("scenario-propose") => scenario_propose(arguments),
@@ -938,13 +941,7 @@ fn task_proposal_generate(mut arguments: impl Iterator<Item = String>) -> Result
             }
         }
     }
-    let resolved_assignments = assignments
-        .iter()
-        .map(|assignment| {
-            let (agent_id, skill_ids) = resolve_task_assignment(&connection, assignment)?;
-            Ok(json!({"node_id":assignment["node_id"],"agent_id":agent_id,"skill_ids":skill_ids}))
-        })
-        .collect::<Result<Vec<_>, String>>()?;
+    let resolved_assignments = resolve_all_assignments(&connection, &proposal)?;
     let canonical = serde_json::to_string(&proposal).map_err(|e| e.to_string())?;
     let hash = format!("{:x}", Sha256::digest(canonical.as_bytes()));
     let proposal_id = format!("proposal_{}", unique_suffix());
@@ -988,9 +985,103 @@ fn task_proposal_generate(mut arguments: impl Iterator<Item = String>) -> Result
         .map_err(|e| e.to_string())?;
     tx.execute("INSERT INTO task_thread_messages(id,thread_id,sequence,role,kind,content,proposal_id,created_at) VALUES (?1,?2,?3,'system','proposal',?4,?5,?6)",rusqlite::params![format!("message_{}",unique_suffix()),thread_id,sequence,proposal["title"].as_str().unwrap_or("执行方案"),proposal_id,stamp]).map_err(|e|e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
-    Ok(
-        json!({"schema_version":"1.0.0","proposal_id":proposal_id,"thread_id":thread_id,"revision":revision,"proposal_hash":hash,"expires_at":expires_at,"requires_confirmation":true,"resolved_assignments":resolved_assignments,"proposal":proposal}),
-    )
+    let mut response = task_proposal_response(
+        &proposal_id,
+        &thread_id,
+        &hash,
+        resolved_assignments,
+        proposal,
+    );
+    let object = response
+        .as_object_mut()
+        .expect("task proposal response is an object");
+    object.insert("revision".into(), json!(revision));
+    object.insert("expires_at".into(), json!(expires_at));
+    Ok(response)
+}
+
+fn task_proposal_current(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let (database, thread_id) = parse_database_and_thread_id(&mut arguments)?;
+    let connection = Connection::open_with_flags(database, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|error| error.to_string())?;
+    let (proposal_id, raw, hash, expires_at): (String, String, String, String) = connection
+        .query_row(
+            "SELECT id,proposal_json,proposal_sha256,expires_at FROM task_proposals
+             WHERE thread_id=?1 AND revision=(SELECT current_revision FROM task_threads WHERE id=?1)
+             AND status IN ('awaiting_input','validated') ORDER BY created_at DESC LIMIT 1",
+            [&thread_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .map_err(|_| "task_proposal_not_found".to_owned())?;
+    let current = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    if current
+        > expires_at
+            .parse::<u64>()
+            .map_err(|_| "task_proposal_expiry_invalid")?
+    {
+        return Err("task_proposal_expired".into());
+    }
+    let proposal: Value = serde_json::from_str(&raw).map_err(|_| "task_proposal_invalid")?;
+    let resolved_assignments = resolve_all_assignments(&connection, &proposal)
+        .map_err(|_| "task_proposal_stale".to_owned())?;
+    Ok(task_proposal_response(
+        &proposal_id,
+        &thread_id,
+        &hash,
+        resolved_assignments,
+        proposal,
+    ))
+}
+
+fn parse_database_and_thread_id(
+    arguments: &mut impl Iterator<Item = String>,
+) -> Result<(PathBuf, String), String> {
+    let mut database = None;
+    let mut thread_id = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--thread-id" => thread_id = arguments.next(),
+            _ => return Err(usage()),
+        }
+    }
+    Ok((database.ok_or_else(usage)?, thread_id.ok_or_else(usage)?))
+}
+
+fn resolve_all_assignments(
+    connection: &Connection,
+    proposal: &Value,
+) -> Result<Vec<Value>, String> {
+    proposal["assignments"]
+        .as_array()
+        .ok_or("task_proposal_assignments_invalid")?
+        .iter()
+        .map(|assignment| {
+            let (agent_id, skill_ids) = resolve_task_assignment(connection, assignment)?;
+            Ok(json!({"node_id":assignment["node_id"],"agent_id":agent_id,"skill_ids":skill_ids}))
+        })
+        .collect()
+}
+
+fn task_proposal_response(
+    proposal_id: &str,
+    thread_id: &str,
+    hash: &str,
+    resolved_assignments: Vec<Value>,
+    proposal: Value,
+) -> Value {
+    json!({
+        "schema_version":"1.0.0",
+        "proposal_id":proposal_id,
+        "thread_id":thread_id,
+        "proposal_hash":hash,
+        "requires_confirmation":true,
+        "resolved_assignments":resolved_assignments,
+        "proposal":proposal
+    })
 }
 
 fn task_proposal_confirm(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
@@ -3724,7 +3815,7 @@ fn task_command_arguments(
 }
 
 fn usage() -> String {
-    "usage: ai-employee-runtime employees-list|employee-save|employee-delete|effective-prompt|capabilities|capability-readiness|skills-list|tools-list|install-tool|install-skill|bind-skill|unbind-skill|knowledge-import|knowledge-list|knowledge-search|chat-history|chat-send|chat-abort|chat-delete|chat-retention|archive-list|run-task|run-skill|run-status|continue-run|resolve-action-result|list-tasks|usage-summary|cancel-task|events|task-thread-create|task-thread-list|task-thread-get|task-thread-message|task-thread-timeline|task-thread-retention|task-proposal-generate|task-proposal-confirm|scenario-list|scenario-propose|scenario-get|scenario-validate|scenario-save|scenario-disable|business-flow-plan|business-flow-start|business-flow-list|business-flow-status|business-flow-continue".to_owned()
+    "usage: ai-employee-runtime employees-list|employee-save|employee-delete|effective-prompt|capabilities|capability-readiness|skills-list|tools-list|install-tool|install-skill|bind-skill|unbind-skill|knowledge-import|knowledge-list|knowledge-search|chat-history|chat-send|chat-abort|chat-delete|chat-retention|archive-list|run-task|run-skill|run-status|continue-run|resolve-action-result|list-tasks|usage-summary|cancel-task|events|task-thread-create|task-thread-list|task-thread-get|task-thread-message|task-thread-timeline|task-thread-retention|task-proposal-generate|task-proposal-current|task-proposal-confirm|scenario-list|scenario-propose|scenario-get|scenario-validate|scenario-save|scenario-disable|business-flow-plan|business-flow-start|business-flow-list|business-flow-status|business-flow-continue".to_owned()
 }
 
 fn usage_summary(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {
@@ -4477,6 +4568,133 @@ fn knowledge_search_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn future_expiry() -> String {
+        (SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 900)
+            .to_string()
+    }
+
+    fn proposal_current_arguments(
+        database: &Path,
+        thread_id: &str,
+    ) -> impl Iterator<Item = String> {
+        vec![
+            "--database".to_owned(),
+            database.display().to_string(),
+            "--thread-id".to_owned(),
+            thread_id.to_owned(),
+        ]
+        .into_iter()
+    }
+
+    fn proposal_recovery_fixture(status: &str, expires_at: String) -> (PathBuf, String, String) {
+        let database = env::temp_dir().join(format!(
+            "ai-employee-proposal-current-{}.db",
+            unique_suffix()
+        ));
+        let mut connection = Connection::open(&database).unwrap();
+        migrate(&mut connection).unwrap();
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let stamp = now();
+        bootstrap_packages(&mut connection, &repository_root, &stamp).unwrap();
+        connection
+            .execute(
+                "INSERT INTO agents VALUES ('data-researcher','Data Researcher','researcher','user','active',?1,?1)",
+                [&stamp],
+            )
+            .unwrap();
+        bind_skill(
+            &connection,
+            "data-researcher",
+            "web-search",
+            "1.0.0",
+            &stamp,
+        )
+        .unwrap();
+
+        let thread_id = "thread_proposal_recovery".to_owned();
+        let proposal_id = "proposal_recovery".to_owned();
+        let proposal = r#"{"schema_version":"1.0.0","intent":"single_agent_task","title":"Research","objective":"Research the current topic","missing_inputs":[],"deliverable":{"type":"structured_result","description":"Research summary","target_path":null},"assignments":[{"node_id":"research","role":"owner","employee_selector":{"preferred_id":"data-researcher","capabilities":["web-search"]},"goal":"Research the current topic","depends_on":[],"acceptance_criteria":[{"criterion_id":"sources","description":"Includes sources","evidence_type":"structured_output","required":true}]}],"acceptance_criteria":[{"criterion_id":"sources","description":"Includes sources","evidence_type":"structured_output","required":true}],"requested_resources":[],"budget_hint":{"input_tokens":0,"output_tokens":0,"tool_rounds":0,"wall_clock_ms":0}}"#;
+        let hash = format!("{:x}", Sha256::digest(proposal.as_bytes()));
+        connection.execute("INSERT INTO task_threads(id,title,status,current_revision,created_at,updated_at) VALUES (?1,'Research','awaiting_confirmation',1,?2,?2)", rusqlite::params![thread_id,stamp]).unwrap();
+        connection.execute("INSERT INTO task_thread_messages(id,thread_id,sequence,role,kind,content,created_at) VALUES ('message_goal',?1,1,'user','goal','Research the current topic',?2),('message_clarification',?1,2,'user','clarification','Use public sources',?2)", rusqlite::params![thread_id,stamp]).unwrap();
+        connection.execute("INSERT INTO task_proposals(id,thread_id,revision,status,proposal_json,proposal_sha256,expires_at,created_at,updated_at) VALUES (?1,?2,1,?3,?4,?5,?6,?7,?7)", rusqlite::params![proposal_id,thread_id,status,proposal,hash,expires_at,stamp]).unwrap();
+        drop(connection);
+        (database, thread_id, proposal_id)
+    }
+
+    #[test]
+    fn task_proposal_current_restores_without_writes_or_model_calls() {
+        let (database, thread_id, proposal_id) =
+            proposal_recovery_fixture("validated", future_expiry());
+        let arguments = || {
+            vec![
+                "--database".to_owned(),
+                database.display().to_string(),
+                "--thread-id".to_owned(),
+                thread_id.clone(),
+            ]
+            .into_iter()
+        };
+
+        let first = task_proposal_current(arguments()).unwrap();
+        let second = task_proposal_current(arguments()).unwrap();
+
+        assert_eq!(first, second);
+        assert_eq!(first["proposal_id"], proposal_id);
+        assert_eq!(
+            first["resolved_assignments"][0]["agent_id"],
+            "data-researcher"
+        );
+        let connection = Connection::open(&database).unwrap();
+        let proposals: i64 = connection
+            .query_row("SELECT count(*) FROM task_proposals", [], |row| row.get(0))
+            .unwrap();
+        let messages: i64 = connection
+            .query_row("SELECT count(*) FROM task_thread_messages", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(proposals, 1);
+        assert_eq!(messages, 2);
+        fs::remove_file(database).unwrap();
+    }
+
+    #[test]
+    fn task_proposal_current_rejects_expired_without_mutating_status() {
+        let (database, thread_id, _) = proposal_recovery_fixture("validated", "1".to_owned());
+        let error =
+            task_proposal_current(proposal_current_arguments(&database, &thread_id)).unwrap_err();
+        assert_eq!(error, "task_proposal_expired");
+        let status: String = Connection::open(&database)
+            .unwrap()
+            .query_row("SELECT status FROM task_proposals LIMIT 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(status, "validated");
+        fs::remove_file(database).unwrap();
+    }
+
+    #[test]
+    fn task_proposal_current_rejects_stale_employee_resolution() {
+        let (database, thread_id, _) = proposal_recovery_fixture("validated", future_expiry());
+        Connection::open(&database)
+            .unwrap()
+            .execute(
+                "UPDATE agents SET status='disabled' WHERE id='data-researcher'",
+                [],
+            )
+            .unwrap();
+        let error =
+            task_proposal_current(proposal_current_arguments(&database, &thread_id)).unwrap_err();
+        assert_eq!(error, "task_proposal_stale");
+        fs::remove_file(database).unwrap();
+    }
 
     #[test]
     fn task_room_normalizes_second_and_millisecond_timestamps() {
