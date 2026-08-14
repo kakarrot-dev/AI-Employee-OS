@@ -20,6 +20,7 @@ final class TaskStore: ObservableObject {
     @Published private(set) var isSubmitting = false
     @Published private var approvalRunsInFlight: Set<String> = []
     private var restoredTaskMonitors: [String: Task<Void, Never>] = [:]
+    private var proposalGeneration: UInt = 0
 
     var activeProposal: TaskProposalResponse? {
         guard case .review(let proposal) = proposalState else { return nil }
@@ -31,13 +32,29 @@ final class TaskStore: ObservableObject {
         return false
     }
 
-    init(service: RuntimeService) {
+    @discardableResult
+    private func beginProposalOperation(_ state: TaskProposalPresentationState) -> UInt {
+        proposalGeneration &+= 1
+        proposalState = state
+        return proposalGeneration
+    }
+
+    private func invalidateProposalOperations() {
+        proposalGeneration &+= 1
+    }
+
+    private func canApplyProposalOperation(_ generation: UInt, threadID: String) -> Bool {
+        proposalGeneration == generation && activeThread?.id == threadID
+    }
+
+    init(service: RuntimeService, restoresOnInit: Bool = true) {
         self.service = service
         if let demo = WorkLibraryDemoData.current {
             runs = demo.runs
             selection = demo.runs.first?.id
             return
         }
+        guard restoresOnInit else { return }
         Task {
             do { try await service.recover() }
             catch {
@@ -68,18 +85,19 @@ final class TaskStore: ObservableObject {
               activeThread?.id == proposal.threadID else { return }
         let threadID = proposal.threadID
         isSubmitting = true
-        proposalState = .generating
+        let generation = beginProposalOperation(.generating)
         Task {
             defer { isSubmitting = false }
             do {
                 let response = try await service.taskProposalConfirm(proposal.proposalID, proposal.proposalHash)
-                guard activeThread?.id == threadID else { return }
-                selectThread(response.thread)
+                guard canApplyProposalOperation(generation, threadID: threadID) else { return }
+                activeThread = response.thread
+                proposalState = .initial(threadStatus: response.thread.status, proposal: nil)
                 draft = ""
                 await restoreHistory()
                 await restoreThreads()
             } catch {
-                guard activeThread?.id == threadID else { return }
+                guard canApplyProposalOperation(generation, threadID: threadID) else { return }
                 proposalState = .failure(code: RuntimeService.taskProposalErrorCode(from: error))
                 historyError = error.localizedDescription
             }
@@ -92,7 +110,7 @@ final class TaskStore: ObservableObject {
         let selectedThreadID = activeThread?.id
         isSubmitting = true
         historyError = nil
-        proposalState = .generating
+        let generation = beginProposalOperation(.generating)
         Task {
             var proposalThreadID: String?
             defer { isSubmitting = false }
@@ -109,17 +127,18 @@ final class TaskStore: ObservableObject {
                     thread = try await service.taskThreadCreate(String(objective.prefix(60)), objective)
                 }
                 proposalThreadID = thread.id
-                guard activeThread?.id == selectedThreadID else { return }
-                selectThread(thread)
+                guard proposalGeneration == generation,
+                      activeThread?.id == selectedThreadID else { return }
+                activeThread = thread
                 proposalState = .generating
                 let proposal = try await service.taskProposalGenerate(thread.id, preferredAgentID)
-                guard activeThread?.id == thread.id else { return }
+                guard canApplyProposalOperation(generation, threadID: thread.id) else { return }
                 proposalState = .review(proposal)
                 await restoreThreads()
             } catch {
                 let isCurrentThread = proposalThreadID.map { activeThread?.id == $0 }
                     ?? (activeThread?.id == selectedThreadID)
-                guard isCurrentThread else { return }
+                guard proposalGeneration == generation, isCurrentThread else { return }
                 proposalState = .failure(code: RuntimeService.taskProposalErrorCode(from: error))
                 historyError = error.localizedDescription
             }
@@ -131,19 +150,20 @@ final class TaskStore: ObservableObject {
         let threadID = thread.id
         isSubmitting = true
         historyError = nil
-        proposalState = .generating
+        let generation = beginProposalOperation(.generating)
         Task {
             defer { isSubmitting = false }
             do {
                 let updatedThread = try await service.taskThreadMessage(threadID, input)
-                guard activeThread?.id == threadID else { return }
+                guard canApplyProposalOperation(generation, threadID: threadID) else { return }
                 activeThread = updatedThread
                 proposalState = .generating
                 let proposal = try await service.taskProposalGenerate(threadID, nil)
-                guard activeThread?.id == threadID else { return }
+                guard canApplyProposalOperation(generation, threadID: threadID) else { return }
                 proposalState = .review(proposal)
+                await restoreThreads()
             } catch {
-                guard activeThread?.id == threadID else { return }
+                guard canApplyProposalOperation(generation, threadID: threadID) else { return }
                 proposalState = .failure(code: RuntimeService.taskProposalErrorCode(from: error))
                 historyError = error.localizedDescription
             }
@@ -151,13 +171,23 @@ final class TaskStore: ObservableObject {
     }
 
     func cancelWorkConfirmation() {
+        invalidateProposalOperations()
         proposalState = activeThread.map {
             .initial(threadStatus: $0.status, proposal: nil)
         } ?? .idle
     }
 
     func selectThread(_ thread: TaskThreadProjection?) {
+        let previousThreadID = activeThread?.id
         activeThread = thread
+        guard previousThreadID != thread?.id else {
+            if thread == nil {
+                invalidateProposalOperations()
+                proposalState = .idle
+            }
+            return
+        }
+        invalidateProposalOperations()
         proposalState = thread.map {
             .initial(threadStatus: $0.status, proposal: nil)
         } ?? .idle
@@ -169,13 +199,13 @@ final class TaskStore: ObservableObject {
     func restoreProposal(for thread: TaskThreadProjection) async {
         let threadID = thread.id
         guard activeThread?.id == threadID else { return }
-        proposalState = .restoring
+        let generation = beginProposalOperation(.restoring)
         do {
             let proposal = try await service.taskProposalCurrent(threadID)
-            guard activeThread?.id == threadID else { return }
+            guard canApplyProposalOperation(generation, threadID: threadID) else { return }
             proposalState = .review(proposal)
         } catch {
-            guard activeThread?.id == threadID else { return }
+            guard canApplyProposalOperation(generation, threadID: threadID) else { return }
             let code = RuntimeService.taskProposalErrorCode(from: error)
             switch code {
             case "task_proposal_expired", "task_proposal_stale":
@@ -195,16 +225,16 @@ final class TaskStore: ObservableObject {
         let threadID = thread.id
         isSubmitting = true
         historyError = nil
-        proposalState = .generating
+        let generation = beginProposalOperation(.generating)
         Task {
             defer { isSubmitting = false }
             do {
                 let proposal = try await service.taskProposalRegenerate(threadID)
-                guard activeThread?.id == threadID else { return }
+                guard canApplyProposalOperation(generation, threadID: threadID) else { return }
                 proposalState = .review(proposal)
                 await restoreThreads()
             } catch {
-                guard activeThread?.id == threadID else { return }
+                guard canApplyProposalOperation(generation, threadID: threadID) else { return }
                 proposalState = .failure(code: RuntimeService.taskProposalErrorCode(from: error))
                 historyError = error.localizedDescription
             }
@@ -345,15 +375,20 @@ final class TaskStore: ObservableObject {
     }
 
     private func restoreThreads() async {
+        let selectedThreadID = activeThread?.id
         do {
             async let active = service.taskThreadList(false)
             async let archived = service.taskThreadList(true)
-            taskThreads = try await active
-            archivedTaskThreads = try await archived
-            if let activeID = activeThread?.id {
-                selectThread(taskThreads.first(where: { $0.id == activeID }) ?? taskThreads.first)
+            let refreshedThreads = try await active
+            let refreshedArchivedThreads = try await archived
+            taskThreads = refreshedThreads
+            archivedTaskThreads = refreshedArchivedThreads
+            guard activeThread?.id == selectedThreadID else { return }
+            if let selectedThreadID,
+               let refreshedThread = refreshedThreads.first(where: { $0.id == selectedThreadID }) {
+                activeThread = refreshedThread
             } else {
-                selectThread(taskThreads.first)
+                selectThread(refreshedThreads.first)
             }
         } catch {
             logger.error("Could not restore task threads")
