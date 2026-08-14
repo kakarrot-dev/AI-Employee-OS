@@ -9,5 +9,6 @@ apps/macos/AIEmployee/.build/
 __pycache__/
 *.py[cod]
 .venv/
+.worktrees/
 storage/database/*.db
 storage/database/*.db-*
