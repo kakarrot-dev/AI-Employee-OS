@@ -238,8 +238,15 @@ extension View {
     func moduleNavigationTitle(_ title: String, systemImage: String) -> some View {
         navigationTitle("")
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    ModuleToolbarTitle(title: title, systemImage: systemImage)
+                if #available(macOS 26.0, *) {
+                    ToolbarItem(placement: .principal) {
+                        ModuleToolbarTitle(title: title, systemImage: systemImage)
+                    }
+                    .sharedBackgroundVisibility(.hidden)
+                } else {
+                    ToolbarItem(placement: .principal) {
+                        ModuleToolbarTitle(title: title, systemImage: systemImage)
+                    }
                 }
             }
     }

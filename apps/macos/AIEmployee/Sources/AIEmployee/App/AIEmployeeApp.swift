@@ -28,6 +28,7 @@ struct AIEmployeeApp: App {
                 }
         }
         .defaultSize(width: 1280, height: 820)
+        .windowToolbarStyle(.unifiedCompact(showsTitle: true))
         .commands {
             CommandGroup(replacing: .appSettings) {
                 Button("设置…") { destinationRaw = AppDestination.settings.rawValue }

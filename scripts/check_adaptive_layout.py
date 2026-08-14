@@ -21,6 +21,8 @@ chat = source("apps/macos/AIEmployee/Sources/AIEmployee/Views/EmployeeChat/Emplo
 knowledge = source("apps/macos/AIEmployee/Sources/AIEmployee/Views/KnowledgeLibraryWorkspaceView.swift")
 capabilities = source("apps/macos/AIEmployee/Sources/AIEmployee/Views/SupportingWorkspaces.swift")
 settings = source("apps/macos/AIEmployee/Sources/AIEmployee/Views/SettingsView.swift")
+controls = source("apps/macos/AIEmployee/Sources/AIEmployee/DesignSystem/CreamControls.swift")
+app = source("apps/macos/AIEmployee/Sources/AIEmployee/App/AIEmployeeApp.swift")
 
 assert "appWindowWidth" not in all_swift, "menu pages must not receive raw window width"
 assert "compactShellWidth: CGFloat = 960" in layout
@@ -49,5 +51,9 @@ assert "AppLayoutProfile.work.primary.maxWidth" in work
 assert "AppLayoutProfile.employeeChat.primary.maxWidth" in chat
 assert "@SceneStorage(\"workInspectorPreferred\")" in work
 assert "@SceneStorage(\"taskInspectorVisible\")" in chat
+assert '.windowToolbarStyle(.unifiedCompact(showsTitle: true))' in app
+assert 'if #available(macOS 26.0, *)' in controls
+assert '.sharedBackgroundVisibility(.hidden)' in controls
+assert controls.count('ToolbarItem(placement: .principal)') == 2, "macOS 26 and legacy toolbar titles must both be explicit"
 
 print("adaptive layout checks: ok")
