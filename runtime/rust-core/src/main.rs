@@ -16,8 +16,10 @@ use ai_employee_runtime::business_flow::{
 };
 use ai_employee_runtime::business_flow_service::{
     advance_after_child_success, disable_scenario, get_scenario, list_business_flows,
-    list_scenarios, next_ready_work_order, project_business_flow, record_work_order_started,
-    save_scenario, settle_failed_work_order, start_business_flow, validate_scenario,
+    list_scenarios, next_ready_work_order, project_business_flow,
+    reconcile_unbound_business_flow_threads, record_assignee_unavailable,
+    record_work_order_started, save_scenario, settle_failed_work_order, start_business_flow,
+    start_direct_business_flow, validate_scenario,
 };
 use ai_employee_runtime::employee_prompt::{
     compile_effective_prompt, legacy_mission_from_base_prompt,
@@ -65,6 +67,8 @@ fn command() -> Result<serde_json::Value, String> {
         Some("archive-list") => archive_list(arguments),
         Some("employees-list") => employees_list(arguments),
         Some("employee-save") => employee_save(arguments),
+        Some("employee-set-status") => employee_set_status(arguments),
+        Some("employee-delete-check") => employee_delete_check(arguments),
         Some("employee-delete") => employee_delete(arguments),
         Some("effective-prompt") => effective_prompt_command(arguments),
         Some("capabilities") => capabilities(arguments),
@@ -348,11 +352,14 @@ fn task_room_timeline_projection(
     let mut participant_ids = BTreeSet::new();
     let mut participant_statement = connection
         .prepare(
-            "SELECT agent.id,agent.name,agent.role,profile.avatar_path,task.status
+            "SELECT COALESCE(snapshot.historical_agent_id,agent.id),
+                    COALESCE(snapshot.display_name,agent.name),COALESCE(snapshot.role,agent.role),
+                    CASE WHEN snapshot.task_id IS NULL THEN profile.avatar_path ELSE NULL END,task.status
              FROM task_thread_task_bindings binding
              JOIN tasks task ON task.id=binding.task_id
              JOIN agents agent ON agent.id=task.agent_id
              LEFT JOIN employee_profiles profile ON profile.agent_id=agent.id
+             LEFT JOIN task_participant_snapshots snapshot ON snapshot.task_id=task.id
              WHERE binding.thread_id=?1 AND binding.binding_role IN ('single','child')
              ORDER BY binding.created_at,binding.task_id",
         )
@@ -430,7 +437,9 @@ fn task_room_timeline_projection(
 
     let mut run_statement = connection
         .prepare(
-            "SELECT run.id,task.id,agent.id,agent.name,agent.role,profile.avatar_path,
+            "SELECT run.id,task.id,COALESCE(snapshot.historical_agent_id,agent.id),
+                    COALESCE(snapshot.display_name,agent.name),COALESCE(snapshot.role,agent.role),
+                    CASE WHEN snapshot.task_id IS NULL THEN profile.avatar_path ELSE NULL END,
                     COALESCE(work.goal,json_extract(task.input,'$.goal'),task.input),run.phase,run.created_at,run.updated_at,
                     (SELECT json_extract(observation.summary_json,'$.question') FROM run_observations observation
                      WHERE observation.run_id=run.id AND observation.kind='model_decision'
@@ -439,6 +448,7 @@ fn task_room_timeline_projection(
              JOIN tasks task ON task.id=binding.task_id
              JOIN agents agent ON agent.id=task.agent_id
              LEFT JOIN employee_profiles profile ON profile.agent_id=agent.id
+             LEFT JOIN task_participant_snapshots snapshot ON snapshot.task_id=task.id
              JOIN agent_runs run ON run.task_id=task.id
              LEFT JOIN work_orders work ON work.child_task_id=task.id
              WHERE binding.thread_id=?1 AND binding.binding_role IN ('single','child')",
@@ -536,12 +546,15 @@ fn task_room_timeline_projection(
     }
 
     let mut action_statement = connection.prepare(
-        "SELECT action.id,task.id,agent.id,agent.name,agent.role,profile.avatar_path,
+        "SELECT action.id,task.id,COALESCE(snapshot.historical_agent_id,agent.id),
+                COALESCE(snapshot.display_name,agent.name),COALESCE(snapshot.role,agent.role),
+                CASE WHEN snapshot.task_id IS NULL THEN profile.avatar_path ELSE NULL END,
                 action.tool_id,COALESCE(json_extract(action.input_json,'$.action'),''),
                 action.status,approval.id,approval.status,action.updated_at
          FROM task_thread_task_bindings binding
          JOIN tasks task ON task.id=binding.task_id JOIN agents agent ON agent.id=task.agent_id
          LEFT JOIN employee_profiles profile ON profile.agent_id=agent.id
+         LEFT JOIN task_participant_snapshots snapshot ON snapshot.task_id=task.id
          JOIN actions action ON action.task_id=task.id
          LEFT JOIN approvals approval ON approval.id=(
              SELECT candidate.id FROM approvals candidate
@@ -624,7 +637,9 @@ fn task_room_timeline_projection(
     }
 
     let mut deliverable_statement=connection.prepare(
-        "SELECT deliverable.id,deliverable.task_id,agent.id,agent.name,agent.role,profile.avatar_path,
+        "SELECT deliverable.id,deliverable.task_id,COALESCE(snapshot.historical_agent_id,agent.id),
+                COALESCE(snapshot.display_name,agent.name),COALESCE(snapshot.role,agent.role),
+                CASE WHEN snapshot.task_id IS NULL THEN profile.avatar_path ELSE NULL END,
                 deliverable.summary,deliverable.output_json,deliverable.status,deliverable.created_at,
                 (SELECT artifact.uri FROM deliverable_evidence evidence JOIN artifacts artifact ON artifact.id=evidence.evidence_ref
                  WHERE evidence.deliverable_id=deliverable.id AND evidence.evidence_type='artifact'
@@ -633,6 +648,7 @@ fn task_room_timeline_projection(
          FROM task_thread_task_bindings binding JOIN deliverables deliverable ON deliverable.task_id=binding.task_id
          JOIN tasks task ON task.id=deliverable.task_id JOIN agents agent ON agent.id=task.agent_id
          LEFT JOIN employee_profiles profile ON profile.agent_id=agent.id
+         LEFT JOIN task_participant_snapshots snapshot ON snapshot.task_id=task.id
          WHERE binding.thread_id=?1 AND binding.binding_role IN ('single','child') AND deliverable.status='verified'"
     ).map_err(|e|e.to_string())?;
     let deliverables = deliverable_statement
@@ -733,12 +749,15 @@ fn task_room_timeline_projection(
     let mut handoff_statement = connection
         .prepare(
             "SELECT handoff.id,handoff.summary,handoff.acceptance,handoff.created_at,
-                source_agent.name,target_agent.name,handoff.deliverable_id
+                COALESCE(source_snapshot.display_name,source_agent.name),
+                COALESCE(target_snapshot.display_name,target_agent.name),handoff.deliverable_id
          FROM handoffs handoff
          JOIN work_orders source ON source.id=handoff.source_work_order_id
          JOIN work_orders target ON target.id=handoff.target_work_order_id
          JOIN agents source_agent ON source_agent.id=source.assignee_agent_id
          JOIN agents target_agent ON target_agent.id=target.assignee_agent_id
+         LEFT JOIN task_participant_snapshots source_snapshot ON source_snapshot.task_id=source.child_task_id
+         LEFT JOIN task_participant_snapshots target_snapshot ON target_snapshot.task_id=target.child_task_id
          JOIN business_flows flow ON flow.id=handoff.business_flow_id
          JOIN task_thread_task_bindings binding ON binding.task_id=flow.root_task_id
          WHERE binding.thread_id=?1",
@@ -1905,18 +1924,43 @@ fn drive_business_flow_once(
     python: &Path,
     flow_id: &str,
 ) -> Result<Value, String> {
+    record_assignee_unavailable(connection, flow_id, &now())?;
     let ready = next_ready_work_order(&connection, &flow_id)?;
     let Some(work_order) = ready else {
         return serde_json::to_value(project_business_flow(connection, flow_id)?)
             .map_err(|e| e.to_string());
     };
-    record_work_order_started(connection, flow_id, &work_order.id, &now())?;
-    let result = run_existing_agent_task(
+    let result = match run_existing_agent_task(
         connection,
         repository_root,
         python,
         &work_order.child_task_id,
-    )?;
+    ) {
+        Ok(result) => result,
+        Err(error) => {
+            let assignee_active: bool = connection
+                .query_row(
+                    "SELECT EXISTS(
+                       SELECT 1 FROM work_orders work
+                       JOIN agents agent ON agent.id=work.assignee_agent_id
+                       WHERE work.id=?1 AND agent.status='active'
+                     )",
+                    [&work_order.id],
+                    |row| row.get(0),
+                )
+                .map_err(|query_error| query_error.to_string())?;
+            if !assignee_active {
+                return serde_json::to_value(record_assignee_unavailable(
+                    connection,
+                    flow_id,
+                    &now(),
+                )?)
+                .map_err(|serialization_error| serialization_error.to_string());
+            }
+            return Err(error);
+        }
+    };
+    record_work_order_started(connection, flow_id, &work_order.id, &now())?;
     if result["status"] == "succeeded" {
         let deliverable_id = result["deliverable_id"]
             .as_str()
@@ -2186,9 +2230,10 @@ fn business_flow_start(mut arguments: impl Iterator<Item = String>) -> Result<Va
     let mut connection =
         Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
     migrate(&mut connection).map_err(|e| e.to_string())?;
-    let projection = start_business_flow(
+    let flow_id = flow_id.ok_or_else(usage)?;
+    let projection = start_direct_business_flow(
         &mut connection,
-        &flow_id.ok_or_else(usage)?,
+        &flow_id,
         &scenario_id.ok_or_else(usage)?,
         &plan_hash.ok_or_else(usage)?,
         &now(),
@@ -2300,6 +2345,7 @@ fn employee_arguments(
 
 const DEFAULT_AGENT_ID: &str = "ai-product-manager";
 const DEFAULT_AGENT_DISMISSED_FLAG: &str = "default_agent_dismissed";
+const HISTORICAL_AGENT_ID: &str = "system:historical-employee";
 
 fn ensure_default_agent(connection: &mut Connection, root: &std::path::Path) -> Result<(), String> {
     let stamp = now();
@@ -2367,62 +2413,6 @@ fn default_agent_dismissed(connection: &Connection) -> Result<bool, String> {
         .optional()
         .map_err(|error| error.to_string())?;
     Ok(value.as_deref() == Some("1"))
-}
-
-fn dismiss_default_agent(connection: &Connection) -> Result<(), String> {
-    connection
-        .execute(
-            "INSERT INTO runtime_flags(key, value, updated_at) VALUES (?1, '1', ?2)
-             ON CONFLICT(key) DO UPDATE SET value='1', updated_at=excluded.updated_at",
-            rusqlite::params![DEFAULT_AGENT_DISMISSED_FLAG, now()],
-        )
-        .map_err(|error| error.to_string())?;
-    Ok(())
-}
-
-fn purge_agent_records(connection: &Connection, agent_id: &str) -> Result<(), String> {
-    connection
-        .execute(
-            "DELETE FROM scoped_permission_grants WHERE subject_id=?1
-             OR task_id IN (SELECT id FROM tasks WHERE agent_id=?1)",
-            [agent_id],
-        )
-        .map_err(|error| error.to_string())?;
-    connection
-        .execute(
-            "DELETE FROM memory_provenance WHERE task_id IN (SELECT id FROM tasks WHERE agent_id=?1)",
-            [agent_id],
-        )
-        .map_err(|error| error.to_string())?;
-    connection
-        .execute(
-            "DELETE FROM memories WHERE owner_type='agent' AND owner_id=?1",
-            [agent_id],
-        )
-        .map_err(|error| error.to_string())?;
-    connection
-        .execute(
-            "DELETE FROM model_call_configs WHERE employee_id=?1",
-            [agent_id],
-        )
-        .map_err(|error| error.to_string())?;
-    connection
-        .execute("DELETE FROM conversations WHERE agent_id=?1", [agent_id])
-        .map_err(|error| error.to_string())?;
-    connection
-        .execute(
-            "DELETE FROM approvals WHERE agent_id=?1
-             OR task_id IN (SELECT id FROM tasks WHERE agent_id=?1)",
-            [agent_id],
-        )
-        .map_err(|error| error.to_string())?;
-    connection
-        .execute("DELETE FROM evaluations WHERE agent_id=?1", [agent_id])
-        .map_err(|error| error.to_string())?;
-    connection
-        .execute("DELETE FROM tasks WHERE agent_id=?1", [agent_id])
-        .map_err(|error| error.to_string())?;
-    Ok(())
 }
 
 fn bootstrap_packages(
@@ -2952,6 +2942,9 @@ fn employee_save(arguments: impl Iterator<Item = String>) -> Result<serde_json::
     {
         return Err("employee id must be lowercase kebab-case".to_owned());
     }
+    if id == HISTORICAL_AGENT_ID {
+        return Err("employee id is reserved".to_owned());
+    }
     let name = required_string(&payload, "name")?;
     let role = required_string(&payload, "role")?;
     let department = required_string(&payload, "department")?;
@@ -3004,13 +2997,93 @@ fn employee_save(arguments: impl Iterator<Item = String>) -> Result<serde_json::
     Ok(json!({"schema_version":"1.0","id":id,"saved":true}))
 }
 
+fn employee_set_status(mut arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let mut database = None;
+    let mut employee_id = None;
+    let mut status = None;
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--database" => database = arguments.next().map(PathBuf::from),
+            "--employee-id" => employee_id = arguments.next(),
+            "--status" => status = arguments.next(),
+            _ => return Err(usage()),
+        }
+    }
+    let employee_id = employee_id.ok_or_else(usage)?;
+    let status = status.ok_or_else(usage)?;
+    if !matches!(status.as_str(), "active" | "disabled") {
+        return Err("invalid employee status".to_owned());
+    }
+    let mut connection =
+        Connection::open(database.ok_or_else(usage)?).map_err(|error| error.to_string())?;
+    migrate(&mut connection).map_err(|error| error.to_string())?;
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    let updated = transaction
+        .execute(
+            "UPDATE agents SET status=?2,updated_at=?3
+             WHERE id=?1 AND EXISTS(SELECT 1 FROM employee_profiles profile WHERE profile.agent_id=agents.id)",
+            rusqlite::params![employee_id, status, now()],
+        )
+        .map_err(|error| error.to_string())?;
+    if updated != 1 {
+        return Err("employee not found".to_owned());
+    }
+    transaction.commit().map_err(|error| error.to_string())?;
+    Ok(json!({"schema_version":"1.0","id":employee_id,"status":status}))
+}
+
+fn active_employee_work_count(connection: &Connection, employee_id: &str) -> Result<i64, String> {
+    connection
+        .query_row(
+            "SELECT count(*) FROM (
+               SELECT CASE
+                        WHEN binding.thread_id IS NULL THEN 'task:' || task.id
+                        ELSE 'thread:' || binding.thread_id
+                      END AS work_key
+               FROM tasks task
+               LEFT JOIN task_thread_task_bindings binding ON binding.task_id=task.id
+               WHERE task.agent_id=?1 AND task.status IN ('pending','running')
+               GROUP BY work_key
+             )",
+            [employee_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())
+}
+
+fn employee_delete_check(arguments: impl Iterator<Item = String>) -> Result<Value, String> {
+    let (database, _, employee_id) = employee_arguments(arguments, "--employee-id")?;
+    let mut connection = Connection::open(database).map_err(|error| error.to_string())?;
+    migrate(&mut connection).map_err(|error| error.to_string())?;
+    let exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM employee_profiles WHERE agent_id=?1)",
+            [&employee_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if !exists {
+        return Err("employee not found".to_owned());
+    }
+    let active_work_count = active_employee_work_count(&connection, &employee_id)?;
+    Ok(json!({
+        "schema_version":"1.0",
+        "id":employee_id,
+        "deletable":active_work_count == 0,
+        "active_work_count":active_work_count,
+        "reason":if active_work_count == 0 { Value::Null } else { json!("active_work") }
+    }))
+}
+
 fn employee_delete(arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {
     let (database, _, id) = employee_arguments(arguments, "--employee-id")?;
     let mut connection = Connection::open(database).map_err(|e| e.to_string())?;
     migrate(&mut connection).map_err(|e| e.to_string())?;
     let exists: bool = connection
         .query_row(
-            "SELECT EXISTS(SELECT 1 FROM agents WHERE id=?1)",
+            "SELECT EXISTS(SELECT 1 FROM employee_profiles WHERE agent_id=?1)",
             [&id],
             |row| row.get(0),
         )
@@ -3018,36 +3091,91 @@ fn employee_delete(arguments: impl Iterator<Item = String>) -> Result<serde_json
     if !exists {
         return Err("employee not found".to_owned());
     }
-    let is_default = id == DEFAULT_AGENT_ID;
-    if is_default {
-        dismiss_default_agent(&connection)?;
-        purge_agent_records(&connection, &id)?;
-        connection
-            .execute("DELETE FROM agents WHERE id=?1", [&id])
-            .map_err(|e| e.to_string())?;
-        return Ok(json!({"schema_version":"1.0","id":id,"disposition":"deleted"}));
+    let tx = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    if active_employee_work_count(&tx, &id)? > 0 {
+        return Err("employee_delete_blocked_active_work".to_owned());
     }
-    let referenced: bool = connection
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM conversations WHERE agent_id=?1 UNION SELECT 1 FROM tasks WHERE agent_id=?1)",
-            [&id],
-            |row| row.get(0),
+    tx.execute(
+        "INSERT OR IGNORE INTO task_participant_snapshots(task_id,historical_agent_id,display_name,role,captured_at)
+         SELECT task.id,agent.id,agent.name,agent.role,task.created_at
+         FROM tasks task JOIN agents agent ON agent.id=task.agent_id WHERE agent.id=?1",
+        [&id],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.execute(
+        "UPDATE scenario_definitions SET status='disabled',updated_at=?2 WHERE id IN (
+           SELECT DISTINCT version.scenario_definition_id
+           FROM scenario_versions version JOIN scenario_nodes node ON node.scenario_version_id=version.id
+           WHERE node.assignee_agent_id=?1
+         )",
+        rusqlite::params![id, now()],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.execute(
+        "DELETE FROM scoped_permission_grants WHERE subject_id=?1",
+        [&id],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.execute(
+        "DELETE FROM permissions WHERE subject_type='agent' AND subject_id=?1",
+        [&id],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.execute(
+        "DELETE FROM memories WHERE owner_type='agent' AND owner_id=?1",
+        [&id],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.execute("DELETE FROM model_call_configs WHERE employee_id=?1", [&id])
+        .map_err(|error| error.to_string())?;
+    tx.execute("DELETE FROM conversations WHERE agent_id=?1", [&id])
+        .map_err(|error| error.to_string())?;
+    tx.execute(
+        "UPDATE tasks SET agent_id=?2 WHERE agent_id=?1",
+        rusqlite::params![id, HISTORICAL_AGENT_ID],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.execute(
+        "UPDATE approvals SET agent_id=?2 WHERE agent_id=?1",
+        rusqlite::params![id, HISTORICAL_AGENT_ID],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.execute(
+        "UPDATE evaluations SET agent_id=?2 WHERE agent_id=?1",
+        rusqlite::params![id, HISTORICAL_AGENT_ID],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.execute(
+        "UPDATE scenario_nodes
+         SET historical_agent_id=COALESCE(historical_agent_id,assignee_agent_id),assignee_agent_id=?2
+         WHERE assignee_agent_id=?1",
+        rusqlite::params![id, HISTORICAL_AGENT_ID],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.execute(
+        "UPDATE work_orders SET assignee_agent_id=?2,updated_at=?3 WHERE assignee_agent_id=?1",
+        rusqlite::params![id, HISTORICAL_AGENT_ID, now()],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.execute(
+        "DELETE FROM business_flow_participants WHERE agent_id=?1",
+        [&id],
+    )
+    .map_err(|error| error.to_string())?;
+    if id == DEFAULT_AGENT_ID {
+        tx.execute(
+            "INSERT INTO runtime_flags(key,value,updated_at) VALUES (?1,'1',?2)
+             ON CONFLICT(key) DO UPDATE SET value='1',updated_at=excluded.updated_at",
+            rusqlite::params![DEFAULT_AGENT_DISMISSED_FLAG, now()],
         )
-        .map_err(|e| e.to_string())?;
-    if referenced {
-        connection
-            .execute(
-                "UPDATE agents SET status='disabled',updated_at=?2 WHERE id=?1",
-                rusqlite::params![id, now()],
-            )
-            .map_err(|e| e.to_string())?;
-        Ok(json!({"schema_version":"1.0","id":id,"disposition":"disabled"}))
-    } else {
-        connection
-            .execute("DELETE FROM agents WHERE id=?1", [&id])
-            .map_err(|e| e.to_string())?;
-        Ok(json!({"schema_version":"1.0","id":id,"disposition":"deleted"}))
+        .map_err(|error| error.to_string())?;
     }
+    tx.execute("DELETE FROM agents WHERE id=?1", [&id])
+        .map_err(|error| error.to_string())?;
+    tx.commit().map_err(|error| error.to_string())?;
+    Ok(json!({"schema_version":"1.0","id":id,"disposition":"deleted"}))
 }
 
 fn effective_prompt_command(
@@ -4059,10 +4187,12 @@ fn recover_runtime(
     let database = database.ok_or_else(usage)?;
     let mut connection = Connection::open(database).map_err(|error| error.to_string())?;
     migrate(&mut connection).map_err(|error| error.to_string())?;
+    let flow_threads_repaired = reconcile_unbound_business_flow_threads(&mut connection)?;
     let summary =
         reconcile_interrupted(&mut connection, &now()).map_err(|error| error.to_string())?;
     Ok(json!({
         "schema_version":"1.0",
+        "flow_threads_repaired":flow_threads_repaired,
         "safe_failures":summary.safe_failures,
         "result_unknown":summary.result_unknown
     }))
@@ -4255,7 +4385,7 @@ fn task_command_arguments(
 }
 
 fn usage() -> String {
-    "usage: ai-employee-runtime employees-list|employee-save|employee-delete|effective-prompt|capabilities|capability-readiness|skills-list|tools-list|install-tool|install-skill|bind-skill|unbind-skill|knowledge-import|knowledge-list|knowledge-search|chat-history|chat-send|chat-abort|chat-delete|chat-retention|archive-list|run-task|run-skill|run-status|continue-run|resolve-action-result|list-tasks|usage-summary|cancel-task|events|task-thread-create|task-thread-list|task-thread-get|task-thread-message|task-thread-timeline|task-thread-retention|task-proposal-generate|task-proposal-regenerate|task-proposal-current|task-proposal-confirm|scenario-list|scenario-propose|scenario-get|scenario-validate|scenario-save|scenario-disable|business-flow-plan|business-flow-start|business-flow-list|business-flow-status|business-flow-continue".to_owned()
+    "usage: ai-employee-runtime employees-list|employee-save|employee-set-status|employee-delete-check|employee-delete|effective-prompt|capabilities|capability-readiness|skills-list|tools-list|install-tool|install-skill|bind-skill|unbind-skill|knowledge-import|knowledge-list|knowledge-search|chat-history|chat-send|chat-abort|chat-delete|chat-retention|archive-list|run-task|run-skill|run-status|continue-run|resolve-action-result|list-tasks|usage-summary|cancel-task|events|task-thread-create|task-thread-list|task-thread-get|task-thread-message|task-thread-timeline|task-thread-retention|task-proposal-generate|task-proposal-regenerate|task-proposal-current|task-proposal-confirm|scenario-list|scenario-propose|scenario-get|scenario-validate|scenario-save|scenario-disable|business-flow-plan|business-flow-start|business-flow-list|business-flow-status|business-flow-continue".to_owned()
 }
 
 fn usage_summary(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {

@@ -30,7 +30,11 @@ pub const MIGRATION_016: &str =
     include_str!("../../../storage/migrations/016_task_threads_and_proposals.sql");
 pub const MIGRATION_017: &str =
     include_str!("../../../storage/migrations/017_task_thread_retention.sql");
-const LATEST_SCHEMA_VERSION: i64 = 17;
+pub const MIGRATION_018: &str =
+    include_str!("../../../storage/migrations/018_employee_work_snapshots.sql");
+pub const MIGRATION_019: &str =
+    include_str!("../../../storage/migrations/019_business_flow_task_threads.sql");
+const LATEST_SCHEMA_VERSION: i64 = 19;
 
 pub fn migrate(connection: &mut Connection) -> Result<()> {
     connection.busy_timeout(Duration::from_secs(5))?;
@@ -91,6 +95,12 @@ pub fn migrate(connection: &mut Connection) -> Result<()> {
     if current < 17 {
         transaction.execute_batch(MIGRATION_017)?;
     }
+    if current < 18 {
+        transaction.execute_batch(MIGRATION_018)?;
+    }
+    if current < 19 {
+        transaction.execute_batch(MIGRATION_019)?;
+    }
     transaction.commit()
 }
 
@@ -131,7 +141,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 52); // 51 canonical tables plus schema_migrations.
+        assert_eq!(count, 53); // 52 canonical tables plus schema_migrations.
 
         let integrity: String = connection
             .query_row("PRAGMA integrity_check", [], |row| row.get(0))
@@ -143,7 +153,7 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(migration_count, 17);
+        assert_eq!(migration_count, 19);
     }
 
     #[test]
@@ -251,7 +261,11 @@ mod tests {
         for (id, key, position) in [("node_1", "a", 0), ("node_2", "b", 1)] {
             connection
                 .execute(
-                    "INSERT INTO scenario_nodes VALUES (?1,'version_1',?2,'executor','goal','agent_1','[]','[]','[]','{}','stop',?3)",
+                    "INSERT INTO scenario_nodes(
+                       id,scenario_version_id,node_key,role,goal,assignee_agent_id,
+                       required_capabilities_json,input_refs_json,acceptance_json,budget_json,
+                       failure_policy,position
+                     ) VALUES (?1,'version_1',?2,'executor','goal','agent_1','[]','[]','[]','{}','stop',?3)",
                     rusqlite::params![id, key, position],
                 )
                 .unwrap();
@@ -293,6 +307,68 @@ mod tests {
             })
             .unwrap();
         assert_eq!(name, "Alex");
+    }
+
+    #[test]
+    fn migration_018_does_not_collide_with_a_legacy_user_employee_id() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        for migration in [
+            MIGRATION_001,
+            MIGRATION_002,
+            MIGRATION_003,
+            MIGRATION_004,
+            MIGRATION_005,
+            MIGRATION_006,
+            MIGRATION_007,
+            MIGRATION_008,
+            MIGRATION_009,
+            MIGRATION_010,
+            MIGRATION_011,
+            MIGRATION_012,
+            MIGRATION_013,
+            MIGRATION_014,
+            MIGRATION_015,
+            MIGRATION_016,
+            MIGRATION_017,
+        ] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection
+            .execute(
+                "INSERT INTO agents VALUES (
+                   'system-historical-employee','Legacy User','Operator','user-managed','active','t','t'
+                 )",
+                [],
+            )
+            .unwrap();
+
+        migrate(&mut connection).unwrap();
+
+        let legacy: (String, String) = connection
+            .query_row(
+                "SELECT name,status FROM agents WHERE id='system-historical-employee'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(legacy, ("Legacy User".to_owned(), "active".to_owned()));
+        let sentinel: (String, String) = connection
+            .query_row(
+                "SELECT package_path,status FROM agents WHERE id='system:historical-employee'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            sentinel,
+            ("system-history".to_owned(), "disabled".to_owned())
+        );
+        let foreign_key_violations: i64 = connection
+            .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(foreign_key_violations, 0);
     }
 
     #[test]

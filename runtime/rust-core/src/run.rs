@@ -5,7 +5,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -512,7 +512,7 @@ pub fn continue_run(config: ContinueRunConfig<'_>) -> Result<Value, String> {
     let deadline = (timestamp_seconds() + 60).to_string();
     let tx = config
         .connection
-        .transaction()
+        .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|error| error.to_string())?;
     let approval_changed = tx.execute(
         "UPDATE approvals SET status='approved',resolved_at=?1 WHERE id=?2 AND status='pending'",
@@ -1324,7 +1324,8 @@ fn claim_prepared_task_run(
     let changed = transaction
         .execute(
             "UPDATE tasks SET status='running',updated_at=?1
-             WHERE id=?2 AND agent_id=?3 AND status='pending'",
+             WHERE id=?2 AND agent_id=?3 AND status='pending'
+               AND EXISTS(SELECT 1 FROM agents WHERE id=?3 AND status='active')",
             params![now, task_id, agent_id],
         )
         .map_err(|error| error.to_string())?;

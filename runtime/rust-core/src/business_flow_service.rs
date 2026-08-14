@@ -310,6 +310,27 @@ pub fn start_business_flow(
     plan_hash: &str,
     now: &str,
 ) -> Result<BusinessFlowProjection, String> {
+    start_business_flow_internal(connection, flow_id, scenario_id, plan_hash, now, false)
+}
+
+pub fn start_direct_business_flow(
+    connection: &mut Connection,
+    flow_id: &str,
+    scenario_id: &str,
+    plan_hash: &str,
+    now: &str,
+) -> Result<BusinessFlowProjection, String> {
+    start_business_flow_internal(connection, flow_id, scenario_id, plan_hash, now, true)
+}
+
+fn start_business_flow_internal(
+    connection: &mut Connection,
+    flow_id: &str,
+    scenario_id: &str,
+    plan_hash: &str,
+    now: &str,
+    bind_direct_thread: bool,
+) -> Result<BusinessFlowProjection, String> {
     if flow_id.trim().is_empty() {
         return Err("business_flow_id_required".into());
     }
@@ -324,6 +345,13 @@ pub fn start_business_flow(
     if let Some((existing_scenario_id, existing_hash)) = already_exists {
         if existing_scenario_id != scenario_id || existing_hash != plan_hash {
             return Err("flow_revision_conflict".into());
+        }
+        if bind_direct_thread {
+            let transaction = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(|error| error.to_string())?;
+            materialize_direct_flow_thread(&transaction, flow_id)?;
+            transaction.commit().map_err(|error| error.to_string())?;
         }
         return project_business_flow(connection, flow_id);
     }
@@ -347,6 +375,25 @@ pub fn start_business_flow(
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|error| error.to_string())?;
+    let mut assignees = validated
+        .proposal
+        .nodes
+        .iter()
+        .map(|node| node.suggested_agent_id.as_str())
+        .collect::<BTreeSet<_>>();
+    assignees.insert(validated.proposal.coordinator_agent_id.as_str());
+    for agent_id in assignees {
+        let active: bool = transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM agents WHERE id=?1 AND status='active')",
+                [agent_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if !active {
+            return Err(format!("assignee_unavailable:{agent_id}"));
+        }
+    }
     transaction
         .execute(
             "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at,parent_task_id)
@@ -499,8 +546,165 @@ pub fn start_business_flow(
             now,
         )?;
     }
+    if bind_direct_thread {
+        materialize_direct_flow_thread(&transaction, flow_id)?;
+    }
     transaction.commit().map_err(|error| error.to_string())?;
     project_business_flow(connection, flow_id)
+}
+
+fn materialize_direct_flow_thread(connection: &Connection, flow_id: &str) -> Result<(), String> {
+    let existing_thread: Option<String> = connection
+        .query_row(
+            "SELECT binding.thread_id
+             FROM business_flows flow
+             JOIN task_thread_task_bindings binding ON binding.task_id=flow.root_task_id
+             WHERE flow.id=?1",
+            [flow_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    if let Some(thread_id) = existing_thread {
+        let expected_bindings: i64 = connection
+            .query_row(
+                "SELECT count(*)+1 FROM work_orders WHERE business_flow_id=?1",
+                [flow_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        let actual_bindings: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM task_thread_task_bindings binding
+                 WHERE binding.thread_id=?1 AND (
+                   binding.task_id=(SELECT root_task_id FROM business_flows WHERE id=?2)
+                   OR binding.task_id IN (
+                     SELECT child_task_id FROM work_orders WHERE business_flow_id=?2
+                   )
+                 )",
+                params![thread_id, flow_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if actual_bindings != expected_bindings {
+            return Err("business_flow_thread_binding_conflict".to_owned());
+        }
+        return Ok(());
+    }
+
+    let (root_task_id, title, objective, root_status, created_at, updated_at): (
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+    ) = connection
+        .query_row(
+            "SELECT flow.root_task_id,flow.title,flow.objective,task.status,flow.created_at,task.updated_at
+             FROM business_flows flow JOIN tasks task ON task.id=flow.root_task_id
+             WHERE flow.id=?1",
+            [flow_id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            },
+        )
+        .map_err(|_| "business_flow_not_found".to_owned())?;
+    let thread_status = match root_status.as_str() {
+        "succeeded" | "failed" | "cancelled" => root_status.as_str(),
+        _ => "running",
+    };
+    let thread_id = format!("system:flow-thread:{flow_id}");
+    connection
+        .execute(
+            "INSERT INTO task_threads(id,title,status,current_revision,created_at,updated_at)
+             VALUES (?1,?2,?3,1,?4,?5)",
+            params![thread_id, title, thread_status, created_at, updated_at],
+        )
+        .map_err(|error| format!("business_flow_thread_conflict:{error}"))?;
+    connection
+        .execute(
+            "INSERT INTO task_thread_messages(id,thread_id,sequence,role,kind,content,proposal_id,task_id,created_at)
+             VALUES (?1,?2,1,'user','goal',?3,NULL,?4,?5)",
+            params![
+                format!("system:flow-goal:{flow_id}"),
+                thread_id,
+                objective,
+                root_task_id,
+                created_at
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "INSERT INTO task_thread_task_bindings(thread_id,task_id,proposal_id,binding_role,created_at)
+             VALUES (?1,?2,NULL,'root',?3)",
+            params![thread_id, root_task_id, created_at],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "INSERT INTO task_thread_task_bindings(thread_id,task_id,proposal_id,binding_role,created_at)
+             SELECT ?1,child_task_id,NULL,'child',created_at
+             FROM work_orders WHERE business_flow_id=?2",
+            params![thread_id, flow_id],
+        )
+        .map_err(|error| error.to_string())?;
+    let expected_bindings: i64 = connection
+        .query_row(
+            "SELECT count(*)+1 FROM work_orders WHERE business_flow_id=?1",
+            [flow_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    let actual_bindings: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM task_thread_task_bindings WHERE thread_id=?1",
+            [&thread_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if actual_bindings != expected_bindings {
+        return Err("business_flow_thread_binding_conflict".to_owned());
+    }
+    Ok(())
+}
+
+pub fn reconcile_unbound_business_flow_threads(
+    connection: &mut Connection,
+) -> Result<usize, String> {
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    let flow_ids = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT flow.id FROM business_flows flow
+                 WHERE NOT EXISTS(
+                   SELECT 1 FROM task_thread_task_bindings binding
+                   WHERE binding.task_id=flow.root_task_id
+                 )
+                 ORDER BY flow.created_at,flow.id",
+            )
+            .map_err(|error| error.to_string())?;
+        statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?
+    };
+    for flow_id in &flow_ids {
+        materialize_direct_flow_thread(&transaction, flow_id)?;
+    }
+    transaction.commit().map_err(|error| error.to_string())?;
+    Ok(flow_ids.len())
 }
 
 pub fn project_business_flow(
@@ -519,7 +723,8 @@ pub fn project_business_flow(
     let (root_task_id, scenario_id, scenario_version_id, scenario_sha256, title, objective, status) =
         header.ok_or_else(|| "business_flow_not_found".to_owned())?;
     let mut statement = connection.prepare(
-        "SELECT work.id,node.node_key,work.child_task_id,work.assignee_agent_id,work.role,work.goal,task.status,work.revision,
+        "SELECT work.id,node.node_key,work.child_task_id,
+                COALESCE(snapshot.historical_agent_id,work.assignee_agent_id),work.role,work.goal,task.status,work.revision,
                 EXISTS(SELECT 1 FROM actions WHERE task_id=task.id AND status='blocked'),
                 EXISTS(SELECT 1 FROM actions WHERE task_id=task.id AND status='result_unknown'),
                 EXISTS(SELECT 1 FROM work_order_dependencies dependency
@@ -538,10 +743,13 @@ pub fn project_business_flow(
                 (SELECT id FROM agent_runs WHERE task_id=task.id ORDER BY created_at DESC LIMIT 1),
                 (SELECT phase FROM agent_runs WHERE task_id=task.id ORDER BY created_at DESC LIMIT 1),
                 (SELECT id FROM actions WHERE task_id=task.id AND status IN ('blocked','result_unknown')
-                 ORDER BY created_at DESC LIMIT 1)
+                 ORDER BY created_at DESC LIMIT 1),
+                EXISTS(SELECT 1 FROM agents assignee
+                       WHERE assignee.id=work.assignee_agent_id AND assignee.status='active')
          FROM work_orders work
          JOIN scenario_nodes node ON node.id=work.scenario_node_id
          JOIN tasks task ON task.id=work.child_task_id
+         LEFT JOIN task_participant_snapshots snapshot ON snapshot.task_id=task.id
          WHERE work.business_flow_id=?1 ORDER BY node.position"
     ).map_err(|error| error.to_string())?;
     let rows = statement
@@ -550,10 +758,16 @@ pub fn project_business_flow(
             let blocked: bool = row.get(8)?;
             let unknown: bool = row.get(9)?;
             let waiting_dependency: bool = row.get(10)?;
+            let run_phase: Option<String> = row.get(12)?;
+            let assignee_active: bool = row.get(14)?;
             let projection = if unknown {
                 "verification_required"
             } else if blocked {
                 "waiting_approval"
+            } else if run_phase.as_deref() == Some("waiting_user") {
+                "waiting_user"
+            } else if persisted == "pending" && !assignee_active {
+                "waiting_user"
             } else if persisted == "pending" && waiting_dependency {
                 "waiting_dependency"
             } else if persisted == "pending" {
@@ -571,7 +785,7 @@ pub fn project_business_flow(
                 status: projection.to_owned(),
                 revision: row.get(7)?,
                 run_id: row.get(11)?,
-                run_phase: row.get(12)?,
+                run_phase,
                 action_id: row.get(13)?,
             })
         })
@@ -980,6 +1194,68 @@ pub fn record_work_order_started(
     )
 }
 
+pub fn record_assignee_unavailable(
+    connection: &mut Connection,
+    flow_id: &str,
+    now: &str,
+) -> Result<BusinessFlowProjection, String> {
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    let root_task_id: String = transaction
+        .query_row(
+            "SELECT root_task_id FROM business_flows WHERE id=?1",
+            [flow_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| "business_flow_not_found".to_owned())?;
+    let unavailable = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT work.id FROM work_orders work
+                 JOIN tasks task ON task.id=work.child_task_id
+                 LEFT JOIN agents assignee ON assignee.id=work.assignee_agent_id
+                 WHERE work.business_flow_id=?1 AND task.status='pending'
+                   AND COALESCE(assignee.status,'disabled')!='active'
+                 ORDER BY work.id",
+            )
+            .map_err(|error| error.to_string())?;
+        statement
+            .query_map([flow_id], |row| row.get::<_, String>(0))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?
+    };
+    for work_order_id in unavailable {
+        let exists: bool = transaction
+            .query_row(
+                "SELECT EXISTS(
+                   SELECT 1 FROM runtime_events
+                   WHERE task_id=?1 AND event_type='business_flow.waiting_user'
+                     AND json_extract(payload_json,'$.work_order_id')=?2
+                     AND json_extract(payload_json,'$.reason')='assignee_unavailable'
+                 )",
+                params![root_task_id, work_order_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if !exists {
+            append_root_event(
+                &transaction,
+                &root_task_id,
+                "business_flow.waiting_user",
+                &serde_json::json!({
+                    "work_order_id": work_order_id,
+                    "reason": "assignee_unavailable"
+                }),
+                now,
+            )?;
+        }
+    }
+    transaction.commit().map_err(|error| error.to_string())?;
+    project_business_flow(connection, flow_id)
+}
+
 pub fn settle_failed_work_order(
     connection: &Connection,
     flow_id: &str,
@@ -1172,6 +1448,150 @@ mod tests {
             .query_row("SELECT count(*) FROM agent_runs", [], |row| row.get(0))
             .unwrap();
         assert_eq!(run_count, 0);
+    }
+
+    #[test]
+    fn direct_start_atomically_materializes_the_task_thread() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        let proposal = fixture(&mut connection);
+        save_scenario(&mut connection, "scenario", "manual", proposal, "t1").unwrap();
+        let hash = get_scenario(&connection, "scenario").unwrap().sha256;
+
+        start_direct_business_flow(&mut connection, "flow", "scenario", &hash, "t2").unwrap();
+
+        let thread_id: String = connection
+            .query_row(
+                "SELECT thread_id FROM task_thread_task_bindings WHERE task_id='flow:root'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(thread_id, "system:flow-thread:flow");
+        let binding_count: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM task_thread_task_bindings WHERE thread_id=?1",
+                [&thread_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(binding_count, 3);
+        let goal_count: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM task_thread_messages WHERE thread_id=?1 AND kind='goal'",
+                [&thread_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(goal_count, 1);
+    }
+
+    #[test]
+    fn direct_thread_conflict_rolls_back_the_new_flow() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        let proposal = fixture(&mut connection);
+        save_scenario(&mut connection, "scenario", "manual", proposal, "t1").unwrap();
+        let hash = get_scenario(&connection, "scenario").unwrap().sha256;
+        connection
+            .execute(
+                "INSERT INTO task_threads(
+                   id,title,status,current_revision,created_at,updated_at
+                 ) VALUES (
+                   'system:flow-thread:flow','Conflict','running',1,'t0','t0'
+                 )",
+                [],
+            )
+            .unwrap();
+
+        let error = start_direct_business_flow(&mut connection, "flow", "scenario", &hash, "t2")
+            .unwrap_err();
+
+        assert!(error.starts_with("business_flow_thread_conflict:"));
+        let flow_count: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM business_flows WHERE id='flow'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let task_count: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM tasks WHERE id LIKE 'flow:%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!((flow_count, task_count), (0, 0));
+    }
+
+    #[test]
+    fn recovery_repairs_a_preexisting_unbound_flow() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        let proposal = fixture(&mut connection);
+        save_scenario(&mut connection, "scenario", "manual", proposal, "t1").unwrap();
+        let hash = get_scenario(&connection, "scenario").unwrap().sha256;
+        start_business_flow(&mut connection, "flow", "scenario", &hash, "t2").unwrap();
+
+        assert_eq!(
+            reconcile_unbound_business_flow_threads(&mut connection).unwrap(),
+            1
+        );
+        assert_eq!(
+            reconcile_unbound_business_flow_threads(&mut connection).unwrap(),
+            0
+        );
+        let binding_count: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM task_thread_task_bindings
+                 WHERE thread_id='system:flow-thread:flow'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(binding_count, 3);
+    }
+
+    #[test]
+    fn disabled_pending_assignee_projects_waiting_user_without_fake_start() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        let proposal = fixture(&mut connection);
+        save_scenario(&mut connection, "scenario", "manual", proposal, "t1").unwrap();
+        let hash = get_scenario(&connection, "scenario").unwrap().sha256;
+        start_business_flow(&mut connection, "flow", "scenario", &hash, "t2").unwrap();
+        connection
+            .execute("UPDATE agents SET status='disabled' WHERE id='alex'", [])
+            .unwrap();
+
+        let projection = record_assignee_unavailable(&mut connection, "flow", "t3").unwrap();
+        assert!(
+            projection
+                .work_orders
+                .iter()
+                .all(|work_order| work_order.status == "waiting_user")
+        );
+        assert!(
+            next_ready_work_order(&connection, "flow")
+                .unwrap()
+                .is_none()
+        );
+        record_assignee_unavailable(&mut connection, "flow", "t4").unwrap();
+        let waiting_events: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM runtime_events
+                 WHERE task_id='flow:root' AND event_type='business_flow.waiting_user'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let started_events: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM runtime_events
+                 WHERE task_id='flow:root' AND event_type='work_order.started'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(waiting_events, 2);
+        assert_eq!(started_events, 0);
     }
 
     #[test]

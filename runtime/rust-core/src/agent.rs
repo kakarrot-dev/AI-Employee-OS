@@ -13,6 +13,7 @@ pub enum AgentError {
     Json(serde_json::Error),
     Database(rusqlite::Error),
     UnsupportedSchemaVersion(String),
+    InvalidId(String),
     InvalidStatus(String),
 }
 
@@ -87,6 +88,7 @@ pub fn install_agent_package(
     if package.schema_version != SUPPORTED_SCHEMA_VERSION {
         return Err(AgentError::UnsupportedSchemaVersion(package.schema_version));
     }
+    validate_agent_id(&package.agent.id)?;
     if !matches!(package.agent.status.as_str(), "active" | "disabled") {
         return Err(AgentError::InvalidStatus(package.agent.status));
     }
@@ -150,6 +152,13 @@ pub fn install_agent_package(
     transaction.commit()?;
 
     get_agent(connection, &package.agent.id).map_err(AgentError::Database)
+}
+
+fn validate_agent_id(id: &str) -> Result<(), AgentError> {
+    if id.trim().is_empty() || id.starts_with("system:") {
+        return Err(AgentError::InvalidId(id.to_owned()));
+    }
+    Ok(())
 }
 
 fn yaml_value_to_json(value: &serde_yaml::Value) -> Result<String, AgentError> {
@@ -225,5 +234,13 @@ mod tests {
         let agent =
             install_agent_package(&mut connection, &package_path, "2026-08-04T00:00:01Z").unwrap();
         assert_eq!(agent.status, "disabled");
+    }
+
+    #[test]
+    fn rejects_the_reserved_system_agent_namespace() {
+        assert!(matches!(
+            validate_agent_id("system:historical-employee"),
+            Err(AgentError::InvalidId(id)) if id == "system:historical-employee"
+        ));
     }
 }
