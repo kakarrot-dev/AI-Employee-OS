@@ -104,9 +104,37 @@ pub fn migrate(connection: &mut Connection) -> Result<()> {
         transaction.execute_batch(MIGRATION_019)?;
     }
     if current < 20 {
+        repair_draft_018_scenario_history(&transaction)?;
         transaction.execute_batch(MIGRATION_020)?;
     }
     transaction.commit()
+}
+
+fn repair_draft_018_scenario_history(connection: &Connection) -> Result<()> {
+    let has_historical_agent_id: bool = connection.query_row(
+        "SELECT EXISTS(
+           SELECT 1 FROM pragma_table_info('scenario_nodes')
+           WHERE name='historical_agent_id'
+         )",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_historical_agent_id {
+        connection.execute_batch(
+            "ALTER TABLE scenario_nodes ADD COLUMN historical_agent_id TEXT;
+             UPDATE scenario_nodes SET historical_agent_id=assignee_agent_id;",
+        )?;
+    }
+    connection.execute_batch(
+        "CREATE TRIGGER IF NOT EXISTS capture_scenario_node_historical_agent
+         AFTER INSERT ON scenario_nodes
+         WHEN NEW.historical_agent_id IS NULL
+         BEGIN
+           UPDATE scenario_nodes
+           SET historical_agent_id=NEW.assignee_agent_id
+           WHERE id=NEW.id;
+         END;",
+    )
 }
 
 fn current_schema_version(connection: &Connection) -> Result<i64> {
@@ -374,6 +402,94 @@ mod tests {
             })
             .unwrap();
         assert_eq!(foreign_key_violations, 0);
+    }
+
+    #[test]
+    fn migration_020_repairs_draft_018_schema_without_historical_agent_column() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        for migration in [
+            MIGRATION_001,
+            MIGRATION_002,
+            MIGRATION_003,
+            MIGRATION_004,
+            MIGRATION_005,
+            MIGRATION_006,
+            MIGRATION_007,
+            MIGRATION_008,
+            MIGRATION_009,
+            MIGRATION_010,
+            MIGRATION_011,
+            MIGRATION_012,
+            MIGRATION_013,
+            MIGRATION_014,
+            MIGRATION_015,
+            MIGRATION_016,
+            MIGRATION_017,
+        ] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection
+            .execute_batch(
+                "CREATE TABLE task_participant_snapshots (
+                   task_id TEXT PRIMARY KEY,
+                   historical_agent_id TEXT NOT NULL,
+                   display_name TEXT NOT NULL CHECK (length(trim(display_name)) > 0),
+                   role TEXT NOT NULL CHECK (length(trim(role)) > 0),
+                   captured_at TEXT NOT NULL,
+                   FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+                 );
+                 CREATE TRIGGER capture_task_participant_snapshot
+                 AFTER INSERT ON tasks
+                 BEGIN
+                   INSERT INTO task_participant_snapshots(task_id,historical_agent_id,display_name,role,captured_at)
+                   SELECT NEW.id,agent.id,agent.name,agent.role,NEW.created_at
+                   FROM agents agent WHERE agent.id=NEW.agent_id;
+                 END;
+                 INSERT INTO agents(id,name,role,package_path,status,created_at,updated_at)
+                 VALUES ('system:historical-employee','已删除员工','历史参与者','system-history','disabled','t','t');
+                 INSERT INTO schema_migrations(version,applied_at) VALUES (18,'t');",
+            )
+            .unwrap();
+        connection.execute_batch(MIGRATION_019).unwrap();
+        connection
+            .execute_batch(
+                "INSERT INTO agents VALUES ('ai-product-manager','Legacy Generalist','Role','legacy','active','t','t');
+                 INSERT INTO scenario_definitions VALUES ('scenario','Scenario','','active',1,'t','t');
+                 INSERT INTO scenario_versions VALUES (
+                   'scenario-v1','scenario',1,'manual','{}',
+                   'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',NULL,'t','t'
+                 );
+                 INSERT INTO scenario_nodes VALUES (
+                   'node','scenario-v1','research','executor','Research','ai-product-manager',
+                   '[]','[]','[]','{}','stop',0
+                 );",
+            )
+            .unwrap();
+
+        migrate(&mut connection).unwrap();
+
+        let node: (String, String) = connection
+            .query_row(
+                "SELECT assignee_agent_id,historical_agent_id FROM scenario_nodes WHERE id='node'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            node,
+            (
+                "system:historical-employee".to_owned(),
+                "ai-product-manager".to_owned()
+            )
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            0
+        );
     }
 
     #[test]
