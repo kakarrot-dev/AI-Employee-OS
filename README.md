@@ -26,7 +26,7 @@
 
 AI Employee OS turns an AI assistant into a governed local worker. The macOS client handles interaction and Keychain access, the Rust runtime owns state and permissions, and the Python worker handles intent, context, planning, and model calls.
 
-Fresh installs seed Alex (`ai-product-manager`) plus two least-privilege specialists: a data researcher (`data-researcher`) bound only to `web-search`, and a document writer (`document-writer`) bound only to `local-file-operations`. Users can permanently delete any built-in employee so bootstrap will not restore it. Multiple employee profiles can also be created and edited. Work execution requires a bound Skill with Manifest `schema_version: 2.0.0` and readiness `ready`. Legacy Manifest 1.0 skills such as `prd-generation` are `incompatible` with the Generic Run Kernel if still present.
+Fresh installs seed two least-privilege specialists: a data researcher (`data-researcher`) bound only to `web-search`, and a document writer (`document-writer`) bound only to `local-file-operations`. Users can permanently delete either built-in employee so bootstrap will not restore it. Other employee profiles can be created, edited, and bound to one or more ready Skills. Work execution requires a bound Skill with Manifest `schema_version: 2.0.0` and readiness `ready`. Legacy Manifest 1.0 skills such as `prd-generation` are `incompatible` with the Generic Run Kernel if still present.
 
 ## Current capabilities
 
@@ -112,7 +112,7 @@ The packaged application is written to `dist/AIEmployee.app`. Runtime data is st
 
 1. Open Settings in the app.
 2. Save the DeepSeek API key to macOS Keychain.
-3. Open Work and select an active employee (fresh installs include Alex and the two specialists; create one in Contacts if you deleted them).
+3. Open Work and select an active employee (fresh installs include the two specialists; create and bind another employee in Contacts when needed).
 4. Start a conversation or submit a work request.
 
 DeepSeek Chat Completions are stateless. The runtime reconstructs the ordered conversation from SQLite for every model request.

@@ -182,7 +182,7 @@ Accepted（分阶段迁移中）
 
 ## ADR-027：普通对话与任务执行分离
 
-Alex 的 Conversation/Message 是连续交流事实，Task/Action 是受控执行事实，两者不得互相冒充。闲聊由 DeepSeek 官方 API 生成；工作走 `run-task` / Skill Graph / ToolExecutor，见 ADR-031。多轮上下文由 Runtime 从 SQLite 按顺序重建，模型 reasoning 不持久化、不展示。API Key 只允许来自 macOS Keychain 注入的受控进程环境。
+示例员工 的 Conversation/Message 是连续交流事实，Task/Action 是受控执行事实，两者不得互相冒充。闲聊由 DeepSeek 官方 API 生成；工作走 `run-task` / Skill Graph / ToolExecutor，见 ADR-031。多轮上下文由 Runtime 从 SQLite 按顺序重建，模型 reasoning 不持久化、不展示。API Key 只允许来自 macOS Keychain 注入的受控进程环境。
 
 `chat-send` 在回复前做意图识别（启发式 + 可选 LLM）：`chat` 走对话 worker；`task` 且 `tasks_enabled` 时在同一会话中执行工作并写入助手说明，副作用仍只经 Rust ToolExecutor。未接通能力时工作意图降级为闲聊并提示。
 
@@ -1337,7 +1337,7 @@ ADR-003 选择 Deep Agents + LangGraph 作为长期 Agent Engine。MVP 工作执
 ## 决策
 
 1. CLI `run-task` 挂接自研 `golden_path` 编排（原 `run-golden`），复用 `TaskService`、`GraphPlan`、`ToolExecutor` 与 Python Worker；不在 MVP 引入 LangGraph Checkpoint。
-2. 仓库 Package（`file-tool`、`document-tool`、`prd-generation`、`requirement-analysis`）由 Runtime bootstrap 安装，并通过 `agent_skills` 绑定 Alex，使 `tasks_enabled` 为真。
+2. 仓库 Package（`file-tool`、`document-tool`、`prd-generation`、`requirement-analysis`）由 Runtime bootstrap 安装，并通过 `agent_skills` 绑定 示例员工，使 `tasks_enabled` 为真。
 3. Client 工作确认是本地 UX（`awaitingWorkConfirmation`），写入类高风险动作仍通过 `--approve-write` 预置 `approvals`；完整 pending→approve 交互审批留待后续。
 4. Knowledge 检索 MVP 暴露关键词 `knowledge-import` / `knowledge-search`；`embedding_ref` 保持空，FastEmbed 仍按 ADR-010 为后置能力。
 

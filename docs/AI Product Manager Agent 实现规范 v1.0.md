@@ -1,12 +1,12 @@
 # AI Product Manager Agent 实现规范 v1.0
 
-> 实现状态：主验证路径为 **Alex**（`ai-product-manager`）+ **`prd-generation`**，经 `run-task` / 自研 Graph / ToolExecutor。下文若列出 `competitor-analysis` 等扩展 Skill，视为非现行主路径。编排不以 Deep Agents 为必经链。
+> 实现状态：主验证路径为 **示例员工**（`example-employee`）+ **`prd-generation`**，经 `run-task` / 自研 Graph / ToolExecutor。下文若列出 `competitor-analysis` 等扩展 Skill，视为非现行主路径。编排不以 Deep Agents 为必经链。
 
 目标：
 
 定义第一个可运行 AI 员工：
 
-> AI 产品经理 Agent（Alex）
+> AI 产品经理 Agent（示例员工）
 
 用于验证：
 
@@ -30,7 +30,7 @@
 ## Agent Name
 
 ```text
-Alex
+示例员工
 ```
 
 ## Role
@@ -52,7 +52,7 @@ AI Product Manager
 完整目录：
 
 ```text
-ai-product-manager/
+example-employee/
 
 
 ├── AGENT.md
@@ -112,7 +112,7 @@ ai-product-manager/
 面向人阅读。
 
 ```markdown
-# Alex - AI Product Manager
+# 示例员工 - AI Product Manager
 
 
 ## Role
@@ -158,12 +158,12 @@ AI 产品经理
 系统读取。
 
 ```yaml
-id: ai-product-manager
+id: example-employee
 
 version: 1.0.0
 
 
-name: Alex
+name: 示例员工
 
 
 role: product_manager
@@ -715,7 +715,7 @@ task:
 
 agent:
 
-"Alex",
+"示例员工",
 
 skill:
 
@@ -734,7 +734,7 @@ Context Builder：
 ## Identity
 
 ```text
-你是AI产品经理Alex
+你是AI产品经理示例员工
 ```
 
 ---
@@ -796,7 +796,7 @@ Knowledge Tool
 SYSTEM:
 
 
-你是Alex，一名AI产品经理。
+你是示例员工，一名AI产品经理。
 
 
 你的目标：
@@ -847,7 +847,7 @@ Document Tool
 ```json
 {
 agent:
-ai-product-manager,
+example-employee,
 
 task_type:
 product_analysis
@@ -1116,7 +1116,7 @@ evaluation/
 我的AI员工
 
 
-🟢 Alex
+🟢 示例员工
 AI产品经理
 
 
@@ -1125,7 +1125,7 @@ AI产品经理
 输入：
 
 ```
-@Alex
+@示例员工
 
 帮我分析这个产品需求
 ```

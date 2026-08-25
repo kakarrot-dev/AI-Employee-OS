@@ -118,7 +118,7 @@ AI Employee OS 需要：
 任务：
 
 ```text
-@Alex 分析企业AI知识库需求
+@示例员工 分析企业AI知识库需求
 ```
 
 Trace：
@@ -328,7 +328,7 @@ AI 员工必须支持：
 UI：
 
 ```text
-Alex 工作记录
+示例员工 工作记录
 
 
 任务：
@@ -604,6 +604,8 @@ Performance Update
 
 有没有完成。
 
+Runtime Evaluation 不能只给出总分或 `delivery_allowed`。对带结构化验收的 Task，独立于执行 Worker 的 Acceptance Evaluator 只接收候选输出、冻结 criterion 与 Rust 提供的受控 Evidence，判断自然语言 criterion 是否实质满足；`metrics_json.criteria[]` 必须逐条保存 `criterion_id`、原始描述、`evidence_type`、`required`、`passed`、判定理由与 `evidence_refs`。Rust 交付闸会把报告与冻结验收逐字段比对，并确认每个 Evidence 引用确实属于当前 Deliverable；缺项、错配、空引用或模型虚构引用均按未通过处理。
+
 例如：
 
 PRD任务：
@@ -788,7 +790,7 @@ Memory
 增加：
 
 ```text
-Alex
+示例员工
 
 AI产品经理
 

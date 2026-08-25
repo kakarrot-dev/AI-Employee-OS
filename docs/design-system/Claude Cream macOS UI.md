@@ -62,7 +62,7 @@ AI Employee macOS Client 使用 Claude Cream 作为唯一自定义视觉 Token�
 
 ## 历史说明
 
-早期 Release 3 曾以 Company / Alex / Tasks 五栏为壳。现行导航为「办公室 / 通讯录 / 工作库 / 知识库 / 技能库 / 工具库 / 设置」，以 Main Interface Spec v2.0 为准；不得用 Mock 冒充尚未接通的能力。
+早期 Release 3 曾以 Company / 示例员工 / Tasks 五栏为壳。现行导航为「办公室 / 通讯录 / 工作库 / 知识库 / 技能库 / 工具库 / 设置」，以 Main Interface Spec v2.0 为准；不得用 Mock 冒充尚未接通的能力。
 
 **视觉命题**：温暖、克制、高密度的 macOS 原生工作台。Claude Cream 只承担品牌识别、焦点和关键状态。
 
@@ -73,7 +73,7 @@ AI Employee macOS Client 使用 Claude Cream 作为唯一自定义视觉 Token�
 | 事实状态 | 用户可见表达 | 自动行为 |
 | --- | --- | --- |
 | Task `pending` | 已排队 | 等待 Runtime |
-| Task `running` | Alex 正在工作 | 展示 Action 进度，允许请求取消 |
+| Task `running` | 示例员工 正在工作 | 展示 Action 进度，允许请求取消 |
 | Task `succeeded` | 已交付 | 突出 Artifact 与质量门禁 |
 | Task `failed` | 未完成 | 展示错误与恢复建议 |
 | Task `cancelled` | 已取消 | 不再表现为进行中 |

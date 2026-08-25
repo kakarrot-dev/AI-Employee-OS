@@ -8,11 +8,11 @@
 
 1. 用户在 macOS Keychain 配置 DeepSeek API Key。
 2. 在客户端编辑员工 Identity / Soul / Persona；Effective Prompt 由 Rust Runtime 单向编译。
-3. 与员工完成可跨重启恢复的多轮对话（新装内置 Alex / `ai-product-manager`、数据搜集员工 / `data-researcher`、文档编写员工 / `document-writer`；均可彻底删除且不会被自动恢复）。
+3. 与员工完成可跨重启恢复的多轮对话（新装内置数据搜集员工 / `data-researcher`、文档编写员工 / `document-writer`；均可彻底删除且不会被自动恢复；用户可自行创建通用员工）。
 4. Skill / Tool 由仓库 Package 安装（客户端不创建）；Runtime bootstrap 安装内置 Package 后，技能库与工具库可浏览。
 5. 办公室提供唯一默认任务输入框；Rust Runtime 通过模型生成并校验单员工或多员工 Task Proposal，用户确认后进入 Task Thread 执行。闲聊仍走员工私聊，工作执行复用 Generic Run Kernel，Golden Path 已移除。
 
-可执行 Skill 必须是 Manifest `schema_version: 2.0.0`。Alex bootstrap 绑定 `local-file-operations` 与 `web-search`；数据搜集员工只绑定 `web-search`，文档编写员工只绑定 `local-file-operations`。当前主验证闭环为两名专职员工串行完成“网络搜集 → verified Handoff → 授权目录内创建 Markdown 文件”，写入经审批后由 `file-tool` 执行。真实搜索依赖本机 `mcporter` + Exa，尚未作为无外部依赖的默认 CI 门禁。仓库中 `prd-generation` / `requirement-analysis` 等 Manifest 1.0 Skill 若仍存在，readiness 为 `incompatible`，不作为工作执行主路径。
+可执行 Skill 必须是 Manifest `schema_version: 2.0.0`。数据搜集员工只绑定 `web-search`，文档编写员工只绑定 `local-file-operations`；用户创建的员工可按需绑定一个或多个 ready Skill。当前主验证闭环为两名专职员工串行完成“网络搜集 → verified Handoff → 授权目录内创建 Markdown 文件”，写入经审批后由 `file-tool` 执行。真实搜索依赖本机 `mcporter` + Exa，尚未作为无外部依赖的默认 CI 门禁。仓库中 `prd-generation` / `requirement-analysis` 等 Manifest 1.0 Skill 若仍存在，readiness 为 `incompatible`，不作为工作执行主路径。
 
 客户端已支持多员工 Profile 的创建、编辑、停用，以及内置员工的彻底删除；任意新建员工的工作执行与 per-employee `tasks_enabled` 尚未成为主验证路径。
 
@@ -34,7 +34,7 @@
 
 - Swift macOS Client：办公室、通讯录、工作库、归档、知识库、技能库、工具库、设置
 - DeepSeek 驱动的多轮对话与意图路由
-- 员工 Profile：Identity / Soul / Persona；三个内置员工可彻底删除且不自动恢复
+- 员工 Profile：Identity / Soul / Persona；两个内置专职员工可彻底删除且不自动恢复
 - 仓库内置 Agent / Skill / Tool Package 的安装、列表与 Skill 绑定
 - 已合入内置 Tool：`file-tool`（读 / 创建 / 编辑授权本地文件）、`agent-reach-tool`（`search_web`）
 - 已合入可执行 Skill：`local-file-operations`、`web-search`（Manifest 2.0）

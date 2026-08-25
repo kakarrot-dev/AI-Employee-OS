@@ -40,14 +40,14 @@ MVP canonical 数据模型现包含 28 张表；Conversation 扩展由追加 Mig
 - 员工只有 `active | disabled` 两种持久化状态；删除不是第三种状态，而是物理移除原 `agents`、Profile、Persona、Skill 绑定、私人 Conversation、员工 Memory 与权限记录。
 - 员工存在 `pending | running` Task 时禁止删除；Runtime 必须在同一写事务内再次检查并以 `employee_delete_blocked_active_work` 拒绝，客户端不得把该错误降级成停用。
 - 已完成、失败或取消的工作继续保留 Task、Action、Handoff、Deliverable、Evaluation 与 Audit。`task_participant_snapshots` 保存任务创建时的最小历史身份，工作库不得依赖实时 Employee Profile 回放历史。
-- 内置员工可彻底删除且不自动恢复：`ai-product-manager` 写入 `runtime_flags.default_agent_dismissed`；`data-researcher` 与 `document-writer` 写入 `runtime_flags.builtin_agent_dismissed:<agent_id>`。其历史工作均遵循同一快照保留规则。
+- 两名内置专职员工可彻底删除且不自动恢复：`data-researcher` 与 `document-writer` 写入 `runtime_flags.builtin_agent_dismissed:<agent_id>`。其历史工作均遵循同一快照保留规则。
 
 此前定义的核心表如下：
 
 - Identity：`subjects`
 - Agent：`agents`、`personas`、`employee_profiles`
 - Capability：`skills`、`agent_skills`、`tools`
-- Execution：`tasks`、`actions`、`tool_executions`、`task_execution_snapshots`
+- Execution：`tasks`、`task_capability_locks`、`actions`、`tool_executions`、`task_execution_snapshots`
 - Context：`memories`、`knowledge_sources`、`knowledge_chunks`
 - Security：`permissions`、`approvals`、`audit_logs`
 - Evaluation：`evaluations`、`feedbacks`、`metrics`
@@ -63,12 +63,15 @@ erDiagram
     agents ||--o{ agent_skills : enables
     skills ||--o{ agent_skills : assigned
     agents ||--o{ tasks : executes
+    tasks ||--o{ task_capability_locks : locks
+    skills ||--o{ task_capability_locks : selected
     tasks ||--o{ actions : contains
     tools o|--o{ actions : invokes
     actions ||--o{ tool_executions : attempts
     tasks ||--o| task_execution_snapshots : locks
     knowledge_sources ||--o{ knowledge_chunks : splits
     tasks ||--o{ approvals : requests
+    actions ||--o| approvals : authorizes
     agents ||--o{ approvals : submits
     agents o|--o{ audit_logs : produces
     tasks o|--o{ audit_logs : traces
@@ -174,6 +177,17 @@ CREATE TABLE tasks (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE RESTRICT
+);
+
+CREATE TABLE task_capability_locks (
+  task_id TEXT NOT NULL,
+  skill_id TEXT NOT NULL,
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (task_id, skill_id),
+  UNIQUE (task_id, ordinal),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE actions (
@@ -334,8 +348,11 @@ CREATE TABLE approvals (
   ),
   created_at TEXT NOT NULL,
   resolved_at TEXT,
+  action_id TEXT,
+  input_sha256 TEXT,
   FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE RESTRICT,
-  FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE RESTRICT
+  FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE RESTRICT,
+  FOREIGN KEY (action_id) REFERENCES actions(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE audit_logs (
@@ -390,6 +407,7 @@ CREATE TABLE runtime_flags (
 );
 
 CREATE INDEX idx_tasks_agent_status ON tasks(agent_id, status);
+CREATE INDEX idx_task_capability_locks_task_ordinal ON task_capability_locks(task_id, ordinal);
 CREATE INDEX idx_actions_task_created ON actions(task_id, created_at);
 CREATE INDEX idx_runtime_events_task_sequence ON runtime_events(task_id, sequence);
 CREATE INDEX idx_tool_executions_action_started ON tool_executions(action_id, started_at);
@@ -398,6 +416,7 @@ CREATE INDEX idx_memories_owner_type ON memories(owner_type, owner_id, memory_ty
 CREATE INDEX idx_knowledge_sources_status ON knowledge_sources(index_status);
 CREATE INDEX idx_knowledge_chunks_source ON knowledge_chunks(source_id, chunk_index);
 CREATE INDEX idx_approvals_task_status ON approvals(task_id, status);
+CREATE UNIQUE INDEX idx_approvals_pending_action ON approvals(action_id) WHERE status = 'pending';
 CREATE INDEX idx_audit_logs_task_created ON audit_logs(task_id, created_at);
 CREATE INDEX idx_evaluations_task_created ON evaluations(task_id, created_at);
 CREATE INDEX idx_feedbacks_task_created ON feedbacks(task_id, created_at);
@@ -416,6 +435,7 @@ CREATE INDEX idx_metrics_name_recorded ON metrics(name, recorded_at);
 | `agent_skills` | Agent 的 Skill 启用状态 | 连接 Agent 与 Skill | Agent 删除时级联，Skill 删除时限制 |
 | `tools` | 可调用 Tool 清单 | 被 Action 引用 | 已产生 Action 时限制删除 |
 | `tasks` | 一次用户任务及其状态 | 属于 Agent，包含 Action | 有审计或审批记录时限制删除 |
+| `task_capability_locks` | Task 确认时冻结的 Skill 集合及顺序 | 连接 Task 与 Skill；执行期间不得重新解析成全部就绪 Skill | 随 Task 级联删除，Skill 有引用时限制删除 |
 | `task_threads` | 工作库中的持续任务交互容器 | 通过 Binding 投影一个或多个 Task | `archived_at` 可恢复归档；`deleted_at` 仅从工作库软删除，不删除 Task/Action/Audit 证据 |
 | `task_thread_task_bindings` | Task Thread 与执行 Task 的唯一投影关系 | `proposal_id` 对一句话办事非空；场景库直接启动的 Business Flow 为 `NULL` | 随 Task Thread 保留；Task 与 Thread 均使用限制删除 |
 | `actions` | Agent Loop 中的单步执行 | 属于 Task，可引用 Tool | Task 删除时级联 |
@@ -427,12 +447,12 @@ CREATE INDEX idx_metrics_name_recorded ON metrics(name, recorded_at);
 | `knowledge_sources` | 本地资料和预置资料的索引来源 | 一对多包含 Chunk | 删除 Source 时级联删除 Chunk |
 | `knowledge_chunks` | 可检索文本分块及向量引用 | 属于 Knowledge Source | 随 Source 级联删除 |
 | `permissions` | 主体对资源动作的允许或拒绝规则 | 多态 subject | 应用层负责 subject 完整性 |
-| `approvals` | 高风险动作的人类审批 | 关联 Task 与 Agent | 保留审批链，限制父记录删除 |
+| `approvals` | 需要确认动作的人类审批 | 绑定 Task、Agent、Action 与规范化输入 Hash，防止批准后换参 | 保留审批链，限制父记录删除 |
 | `audit_logs` | 安全与执行审计事件 | 可关联 Agent、Task、Approval | 父记录删除时置空，审计记录保留 |
-| `evaluations` | Task 与 Agent 的质量评分 | 关联 Task 与 Agent | Task 删除时级联，Agent 删除时限制 |
+| `evaluations` | Task 与 Agent 的质量评分；带结构化验收时 `metrics_json.criteria[]` 保存逐条验收与 Evidence 引用 | 关联 Task 与 Agent；验收报告必须与冻结 criterion 逐字段一致 | Task 删除时级联，Agent 删除时限制 |
 | `feedbacks` | 用户对 Task 的评分和反馈 | 关联 Task | Task 删除时级联 |
 | `metrics` | 可按 Task 或 Agent 聚合的数值指标 | 可选关联 Task、Agent | 父记录删除时置空 |
-| `runtime_flags` | Runtime 持久化开关与用户选择 | 无外键；如 `default_agent_dismissed` | 可更新；删除默认员工时写入 |
+| `runtime_flags` | Runtime 持久化开关与用户选择 | 无外键；内置专职员工删除标记使用 `builtin_agent_dismissed:<agent_id>` | 可更新；删除内置专职员工时写入 |
 | `agent_runs` | Task 的一次通用 Runtime 执行实例 | 属于 Task，保存 phase、revision 与预算 | Task 删除时级联 |
 | `run_snapshots` | 锁定 Agent、单 Skill 或 Capability Set、Toolset、Context、Model 配置 | 属于 Run，每种类型唯一 | Run 删除时级联 |
 | `run_observations` | 已确认的模型决策、ToolResult 和继续输入 | Run 内 sequence 单调递增 | Run 删除时级联 |

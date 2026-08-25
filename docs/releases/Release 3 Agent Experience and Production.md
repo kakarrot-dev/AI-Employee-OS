@@ -1,6 +1,6 @@
 # Release 3：Agent Experience and Production
 
-> 历史里程碑快照（约 2026-08-04），非现行产品 Spec。文中 Company / Alex / Tasks / Artifacts / Knowledge 五栏与 `run-golden` 描述已被后续迭代取代：现行导航为办公室 / 通讯录 / 工作库 / 技能库 / 工具库 / 设置；工作执行为 `run-task`。以 `AGENTS.md`、[架构总览](../架构总览.md) 与 [Main Interface Spec v2.0](../design-system/AI%20Employee%20macOS%20Main%20Interface%20Spec%20v2.0.md) 为准。
+> 历史里程碑快照（约 2026-08-04），非现行产品 Spec。文中 Company / 示例员工 / Tasks / Artifacts / Knowledge 五栏与 `run-golden` 描述已被后续迭代取代：现行导航为办公室 / 通讯录 / 工作库 / 技能库 / 工具库 / 设置；工作执行为 `run-task`。以 `AGENTS.md`、[架构总览](../架构总览.md) 与 [Main Interface Spec v2.0](../design-system/AI%20Employee%20macOS%20Main%20Interface%20Spec%20v2.0.md) 为准。
 
 ## 目标
 
@@ -9,7 +9,7 @@
 ## Agent Experience
 
 - SwiftPM + SwiftUI 原生 `NavigationSplitView`：左侧 Task，右侧状态、Graph Node、质量分、Skill 版本和产物路径。
-- App Shell 使用原生 `NavigationSplitView` 提供 Company、Alex、Tasks、Artifacts、Knowledge 五个 Workspace；Settings 使用独立 Scene。所有页面消费真实 Runtime/Package 状态，不使用 Mock 冒充未开放能力。
+- App Shell 使用原生 `NavigationSplitView` 提供 Company、示例员工、Tasks、Artifacts、Knowledge 五个 Workspace；Settings 使用独立 Scene。所有页面消费真实 Runtime/Package 状态，不使用 Mock 冒充未开放能力。
 - Claude Cream 是客户端唯一自定义视觉 Token，Light/Dark 共用语义角色；Artifact Preview 是完成页主锚点，原始 Event 与 Task ID 默认折叠。
 - Composer 只采集任务输入；执行前显示一次性写入授权，明确范围为项目 `outputs` 目录。
 - Client 通过 Bundle 内 Rust Runtime 调用 `run-golden`，只解析 Runtime 返回的 canonical Evidence；Task 事件通过持久化 cursor 续读，取消请求由 Runtime 确认收敛。

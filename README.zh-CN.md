@@ -26,7 +26,7 @@
 
 AI Employee OS 将 AI 助手变成受治理的本地工作者。macOS 客户端负责交互与 Keychain 访问，Rust 运行时负责状态和权限，Python Worker 负责意图、上下文、规划和模型调用。
 
-新装会种子化 Alex（`ai-product-manager`）和两名最小权限专职员工：数据搜集员工（`data-researcher`）只绑定 `web-search`，文档编写员工（`document-writer`）只绑定 `local-file-operations`。用户可彻底删除任一内置员工，bootstrap 不会自动恢复；客户端也可以创建和编辑其他员工 Profile。工作执行要求已绑定且 Manifest `schema_version: 2.0.0`、readiness 为 `ready` 的 Skill。Manifest 1.0 的遗留 Skill（如 `prd-generation`）若仍存在，对 Generic Run Kernel 为 `incompatible`。
+新装会种子化两名最小权限专职员工：数据搜集员工（`data-researcher`）只绑定 `web-search`，文档编写员工（`document-writer`）只绑定 `local-file-operations`。用户可彻底删除任一内置员工，bootstrap 不会自动恢复；客户端也可以创建和编辑其他员工 Profile，并按需绑定多个 ready Skill。工作执行要求已绑定且 Manifest `schema_version: 2.0.0`、readiness 为 `ready` 的 Skill。Manifest 1.0 的遗留 Skill（如 `prd-generation`）若仍存在，对 Generic Run Kernel 为 `incompatible`。
 
 ## 当前能力
 
@@ -109,7 +109,7 @@ cd AI-Employee-OS
 
 1. 打开客户端设置。
 2. 将 DeepSeek API Key 保存到 macOS Keychain。
-3. 进入工作库并选择在职员工（新装种子为 Alex；若已删除种子，先在通讯录新建）。
+3. 进入工作库并选择在职员工（新装包含两名专职员工；也可先在通讯录创建并绑定所需 Skill）。
 4. 开始对话或提交工作请求。
 
 DeepSeek Chat Completions 本身无状态。每次请求模型前，Runtime 都会从 SQLite 重建当前 Conversation 的有序消息。

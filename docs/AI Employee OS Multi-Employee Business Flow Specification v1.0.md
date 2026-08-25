@@ -432,7 +432,7 @@ CHECK predecessor != successor
 - Scheduler 只选择一个 Phase 1 ready WorkOrder。
 - Rust 为 Child Task 创建正常 AgentRun 和 Snapshots。
 - 后续完全复用 Generic Run Kernel。
-- Child complete 必须经过 Deliverable/Evidence/Evaluation gate。
+- Child complete 必须经过 Deliverable/Evidence/Evaluation gate。独立 Acceptance Evaluator 必须依据候选输出与受控 Evidence 判断自然语言 criterion，逐条记录 `criterion_id`、验收描述、证据类型、通过状态、理由和真实 `evidence_ref`；仅存在同类型 Evidence 不能满足验收。
 - 成功后进入 Handoff；失败按 failure policy 收敛。
 
 ### 12.4 Finalization
@@ -443,6 +443,7 @@ Phase 1 必须把 Finalization 表达为最后一个 WorkOrder：
 - 输入只含 A、B verified Deliverable 和允许的 SharedContextRef；
 - Acceptance 与 Root 总验收一致；
 - 产生 Child verified Deliverable 后，Rust 在 `business_flow_outputs` 创建 Root 输出绑定；该绑定把 Root Task 映射到 Finalization verified Deliverable，上游证据继续由 Deliverable Evidence 与 Handoff 链追溯；
+- Finalization Evaluation 必须同时覆盖自身 WorkOrder 验收与 Root 总验收；缺少逐条报告、报告字段与冻结验收不一致、或引用不存在的 Evidence 时默认拒绝；
 - Root 输出绑定持久化后 Root Task 才能 succeeded。
 
 Root Task 本身不创建 AgentRun，避免一个 Task 同时承担编排和员工执行。

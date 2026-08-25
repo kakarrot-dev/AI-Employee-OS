@@ -468,7 +468,7 @@ capability-readiness --database <path> --repository-root <path>
 
 命令 stdout 只输出一个 JSON 对象或 NDJSON 事件流；诊断写 stderr；非零退出码表示命令/协议失败，不代表已持久化 Task 一定失败。所有响应包含 `schema_version`。
 
-迁移期保留 `run-task`，内部转发到明确指定的兼容 Skill；聊天切换完成后删除其 Golden Path 实现。不得让 `run-task` 静默选择硬编码 Alex/PRD。
+迁移期保留 `run-task`，内部转发到明确指定的兼容 Skill；聊天切换完成后删除其 Golden Path 实现。不得让 `run-task` 静默选择硬编码 示例员工/PRD。
 
 ### 17.2 Python Worker
 

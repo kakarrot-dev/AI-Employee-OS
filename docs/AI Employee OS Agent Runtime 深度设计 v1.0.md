@@ -299,7 +299,7 @@ Agent Package。
 例如：
 
 ```text
-你是 Alex。
+你是 示例员工。
 
 岗位：
 
@@ -446,7 +446,7 @@ Knowledge Tool
 
 <identity>
 
-你是AI产品经理Alex
+你是AI产品经理示例员工
 
 </identity>
 
@@ -1119,7 +1119,7 @@ Memory
 用户：
 
 ```
-@Alex
+@示例员工
 帮我分析企业AI知识库需求
 ```
 

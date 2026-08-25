@@ -242,7 +242,7 @@ message Agent {
 "product_manager_001",
 
 "name":
-"Alex",
+"示例员工",
 
 "role":
 "AI Product Manager",
@@ -385,7 +385,7 @@ type:
 "task_started",
 
 agent:
-"Alex",
+"示例员工",
 
 task:
 "需求分析"
@@ -551,7 +551,7 @@ task:
 "生成PRD",
 
 agent:
-"Alex",
+"示例员工",
 
 skills:
 [
@@ -576,7 +576,7 @@ memory:
 
 system_prompt:
 
-"你是AI产品经理Alex...",
+"你是AI产品经理示例员工...",
 
 
 available_tools:
@@ -1008,7 +1008,7 @@ MVP 路由决策：
 agent:
 
 id:
-ai-product-manager
+example-employee
 
 
 version:
@@ -1018,7 +1018,7 @@ version:
 identity:
 
 name:
-Alex
+示例员工
 
 role:
 Product Manager
@@ -1353,7 +1353,7 @@ Swift：
 2. Unified Data Model + `contracts/`
 3. 本文档（CLI / 子进程语义；Proto 块为历史草稿）
 4. ADR（含 ADR-027～031）
-5. AI Product Manager Agent 规范（主路径 Alex + `prd-generation`）
+5. AI Product Manager Agent 规范（主路径 示例员工 + `prd-generation`）
     
 # Phase 1 Scenario / Business Flow CLI
 

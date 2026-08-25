@@ -16,7 +16,7 @@
 
 推荐给新会话的起始指令：
 
-> 阅读 `docs/plans/AI Employee OS 通用 Agent Runtime 重建计划 v0.1.md`、根目录 `AGENTS.md` 及其中列出的 canonical 文档。先检查当前代码和工作区是否漂移，然后基于该计划生成通用 Agent Runtime Spec；不要直接编码，不要恢复旧 Golden Path，不要硬编码 Alex、PRD 或任何单一场景。
+> 阅读 `docs/plans/AI Employee OS 通用 Agent Runtime 重建计划 v0.1.md`、根目录 `AGENTS.md` 及其中列出的 canonical 文档。先检查当前代码和工作区是否漂移，然后基于该计划生成通用 Agent Runtime Spec；不要直接编码，不要恢复旧 Golden Path，不要硬编码 示例员工、PRD 或任何单一场景。
 
 ## 2. 已确认目标
 
@@ -41,7 +41,7 @@ Agent → Skill → Tool → Deliverable
 
 - 不恢复已删除的 `app.worker`。
 - 不继续使用或迁移旧 `run_golden_path` 作为产品主路径。
-- 不硬编码 `ai-product-manager`、`prd-generation`、固定 Knowledge、固定搜索词或固定输出模板。
+- 不硬编码 `example-employee`、`prd-generation`、固定 Knowledge、固定搜索词或固定输出模板。
 - 不为每个 Skill 强制设计 DAG。
 - 不允许 Skill Package 中的任意脚本绕过 Rust ToolExecutor 执行。
 - 不引入第二套 Task/Action 状态事实源。
@@ -63,7 +63,7 @@ channel is empty and sending half is closed
 缺少文件只是最先暴露的表象。恢复旧 Worker 会保留以下结构性错误：
 
 - 工作执行丢弃已经编译的员工 Effective Prompt。
-- Golden Path 硬编码 Alex 和 `prd-generation`。
+- Golden Path 硬编码 示例员工 和 `prd-generation`。
 - Skill Manifest 的 routing、input/output schema、required context、required tools 没有成为真实执行控制面。
 - Rust 用占位数据直接把 `analyze` 标记为完成。
 - 固定演示 Knowledge 绕过 Skill 的 `on_missing: fail`。
@@ -448,7 +448,7 @@ Checkpoint 应位于副作用边界：
 共同验收：
 
 - 更换 Skill ID 不改 Runtime。
-- 非 Alex 员工可运行同一 Skill。
+- 非 示例员工 员工可运行同一 Skill。
 - 新 Run 使用最新员工 Prompt Hash；运行中的 Run 保持旧快照。
 - 未声明 Tool 不进入模型动作空间。
 - 缺依赖在副作用前失败。
@@ -628,12 +628,12 @@ Plan 必须：
 只有同时满足以下条件，才能声称通用 Agent Runtime 已完成：
 
 - Agent 的 Effective Prompt 真正进入工作执行。
-- Runtime 不包含 Alex、PRD 或单一场景硬编码。
+- Runtime 不包含 示例员工、PRD 或单一场景硬编码。
 - 新 Skill 仅通过 Package 安装与员工绑定即可运行。
 - Skill 声明的 Tool 依赖、输入、输出、预算和失败规则被 Runtime 实际执行。
 - Tool 只能经 Rust ToolExecutor 执行。
 - 每个副作用可审计、可恢复且不会因崩溃自动重复。
 - Deliverable 有真实 Artifact/ToolResult/Verification 证据。
-- 三类通用 Skill 及非 Alex 员工通过端到端验证。
+- 三类通用 Skill 及非 示例员工 员工通过端到端验证。
 - 旧 Golden Path 已退出产品主路径。
 - canonical 文档、机器契约、实现、测试和客户端状态表达一致。

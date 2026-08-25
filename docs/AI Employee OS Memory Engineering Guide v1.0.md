@@ -183,7 +183,7 @@ content:
 
 例如：
 
-AI产品经理 Alex：
+AI产品经理 示例员工：
 
 ```text
 
@@ -1102,7 +1102,7 @@ Runtime 已具备（产品面未全暴露）：
 
 agent:
 
-Alex,
+示例员工,
 
 
 memory:
@@ -1128,7 +1128,7 @@ memory:
 
 agent:
 
-Alex,
+示例员工,
 
 
 experience:

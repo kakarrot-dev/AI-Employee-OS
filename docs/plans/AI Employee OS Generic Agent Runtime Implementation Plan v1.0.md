@@ -60,7 +60,7 @@ git diff -- runtime/rust-core/src/main.rs runtime/python-agent/app apps/macos/AI
 - Secret 不进入参数、数据库、日志、Trace、Memory、Context 或 Artifact。
 - 无验证 Evidence 不产生 `verified` Deliverable，不将 Task 标记为 `succeeded`。
 - `result_unknown` 禁止自动重放。
-- 不硬编码 Alex、`ai-product-manager`、`prd-generation` 或固定 Knowledge。
+- 不硬编码 示例员工、`example-employee`、`prd-generation` 或固定 Knowledge。
 
 ## 4. Phase 1：冻结决策、契约与显式 Run Kernel
 
@@ -184,7 +184,7 @@ Worker 不接收数据库路径、Keychain 引用或完整环境；只接收 Run
 - `packages/skills/structured-summary/`：纯推理、无 Tool、结构化输出。
 - `packages/skills/write-note/`：单次 `document-tool.create_markdown`，生成 Artifact。
 
-每个包含 `manifest.yaml`、`SKILL.md`、`evals/cases.json`、`evals/suite.json`。不得复用 PRD 文案或固定 Alex。
+每个包含 `manifest.yaml`、`SKILL.md`、`evals/cases.json`、`evals/suite.json`。不得复用 PRD 文案或固定 示例员工。
 
 ### 4.8 Phase 1 验证
 
@@ -199,7 +199,7 @@ python3 -m unittest discover -s runtime/python-agent -p 'test_*.py'
 
 ```bash
 ai-employee-runtime run-skill --database <temp-db> --repository-root . \
-  --agent-id <non-alex-agent> --skill-id structured-summary \
+  --agent-id <non-example_employee-agent> --skill-id structured-summary \
   --input-json '{"text":"..."}'
 ```
 
@@ -322,8 +322,8 @@ ai-employee-runtime run-skill --database <temp-db> --repository-root . \
 
 真实 App 手动矩阵：
 
-1. 非 Alex 员工 + 纯推理 Skill：跨重启恢复 Conversation 和 Run 结果。
-2. 非 Alex 员工 + 单 Tool Skill：审批、Artifact、Deliverable 与真实文件一致。
+1. 非 示例员工 员工 + 纯推理 Skill：跨重启恢复 Conversation 和 Run 结果。
+2. 非 示例员工 员工 + 单 Tool Skill：审批、Artifact、Deliverable 与真实文件一致。
 3. 多轮 Tool Skill：Task Inspector 顺序与 Runtime Event 一致。
 4. 无匹配 Skill：明确能力不足，不创建 Tool Action。
 5. 歧义 Skill：请求补充，不错误执行。
@@ -396,7 +396,7 @@ ai-employee-runtime run-skill --database <temp-db> --repository-root . \
 
 - Phase 1–4 自动门禁全部通过。
 - 真实 App 三类 Skill、等待、审批、取消、恢复、Deliverable 验收通过。
-- `chat-send` 不再调用 Golden Path，且至少一个非 Alex 员工通过工作执行。
+- `chat-send` 不再调用 Golden Path，且至少一个非 示例员工 员工通过工作执行。
 - 仓库代码搜索确认业务主路径不依赖 `prd-generation`。
 
 ### 8.2 删除与修改
@@ -425,7 +425,7 @@ ai-employee-runtime run-skill --database <temp-db> --repository-root . \
 ### 8.3 Phase 5 验证
 
 ```bash
-rg -n "app\.worker|run_golden_path|golden_path|ai-product-manager|prd-generation" \
+rg -n "app\.worker|run_golden_path|golden_path|example-employee|prd-generation" \
   runtime apps scripts
 ./scripts/check.sh
 ./script/build_and_run.sh
@@ -435,7 +435,7 @@ rg -n "app\.worker|run_golden_path|golden_path|ai-product-manager|prd-generation
 
 最终验收：
 
-- 三类通用 Skill + 非 Alex 员工均通过。
+- 三类通用 Skill + 非 示例员工 员工均通过。
 - PRD Skill 停用后主 Runtime 门禁仍通过。
 - 新安装 v2 Skill 仅增加 Package 文件，无 Rust/Python 修改。
 - Task Inspector 与 SQLite/Events 对账一致。
@@ -487,10 +487,10 @@ rg -n "app\.worker|run_golden_path|golden_path|ai-product-manager|prd-generation
 
 - Spec 的所有机器字段均有 Schema 和正反例。
 - 五阶段全部通过各自门禁，且每阶段可从其前一版本安全升级。
-- Runtime 主链无 Alex/PRD/固定 Knowledge 特判。
+- Runtime 主链无 示例员工/PRD/固定 Knowledge 特判。
 - Rust 持有全部安全字段、状态、副作用和恢复语义。
 - Python 仅产生严格 Decision；Swift 仅展示/发起/继续。
-- 三类通用 Skill 和非 Alex 员工在真实 App 中通过。
+- 三类通用 Skill 和非 示例员工 员工在真实 App 中通过。
 - 旧 Golden Path 不再是产品入口，历史记录仍可只读审计。
 - `./scripts/check.sh` 通过；App 打包启动与手动矩阵有真实证据。
 

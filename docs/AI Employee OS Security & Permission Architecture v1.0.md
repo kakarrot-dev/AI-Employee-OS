@@ -202,7 +202,7 @@ AI 产品经理：
 agent:
 
 name:
-Alex
+示例员工
 
 
 permissions:
@@ -837,7 +837,7 @@ Schema：
 
 agent:
 
-"Alex",
+"示例员工",
 
 
 action:
@@ -872,7 +872,7 @@ Observability。
 
 10:01
 
-Alex requested:
+示例员工 requested:
 
 read_file
 
