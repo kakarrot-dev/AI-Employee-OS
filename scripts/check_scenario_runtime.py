@@ -28,8 +28,39 @@ def fail(*args: str) -> str:
 
 with tempfile.TemporaryDirectory(prefix="ai-employee-scenario-") as directory:
     database = Path(directory) / "runtime.db"
+    output = Path(directory) / "output"
+    output.mkdir()
     common = ("--database", str(database))
     run("employees-list", *common, "--repository-root", str(ROOT))
+    run(
+        "employee-save",
+        *common,
+        "--payload",
+        json.dumps({
+            "schema_version": "1.0",
+            "id": "test-employee",
+            "name": "场景测试员工",
+            "role": "场景执行测试",
+            "department": "测试",
+            "soul": ["只执行已锁定的 Capability"],
+            "persona": {
+                "communication": {"style": "concise"},
+                "thinking": {"approach": "evidence_first"},
+                "decision": {"priorities": ["accuracy"]},
+                "habit": {"output_format": "markdown"},
+            },
+            "base_prompt": "仅用于场景 Runtime 测试。",
+            "status": "active",
+            "config_version": 1,
+        }, ensure_ascii=False),
+    )
+    run(
+        "bind-skill",
+        *common,
+        "--agent-id", "test-employee",
+        "--skill-id", "local-file-operations",
+        "--skill-version", "1.0.0",
+    )
     proposal = PROPOSAL.read_text(encoding="utf-8")
     coordinator_env = dict(os.environ)
     coordinator_env["AI_EMPLOYEE_FAKE_SCENARIO_PROPOSAL"] = proposal
@@ -71,18 +102,42 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-scenario-") as directory:
     assert started["root_task_id"] == repeated["root_task_id"]
     assert [item["status"] for item in started["work_orders"]] == ["ready", "waiting_dependency", "waiting_dependency"]
     assert run("business-flow-status", *common, "--flow-id", "flow-1")["scenario_sha256"] == validation["proposal_hash"]
-    decision_env = dict(os.environ)
-    decision_env["AI_EMPLOYEE_FAKE_DECISION"] = json.dumps({
-        "schema_version": "1.0.0",
-        "type": "complete",
-        "output": {"summary": "verified"},
-        "deliverable_candidates": [],
-        "evidence_refs": [],
-    })
-    first_step = run(
-        "business-flow-continue", *common, "--flow-id", "flow-1",
-        "--repository-root", str(ROOT), env=decision_env,
-    )
+    def complete_next_step(index: int) -> object:
+        decision_env = dict(os.environ)
+        decision_env["AI_EMPLOYEE_FAKE_DECISION"] = json.dumps({
+            "schema_version": "1.0.0",
+            "type": "tool_call",
+            "skill_id": "local-file-operations",
+            "tool_id": "file-tool",
+            "action": "create_file",
+            "arguments": {"path": f"step-{index}.md", "content": f"# Step {index}\n\nverified"},
+            "rationale_summary": "produce execution evidence",
+        })
+        waiting = run(
+            "business-flow-continue", *common, "--flow-id", "flow-1",
+            "--repository-root", str(ROOT), env=decision_env,
+        )
+        assert waiting["run"]["phase"] == "waiting_approval"
+        completion_env = dict(os.environ)
+        completion_env["AI_EMPLOYEE_FAKE_DECISION"] = json.dumps({
+            "schema_version": "1.0.0",
+            "type": "complete",
+            "output": {"summary": "verified", "path": f"step-{index}.md"},
+            "deliverable_candidates": [],
+            "evidence_refs": [],
+        })
+        completed_run = run(
+            "continue-run", *common,
+            "--repository-root", str(ROOT),
+            "--run-id", waiting["run"]["run_id"],
+            "--authorized-root", str(output),
+            "--approve",
+            env=completion_env,
+        )
+        assert completed_run["status"] == "succeeded"
+        return run("business-flow-status", *common, "--flow-id", "flow-1")
+
+    first_step = complete_next_step(1)
     assert [item["status"] for item in first_step["work_orders"]] == ["succeeded", "ready", "waiting_dependency"]
     with sqlite3.connect(database) as connection:
         counts_before_recovery = (
@@ -104,15 +159,9 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-scenario-") as directory:
             connection.execute("SELECT count(*) FROM tool_executions").fetchone()[0],
         )
     assert counts_before_recovery == counts_after_recovery
-    second_step = run(
-        "business-flow-continue", *common, "--flow-id", "flow-1",
-        "--repository-root", str(ROOT), env=decision_env,
-    )
+    second_step = complete_next_step(2)
     assert [item["status"] for item in second_step["work_orders"]] == ["succeeded", "succeeded", "ready"]
-    completed = run(
-        "business-flow-continue", *common, "--flow-id", "flow-1",
-        "--repository-root", str(ROOT), env=decision_env,
-    )
+    completed = complete_next_step(3)
     assert completed["status"] == "succeeded"
     assert completed["root_deliverable_id"]
     assert [item["status"] for item in completed["work_orders"]] == ["succeeded", "succeeded", "succeeded"]
@@ -140,8 +189,8 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-scenario-") as directory:
         assert "handoff.accepted" in root_events
         assert "business_flow.completed" in root_events
         assert root_events[-1] == "task_succeeded"
-        assert connection.execute("SELECT count(*) FROM actions").fetchone()[0] == 0
-        assert connection.execute("SELECT count(*) FROM tool_executions").fetchone()[0] == 0
+        assert connection.execute("SELECT count(*) FROM actions").fetchone()[0] == 3
+        assert connection.execute("SELECT count(*) FROM tool_executions").fetchone()[0] == 3
         assert connection.execute("SELECT count(*) FROM business_flows").fetchone()[0] == 2
         assert connection.execute("SELECT count(*) FROM tasks WHERE status='cancelled'").fetchone()[0] == 4
 

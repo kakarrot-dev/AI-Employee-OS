@@ -79,6 +79,17 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-generic-") as directory:
         "--skill-version",
         "1.0.0",
     )
+    run(
+        "bind-skill",
+        "--database",
+        str(database),
+        "--agent-id",
+        "runtime-test-worker",
+        "--skill-id",
+        "web-search",
+        "--skill-version",
+        "1.0.0",
+    )
 
     requested = run(
         "run-skill",
@@ -138,7 +149,7 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-generic-") as directory:
         "--conversation-id",
         "conversation_search_gate",
         "--employee-id",
-        "ai-product-manager",
+        "runtime-test-worker",
         "--input",
         "查找 Rust 官方文档",
         env={
@@ -186,7 +197,7 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-generic-") as directory:
         "--conversation-id",
         "conversation_cross_skill",
         "--employee-id",
-        "ai-product-manager",
+        "runtime-test-worker",
         "--input",
         "先搜索资料，再生成本地 Markdown 文档",
         env={
@@ -245,7 +256,7 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-generic-") as directory:
         "--conversation-id",
         "conversation_repeated_search",
         "--employee-id",
-        "ai-product-manager",
+        "runtime-test-worker",
         "--input",
         "先搜索资料，再生成本地 Markdown 文档",
         env={
@@ -285,7 +296,7 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-generic-") as directory:
         "--conversation-id",
         "conversation_capability_mismatch",
         "--employee-id",
-        "ai-product-manager",
+        "runtime-test-worker",
         "--input",
         "创建一个文件",
         env={

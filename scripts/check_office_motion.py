@@ -27,7 +27,7 @@ assert 'section(title: "用量概览", subtitle: hasData ? "最近 7 天的模�
 )
 for removed_copy in ["当前工作", "进行中的工作", "需要你处理", "正在推进"]:
     assert removed_copy not in text, f"office must not render work status copy: {removed_copy}"
-assert "OfficeSnapshot.EmployeeItem(id: \"alex\"" not in snapshot and "demo-running" not in snapshot, (
+assert "demo-running" not in snapshot, (
     "usage-only Office demos must not retain obsolete employee or work fixtures"
 )
 assert "USAGE_PRICING_VERSION" in runtime and '"pricing_version": USAGE_PRICING_VERSION' in runtime, (

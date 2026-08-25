@@ -16,8 +16,12 @@ runtime = source("runtime/rust-core/src/main.rs")
 archive = source("apps/macos/AIEmployee/Sources/AIEmployee/Views/Archive/ArchiveWorkspaceView.swift")
 
 assert 'item.role == "user"' in view and 'item.role == "agent"' in view
-assert 'item.kind == "approval"' in view and 'case "handoff"' in view
+assert '["approval", "permission"].contains(item.kind)' in view and 'case "handoff"' in view
 assert 'Button("允许一次")' in view and 'Button("拒绝")' in view
+assert 'Text("目标：\\(resource)")' in view and 'Text("影响：\\(impact)")' in view
+assert 'Label("操作详情不可用，暂不能授权"' in view
+assert 'item.resource != nil' in view and 'item.impact != nil' in view
+assert 'case "permission": "等待你的授权"' in view
 assert 'Text("任务进度")' in view
 assert "CreamAvatar(" in view and "CreamProgressBar(" in view
 assert "struct CreamAvatar" in controls and "struct CreamProgressBar" in controls
@@ -30,8 +34,10 @@ assert "CreamTimelineLayout(" in view and "CreamTimelineMarkdownBody(" in view
 assert "proposal.threadID == thread.id" in view and 'Button("确认执行"' in view
 assert 'Text(candidateAssignments.isEmpty ? "参与员工" : "拟参与员工")' in view
 assert 'Button("重新生成方案", action: store.regenerateProposal)' in view
-assert 'Text("正在匹配员工…")' in view
-assert 'Text("方案匹配")' in view
+assert 'proposalLoadingCard("正在匹配员工…")' in view
+assert 'Text("执行顺序")' in view
+assert 'Text("最终交付")' in view and 'Text("整体验收标准")' in view
+assert 'assignment.dependsOn.joined' in view and 'assignment.acceptanceCriteria' in view
 assert 'proposal.candidateAssignments(employees: employeeStore.employees)' in view
 assert 'thread.room.participants.isEmpty ? "尚未匹配员工"' in view
 assert 'private func inspectorCandidateAssignments(for thread: TaskThreadProjection)' in view
@@ -39,7 +45,7 @@ assert 'case .review(let proposal) where proposal.threadID == thread.id:' in vie
 assert 'ForEach(candidateAssignments)' in view
 assert 'title: "待确认"' in view and "CreamStatusLabel(" in view
 assert 'private var proposalStateAllowsRoomInput: Bool' in view
-assert 'case .recoverable, .failed, .restoring, .generating:' in view
+assert 'case .recoverable, .failed, .restoring, .generating, .starting:' in view
 assert 'case .idle, .review:' in view
 assert 'isInputEnabled: canSendMessage(thread)' in view
 assert 'isActionEnabled: canSubmit(thread)' in view
@@ -54,8 +60,12 @@ assert 'inspectorSection("Workspace")' not in view
 assert 'NSWorkspace.shared.activateFileViewerSelecting' in view
 assert "ConversationStore" not in view
 assert "struct TaskRoomTimelineItem" in model and "let agentID: String?" in model
+assert "let resource: String?" in model and "let impact: String?" in model
 assert 'Some("task-thread-timeline")' in runtime
 assert '"agent",\n                "agent_update"' in runtime and '"system",\n                "handoff"' in runtime
 assert "task_room_timeline_projection" in runtime
+assert 'else if status == "blocked"' in runtime and '"permission"' in runtime
+assert "fn action_approval_details(" in runtime
+assert 'item["resource"] = json!(resource)' in runtime and 'item["impact"] = json!(impact)' in runtime
 
 print("task room UI checks: ok")

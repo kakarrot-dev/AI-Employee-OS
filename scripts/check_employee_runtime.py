@@ -37,23 +37,7 @@ with tempfile.TemporaryDirectory() as directory:
     database = Path(directory) / "runtime.db"
     listed = run(database, "employees-list", "--repository-root", str(ROOT))
     employees_by_id = {item["id"]: item for item in listed["employees"]}
-    assert set(employees_by_id) == {
-        "ai-product-manager",
-        "data-researcher",
-        "document-writer",
-    }
-    alex = employees_by_id["ai-product-manager"]
-    assert "把模糊需求转化为可执行的产品方案" in alex["base_prompt"]
-    assert alex["soul"]
-    assert "mission" not in alex
-    assert "responsibilities" not in alex
-    assert "boundaries" not in alex
-
-    alex_prompt = run(database, "effective-prompt", "--employee-id", "ai-product-manager")
-    assert "把模糊需求转化为可执行的产品方案" in alex_prompt["prompt"]
-    assert "用户价值优先" in alex_prompt["prompt"]
-    assert "使命：" not in alex_prompt["prompt"]
-    assert "<instructions>" not in alex_prompt["prompt"]
+    assert set(employees_by_id) == {"data-researcher", "document-writer"}
 
     caps = run(database, "capabilities", "--repository-root", str(ROOT))
     assert caps["skills_installed"] == 2
@@ -76,18 +60,6 @@ with tempfile.TemporaryDirectory() as directory:
     assert reach["actions"][0]["required_permissions"] == ["network.search"]
     assert "data_sources" in reach
 
-    alex_skills = {
-        item["id"]
-        for item in run(
-            database,
-            "skills-list",
-            "--repository-root",
-            str(ROOT),
-            "--agent-id",
-            "ai-product-manager",
-        )["skills"]
-    }
-    assert alex_skills == {"local-file-operations", "web-search"}
     specialist_expectations = {
         "data-researcher": ("web-search", "只使用网络搜索能力", "来源可追溯"),
         "document-writer": ("local-file-operations", "只使用本地文件操作能力", "忠实高于扩写"),
@@ -109,30 +81,59 @@ with tempfile.TemporaryDirectory() as directory:
         assert identity_fragment in specialist["base_prompt"]
         assert any(soul_fragment in item for item in specialist["soul"])
 
+    generalist = {
+        "schema_version": "1.0",
+        "id": "generalist",
+        "name": "通用员工",
+        "role": "通用执行者",
+        "department": "测试",
+        "soul": ["忠实执行"],
+        "persona": {
+            "communication": {"style": "concise"},
+            "thinking": {"approach": "evidence_first"},
+            "decision": {"priorities": ["accuracy"]},
+            "habit": {"output_format": "markdown"},
+        },
+        "base_prompt": "按已绑定 Skill 工作。",
+        "status": "active",
+        "config_version": 1,
+    }
+    run(database, "employee-save", "--payload", json.dumps(generalist, ensure_ascii=False))
+    for skill_id in ("local-file-operations", "web-search"):
+        run(
+            database,
+            "bind-skill",
+            "--agent-id",
+            "generalist",
+            "--skill-id",
+            skill_id,
+            "--skill-version",
+            "1.0.0",
+        )
     unbound = run(
         database,
         "unbind-skill",
         "--agent-id",
-        "ai-product-manager",
+        "generalist",
         "--skill-id",
         "web-search",
     )
     assert unbound["unbound"] is True
-    alex_skills_after = {
+    generalist_skills_after = {
         item["id"]
         for item in run(
             database,
             "skills-list",
             "--agent-id",
-            "ai-product-manager",
+            "generalist",
         )["skills"]
     }
-    assert "web-search" not in alex_skills_after
+    assert "web-search" not in generalist_skills_after
     rebound = run(
         database,
         "bind-skill",
         "--agent-id",
-        "ai-product-manager",
+        "generalist",
         "--skill-id",
         "web-search",
         "--skill-version",
@@ -328,27 +329,27 @@ with tempfile.TemporaryDirectory() as directory:
         ).fetchone() == (None,)
         assert connection.execute("SELECT count(*) FROM conversations WHERE agent_id='content-operator'").fetchone() == (0,)
 
-    deleted = run(database, "employee-delete", "--employee-id", "ai-product-manager")
+    deleted = run(database, "employee-delete", "--employee-id", "data-researcher")
     assert deleted["disposition"] == "deleted"
     after_delete = run(database, "employees-list", "--repository-root", str(ROOT))
-    assert all(item["id"] != "ai-product-manager" for item in after_delete["employees"])
+    assert all(item["id"] != "data-researcher" for item in after_delete["employees"])
     with sqlite3.connect(database) as connection:
         flag = connection.execute(
-            "SELECT value FROM runtime_flags WHERE key='default_agent_dismissed'"
+            "SELECT value FROM runtime_flags WHERE key='builtin_agent_dismissed:data-researcher'"
         ).fetchone()
         assert flag == ("1",)
 
 with tempfile.TemporaryDirectory() as directory:
     database = Path(directory) / "runtime-disabled.db"
     listed = run(database, "employees-list", "--repository-root", str(ROOT))
-    assert any(item["id"] == "ai-product-manager" for item in listed["employees"])
+    assert any(item["id"] == "document-writer" for item in listed["employees"])
     with sqlite3.connect(database) as connection:
         connection.execute(
-            "UPDATE agents SET status='disabled' WHERE id='ai-product-manager'"
+            "UPDATE agents SET status='disabled' WHERE id='document-writer'"
         )
         connection.commit()
     listed_after = run(database, "employees-list", "--repository-root", str(ROOT))
-    alex = next(item for item in listed_after["employees"] if item["id"] == "ai-product-manager")
-    assert alex["status"] == "disabled"
+    writer = next(item for item in listed_after["employees"] if item["id"] == "document-writer")
+    assert writer["status"] == "disabled"
 
 print("employee runtime checks: ok")

@@ -154,7 +154,10 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-business-flow-") as directo
             "AI_EMPLOYEE_MCPORTER_PATH": str(fake_mcporter),
             "AI_EMPLOYEE_FAKE_DECISION": json.dumps({
                 "schema_version": "1.0.0", "type": "complete",
-                "output": {"summary": "研究完成", "sources": ["https://example.com/evidence"]},
+                "output": {
+                    "answer": "研究完成",
+                    "sources": [{"title": "Research evidence", "url": "https://example.com/evidence"}],
+                },
                 "deliverable_candidates": [], "evidence_refs": ["https://example.com/evidence"],
             }),
         },
@@ -219,14 +222,33 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-business-flow-") as directo
     assert writing_done["status"] == "succeeded"
     assert "example.com/evidence" in (output / "release.md").read_text()
 
-    final = run(
+    final_waiting = run(
         "business-flow-continue", *common, "--flow-id", "flow-multi",
         env={"AI_EMPLOYEE_FAKE_DECISION": json.dumps({
-            "schema_version": "1.0.0", "type": "complete",
-            "output": {"summary": "最终交付已验证"},
-            "deliverable_candidates": [], "evidence_refs": [],
+            "schema_version": "1.0.0", "type": "tool_call", "skill_id": "web-search",
+            "tool_id": "agent-reach-tool", "action": "search_web",
+            "arguments": {"query": "verify final release", "num_results": 1},
+            "rationale_summary": "verify final delivery",
         })},
     )
+    assert final_waiting["run"]["phase"] == "waiting_approval"
+    final_run = run(
+        "continue-run", *common, "--run-id", final_waiting["run"]["run_id"],
+        "--authorized-root", str(output), "--approve",
+        env={
+            "AI_EMPLOYEE_MCPORTER_PATH": str(fake_mcporter),
+            "AI_EMPLOYEE_FAKE_DECISION": json.dumps({
+                "schema_version": "1.0.0", "type": "complete",
+                "output": {
+                    "answer": "最终交付已验证",
+                    "sources": [{"title": "Research evidence", "url": "https://example.com/evidence"}],
+                },
+                "deliverable_candidates": [], "evidence_refs": ["https://example.com/evidence"],
+            }),
+        },
+    )
+    assert final_run["status"] == "succeeded"
+    final = run("business-flow-status", "--database", str(database), "--flow-id", "flow-multi")
     assert final["status"] == "succeeded" and final["root_deliverable_id"]
 
     with sqlite3.connect(database) as connection:

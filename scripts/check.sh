@@ -40,3 +40,26 @@ swiftc \
   apps/macos/AIEmployee/Tests/ClientModelChecks.swift \
   -o "$CLIENT_CHECK_BINARY"
 "$CLIENT_CHECK_BINARY"
+
+TASK_STORE_CHECK_BINARY="${TMPDIR:-/tmp}/ai-employee-task-store-checks"
+TASK_STORE_CLANG_CACHE="${TMPDIR:-/tmp}/ai-employee-task-store-clang-cache"
+TASK_STORE_SWIFT_CACHE="${TMPDIR:-/tmp}/ai-employee-task-store-swift-cache"
+mkdir -p "$TASK_STORE_CLANG_CACHE" "$TASK_STORE_SWIFT_CACHE"
+CLANG_MODULE_CACHE_PATH="$TASK_STORE_CLANG_CACHE" \
+SWIFT_MODULECACHE_PATH="$TASK_STORE_SWIFT_CACHE" \
+swiftc \
+  apps/macos/AIEmployee/Sources/AIEmployee/Models/TaskRun.swift \
+  apps/macos/AIEmployee/Sources/AIEmployee/Models/Employee.swift \
+  apps/macos/AIEmployee/Sources/AIEmployee/Models/Conversation.swift \
+  apps/macos/AIEmployee/Sources/AIEmployee/Models/OfficeSnapshot.swift \
+  apps/macos/AIEmployee/Sources/AIEmployee/Models/RuntimeCapabilities.swift \
+  apps/macos/AIEmployee/Sources/AIEmployee/Models/Scenario.swift \
+  apps/macos/AIEmployee/Sources/AIEmployee/Models/TaskThread.swift \
+  apps/macos/AIEmployee/Sources/AIEmployee/Models/WorkLibraryDemoData.swift \
+  apps/macos/AIEmployee/Sources/AIEmployee/Models/ModelConfiguration.swift \
+  apps/macos/AIEmployee/Sources/AIEmployee/Models/Knowledge.swift \
+  apps/macos/AIEmployee/Sources/AIEmployee/Services/RuntimeService.swift \
+  apps/macos/AIEmployee/Sources/AIEmployee/Stores/TaskStore.swift \
+  apps/macos/AIEmployee/Tests/TaskProposalRecoveryChecks.swift \
+  -o "$TASK_STORE_CHECK_BINARY"
+"$TASK_STORE_CHECK_BINARY"

@@ -68,10 +68,10 @@ assert "CreamTimelineMarkdownBody(source: displayedContent)" in workspace and ".
 assert '"--stream-events"' in Path(
     "apps/macos/AIEmployee/Sources/AIEmployee/Services/RuntimeService.swift"
 ).read_text(), "chat requests must use the real Runtime streaming protocol"
-assert 'employee?.name ?? "Alex"' not in workspace and 'employee?.role ?? "AI 产品经理"' not in workspace, (
+assert 'employee?.name ?? "默认员工"' not in workspace and 'employee?.role ?? "默认角色"' not in workspace, (
     "missing employee data must not be disguised as the default seed employee"
 )
-assert "交给 Alex 新工作" not in command_palette and "在办公室描述目标，确认员工分工后执行" in command_palette, (
+assert "交给默认员工新工作" not in command_palette and "在办公室描述目标，确认员工分工后执行" in command_palette, (
     "the command palette must route generic work through the unified Office entry"
 )
 assert "查看员工与工作状态" not in command_palette and "交代工作并查看模型用量" in command_palette, (
