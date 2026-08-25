@@ -20,6 +20,8 @@ final class TaskStore: ObservableObject {
     @Published private(set) var isSubmitting = false
     @Published private var approvalRunsInFlight: Set<String> = []
     private var restoredTaskMonitors: [String: Task<Void, Never>] = [:]
+    private var taskThreadMonitors: [String: Task<Void, Never>] = [:]
+    private var flowContinuationTasks: [String: Task<Void, Never>] = [:]
     private var proposalGeneration: UInt = 0
 
     var activeProposal: TaskProposalResponse? {
@@ -85,10 +87,11 @@ final class TaskStore: ObservableObject {
               activeThread?.id == proposal.threadID else { return }
         let threadID = proposal.threadID
         isSubmitting = true
-        let generation = beginProposalOperation(.generating)
+        let generation = beginProposalOperation(.starting)
         Task {
             defer { isSubmitting = false }
             do {
+                monitorTaskThread(threadID)
                 let response = try await service.taskProposalConfirm(proposal.proposalID, proposal.proposalHash)
                 guard canApplyProposalOperation(generation, threadID: threadID) else { return }
                 activeThread = response.thread
@@ -383,6 +386,7 @@ final class TaskStore: ObservableObject {
             let refreshedArchivedThreads = try await archived
             taskThreads = refreshedThreads
             archivedTaskThreads = refreshedArchivedThreads
+            syncTaskThreadMonitors(refreshedThreads)
             guard activeThread?.id == selectedThreadID else { return }
             if let selectedThreadID,
                let refreshedThread = refreshedThreads.first(where: { $0.id == selectedThreadID }) {
@@ -392,6 +396,73 @@ final class TaskStore: ObservableObject {
             }
         } catch {
             logger.error("Could not restore task threads")
+        }
+    }
+
+    private func syncTaskThreadMonitors(_ threads: [TaskThreadProjection]) {
+        let monitorable = Set(threads.filter { thread in
+            thread.archivedAt == nil
+                && thread.execution != nil
+                && !["succeeded", "failed", "cancelled"].contains(thread.status)
+        }.map(\.id))
+        let staleThreadIDs = taskThreadMonitors.keys.filter { !monitorable.contains($0) }
+        for threadID in staleThreadIDs {
+            taskThreadMonitors[threadID]?.cancel()
+            taskThreadMonitors[threadID] = nil
+        }
+        for threadID in monitorable where taskThreadMonitors[threadID] == nil {
+            monitorTaskThread(threadID)
+        }
+    }
+
+    private func monitorTaskThread(_ threadID: String) {
+        guard taskThreadMonitors[threadID] == nil else { return }
+        taskThreadMonitors[threadID] = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                do {
+                    let thread = try await self.service.taskThreadGet(threadID)
+                    self.apply(thread)
+                    if ["succeeded", "failed", "cancelled"].contains(thread.status)
+                        || thread.archivedAt != nil {
+                        break
+                    }
+                    self.continueReadyFlowIfNeeded(thread)
+                } catch {
+                    self.logger.error("Could not refresh task thread progress")
+                }
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            self.taskThreadMonitors[threadID] = nil
+        }
+    }
+
+    private func continueReadyFlowIfNeeded(_ thread: TaskThreadProjection) {
+        guard !isSubmitting,
+              let flow = thread.execution,
+              flow.status == "running",
+              flow.workOrders.contains(where: { $0.status == "ready" }),
+              flowContinuationTasks[flow.id] == nil else { return }
+        flowContinuationTasks[flow.id] = Task { [weak self] in
+            guard let self else { return }
+            defer { self.flowContinuationTasks[flow.id] = nil }
+            do {
+                _ = try await self.service.businessFlowContinue(flow.id, nil)
+            } catch {
+                self.historyError = error.localizedDescription
+                self.logger.error("Could not continue ready business flow")
+            }
+        }
+    }
+
+    private func apply(_ thread: TaskThreadProjection) {
+        if let index = taskThreads.firstIndex(where: { $0.id == thread.id }) {
+            taskThreads[index] = thread
+        } else if thread.archivedAt == nil {
+            taskThreads.append(thread)
+        }
+        if activeThread?.id == thread.id {
+            activeThread = thread
         }
     }
 

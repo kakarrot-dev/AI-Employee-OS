@@ -51,9 +51,9 @@ struct WorkLibraryDemoData {
         let artifactPath = ((try? RuntimeService.authorizedOutputDirectory()) ?? FileManager.default.temporaryDirectory)
             .appending(path: "work-library-information-architecture.md").path
         let messages: [String: [ChatMessage]] = [
-            "ai-product-manager": [
-                .init(id: "work-alex-user", role: "user", content: "重新设计工作库，让每名 AI 员工只有一个持续会话，正式工作也要进入同一条时间线。", createdAt: stamp(14_400)),
-                .init(id: "work-alex-agent", role: "assistant", content: "我会先统一会话与工作记录的关系，再检查 **运行状态、审批和交付物** 是否能在同一页面恢复。", createdAt: stamp(14_220))
+            "001": [
+                .init(id: "work-wukong-user", role: "user", content: "重新设计工作库，让每名 AI 员工只有一个持续会话，正式工作也要进入同一条时间线。", createdAt: stamp(14_400)),
+                .init(id: "work-wukong-agent", role: "assistant", content: "我会先统一会话与工作记录的关系，再检查 **运行状态、审批和交付物** 是否能在同一页面恢复。", createdAt: stamp(14_220))
             ],
             "maya": [
                 .init(id: "work-maya-user", role: "user", content: "帮我整理昨天的 8 份用户访谈，先标出证据不足的结论。", createdAt: stamp(360)),
@@ -67,7 +67,7 @@ struct WorkLibraryDemoData {
 
         let completed = TaskRun(
             id: "demo-work-completed",
-            agentID: "ai-product-manager",
+            agentID: "001",
             input: "输出工作库的信息架构与自适应布局说明",
             createdAt: stamp(10_800),
             status: .succeeded,
@@ -81,7 +81,7 @@ struct WorkLibraryDemoData {
         )
         let running = TaskRun(
             id: "demo-work-running",
-            agentID: "ai-product-manager",
+            agentID: "001",
             input: "完善工作库的会话时间、运行进度与交付物展示",
             createdAt: stamp(160),
             status: .running,
@@ -97,9 +97,9 @@ struct WorkLibraryDemoData {
         return Self(
             messages: messages,
             runs: [running, completed],
-            lastActivity: ["ai-product-manager": stamp(8), "maya": stamp(180), "leo": stamp(259_200)],
+            lastActivity: ["001": stamp(8), "maya": stamp(180), "leo": stamp(259_200)],
             previews: [
-                "ai-product-manager": "正在完善工作库的进度与交付物展示",
+                "001": "正在完善工作库的进度与交付物展示",
                 "maya": "已收到，我会保留原始引文和样本限制",
                 "leo": "需要补充事件定义和去重规则"
             ],
@@ -115,7 +115,7 @@ struct WorkLibraryDemoData {
             - 运行状态和交付物可以恢复
             """],
             messageAttachments: [
-                "work-alex-user": [
+                "work-wukong-user": [
                     .init(name: "现有工作库截图.png", kind: "PNG 图像", size: "428 KB"),
                     .init(name: "工作库需求说明.md", kind: "Markdown", size: "6 KB")
                 ],

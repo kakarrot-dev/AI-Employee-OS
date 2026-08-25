@@ -80,9 +80,11 @@ struct TaskRoomTimelineItem: Codable, Identifiable, Sendable {
     let toolID: String?
     let action: String?
     let artifactURI: String?
+    let resource: String?
+    let impact: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, sequence, role, kind, content, status, action
+        case id, sequence, role, kind, content, status, action, resource, impact
         case createdAt = "created_at"
         case agentID = "agent_id"
         case agentName = "agent_name"
@@ -131,6 +133,7 @@ enum TaskProposalPresentationState: Equatable, Sendable {
     case restoring
     case recoverable(message: String)
     case generating
+    case starting
     case review(TaskProposalResponse)
     case failed(message: String, diagnosticCode: String)
 
@@ -189,17 +192,30 @@ struct TaskProposalResponse: Codable, Equatable, Sendable {
             let employeeSelector: EmployeeSelector
             let goal: String
             let dependsOn: [String]
+            let acceptanceCriteria: [AcceptanceCriterion]
             enum CodingKeys: String, CodingKey {
                 case role, goal
                 case nodeID = "node_id"
                 case employeeSelector = "employee_selector"
                 case dependsOn = "depends_on"
+                case acceptanceCriteria = "acceptance_criteria"
+            }
+        }
+        struct Deliverable: Codable, Equatable, Sendable {
+            let type: String
+            let description: String
+            let targetPath: String?
+            enum CodingKeys: String, CodingKey {
+                case type, description
+                case targetPath = "target_path"
             }
         }
         let intent: String
         let title: String
         let objective: String
+        let deliverable: Deliverable
         let assignments: [Assignment]
+        let acceptanceCriteria: [AcceptanceCriterion]
         let missingInputs: [MissingInput]
         struct MissingInput: Codable, Equatable, Sendable {
             let key: String
@@ -207,7 +223,8 @@ struct TaskProposalResponse: Codable, Equatable, Sendable {
             let required: Bool
         }
         enum CodingKeys: String, CodingKey {
-            case intent, title, objective, assignments
+            case intent, title, objective, deliverable, assignments
+            case acceptanceCriteria = "acceptance_criteria"
             case missingInputs = "missing_inputs"
         }
     }

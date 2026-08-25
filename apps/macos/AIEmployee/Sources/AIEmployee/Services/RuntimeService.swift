@@ -77,6 +77,7 @@ struct RuntimeService: Sendable {
     let unbindSkill: @Sendable (String, String) async throws -> UnbindSkillResponse
     let taskThreadCreate: @Sendable (String, String) async throws -> TaskThreadProjection
     let taskThreadList: @Sendable (Bool) async throws -> [TaskThreadProjection]
+    let taskThreadGet: @Sendable (String) async throws -> TaskThreadProjection
     let taskThreadMessage: @Sendable (String, String) async throws -> TaskThreadProjection
     let taskThreadRetention: @Sendable (String, String) async throws -> TaskThreadRetentionResponse
     let taskProposalGenerate: @Sendable (String, String?) async throws -> TaskProposalResponse
@@ -251,6 +252,11 @@ struct RuntimeService: Sendable {
             var arguments = ["task-thread-list", "--database", try databaseURL().path]
             if archived { arguments.append("--archived") }
             return try await decodeCommand(arguments, as: [TaskThreadProjection].self)
+        }, taskThreadGet: { threadID in
+            try await decodeCommand([
+                "task-thread-get", "--database", try databaseURL().path,
+                "--thread-id", threadID
+            ], as: TaskThreadProjection.self)
         }, taskThreadMessage: { threadID, input in
             try await decodeCommand([
                 "task-thread-message", "--database", try databaseURL().path,
@@ -372,9 +378,11 @@ struct RuntimeService: Sendable {
     }
 
     private static func databaseURL() throws -> URL {
-        let database = try runtimeLayout().database
+        let layout = try runtimeLayout()
+        let database = layout.database
         do {
             try FileManager.default.createDirectory(at: database.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: layout.outputDirectory, withIntermediateDirectories: true)
         } catch {
             throw RuntimeError.storageUnavailable(error.localizedDescription)
         }

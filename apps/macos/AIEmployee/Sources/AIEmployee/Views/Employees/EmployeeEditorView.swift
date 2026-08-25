@@ -191,9 +191,9 @@ struct EmployeeEditorView: View {
                 }
             }
             formGroup {
-                profileField("员工 ID", field: .id, text: $employee.id, prompt: "ai-product-manager").disabled(!isNew)
+                profileField("员工 ID", field: .id, text: $employee.id, prompt: "001").disabled(!isNew)
                 formDivider
-                profileField("姓名", field: .name, text: $employee.name, prompt: "Alex")
+                profileField("姓名", field: .name, text: $employee.name, prompt: "悟空")
                 formDivider
                 profileField("岗位", field: .role, text: $employee.role, prompt: "AI 产品经理")
                 formDivider

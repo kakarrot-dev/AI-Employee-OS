@@ -848,7 +848,7 @@ private struct LiveActionApprovalBar: View {
             Button {
                 expanded.toggle()
             } label: {
-                Label(expanded ? "收起说明" : "为什么需要确认", systemImage: expanded ? "chevron.up" : "chevron.down")
+                Label(expanded ? "收起说明" : detailPrompt, systemImage: expanded ? "chevron.up" : "chevron.down")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(palette.muted)
             }
@@ -860,6 +860,9 @@ private struct LiveActionApprovalBar: View {
                     approvalFact("工具", pendingAction.toolID ?? "未知")
                     approvalFact("动作", pendingAction.action ?? pendingAction.stepID)
                     approvalFact("目标", pendingAction.resource?.isEmpty == false ? pendingAction.resource! : "未提供可展示目标")
+                    if let summary = pendingAction.argumentSummary, !summary.isEmpty {
+                        approvalFact("影响", summary)
+                    }
                     if let rationale = pendingAction.rationaleSummary, !rationale.isEmpty {
                         approvalFact("原因", rationale)
                     }
@@ -897,7 +900,7 @@ private struct LiveActionApprovalBar: View {
             CreamSymbol(systemName: "hand.raised.fill")
                 .foregroundStyle(palette.warning)
             VStack(alignment: .leading, spacing: AppTheme.Spacing.xxs) {
-                Text("\(employeeName) 需要你确认")
+                Text("\(employeeName) \(requiresApproval ? "需要你确认" : "需要一次性授权")")
                     .font(.callout.weight(.semibold))
                 Text(pendingAction.map { TaskPresentation.actionTitle($0.stepID) } ?? "执行待处理的工具操作")
                     .font(.callout)
@@ -919,6 +922,14 @@ private struct LiveActionApprovalBar: View {
                 .buttonStyle(CreamPrimaryButtonStyle())
         }
         .disabled(store.isResolvingApproval(for: run))
+    }
+
+    private var requiresApproval: Bool {
+        run.waitingReason != "permission_required"
+    }
+
+    private var detailPrompt: String {
+        requiresApproval ? "为什么需要确认" : "为什么需要授权"
     }
 
     private var palette: AppTheme.Palette { AppTheme.palette(for: colorScheme) }

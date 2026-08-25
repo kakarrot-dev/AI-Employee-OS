@@ -111,7 +111,9 @@ struct TaskThreadWorkspaceView: View {
                     case .recoverable(let message):
                         proposalRecoveryCard(message: message)
                     case .generating, .restoring:
-                        proposalLoadingCard()
+                        proposalLoadingCard("正在匹配员工…")
+                    case .starting:
+                        proposalLoadingCard("正在启动任务，进度会在这里持续更新…")
                     case .review(let proposal) where proposal.threadID == thread.id:
                         proposalReview(proposal)
                     case .failed(let message, let code):
@@ -145,15 +147,47 @@ struct TaskThreadWorkspaceView: View {
                 Label(item.question, systemImage: "questionmark.circle")
                     .font(AppTheme.Typography.interfaceBody()).foregroundStyle(palette.warning)
             }
-            Text("方案匹配").font(AppTheme.Typography.metadata(weight: .semibold)).foregroundStyle(palette.muted)
-            ForEach(proposal.candidateAssignments(employees: employeeStore.employees)) { candidate in
+            Text("执行顺序").font(AppTheme.Typography.metadata(weight: .semibold)).foregroundStyle(palette.muted)
+            ForEach(Array(proposal.proposal.assignments.enumerated()), id: \.element.nodeID) { index, assignment in
+                let candidate = proposal.candidateAssignments(employees: employeeStore.employees)
+                    .first(where: { $0.id == assignment.nodeID })
                 HStack(spacing: 10) {
-                    CreamAvatar(path: candidate.avatarPath, name: candidate.name, size: 32)
+                    Text("\(index + 1)")
+                        .font(AppTheme.Typography.metadata(weight: .semibold).monospacedDigit())
+                        .foregroundStyle(palette.primary)
+                        .frame(width: 24, height: 24)
+                        .background(palette.primary.opacity(0.10), in: Circle())
+                    CreamAvatar(path: candidate?.avatarPath, name: candidate?.name ?? "待匹配员工", size: 32)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(candidate.name).font(AppTheme.Typography.interfaceBody(weight: .medium)).foregroundStyle(palette.ink)
-                        Text("\(candidate.role) · \(candidate.goal)")
+                        Text(candidate?.name ?? "待匹配员工").font(AppTheme.Typography.interfaceBody(weight: .medium)).foregroundStyle(palette.ink)
+                        Text("\(candidate?.role ?? assignment.role) · \(assignment.goal)")
                             .font(AppTheme.Typography.metadata()).foregroundStyle(palette.muted)
+                        if !assignment.dependsOn.isEmpty {
+                            Text("在 \(assignment.dependsOn.joined(separator: "、")) 完成后开始")
+                                .font(AppTheme.Typography.metadata()).foregroundStyle(palette.muted)
+                        }
+                        ForEach(Array(assignment.acceptanceCriteria.enumerated()), id: \.offset) { _, criterion in
+                            Label(criterion.description, systemImage: "checkmark.circle")
+                                .font(AppTheme.Typography.metadata()).foregroundStyle(palette.body)
+                        }
                     }
+                }
+            }
+            Divider().overlay(palette.hairlineSoft)
+            VStack(alignment: .leading, spacing: 5) {
+                Text("最终交付").font(AppTheme.Typography.metadata(weight: .semibold)).foregroundStyle(palette.muted)
+                Text(proposal.proposal.deliverable.description)
+                    .font(AppTheme.Typography.interfaceBody(weight: .medium)).foregroundStyle(palette.ink)
+                if let targetPath = proposal.proposal.deliverable.targetPath {
+                    Label(targetPath, systemImage: "folder")
+                        .font(AppTheme.Typography.metadata()).foregroundStyle(palette.body)
+                }
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                Text("整体验收标准").font(AppTheme.Typography.metadata(weight: .semibold)).foregroundStyle(palette.muted)
+                ForEach(Array(proposal.proposal.acceptanceCriteria.enumerated()), id: \.offset) { _, criterion in
+                    Label(criterion.description, systemImage: criterion.required ? "checkmark.seal" : "circle.dashed")
+                        .font(AppTheme.Typography.interfaceBody()).foregroundStyle(palette.body)
                 }
             }
         }
@@ -194,10 +228,10 @@ struct TaskThreadWorkspaceView: View {
         .overlay { RoundedRectangle(cornerRadius: AppTheme.Radius.lg).stroke(palette.hairlineSoft) }
     }
 
-    private func proposalLoadingCard() -> some View {
+    private func proposalLoadingCard(_ message: String) -> some View {
         HStack(spacing: 10) {
             ProgressView().controlSize(.small)
-            Text("正在匹配员工…").font(AppTheme.Typography.interfaceBody(weight: .medium)).foregroundStyle(palette.body)
+            Text(message).font(AppTheme.Typography.interfaceBody(weight: .medium)).foregroundStyle(palette.body)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -258,7 +292,7 @@ struct TaskThreadWorkspaceView: View {
                 CreamTimelineMarkdownBody(source: item.content)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-        } else if ["approval", "handoff", "deliverable", "activity"].contains(item.kind) {
+        } else if ["approval", "permission", "handoff", "deliverable", "activity"].contains(item.kind) {
             runtimeCard(item, thread: thread)
         } else {
             HStack {
@@ -282,7 +316,26 @@ struct TaskThreadWorkspaceView: View {
                     .foregroundStyle(palette.body)
                     .lineSpacing(4)
                     .textSelection(.enabled)
-                if item.kind == "approval", item.status == "pending",
+                if ["approval", "permission"].contains(item.kind),
+                   ["pending", "blocked"].contains(item.status ?? "") {
+                    if let resource = item.resource, let impact = item.impact {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("目标：\(resource)")
+                            Text("影响：\(impact)")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(palette.muted)
+                        .textSelection(.enabled)
+                    } else {
+                        Label("操作详情不可用，暂不能授权", systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(palette.warning)
+                    }
+                }
+                if ["approval", "permission"].contains(item.kind),
+                   ["pending", "blocked"].contains(item.status ?? ""),
+                   item.resource != nil,
+                   item.impact != nil,
                    let execution = thread.execution,
                    let work = execution.workOrders.first(where: { $0.actionID == item.actionID }) {
                     HStack(spacing: 8) {
@@ -350,7 +403,7 @@ struct TaskThreadWorkspaceView: View {
 
     private var proposalStateAllowsRoomInput: Bool {
         switch store.proposalState {
-        case .recoverable, .failed, .restoring, .generating:
+        case .recoverable, .failed, .restoring, .generating, .starting:
             return false
         case .idle, .review:
             return true
@@ -450,6 +503,7 @@ struct TaskThreadWorkspaceView: View {
     private func cardTitle(_ item: TaskRoomTimelineItem) -> String {
         switch item.kind {
         case "approval": item.status == "pending" ? "等待你的批准" : "操作审批 · \(statusLabel(item.status ?? ""))"
+        case "permission": "等待你的授权"
         case "handoff": "员工交接 · \(statusLabel(item.status ?? ""))"
         case "deliverable": "最终交付"
         default: item.agentName.map { "\($0) 正在执行" } ?? "执行进展"
@@ -457,9 +511,9 @@ struct TaskThreadWorkspaceView: View {
     }
 
     private func cardContent(_ item: TaskRoomTimelineItem) -> String {
-        guard item.kind == "approval", let action = item.action else { return userFacingSystemContent(item.content) }
+        guard ["approval", "permission"].contains(item.kind), let action = item.action else { return userFacingSystemContent(item.content) }
         let actionName = ["search_web": "搜索网页", "create_file": "创建文件", "edit_file": "编辑文件", "read_file": "读取文件"][action] ?? action
-        return item.status == "pending" ? "\(item.agentName ?? "员工") 请求执行：\(actionName)" : "\(actionName) · \(statusLabel(item.status ?? ""))"
+        return ["pending", "blocked"].contains(item.status ?? "") ? "\(item.agentName ?? "员工") 请求执行：\(actionName)" : "\(actionName) · \(statusLabel(item.status ?? ""))"
     }
 
     private func userFacingSystemContent(_ content: String) -> String {
@@ -493,7 +547,7 @@ struct TaskThreadWorkspaceView: View {
     }
 
     private func systemIcon(_ kind: String) -> String {
-        ["approval": "checkmark.shield", "handoff": "arrow.right.arrow.left", "deliverable": "doc.badge.checkmark", "activity": "gearshape.2", "proposal": "list.bullet.clipboard", "error": "exclamationmark.triangle"][kind] ?? "checkmark.circle"
+        ["approval": "checkmark.shield", "permission": "key.horizontal", "handoff": "arrow.right.arrow.left", "deliverable": "doc.badge.checkmark", "activity": "gearshape.2", "proposal": "list.bullet.clipboard", "error": "exclamationmark.triangle"][kind] ?? "checkmark.circle"
     }
 
     private func statusLabel(_ status: String) -> String {

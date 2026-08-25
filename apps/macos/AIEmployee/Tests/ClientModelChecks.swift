@@ -27,8 +27,8 @@ enum ClientModelChecks {
             "Markdown document structure"
         )
         expect(
-            MarkdownBlock.parse("| 名称 | 状态 |\n| --- | :---: |\n| Alex | 工作中 |") == [
-                .table(headers: ["名称", "状态"], rows: [["Alex", "工作中"]])
+            MarkdownBlock.parse("| 名称 | 状态 |\n| --- | :---: |\n| 悟空 | 工作中 |") == [
+                .table(headers: ["名称", "状态"], rows: [["悟空", "工作中"]])
             ],
             "Markdown table structure"
         )
@@ -51,7 +51,7 @@ enum ClientModelChecks {
         )
         let blocked = TaskRun(
             id: "task-1",
-            agentID: "ai-product-manager",
+            agentID: "001",
             input: "生成 PRD",
             createdAt: "2026-08-05T00:00:00Z",
             status: .running,
@@ -69,7 +69,7 @@ enum ClientModelChecks {
         )
         let employee = Employee.draft()
         expect(employee.schemaVersion == "1.0" && employee.status == "active", "employee draft uses canonical defaults")
-        expect(employee.persona.thinking.approach == "user_value_first", "persona defaults match Alex package")
+        expect(employee.persona.thinking.approach == "user_value_first", "persona defaults match 悟空 package")
         let encoded = try! JSONEncoder().encode(employee)
         expect((try? JSONDecoder().decode(Employee.self, from: encoded))?.basePrompt == employee.basePrompt, "employee contract round trip")
         let draftErrors = EmployeeDraftValidation.errors(employee: employee, soulPrompt: "")
@@ -81,10 +81,10 @@ enum ClientModelChecks {
         validEmployee.department = "研究部"
         expect(EmployeeDraftValidation.errors(employee: validEmployee, soulPrompt: "以证据为先").isEmpty, "employee draft validation accepts a complete profile")
         let chatSend = """
-        {"schema_version":"1.0","conversation_id":"c1","employee_id":"ai-product-manager","config_version":2,"message":{"id":"m1","role":"assistant","content":"你好","created_at":"2026-08-05T00:00:00Z"}}
+        {"schema_version":"1.0","conversation_id":"c1","employee_id":"001","config_version":2,"message":{"id":"m1","role":"assistant","content":"你好","created_at":"2026-08-05T00:00:00Z"}}
         """.data(using: .utf8)!
         let decodedSend = try! JSONDecoder().decode(ChatSendResponse.self, from: chatSend)
-        expect(decodedSend.employeeID == "ai-product-manager" && decodedSend.configVersion == 2, "chat-send response includes employee and config version")
+        expect(decodedSend.employeeID == "001" && decodedSend.configVersion == 2, "chat-send response includes employee and config version")
         expect(TaskPresentation.time("1785982643508") != "1785982643508", "conversation time accepts Runtime millisecond timestamps")
         expect(
             TaskPresentation.time("2026-08-06T02:54:20.944Z") != "2026-08-06T02:54:20.944Z",
@@ -188,11 +188,11 @@ enum ClientModelChecks {
         )
         expect(regularSettings.presentation == .split && regularSettings.primaryWidth >= 480, "settings shares the regular browser contract")
 
-        var alex = Employee.draft()
-        alex.id = "ai-product-manager"
-        alex.name = "Alex"
-        alex.role = "AI 产品经理"
-        alex.department = "产品部"
+        var wukong = Employee.draft()
+        wukong.id = "001"
+        wukong.name = "悟空"
+        wukong.role = "AI 产品经理"
+        wukong.department = "产品部"
         var maya = Employee.draft()
         maya.id = "maya"
         maya.name = "Maya"
@@ -216,7 +216,7 @@ enum ClientModelChecks {
         )
         let verifiedDelivery = TaskRun(
             id: "task-verified",
-            agentID: "ai-product-manager",
+            agentID: "001",
             input: "写 PRD",
             createdAt: "2026-08-05T11:00:00Z",
             status: .succeeded,
@@ -232,7 +232,7 @@ enum ClientModelChecks {
         )
         let ignored = TaskRun(
             id: "task-empty",
-            agentID: "ai-product-manager",
+            agentID: "001",
             input: "无交付",
             createdAt: "2026-08-05T12:00:00Z",
             status: .succeeded,
@@ -245,7 +245,7 @@ enum ClientModelChecks {
             isCancellationRequested: false
         )
         let office = OfficeSnapshot.live(
-            employees: [alex, maya],
+            employees: [wukong, maya],
             runs: [titledDelivery, verifiedDelivery, ignored],
             isLoading: false,
             runtimeMessage: nil,
@@ -267,7 +267,7 @@ enum ClientModelChecks {
             "title-only delivery uses deliverable title and agent name"
         )
         expect(
-            office.deliveries.contains { $0.title == "产品需求文档" && $0.employeeName == "Alex" && $0.artifactName == "prd.md" },
+            office.deliveries.contains { $0.title == "产品需求文档" && $0.employeeName == "悟空" && $0.artifactName == "prd.md" },
             "verified artifact path wins for delivery filename"
         )
         expect(verifiedDelivery.hasPersistentDeliverable, "verified delivery remains in the conversation timeline")
@@ -288,7 +288,7 @@ enum ClientModelChecks {
             isCancellationRequested: false
         )
         let officeWithRunningWork = OfficeSnapshot.live(
-            employees: [alex, maya],
+            employees: [wukong, maya],
             runs: [runningWork],
             isLoading: false,
             runtimeMessage: nil
@@ -333,39 +333,43 @@ enum ClientModelChecks {
             requiresConfirmation: true,
             resolvedAssignments: [
                 .init(nodeID: "research", agentID: "missing-researcher", skillIDs: ["web-search"]),
-                .init(nodeID: "plan", agentID: "ai-product-manager", skillIDs: ["prd-generation"]),
+                .init(nodeID: "plan", agentID: "001", skillIDs: ["prd-generation"]),
             ],
             proposal: .init(
                 intent: "work",
                 title: "产品调研",
                 objective: "完成调研并形成方案",
+                deliverable: .init(type: "markdown_document", description: "调研方案", targetPath: "research.md"),
                 assignments: [
                     .init(
                         nodeID: "research",
                         role: "researcher",
                         employeeSelector: .init(preferredID: nil, capabilities: ["web.search"]),
                         goal: "收集证据",
-                        dependsOn: []
+                        dependsOn: [],
+                        acceptanceCriteria: [.init(criterionID: "sources", description: "包含来源", evidenceType: "structured_output", required: true)]
                     ),
                     .init(
                         nodeID: "plan",
                         role: "planner",
-                        employeeSelector: .init(preferredID: "ai-product-manager", capabilities: ["product.plan"]),
+                        employeeSelector: .init(preferredID: "001", capabilities: ["product.plan"]),
                         goal: "形成方案",
-                        dependsOn: ["research"]
+                        dependsOn: ["research"],
+                        acceptanceCriteria: [.init(criterionID: "plan", description: "形成方案", evidenceType: "structured_output", required: true)]
                     ),
                 ],
+                acceptanceCriteria: [.init(criterionID: "complete", description: "完成调研方案", evidenceType: "evaluation", required: true)],
                 missingInputs: []
             )
         )
-        let candidates = candidateProposal.candidateAssignments(employees: [alex])
+        let candidates = candidateProposal.candidateAssignments(employees: [wukong])
         expect(
             candidates.map(\.id) == ["research", "plan"],
             "proposal candidate assignments preserve proposal order"
         )
         expect(
-            candidates.last?.agentID == "ai-product-manager"
-                && candidates.last?.name == "Alex"
+            candidates.last?.agentID == "001"
+                && candidates.last?.name == "悟空"
                 && candidates.last?.role == "AI 产品经理",
             "proposal candidate assignments join resolved agent identity to employee profiles"
         )

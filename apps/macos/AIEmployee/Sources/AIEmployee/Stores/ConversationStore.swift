@@ -36,8 +36,8 @@ final class ConversationStore: ObservableObject {
             }
             .store(in: &cancellables)
         if let demo = WorkLibraryDemoData.current {
-            employeeID = "ai-product-manager"
-            employeeName = "Alex"
+            employeeID = "001"
+            employeeName = "悟空"
             messages = demo.messages[employeeID] ?? []
             lastActivityByEmployee = demo.lastActivity
             latestPreviewByEmployee = demo.previews

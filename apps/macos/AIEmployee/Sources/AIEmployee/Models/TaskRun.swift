@@ -43,6 +43,7 @@ struct GraphNodeEvidence: Codable, Identifiable, Sendable {
     let toolID: String?
     let action: String?
     let resource: String?
+    let argumentSummary: String?
     let rationaleSummary: String?
 
     var id: String { actionID }
@@ -55,6 +56,7 @@ struct GraphNodeEvidence: Codable, Identifiable, Sendable {
         toolID: String? = nil,
         action: String? = nil,
         resource: String? = nil,
+        argumentSummary: String? = nil,
         rationaleSummary: String? = nil
     ) {
         self.stepID = stepID
@@ -64,6 +66,7 @@ struct GraphNodeEvidence: Codable, Identifiable, Sendable {
         self.toolID = toolID
         self.action = action
         self.resource = resource
+        self.argumentSummary = argumentSummary
         self.rationaleSummary = rationaleSummary
     }
 
@@ -74,6 +77,7 @@ struct GraphNodeEvidence: Codable, Identifiable, Sendable {
         case outputAs = "output_as"
         case toolID = "tool_id"
         case action, resource
+        case argumentSummary = "argument_summary"
         case rationaleSummary = "rationale_summary"
     }
 }
