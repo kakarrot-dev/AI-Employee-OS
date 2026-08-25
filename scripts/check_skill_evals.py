@@ -73,7 +73,10 @@ def main() -> None:
                     skill_id,
                     "--input-json",
                     json.dumps(case.input, ensure_ascii=False),
-                    env={"AI_EMPLOYEE_FAKE_DECISION": json.dumps(decision, ensure_ascii=False)},
+                    env={
+                        "AI_EMPLOYEE_FAKE_DECISION": json.dumps(decision, ensure_ascii=False),
+                        "AI_EMPLOYEE_MCPORTER_PATH": str(BINARY),
+                    },
                 )
                 assert requested["phase"] == "waiting_approval"
                 with sqlite3.connect(database) as connection:

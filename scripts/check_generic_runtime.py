@@ -154,6 +154,7 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-generic-") as directory:
         "查找 Rust 官方文档",
         env={
             "DEEPSEEK_API_KEY": "test",
+            "AI_EMPLOYEE_MCPORTER_PATH": str(fake_mcporter),
             "AI_EMPLOYEE_FAKE_INTENT": '{"intent":"task","confidence":0.99,"skill_id":"web-search"}',
             "AI_EMPLOYEE_FAKE_DECISION": '{"schema_version":"1.0.0","type":"tool_call","skill_id":"web-search","tool_id":"agent-reach-tool","action":"search_web","arguments":{"query":"Rust 官方文档","num_results":1},"rationale_summary":"search"}',
         },
@@ -202,6 +203,7 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-generic-") as directory:
         "先搜索资料，再生成本地 Markdown 文档",
         env={
             "DEEPSEEK_API_KEY": "test",
+            "AI_EMPLOYEE_MCPORTER_PATH": str(fake_mcporter),
             "AI_EMPLOYEE_FAKE_INTENT": '{"intent":"task","confidence":0.99}',
             "AI_EMPLOYEE_FAKE_DECISION": '{"schema_version":"1.0.0","type":"tool_call","skill_id":"web-search","tool_id":"agent-reach-tool","action":"search_web","arguments":{"query":"AI employee","num_results":1},"rationale_summary":"search evidence"}',
         },
@@ -261,6 +263,7 @@ with tempfile.TemporaryDirectory(prefix="ai-employee-generic-") as directory:
         "先搜索资料，再生成本地 Markdown 文档",
         env={
             "DEEPSEEK_API_KEY": "test",
+            "AI_EMPLOYEE_MCPORTER_PATH": str(fake_mcporter),
             "AI_EMPLOYEE_FAKE_INTENT": '{"intent":"task","confidence":0.99}',
             "AI_EMPLOYEE_FAKE_DECISION": '{"schema_version":"1.0.0","type":"tool_call","skill_id":"web-search","tool_id":"agent-reach-tool","action":"search_web","arguments":{"query":"AI employee","num_results":1},"rationale_summary":"first search"}',
         },

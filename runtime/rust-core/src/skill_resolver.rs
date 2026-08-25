@@ -9,6 +9,18 @@ pub struct SkillReadiness {
 }
 
 pub fn readiness(connection: &Connection, agent_id: &str) -> Result<Vec<SkillReadiness>, String> {
+    readiness_with_tool_probe(
+        connection,
+        agent_id,
+        crate::runtime_dependency::tool_available,
+    )
+}
+
+pub fn readiness_with_tool_probe(
+    connection: &Connection,
+    agent_id: &str,
+    tool_available: impl Fn(&str) -> bool,
+) -> Result<Vec<SkillReadiness>, String> {
     let agent_status: String = connection
         .query_row("SELECT status FROM agents WHERE id=?1", [agent_id], |row| {
             row.get(0)
@@ -35,17 +47,25 @@ pub fn readiness(connection: &Connection, agent_id: &str) -> Result<Vec<SkillRea
             if manifest["schema_version"] != "2.0.0" {
                 reasons.push("runtime_incompatible".to_owned());
             }
-            for tool in manifest["skill"]["tools"].as_array().into_iter().flatten() {
-                let tool_id = tool["id"].as_str().unwrap_or_default();
-                let installed: bool = connection
-                    .query_row(
-                        "SELECT EXISTS(SELECT 1 FROM tools WHERE id=?1 AND status='active')",
-                        [tool_id],
-                        |r| r.get(0),
-                    )
-                    .unwrap_or(false);
-                if !installed {
-                    reasons.push(format!("tool_missing:{tool_id}"));
+            if agent_status == "active"
+                && enabled == Some(1)
+                && status == "active"
+                && manifest["schema_version"] == "2.0.0"
+            {
+                for tool in manifest["skill"]["tools"].as_array().into_iter().flatten() {
+                    let tool_id = tool["id"].as_str().unwrap_or_default();
+                    let installed: bool = connection
+                        .query_row(
+                            "SELECT EXISTS(SELECT 1 FROM tools WHERE id=?1 AND status='active')",
+                            [tool_id],
+                            |r| r.get(0),
+                        )
+                        .unwrap_or(false);
+                    if !installed {
+                        reasons.push(format!("tool_missing:{tool_id}"));
+                    } else if !tool_available(tool_id) {
+                        reasons.push(format!("tool_unavailable:{tool_id}"));
+                    }
                 }
             }
             let readiness = if reasons.is_empty() {
@@ -102,20 +122,69 @@ pub fn resolve(connection: &Connection, agent_id: &str, input: &str) -> Result<S
 }
 
 pub fn ready_skill_ids(connection: &Connection, agent_id: &str) -> Result<Vec<String>, String> {
-    Ok(readiness(connection, agent_id)?
-        .into_iter()
-        .filter(|item| item.readiness == "ready")
-        .map(|item| item.skill_id)
-        .collect())
+    ready_skill_ids_with_tool_probe(
+        connection,
+        agent_id,
+        crate::runtime_dependency::tool_available,
+    )
+}
+
+pub fn ready_skill_ids_with_tool_probe(
+    connection: &Connection,
+    agent_id: &str,
+    tool_available: impl Fn(&str) -> bool,
+) -> Result<Vec<String>, String> {
+    Ok(
+        readiness_with_tool_probe(connection, agent_id, tool_available)?
+            .into_iter()
+            .filter(|item| item.readiness == "ready")
+            .map(|item| item.skill_id)
+            .collect(),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn capability_fixture() -> Connection {
+        let mut connection = Connection::open_in_memory().unwrap();
+        crate::storage::migrate(&mut connection).unwrap();
+        connection
+            .execute_batch(
+                "INSERT INTO agents VALUES ('researcher','Researcher','Researcher','test','active','t','t');
+                 INSERT INTO tools VALUES ('agent-reach-tool','Agent Reach','native','1.0.0','{}','active','t','t');
+                 INSERT INTO skills VALUES (
+                   'web-search','Web Search','1.0.0',
+                   '{\"schema_version\":\"2.0.0\",\"skill\":{\"tools\":[{\"id\":\"agent-reach-tool\"}]}}',
+                   'test','active','t','t'
+                 );
+                 INSERT INTO agent_skills VALUES ('researcher','web-search',1,'t');",
+            )
+            .unwrap();
+        connection
+    }
+
     #[test]
     fn no_candidate_is_explicit() {
         let mut c = Connection::open_in_memory().unwrap();
         crate::storage::migrate(&mut c).unwrap();
         assert_eq!(readiness(&c, "missing").unwrap_err(), "agent_unavailable");
+    }
+
+    #[test]
+    fn runtime_tool_dependency_controls_skill_readiness() {
+        let connection = capability_fixture();
+
+        let unavailable = readiness_with_tool_probe(&connection, "researcher", |_| false).unwrap();
+        assert_eq!(unavailable[0].readiness, "missing_dependency");
+        assert_eq!(
+            unavailable[0].reasons,
+            vec!["tool_unavailable:agent-reach-tool"]
+        );
+
+        let ready = readiness_with_tool_probe(&connection, "researcher", |_| true).unwrap();
+        assert_eq!(ready[0].readiness, "ready");
+        assert!(ready[0].reasons.is_empty());
     }
 }

@@ -35,7 +35,15 @@ use ai_employee_runtime::run::{
     run_prepared_agent_task, run_skill as execute_skill,
 };
 use ai_employee_runtime::skill_package::install_skill_package;
-use ai_employee_runtime::skill_resolver::readiness as skill_readiness;
+use ai_employee_runtime::skill_resolver::SkillReadiness;
+#[cfg(not(test))]
+use ai_employee_runtime::skill_resolver::{
+    readiness as runtime_skill_readiness, ready_skill_ids as runtime_ready_skill_ids,
+};
+#[cfg(test)]
+use ai_employee_runtime::skill_resolver::{
+    readiness_with_tool_probe, ready_skill_ids_with_tool_probe,
+};
 use ai_employee_runtime::storage::migrate;
 use ai_employee_runtime::tool_package::install_tool_package;
 use rusqlite::{
@@ -1103,8 +1111,7 @@ fn generate_task_proposal_with_hook(
     let catalog = employees
         .into_iter()
         .filter_map(|(id, name)| {
-            let caps =
-                ai_employee_runtime::skill_resolver::ready_skill_ids(&connection, &id).ok()?;
+            let caps = ready_skill_ids_for_runtime(&connection, &id).ok()?;
             (!caps.is_empty())
                 .then(|| json!({"agent_id":id,"display_name":name,"ready_capabilities":caps}))
         })
@@ -1799,7 +1806,7 @@ fn resolve_task_assignment(
         if preferred.is_some_and(|value| value != id) {
             continue;
         }
-        let ready = ai_employee_runtime::skill_resolver::ready_skill_ids(connection, &id)?;
+        let ready = ready_skill_ids_for_runtime(connection, &id)?;
         if requested
             .iter()
             .all(|capability| ready.contains(capability))
@@ -2226,9 +2233,7 @@ fn scenario_propose(mut arguments: impl Iterator<Item = String>) -> Result<Value
     let catalog = employees
         .into_iter()
         .filter_map(|(agent_id, display_name)| {
-            let capabilities =
-                ai_employee_runtime::skill_resolver::ready_skill_ids(&connection, &agent_id)
-                    .ok()?;
+            let capabilities = ready_skill_ids_for_runtime(&connection, &agent_id).ok()?;
             (!capabilities.is_empty()).then(|| {
                 json!({
                     "agent_id":agent_id,
@@ -2732,18 +2737,18 @@ fn capabilities(mut arguments: impl Iterator<Item = String>) -> Result<serde_jso
             |row| row.get(0),
         )
         .map_err(|e| e.to_string())?;
-    let tasks_enabled: bool = connection
-        .query_row(
-            "SELECT EXISTS(
-                SELECT 1 FROM agent_skills ash
-                JOIN agents a ON a.id=ash.agent_id AND a.status='active'
-                JOIN skills s ON s.id=ash.skill_id AND s.status='active'
-                WHERE ash.enabled=1 AND json_extract(s.manifest_json,'$.schema_version')='2.0.0'
-            )",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|e| e.to_string())?;
+    let mut agent_statement = connection
+        .prepare("SELECT id FROM agents WHERE status='active' ORDER BY id")
+        .map_err(|error| error.to_string())?;
+    let agent_ids = agent_statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    drop(agent_statement);
+    let tasks_enabled = agent_ids.iter().any(|agent_id| {
+        ready_skill_ids_for_runtime(&connection, agent_id).is_ok_and(|skills| !skills.is_empty())
+    });
     Ok(json!({
         "schema_version": "1.0",
         "skills_installed": skills_installed,
@@ -2825,11 +2830,12 @@ fn skill_list_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value
         .flatten()
         .filter_map(|tool| tool["id"].as_str())
         .all(ai_employee_runtime::runtime_dependency::tool_available);
+    let installed_status = row.get::<_, String>(3)?;
     Ok(json!({
         "id": row.get::<_, String>(0)?,
         "name": row.get::<_, String>(1)?,
         "version": row.get::<_, String>(2)?,
-        "status": row.get::<_, String>(3)?,
+        "status": if available { installed_status.as_str() } else { "missing_dependency" },
         "path": path,
         "summary": description,
         "category": category,
@@ -2943,6 +2949,8 @@ fn tools_list(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
         .map_err(|e| e.to_string())?;
     let mut tools = statement
         .query_map([], |row| {
+            let id = row.get::<_, String>(0)?;
+            let available = ai_employee_runtime::runtime_dependency::tool_available(&id);
             let manifest: String = row.get(5)?;
             let parsed: serde_json::Value = serde_json::from_str(&manifest).unwrap_or(json!({}));
             let description = parsed
@@ -2956,14 +2964,14 @@ fn tools_list(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
                 .unwrap_or("")
                 .to_owned();
             Ok(json!({
-                "id": row.get::<_, String>(0)?,
+                "id": id,
                 "name": row.get::<_, String>(1)?,
                 "type": row.get::<_, String>(2)?,
                 "version": row.get::<_, String>(3)?,
-                "status": row.get::<_, String>(4)?,
+                "status": if available { row.get::<_, String>(4)? } else { "missing_dependency".to_owned() },
                 "summary": description,
                 "category": runtime,
-                "available": ai_employee_runtime::runtime_dependency::tool_available(&row.get::<_, String>(0)?),
+                "available": available,
                 "actions": tool_actions_from_manifest(&parsed)
             }))
         })
@@ -3660,7 +3668,7 @@ fn chat_send(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
         );
     }
 
-    let tasks_enabled = skill_readiness(&connection, &agent_id)?
+    let tasks_enabled = skill_readiness_for_runtime(&connection, &agent_id)?
         .iter()
         .any(|item| item.readiness == "ready");
     let intent = classify_user_intent(
@@ -3967,7 +3975,7 @@ fn classify_user_intent(
     text: &str,
 ) -> Result<IntentResult, String> {
     let worker_root = root.join("runtime/python-agent");
-    let ready = skill_readiness(connection, agent_id)?;
+    let ready = skill_readiness_for_runtime(connection, agent_id)?;
     let mut available_skills = Vec::new();
     for item in ready.into_iter().filter(|item| item.readiness == "ready") {
         let raw: String = connection
@@ -4782,12 +4790,15 @@ fn run_skill(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
     bootstrap_packages(&mut connection, &repository_root, &now())?;
     let input: serde_json::Value = serde_json::from_str(&input_json.ok_or_else(usage)?)
         .map_err(|error| format!("input_schema_invalid: {error}"))?;
+    let agent_id = agent_id.ok_or_else(usage)?;
+    let skill_id = skill_id.ok_or_else(usage)?;
+    ensure_skill_ready_for_runtime(&connection, &agent_id, &skill_id)?;
     execute_skill(RunSkillConfig {
         connection: &mut connection,
         repository_root: &repository_root,
         python: &python,
-        agent_id: &agent_id.ok_or_else(usage)?,
-        skill_id: &skill_id.ok_or_else(usage)?,
+        agent_id: &agent_id,
+        skill_id: &skill_id,
         input,
         conversation_id: conversation_id.as_deref(),
         capability_mode: false,
@@ -5103,36 +5114,75 @@ fn capability_readiness(
     migrate(&mut connection).map_err(|error| error.to_string())?;
     bootstrap_packages(&mut connection, &root, &now())?;
     let agent_id = agent_id.ok_or_else(usage)?;
-    let status: String = connection
-        .query_row(
-            "SELECT status FROM agents WHERE id=?1",
-            [&agent_id],
-            |row| row.get(0),
-        )
-        .map_err(|_| "agent_unavailable".to_owned())?;
-    let mut statement = connection
-        .prepare(
-            "SELECT s.id,s.version,s.status,a.enabled,s.manifest_json FROM skills s
-         LEFT JOIN agent_skills a ON a.skill_id=s.id AND a.agent_id=?1 ORDER BY s.id",
-        )
-        .map_err(|error| error.to_string())?;
-    let skills = statement.query_map([&agent_id], |row| {
-        let id: String = row.get(0)?;
-        let skill_status: String = row.get(2)?;
-        let enabled: Option<i64> = row.get(3)?;
-        let manifest_raw: String = row.get(4)?;
-        let manifest: serde_json::Value = serde_json::from_str(&manifest_raw).unwrap_or(json!({}));
-        let mut reasons = Vec::new();
-        if status != "active" { reasons.push("agent_inactive"); }
-        if enabled != Some(1) { reasons.push("skill_unbound"); }
-        if skill_status != "active" { reasons.push("skill_disabled"); }
-        if manifest["schema_version"] != "2.0.0" { reasons.push("runtime_incompatible"); }
-        let readiness = if reasons.is_empty() { "ready" } else if reasons.contains(&"skill_unbound") { "disabled" } else if reasons.contains(&"runtime_incompatible") { "incompatible" } else { "missing_dependency" };
-        Ok(json!({"skill_id":id,"version":row.get::<_,String>(1)?,"readiness":readiness,"reason_codes":reasons}))
-    }).map_err(|error| error.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|error| error.to_string())?;
+    let skills = skill_readiness_for_runtime(&connection, &agent_id)?
+        .into_iter()
+        .map(|item| {
+            let version: String = connection
+                .query_row(
+                    "SELECT version FROM skills WHERE id=?1",
+                    [&item.skill_id],
+                    |row| row.get(0),
+                )
+                .map_err(|error| error.to_string())?;
+            Ok(json!({
+                "skill_id": item.skill_id,
+                "version": version,
+                "readiness": item.readiness,
+                "reason_codes": item.reasons
+            }))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     Ok(
         json!({"schema_version":"1.0.0","agent_id":agent_id,"tasks_enabled":skills.iter().any(|skill| skill["readiness"]=="ready"),"skills":skills}),
     )
+}
+
+fn skill_readiness_for_runtime(
+    connection: &Connection,
+    agent_id: &str,
+) -> Result<Vec<SkillReadiness>, String> {
+    #[cfg(test)]
+    {
+        readiness_with_tool_probe(connection, agent_id, |_| true)
+    }
+    #[cfg(not(test))]
+    {
+        runtime_skill_readiness(connection, agent_id)
+    }
+}
+
+fn ready_skill_ids_for_runtime(
+    connection: &Connection,
+    agent_id: &str,
+) -> Result<Vec<String>, String> {
+    #[cfg(test)]
+    {
+        ready_skill_ids_with_tool_probe(connection, agent_id, |_| true)
+    }
+    #[cfg(not(test))]
+    {
+        runtime_ready_skill_ids(connection, agent_id)
+    }
+}
+
+fn ensure_skill_ready_for_runtime(
+    connection: &Connection,
+    agent_id: &str,
+    skill_id: &str,
+) -> Result<(), String> {
+    let readiness = skill_readiness_for_runtime(connection, agent_id)?;
+    let item = readiness
+        .iter()
+        .find(|item| item.skill_id == skill_id)
+        .ok_or_else(|| format!("skill_unavailable:{skill_id}:not_installed"))?;
+    if item.readiness == "ready" {
+        Ok(())
+    } else {
+        Err(format!(
+            "skill_unavailable:{skill_id}:{}",
+            item.reasons.join(",")
+        ))
+    }
 }
 
 fn run_task(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::Value, String> {
@@ -5158,12 +5208,15 @@ fn run_task(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::V
         Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
     migrate(&mut connection).map_err(|e| e.to_string())?;
     bootstrap_packages(&mut connection, &root, &now())?;
+    let agent_id = agent_id.ok_or_else(usage)?;
+    let skill_id = skill_id.ok_or_else(usage)?;
+    ensure_skill_ready_for_runtime(&connection, &agent_id, &skill_id)?;
     execute_skill(RunSkillConfig {
         connection: &mut connection,
         repository_root: &root,
         python: &python,
-        agent_id: &agent_id.ok_or_else(usage)?,
-        skill_id: &skill_id.ok_or_else(usage)?,
+        agent_id: &agent_id,
+        skill_id: &skill_id,
         input: serde_json::from_str(&input_json.ok_or_else(usage)?)
             .map_err(|_| "input_schema_invalid".to_owned())?,
         conversation_id: None,
