@@ -112,7 +112,7 @@ class CrossProcessGatewayTests(unittest.TestCase):
             self.database,
             GatewayContext(
                 task_id="task-1",
-                agent_id="ai-product-manager",
+                agent_id="test-employee",
                 deadline="2099-01-01T00:00:00Z",
                 trace_id="trace-1",
                 routes=routes,
@@ -122,13 +122,12 @@ class CrossProcessGatewayTests(unittest.TestCase):
     def _seed_database(self):
         with closing(sqlite3.connect(self.database)) as connection:
             connection.execute("PRAGMA foreign_keys = ON")
-            for migration in range(1, 10):
-                path = next((ROOT / "storage/migrations").glob(f"{migration:03d}_*.sql"))
+            for path in sorted((ROOT / "storage/migrations").glob("[0-9][0-9][0-9]_*.sql")):
                 connection.executescript(path.read_text(encoding="utf-8"))
             now = "2026-08-04T00:00:00Z"
             connection.execute(
                 "INSERT INTO agents VALUES (?,?,?,?,?,?,?)",
-                ("ai-product-manager", "Alex", "AI Product Manager", "package", "active", now, now),
+                ("test-employee", "Test Employee", "Test Role", "package", "active", now, now),
             )
             for tool_id, action, permission, risk, side_effect in (
                 ("file-tool", "read_file", "filesystem.read", 0, "none"),
@@ -154,7 +153,10 @@ class CrossProcessGatewayTests(unittest.TestCase):
                             "required_permissions": [permission],
                             "risk_level": risk,
                             "side_effect": side_effect,
+                            "confirmation": "never" if risk == 0 else "always",
                             "timeout_ms": 10000,
+                            "result_size_limit": 65536,
+                            "sensitive_fields": ["arguments.path", "result.output.content"] if tool_id == "file-tool" else ["arguments.path", "arguments.content"],
                         }],
                     },
                 }
@@ -164,7 +166,7 @@ class CrossProcessGatewayTests(unittest.TestCase):
                 )
             connection.execute(
                 "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES (?,?,?,?,?,?)",
-                ("task-1", "ai-product-manager", "test", "running", now, now),
+                ("task-1", "test-employee", "test", "running", now, now),
             )
             connection.execute(
                 "INSERT INTO actions VALUES (?,?,?,?,?,?,?,?)",
@@ -176,11 +178,11 @@ class CrossProcessGatewayTests(unittest.TestCase):
             )
             connection.execute(
                 "INSERT INTO permissions VALUES (?,?,?,?,?,?,?,?)",
-                ("grant-read", "agent", "ai-product-manager", str(self.root), "filesystem.read", "allow", now, now),
+                ("grant-read", "agent", "test-employee", str(self.root), "filesystem.read", "allow", now, now),
             )
             connection.execute(
                 "INSERT INTO permissions VALUES (?,?,?,?,?,?,?,?)",
-                ("grant-write", "agent", "ai-product-manager", str(self.root), "document.write", "allow", now, now),
+                ("grant-write", "agent", "test-employee", str(self.root), "document.write", "allow", now, now),
             )
             connection.commit()
 

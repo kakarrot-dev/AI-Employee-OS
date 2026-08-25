@@ -276,7 +276,7 @@ mod tests {
         )
         .unwrap();
         c.execute(
-            "INSERT INTO agents VALUES ('agent_1','Alex','PM','/agent','active',?1,?1)",
+            "INSERT INTO agents VALUES ('agent_1','Test Employee','PM','/agent','active',?1,?1)",
             ["2026-08-04T00:00:00Z"],
         )
         .unwrap();
@@ -327,7 +327,7 @@ mod tests {
         )
         .unwrap();
         c.execute(
-            "INSERT INTO agents VALUES ('agent_1','Alex','PM','/agent','active',?1,?1)",
+            "INSERT INTO agents VALUES ('agent_1','Test Employee','PM','/agent','active',?1,?1)",
             ["2026-08-04T00:00:00Z"],
         )
         .unwrap();

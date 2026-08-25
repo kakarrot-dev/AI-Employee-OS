@@ -31,7 +31,7 @@ tool:
       concurrency_safe: true
       retry_policy: {max_attempts: 1, retry_on: []}
       result_size_limit: 1048576
-      sensitive_fields: [arguments.path]
+      sensitive_fields: [arguments.path, result.output.content]
       verification: none
     - name: create_file
       description: Create one new authorized local UTF-8 file without overwriting an existing file

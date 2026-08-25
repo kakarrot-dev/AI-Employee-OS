@@ -446,6 +446,12 @@ fn start_business_flow_internal(
                 ],
             )
             .map_err(|error| error.to_string())?;
+        crate::run::lock_task_capabilities(
+            &transaction,
+            &child_task_id,
+            &node.required_capabilities,
+            now,
+        )?;
         transaction
             .execute(
                 "INSERT INTO work_orders(id,business_flow_id,scenario_node_id,child_task_id,assignee_agent_id,role,goal,input_refs_json,acceptance_json,required_capabilities_json,budget_json,failure_policy,revision,created_at,updated_at)
@@ -1018,6 +1024,106 @@ pub fn reconcile_business_flow_thread_status(
     Ok(true)
 }
 
+pub fn reconcile_succeeded_work_order_advancement(
+    connection: &mut Connection,
+    flow_id: &str,
+    now: &str,
+) -> Result<Option<BusinessFlowProjection>, String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT work.id,deliverable.id,work.role
+             FROM work_orders work
+             JOIN tasks child ON child.id=work.child_task_id AND child.status='succeeded'
+             JOIN deliverables deliverable ON deliverable.task_id=child.id AND deliverable.status='verified'
+             WHERE work.business_flow_id=?1
+               AND EXISTS(
+                 SELECT 1 FROM deliverable_evidence evidence
+                 JOIN evaluations evaluation ON evaluation.id=evidence.evidence_ref
+                 WHERE evidence.deliverable_id=deliverable.id AND evidence.evidence_type='evaluation'
+                   AND json_extract(evaluation.metrics_json,'$.delivery_allowed')=1
+               )
+             ORDER BY work.created_at,work.id,deliverable.created_at DESC,deliverable.id DESC",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([flow_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    drop(statement);
+    let mut checked_work_orders = BTreeSet::new();
+    for (work_order_id, deliverable_id, role) in rows {
+        if !checked_work_orders.insert(work_order_id.clone()) {
+            continue;
+        }
+        let successors = {
+            let mut statement = connection
+                .prepare(
+                    "SELECT successor_work_order_id FROM work_order_dependencies
+                     WHERE business_flow_id=?1 AND predecessor_work_order_id=?2 AND required=1",
+                )
+                .map_err(|error| error.to_string())?;
+            statement
+                .query_map(params![flow_id, work_order_id], |row| {
+                    row.get::<_, String>(0)
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?
+        };
+        let advancement_missing = if successors.is_empty() && role != "finalization" {
+            false
+        } else if successors.is_empty() {
+            let (root_status, output_deliverable): (String, Option<String>) = connection
+                .query_row(
+                    "SELECT task.status,output.deliverable_id
+                     FROM business_flows flow JOIN tasks task ON task.id=flow.root_task_id
+                     LEFT JOIN business_flow_outputs output ON output.business_flow_id=flow.id
+                     WHERE flow.id=?1",
+                    [flow_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .map_err(|error| error.to_string())?;
+            root_status != "succeeded" || output_deliverable.as_deref() != Some(&deliverable_id)
+        } else {
+            let mut missing = false;
+            for successor in successors {
+                let accepted: bool = connection
+                    .query_row(
+                        "SELECT EXISTS(
+                           SELECT 1 FROM handoffs
+                           WHERE business_flow_id=?1 AND source_work_order_id=?2
+                             AND target_work_order_id=?3 AND deliverable_id=?4
+                             AND acceptance='accepted'
+                         )",
+                        params![flow_id, work_order_id, successor, deliverable_id],
+                        |row| row.get(0),
+                    )
+                    .map_err(|error| error.to_string())?;
+                missing |= !accepted;
+            }
+            missing
+        };
+        if advancement_missing {
+            return advance_after_child_success(
+                connection,
+                flow_id,
+                &work_order_id,
+                &deliverable_id,
+                now,
+            )
+            .map(Some);
+        }
+    }
+    Ok(None)
+}
+
 pub fn advance_after_child_success(
     connection: &mut Connection,
     flow_id: &str,
@@ -1067,6 +1173,16 @@ pub fn advance_after_child_success(
         })
     };
     if already_advanced {
+        if successors.is_empty() {
+            commit_business_flow_success(
+                connection,
+                flow_id,
+                &root_task_id,
+                source_work_order_id,
+                deliverable_id,
+                now,
+            )?;
+        }
         return project_business_flow(connection, flow_id);
     }
     let source_acceptance: String = connection
@@ -1147,40 +1263,100 @@ pub fn advance_after_child_success(
         if !finalization_valid {
             return Err("root_finalization_evidence_invalid".into());
         }
-        connection
-            .execute(
-                "INSERT INTO business_flow_outputs(business_flow_id,root_task_id,finalization_work_order_id,deliverable_id,verified_at)
-                 SELECT flow.id,flow.root_task_id,?2,?3,?4 FROM business_flows flow WHERE flow.id=?1
-                 ON CONFLICT(business_flow_id) DO NOTHING",
-                params![flow_id, source_work_order_id, deliverable_id, now],
-            )
-            .map_err(|error| error.to_string())?;
-        append_root_event(
+        commit_business_flow_success(
             connection,
+            flow_id,
             &root_task_id,
+            source_work_order_id,
+            deliverable_id,
+            now,
+        )?;
+    }
+    project_business_flow(connection, flow_id)
+}
+
+fn commit_business_flow_success(
+    connection: &mut Connection,
+    flow_id: &str,
+    root_task_id: &str,
+    finalization_work_order_id: &str,
+    deliverable_id: &str,
+    now: &str,
+) -> Result<(), String> {
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "INSERT INTO business_flow_outputs(business_flow_id,root_task_id,finalization_work_order_id,deliverable_id,verified_at)
+             SELECT flow.id,flow.root_task_id,?2,?3,?4 FROM business_flows flow WHERE flow.id=?1
+             ON CONFLICT(business_flow_id) DO NOTHING",
+            params![flow_id, finalization_work_order_id, deliverable_id, now],
+        )
+        .map_err(|error| error.to_string())?;
+    let committed_output: (String, String, String) = transaction
+        .query_row(
+            "SELECT root_task_id,finalization_work_order_id,deliverable_id
+             FROM business_flow_outputs WHERE business_flow_id=?1",
+            [flow_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|error| error.to_string())?;
+    if committed_output
+        != (
+            root_task_id.to_owned(),
+            finalization_work_order_id.to_owned(),
+            deliverable_id.to_owned(),
+        )
+    {
+        return Err("business_flow_output_conflict".to_owned());
+    }
+    let completion_event_exists: bool = transaction
+        .query_row(
+            "SELECT EXISTS(
+               SELECT 1 FROM runtime_events
+               WHERE task_id=?1 AND event_type='business_flow.completed'
+                 AND json_extract(payload_json,'$.business_flow_id')=?2
+             )",
+            params![root_task_id, flow_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if !completion_event_exists {
+        append_root_event(
+            &transaction,
+            root_task_id,
             "business_flow.completed",
             &serde_json::json!({"business_flow_id":flow_id,"root_deliverable_id":deliverable_id}),
             now,
         )?;
-        connection
-            .execute(
-                "UPDATE tasks SET status='succeeded',updated_at=?1
-                 WHERE id=(SELECT root_task_id FROM business_flow_outputs WHERE business_flow_id=?2)
-                   AND status='running'",
-                params![now, flow_id],
-            )
-            .map_err(|error| error.to_string())?;
-        sync_task_thread_status(connection, &root_task_id, "succeeded", now)?;
-        connection
-            .execute(
-                "INSERT OR IGNORE INTO audit_logs(id,agent_id,task_id,approval_id,action,resource,result,created_at)
-                 SELECT ?1,task.agent_id,task.id,NULL,'business_flow.complete',?2,'succeeded',?3
-                 FROM business_flows flow JOIN tasks task ON task.id=flow.root_task_id WHERE flow.id=?2",
-                params![format!("{flow_id}:audit:complete"), flow_id, now],
-            )
-            .map_err(|error| error.to_string())?;
     }
-    project_business_flow(connection, flow_id)
+    transaction
+        .execute(
+            "UPDATE tasks SET status='succeeded',updated_at=?1 WHERE id=?2 AND status='running'",
+            params![now, root_task_id],
+        )
+        .map_err(|error| error.to_string())?;
+    let root_status: String = transaction
+        .query_row(
+            "SELECT status FROM tasks WHERE id=?1",
+            [root_task_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if root_status != "succeeded" {
+        return Err("business_flow_root_state_conflict".to_owned());
+    }
+    sync_task_thread_status(&transaction, root_task_id, "succeeded", now)?;
+    transaction
+        .execute(
+            "INSERT OR IGNORE INTO audit_logs(id,agent_id,task_id,approval_id,action,resource,result,created_at)
+             SELECT ?1,task.agent_id,task.id,NULL,'business_flow.complete',?2,'succeeded',?3
+             FROM business_flows flow JOIN tasks task ON task.id=flow.root_task_id WHERE flow.id=?2",
+            params![format!("{flow_id}:audit:complete"), flow_id, now],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction.commit().map_err(|error| error.to_string())
 }
 
 fn acceptance_satisfied(
@@ -1190,14 +1366,64 @@ fn acceptance_satisfied(
 ) -> Result<bool, String> {
     let criteria: Vec<AcceptanceCriterion> = serde_json::from_str(acceptance_raw)
         .map_err(|_| "acceptance_contract_invalid".to_owned())?;
+    let evaluation: Option<(String, String)> = connection
+        .query_row(
+            "SELECT evaluation.id,evaluation.metrics_json
+             FROM deliverable_evidence evidence
+             JOIN evaluations evaluation ON evaluation.id=evidence.evidence_ref
+             WHERE evidence.deliverable_id=?1 AND evidence.evidence_type='evaluation'
+               AND json_extract(evaluation.metrics_json,'$.delivery_allowed')=1
+             ORDER BY evaluation.created_at DESC,evaluation.id DESC LIMIT 1",
+            [deliverable_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let Some((evaluation_id, metrics_raw)) = evaluation else {
+        return Ok(false);
+    };
+    let metrics: serde_json::Value = serde_json::from_str(&metrics_raw)
+        .map_err(|_| "acceptance_evaluation_invalid".to_owned())?;
+    let reports = metrics["criteria"]
+        .as_array()
+        .ok_or_else(|| "acceptance_evaluation_invalid".to_owned())?;
     for criterion in criteria.iter().filter(|criterion| criterion.required) {
-        let exists: bool = connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM deliverable_evidence WHERE deliverable_id=?1 AND evidence_type=?2)",
-            params![deliverable_id, criterion.evidence_type],
-            |row| row.get(0),
-        ).map_err(|error| error.to_string())?;
-        if !exists {
+        let Some(report) = reports.iter().find(|report| {
+            report["criterion_id"] == criterion.criterion_id
+                && report["description"] == criterion.description
+                && report["evidence_type"] == criterion.evidence_type
+                && report["required"] == criterion.required
+        }) else {
             return Ok(false);
+        };
+        if report["passed"] != true {
+            return Ok(false);
+        }
+        let references = report["evidence_refs"]
+            .as_array()
+            .ok_or_else(|| "acceptance_evaluation_invalid".to_owned())?;
+        if references.is_empty() {
+            return Ok(false);
+        }
+        for reference in references {
+            let Some(reference) = reference.as_str() else {
+                return Err("acceptance_evaluation_invalid".to_owned());
+            };
+            let exists = if criterion.evidence_type == "evaluation" {
+                reference == evaluation_id
+            } else {
+                connection
+                    .query_row(
+                        "SELECT EXISTS(SELECT 1 FROM deliverable_evidence
+                         WHERE deliverable_id=?1 AND evidence_type=?2 AND evidence_ref=?3)",
+                        params![deliverable_id, criterion.evidence_type, reference],
+                        |row| row.get::<_, bool>(0),
+                    )
+                    .map_err(|error| error.to_string())?
+            };
+            if !exists {
+                return Ok(false);
+            }
         }
     }
     Ok(true)
@@ -1399,14 +1625,14 @@ mod tests {
         migrate(connection).unwrap();
         connection
             .execute(
-                "INSERT INTO agents VALUES ('alex','Alex','PM','package','active','t','t')",
+                "INSERT INTO agents VALUES ('test_employee','Test Employee','PM','package','active','t','t')",
                 [],
             )
             .unwrap();
         connection.execute("INSERT INTO skills VALUES ('local-file-operations','Local files','1.0.0','{}','path','active','t','t')", []).unwrap();
         connection
             .execute(
-                "INSERT INTO agent_skills VALUES ('alex','local-file-operations',1,'t')",
+                "INSERT INTO agent_skills VALUES ('test_employee','local-file-operations',1,'t')",
                 [],
             )
             .unwrap();
@@ -1420,7 +1646,7 @@ mod tests {
             node_id: id.into(),
             role,
             goal: id.into(),
-            suggested_agent_id: "alex".into(),
+            suggested_agent_id: "test_employee".into(),
             required_capabilities: vec!["local-file-operations".into()],
             input_refs: vec![],
             acceptance_criteria: vec![criterion()],
@@ -1438,7 +1664,7 @@ mod tests {
             title: "Launch".into(),
             objective: "Ship".into(),
             overall_acceptance_criteria: vec![criterion()],
-            coordinator_agent_id: "alex".into(),
+            coordinator_agent_id: "test_employee".into(),
             nodes: vec![
                 node("work", ScenarioNodeRole::Executor),
                 node("finalize", ScenarioNodeRole::Finalization),
@@ -1609,7 +1835,10 @@ mod tests {
         let hash = get_scenario(&connection, "scenario").unwrap().sha256;
         start_business_flow(&mut connection, "flow", "scenario", &hash, "t2").unwrap();
         connection
-            .execute("UPDATE agents SET status='disabled' WHERE id='alex'", [])
+            .execute(
+                "UPDATE agents SET status='disabled' WHERE id='test_employee'",
+                [],
+            )
             .unwrap();
 
         let projection = record_assignee_unavailable(&mut connection, "flow", "t3").unwrap();
@@ -1680,7 +1909,7 @@ mod tests {
              VALUES ('deliverable','flow:task:work','run','document','Output','Verified','verified','{}','t3','t3')", []).unwrap();
         connection.execute(
             "INSERT INTO deliverable_evidence VALUES ('deliverable','structured_output','output:hash','t3')", []).unwrap();
-        connection.execute("INSERT INTO evaluations(id,task_id,agent_id,score,metrics_json,created_at) VALUES ('evaluation','flow:task:work','alex',1.0,'{\"delivery_allowed\":true}','t3')", []).unwrap();
+        connection.execute("INSERT INTO evaluations(id,task_id,agent_id,score,metrics_json,created_at) VALUES ('evaluation','flow:task:work','test_employee',1.0,'{\"delivery_allowed\":true,\"criteria\":[{\"criterion_id\":\"verified\",\"description\":\"verified\",\"evidence_type\":\"tool_result\",\"required\":true,\"passed\":false,\"evidence_refs\":[]}]}','t3')", []).unwrap();
         connection.execute("INSERT INTO deliverable_evidence VALUES ('deliverable','evaluation','evaluation','t3')", []).unwrap();
         assert_eq!(
             accept_handoff(
@@ -1696,6 +1925,7 @@ mod tests {
             "handoff_acceptance_failed"
         );
         connection.execute("INSERT INTO deliverable_evidence VALUES ('deliverable','tool_result','tool-call','t3')", []).unwrap();
+        connection.execute("UPDATE evaluations SET metrics_json='{\"delivery_allowed\":true,\"criteria\":[{\"criterion_id\":\"verified\",\"description\":\"verified\",\"evidence_type\":\"tool_result\",\"required\":true,\"passed\":true,\"evidence_refs\":[\"tool-call\"]}]}' WHERE id='evaluation'", []).unwrap();
         let handoff = accept_handoff(
             &mut connection,
             "flow",
@@ -1719,7 +1949,39 @@ mod tests {
     }
 
     #[test]
-    fn finalizer_must_satisfy_its_own_artifact_acceptance() {
+    fn acceptance_rejects_a_legacy_type_only_evaluation() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        let proposal = fixture(&mut connection);
+        connection.execute(
+            "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','test_employee','{}','succeeded','t','t')",
+            [],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO agent_runs(id,task_id,schema_version,phase,revision,model_turns_used,tool_calls_used,max_model_turns,max_tool_calls,deadline,created_at,updated_at) VALUES ('run','task','1.0.0','terminal',1,0,0,1,0,'t','t','t')",
+            [],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO deliverables(id,task_id,run_id,deliverable_type,title,summary,status,output_json,created_at,verified_at) VALUES ('deliverable','task','run','structured_result','Result','Result','verified','{}','t','t')",
+            [],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO evaluations(id,task_id,agent_id,score,metrics_json,created_at) VALUES ('evaluation','task','test_employee',1.0,'{\"delivery_allowed\":true}','t')",
+            [],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO deliverable_evidence VALUES ('deliverable','evaluation','evaluation','t')",
+            [],
+        ).unwrap();
+        let acceptance = serde_json::to_string(&proposal.nodes[0].acceptance_criteria).unwrap();
+
+        assert_eq!(
+            acceptance_satisfied(&connection, "deliverable", &acceptance).unwrap_err(),
+            "acceptance_evaluation_invalid"
+        );
+    }
+
+    #[test]
+    fn finalizer_must_satisfy_acceptance_and_recover_after_output_commit() {
         let mut connection = Connection::open_in_memory().unwrap();
         let mut proposal = fixture(&mut connection);
         proposal.nodes[1].acceptance_criteria[0].evidence_type = "artifact".into();
@@ -1739,7 +2001,7 @@ mod tests {
         connection.execute(
             "INSERT INTO deliverables(id,task_id,run_id,deliverable_type,title,summary,status,output_json,created_at,verified_at)
              VALUES ('deliverable-work','flow:task:work','run-work','structured_result','Research','Verified','verified','{}','t3','t3')", []).unwrap();
-        connection.execute("INSERT INTO evaluations(id,task_id,agent_id,score,metrics_json,created_at) VALUES ('evaluation-work','flow:task:work','alex',1.0,'{\"delivery_allowed\":true}','t3')", []).unwrap();
+        connection.execute("INSERT INTO evaluations(id,task_id,agent_id,score,metrics_json,created_at) VALUES ('evaluation-work','flow:task:work','test_employee',1.0,'{\"delivery_allowed\":true,\"criteria\":[{\"criterion_id\":\"verified\",\"description\":\"verified\",\"evidence_type\":\"evaluation\",\"required\":true,\"passed\":true,\"evidence_refs\":[\"evaluation-work\"]}]}','t3')", []).unwrap();
         connection.execute("INSERT INTO deliverable_evidence VALUES ('deliverable-work','evaluation','evaluation-work','t3')", []).unwrap();
         advance_after_child_success(
             &mut connection,
@@ -1762,7 +2024,7 @@ mod tests {
         connection.execute(
             "INSERT INTO deliverables(id,task_id,run_id,deliverable_type,title,summary,status,output_json,created_at,verified_at)
              VALUES ('deliverable-final','flow:task:finalize','run-final','structured_result','Document','Verified','verified','{}','t4','t4')", []).unwrap();
-        connection.execute("INSERT INTO evaluations(id,task_id,agent_id,score,metrics_json,created_at) VALUES ('evaluation-final','flow:task:finalize','alex',1.0,'{\"delivery_allowed\":true}','t4')", []).unwrap();
+        connection.execute("INSERT INTO evaluations(id,task_id,agent_id,score,metrics_json,created_at) VALUES ('evaluation-final','flow:task:finalize','test_employee',1.0,'{\"delivery_allowed\":true,\"criteria\":[{\"criterion_id\":\"verified\",\"description\":\"verified\",\"evidence_type\":\"artifact\",\"required\":true,\"passed\":false,\"evidence_refs\":[]},{\"criterion_id\":\"verified\",\"description\":\"verified\",\"evidence_type\":\"evaluation\",\"required\":true,\"passed\":true,\"evidence_refs\":[\"evaluation-final\"]}]}','t4')", []).unwrap();
         connection.execute("INSERT INTO deliverable_evidence VALUES ('deliverable-final','evaluation','evaluation-final','t4')", []).unwrap();
 
         assert_eq!(
@@ -1778,6 +2040,7 @@ mod tests {
         );
 
         connection.execute("INSERT INTO deliverable_evidence VALUES ('deliverable-final','artifact','artifact-final','t4')", []).unwrap();
+        connection.execute("UPDATE evaluations SET metrics_json='{\"delivery_allowed\":true,\"criteria\":[{\"criterion_id\":\"verified\",\"description\":\"verified\",\"evidence_type\":\"artifact\",\"required\":true,\"passed\":true,\"evidence_refs\":[\"artifact-final\"]},{\"criterion_id\":\"verified\",\"description\":\"verified\",\"evidence_type\":\"evaluation\",\"required\":true,\"passed\":true,\"evidence_refs\":[\"evaluation-final\"]}]}' WHERE id='evaluation-final'", []).unwrap();
         let completed = advance_after_child_success(
             &mut connection,
             "flow",
@@ -1790,6 +2053,54 @@ mod tests {
         assert_eq!(
             completed.root_deliverable_id.as_deref(),
             Some("deliverable-final")
+        );
+
+        connection.execute_batch(
+            "UPDATE tasks SET status='running' WHERE id='flow:root';
+             DELETE FROM runtime_events WHERE task_id='flow:root' AND event_type='business_flow.completed';
+             DELETE FROM audit_logs WHERE id='flow:audit:complete';
+             INSERT INTO task_threads(id,title,status,current_revision,created_at,updated_at)
+             VALUES ('thread','Flow','running',1,'t5','t5');
+             INSERT INTO task_thread_task_bindings(thread_id,task_id,binding_role,created_at)
+             VALUES ('thread','flow:root','root','t5');"
+        ).unwrap();
+
+        let recovered = advance_after_child_success(
+            &mut connection,
+            "flow",
+            "flow:work:finalize",
+            "deliverable-final",
+            "t6",
+        )
+        .unwrap();
+        assert_eq!(recovered.status, "succeeded");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT status FROM task_threads WHERE id='thread'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+            "succeeded"
+        );
+        assert_eq!(
+            connection.query_row(
+                "SELECT count(*) FROM runtime_events WHERE task_id='flow:root' AND event_type='business_flow.completed'",
+                [],
+                |row| row.get::<_, i64>(0),
+            ).unwrap(),
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT count(*) FROM audit_logs WHERE id='flow:audit:complete'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
         );
     }
 
@@ -1879,7 +2190,7 @@ mod tests {
             "INSERT INTO deliverables(id,task_id,run_id,deliverable_type,title,summary,status,output_json,created_at,verified_at)
              VALUES ('deliverable','flow:task:work','run','document','Output','Verified','verified','{}','t3','t3')", []).unwrap();
         connection.execute("INSERT INTO deliverable_evidence VALUES ('deliverable','structured_output','hash','t3')", []).unwrap();
-        connection.execute("INSERT INTO evaluations(id,task_id,agent_id,score,metrics_json,created_at) VALUES ('evaluation','flow:task:work','alex',1.0,'{\"delivery_allowed\":true}','t3')", []).unwrap();
+        connection.execute("INSERT INTO evaluations(id,task_id,agent_id,score,metrics_json,created_at) VALUES ('evaluation','flow:task:work','test_employee',1.0,'{\"delivery_allowed\":true,\"criteria\":[{\"criterion_id\":\"verified\",\"description\":\"verified\",\"evidence_type\":\"evaluation\",\"required\":true,\"passed\":true,\"evidence_refs\":[\"evaluation\"]}]}','t3')", []).unwrap();
         connection.execute("INSERT INTO deliverable_evidence VALUES ('deliverable','evaluation','evaluation','t3')", []).unwrap();
         accept_handoff(
             &mut connection,
@@ -1905,7 +2216,7 @@ mod tests {
         let resolved = crate::run::resolve_shared_context(
             &connection,
             "flow:task:finalize",
-            "alex",
+            "test_employee",
             serde_json::from_str(&input).unwrap(),
         )
         .unwrap();

@@ -84,20 +84,20 @@ mod tests {
         let stamp = "2026-01-01T00:00:00.000Z";
         connection
             .execute(
-                "INSERT INTO agents VALUES ('alex','Alex','AI 产品经理','pkg','active',?1,?1)",
+                "INSERT INTO agents VALUES ('test_employee','Test Employee','AI 产品经理','pkg','active',?1,?1)",
                 [stamp],
             )
             .unwrap();
         connection
             .execute(
-                "INSERT INTO personas VALUES ('alex','{\"style\":\"structured\"}','{\"approach\":\"user_value_first\"}','{\"priorities\":[\"user_value\"]}','{\"output_format\":\"markdown\"}',?1,?1)",
+                "INSERT INTO personas VALUES ('test_employee','{\"style\":\"structured\"}','{\"approach\":\"user_value_first\"}','{\"priorities\":[\"user_value\"]}','{\"output_format\":\"markdown\"}',?1,?1)",
                 [stamp],
             )
             .unwrap();
         connection
             .execute(
                 "INSERT INTO employee_profiles (agent_id,department,mission,responsibilities_json,boundaries_json,soul_json,base_prompt,config_version,created_at,updated_at)
-                 VALUES ('alex','产品部','旧使命文案',?1,?2,?3,?4,3,?5,?5)",
+                 VALUES ('test_employee','产品部','旧使命文案',?1,?2,?3,?4,3,?5,?5)",
                 params![
                     r#"["旧职责"]"#,
                     r#"["旧边界"]"#,
@@ -115,12 +115,12 @@ mod tests {
         migrate(&mut connection).unwrap();
         seed(&connection);
 
-        let (prompt, version) = compile_effective_prompt(&connection, "alex").unwrap();
+        let (prompt, version) = compile_effective_prompt(&connection, "test_employee").unwrap();
         assert_eq!(version, 3);
         assert!(prompt.contains("身份提示词正文：负责需求分析。"));
         assert!(prompt.contains("用户价值优先"));
         assert!(prompt.contains("结论可验收"));
-        assert!(prompt.contains("姓名：Alex"));
+        assert!(prompt.contains("姓名：Test Employee"));
         assert!(prompt.contains("user_value_first"));
         assert!(!prompt.contains("旧使命文案"));
         assert!(!prompt.contains("旧职责"));

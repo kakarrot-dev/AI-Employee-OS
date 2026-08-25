@@ -525,13 +525,13 @@ mod tests {
         install_graph_fixture(&connection);
         install_agent_package(
             &mut connection,
-            &packages.join("agents/ai-product-manager"),
+            &packages.join("agents/document-writer"),
             "t",
         )
         .unwrap();
         connection
             .execute(
-                "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task_1','ai-product-manager','prd','running','t','t')",
+                "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task_1','document-writer','document','running','t','t')",
                 [],
             )
             .unwrap();
@@ -570,13 +570,13 @@ mod tests {
         install_graph_fixture(&connection);
         install_agent_package(
             &mut connection,
-            &packages.join("agents/ai-product-manager"),
+            &packages.join("agents/document-writer"),
             "t",
         )
         .unwrap();
         connection
             .execute(
-                "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task_2','ai-product-manager','prd','running','t','t')",
+                "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task_2','document-writer','document','running','t','t')",
                 [],
             )
             .unwrap();

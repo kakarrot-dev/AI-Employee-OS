@@ -17,9 +17,10 @@ use ai_employee_runtime::business_flow::{
 use ai_employee_runtime::business_flow_service::{
     advance_after_child_success, disable_scenario, get_scenario, list_business_flows,
     list_scenarios, next_ready_work_order, project_business_flow,
-    reconcile_business_flow_thread_status, reconcile_unbound_business_flow_threads,
-    record_assignee_unavailable, record_work_order_started, save_scenario,
-    settle_failed_work_order, start_business_flow, start_direct_business_flow, validate_scenario,
+    reconcile_business_flow_thread_status, reconcile_succeeded_work_order_advancement,
+    reconcile_unbound_business_flow_threads, record_assignee_unavailable,
+    record_work_order_started, save_scenario, settle_failed_work_order, start_business_flow,
+    start_direct_business_flow, validate_scenario,
 };
 use ai_employee_runtime::employee_prompt::{
     compile_effective_prompt, legacy_mission_from_base_prompt,
@@ -29,9 +30,9 @@ use ai_employee_runtime::memory::retrieve as retrieve_memory;
 use ai_employee_runtime::recovery::reconcile_interrupted;
 use ai_employee_runtime::run::{
     ContinueRunConfig, RunSkillConfig, continue_after_verified_action, continue_run as resume_run,
-    continue_with_user_input, materialize_agent_task, resolve_unknown_action,
-    run_agent as execute_agent, run_existing_agent_task, run_prepared_agent_task,
-    run_skill as execute_skill,
+    continue_with_user_input, lock_task_capabilities, materialize_agent_task,
+    resolve_unknown_action, run_agent as execute_agent, run_existing_agent_task,
+    run_prepared_agent_task, run_skill as execute_skill,
 };
 use ai_employee_runtime::skill_package::install_skill_package;
 use ai_employee_runtime::skill_resolver::readiness as skill_readiness;
@@ -550,7 +551,7 @@ fn task_room_timeline_projection(
                 COALESCE(snapshot.display_name,agent.name),COALESCE(snapshot.role,agent.role),
                 CASE WHEN snapshot.task_id IS NULL THEN profile.avatar_path ELSE NULL END,
                 action.tool_id,COALESCE(json_extract(action.input_json,'$.action'),''),
-                action.status,approval.id,approval.status,action.updated_at
+                action.status,approval.id,approval.status,action.updated_at,action.input_json
          FROM task_thread_task_bindings binding
          JOIN tasks task ON task.id=binding.task_id JOIN agents agent ON agent.id=task.agent_id
          LEFT JOIN employee_profiles profile ON profile.agent_id=agent.id
@@ -577,6 +578,7 @@ fn task_room_timeline_projection(
                 row.get::<_, Option<String>>(9)?,
                 row.get::<_, Option<String>>(10)?,
                 row.get::<_, String>(11)?,
+                row.get::<_, String>(12)?,
             ))
         })
         .map_err(|e| e.to_string())?
@@ -595,45 +597,54 @@ fn task_room_timeline_projection(
         approval_id,
         approval_status,
         created_at,
+        action_input,
     ) in actions
     {
         let kind = if approval_id.is_some() {
             "approval"
+        } else if status == "blocked" {
+            "permission"
         } else {
             "activity"
         };
         let shown_status = approval_status.clone().unwrap_or_else(|| status.clone());
+        let (resource, impact) = if matches!(shown_status.as_str(), "pending" | "blocked") {
+            action_approval_details(connection, &action_input, &action)?
+        } else {
+            (None, None)
+        };
         let content = if approval_status.as_deref() == Some("pending") {
             format!("请求批准执行 {action}")
+        } else if kind == "permission" {
+            format!("请求授权执行 {action}")
         } else {
             format!("{action} · {shown_status}")
         };
         let id = format!("timeline:action:{action_id}");
-        candidates.push((
-            timeline_sort_time(&created_at),
-            format!("2:{id}"),
-            timeline_item(
-                &id,
-                "system",
-                kind,
-                &content,
-                &created_at,
-                Some(agent_id),
-                Some(name),
-                Some(role),
-                avatar,
-                Some(task_id),
-                None,
-                Some(action_id),
-                approval_id,
-                None,
-                None,
-                Some(shown_status),
-                tool_id,
-                Some(action),
-                None,
-            ),
-        ));
+        let mut item = timeline_item(
+            &id,
+            "system",
+            kind,
+            &content,
+            &created_at,
+            Some(agent_id),
+            Some(name),
+            Some(role),
+            avatar,
+            Some(task_id),
+            None,
+            Some(action_id),
+            approval_id,
+            None,
+            None,
+            Some(shown_status),
+            tool_id,
+            Some(action),
+            None,
+        );
+        item["resource"] = json!(resource);
+        item["impact"] = json!(impact);
+        candidates.push((timeline_sort_time(&created_at), format!("2:{id}"), item));
     }
 
     let mut deliverable_statement=connection.prepare(
@@ -861,6 +872,92 @@ fn readable_deliverable_content(output_raw: &str, summary: &str) -> String {
                 .map(str::to_owned)
         })
         .unwrap_or_else(|| summary.to_owned())
+}
+
+fn action_approval_details(
+    connection: &Connection,
+    persisted_input: &str,
+    action: &str,
+) -> Result<(Option<String>, Option<String>), String> {
+    let mut input: Value =
+        serde_json::from_str(persisted_input).map_err(|_| "approval_details_invalid".to_owned())?;
+    if let Some(reference) = input.get("payload_ref").and_then(Value::as_str) {
+        input = ai_employee_runtime::tool_payload::load(connection, reference)?;
+    }
+    let arguments = input
+        .get("arguments")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "approval_details_invalid".to_owned())?;
+    let path = arguments.get("path").and_then(Value::as_str);
+    let query = arguments.get("query").and_then(Value::as_str);
+    let preview = |value: &str| {
+        let mut chars = value.chars();
+        let text = chars.by_ref().take(240).collect::<String>();
+        if chars.next().is_some() {
+            format!("{text}…")
+        } else {
+            text
+        }
+    };
+    match action {
+        "create_file" => {
+            let content = arguments
+                .get("content")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "approval_details_invalid".to_owned())?;
+            Ok((
+                Some(
+                    path.ok_or_else(|| "approval_details_invalid".to_owned())?
+                        .to_owned(),
+                ),
+                Some(format!(
+                    "创建新文件，不覆盖已有文件；写入 {} 个字符。内容预览：{}",
+                    content.chars().count(),
+                    preview(content)
+                )),
+            ))
+        }
+        "edit_file" => {
+            let old_text = arguments
+                .get("old_text")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "approval_details_invalid".to_owned())?;
+            let new_text = arguments
+                .get("new_text")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "approval_details_invalid".to_owned())?;
+            Ok((
+                Some(
+                    path.ok_or_else(|| "approval_details_invalid".to_owned())?
+                        .to_owned(),
+                ),
+                Some(format!(
+                    "仅替换一处完全匹配文本。原文：{}；替换为：{}",
+                    preview(old_text),
+                    preview(new_text)
+                )),
+            ))
+        }
+        "read_file" => Ok((
+            Some(
+                path.ok_or_else(|| "approval_details_invalid".to_owned())?
+                    .to_owned(),
+            ),
+            Some("读取该文件内容，不修改文件。".to_owned()),
+        )),
+        "search_web" => Ok((
+            Some(
+                query
+                    .ok_or_else(|| "approval_details_invalid".to_owned())?
+                    .to_owned(),
+            ),
+            Some("将该查询词发送给已配置的网络搜索服务。".to_owned()),
+        )),
+        _ => Ok((
+            Some(action.to_owned()),
+            Some("执行该工具动作；授权仅对本次 Action 生效。".to_owned()),
+        )),
+    }
 }
 
 fn timeline_sort_time(value: &str) -> i128 {
@@ -1418,6 +1515,7 @@ fn task_proposal_confirm_with_hooks(
             expected_revision,
             status == "confirmed",
             &resolved[0].0,
+            &resolved[0].1,
             &input,
             &stamp,
         )?;
@@ -1547,6 +1645,7 @@ fn materialize_single_agent_confirmation(
     expected_revision: i64,
     recovering_confirmed: bool,
     agent_id: &str,
+    skill_ids: &[String],
     input: &Value,
     stamp: &str,
 ) -> Result<String, String> {
@@ -1585,6 +1684,7 @@ fn materialize_single_agent_confirmation(
         }
     }
     materialize_agent_task(&tx, &task_id, agent_id, input, stamp)?;
+    lock_task_capabilities(&tx, &task_id, skill_ids, stamp)?;
     tx.execute(
         "INSERT OR IGNORE INTO task_thread_task_bindings(thread_id,task_id,proposal_id,binding_role,created_at)
          VALUES (?1,?2,?3,'single',?4)",
@@ -1977,6 +2077,11 @@ fn drive_business_flow_once(
             &now(),
         )?)
         .map_err(|error| error.to_string());
+    }
+    if let Some(projection) =
+        reconcile_succeeded_work_order_advancement(connection, flow_id, &now())?
+    {
+        return serde_json::to_value(projection).map_err(|error| error.to_string());
     }
     record_assignee_unavailable(connection, flow_id, &now())?;
     let ready = next_ready_work_order(&connection, &flow_id)?;
@@ -2418,49 +2523,15 @@ fn employee_arguments(
     ))
 }
 
-const DEFAULT_AGENT_ID: &str = "ai-product-manager";
-const DEFAULT_AGENT_DISMISSED_FLAG: &str = "default_agent_dismissed";
 const SPECIALIST_AGENT_IDS: [&str; 2] = ["data-researcher", "document-writer"];
 const HISTORICAL_AGENT_ID: &str = "system:historical-employee";
 
-fn ensure_default_agent(connection: &mut Connection, root: &std::path::Path) -> Result<(), String> {
+fn ensure_builtin_agents(
+    connection: &mut Connection,
+    root: &std::path::Path,
+) -> Result<(), String> {
     let stamp = now();
     bootstrap_packages(connection, root, &stamp)?;
-    if !default_agent_dismissed(connection)? {
-        let exists = employee_exists(connection, DEFAULT_AGENT_ID)?;
-        if !exists {
-            let default_agent = install_agent_package(
-                connection,
-                &root.join("packages/agents/ai-product-manager"),
-                &stamp,
-            )
-            .map_err(|error| format!("could not install default agent: {error:?}"))?;
-            let alex_identity = "把模糊需求转化为可执行的产品方案。\n\n职责：需求分析、产品方案、可评审文档。\n\n边界：不虚构缺失事实；没有授权时不执行外部操作。\n\n可靠、直接地协助用户完成产品工作。闲聊不会执行 Skill 或 Tool；工作能力在绑定仓库 Package 后接通。";
-            connection.execute(
-                "INSERT OR IGNORE INTO employee_profiles (agent_id,department,mission,responsibilities_json,boundaries_json,soul_json,base_prompt,config_version,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,1,?8,?8)",
-                rusqlite::params![
-                    default_agent.id,
-                    "产品部",
-                    legacy_mission_from_base_prompt(alex_identity),
-                    json!([]).to_string(),
-                    json!([]).to_string(),
-                    json!(["用户价值优先", "区分事实、推测与未知", "结论必须可执行和可验收"]).to_string(),
-                    alex_identity,
-                    stamp
-                ],
-            ).map_err(|error| error.to_string())?;
-        }
-        if employee_status(connection, DEFAULT_AGENT_ID)?.as_deref() == Some("active") {
-            let _ = bind_skill(
-                connection,
-                DEFAULT_AGENT_ID,
-                "local-file-operations",
-                "1.0.0",
-                &stamp,
-            );
-            let _ = bind_skill(connection, DEFAULT_AGENT_ID, "web-search", "1.0.0", &stamp);
-        }
-    }
     for (agent_id, skill_id) in [
         ("data-researcher", "web-search"),
         ("document-writer", "local-file-operations"),
@@ -2534,18 +2605,6 @@ fn ensure_specialist_agent(
             .map_err(|error| error.to_string())?;
     }
     Ok(())
-}
-
-fn default_agent_dismissed(connection: &Connection) -> Result<bool, String> {
-    let value: Option<String> = connection
-        .query_row(
-            "SELECT value FROM runtime_flags WHERE key=?1",
-            [DEFAULT_AGENT_DISMISSED_FLAG],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|error| error.to_string())?;
-    Ok(value.as_deref() == Some("1"))
 }
 
 fn bootstrap_packages(
@@ -2657,7 +2716,7 @@ fn capabilities(mut arguments: impl Iterator<Item = String>) -> Result<serde_jso
         Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
     migrate(&mut connection).map_err(|e| e.to_string())?;
     if let Some(root) = repository_root {
-        ensure_default_agent(&mut connection, &root)?;
+        ensure_builtin_agents(&mut connection, &root)?;
     }
     let skills_installed: i64 = connection
         .query_row(
@@ -2710,7 +2769,7 @@ fn skills_list(mut arguments: impl Iterator<Item = String>) -> Result<serde_json
         Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
     migrate(&mut connection).map_err(|e| e.to_string())?;
     if let Some(root) = repository_root {
-        ensure_default_agent(&mut connection, &root)?;
+        ensure_builtin_agents(&mut connection, &root)?;
     }
     let skills = match agent_id {
         Some(agent_id) => {
@@ -2760,6 +2819,12 @@ fn skill_list_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value
         .to_owned();
     let path = row.get::<_, String>(4)?;
     let (package_files, documents) = read_skill_package_view(Path::new(&path));
+    let available = parsed["skill"]["tools"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|tool| tool["id"].as_str())
+        .all(ai_employee_runtime::runtime_dependency::tool_available);
     Ok(json!({
         "id": row.get::<_, String>(0)?,
         "name": row.get::<_, String>(1)?,
@@ -2768,7 +2833,7 @@ fn skill_list_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value
         "path": path,
         "summary": description,
         "category": category,
-        "available": true,
+        "available": available,
         "package_files": package_files,
         "documents": documents
     }))
@@ -2869,7 +2934,7 @@ fn tools_list(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
         Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
     migrate(&mut connection).map_err(|e| e.to_string())?;
     if let Some(root) = &repository_root {
-        ensure_default_agent(&mut connection, root)?;
+        ensure_builtin_agents(&mut connection, root)?;
     }
     let mut statement = connection
         .prepare(
@@ -2898,7 +2963,7 @@ fn tools_list(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
                 "status": row.get::<_, String>(4)?,
                 "summary": description,
                 "category": runtime,
-                "available": true,
+                "available": ai_employee_runtime::runtime_dependency::tool_available(&row.get::<_, String>(0)?),
                 "actions": tool_actions_from_manifest(&parsed)
             }))
         })
@@ -2934,6 +2999,7 @@ fn tool_actions_from_manifest(parsed: &Value) -> Vec<Value> {
                         "side_effect": action.get("side_effect").and_then(Value::as_str).unwrap_or("unknown"),
                         "confirmation": action.get("confirmation").and_then(Value::as_str).unwrap_or("always"),
                         "timeout_ms": action.get("timeout_ms").and_then(Value::as_u64).unwrap_or(0),
+                        "result_size_limit": action.get("result_size_limit").and_then(Value::as_u64).unwrap_or(0),
                         "idempotency": action.get("idempotency").and_then(Value::as_str).unwrap_or("unsafe"),
                         "concurrency_safe": action.get("concurrency_safe").and_then(Value::as_bool).unwrap_or(false),
                         "sensitive_fields": action.get("sensitive_fields").cloned().unwrap_or_else(|| json!([]))
@@ -2958,20 +3024,7 @@ fn agent_reach_data_sources() -> Vec<Value> {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let executable = [
-        PathBuf::from("agent-reach"),
-        PathBuf::from("/opt/homebrew/bin/agent-reach"),
-        PathBuf::from("/usr/local/bin/agent-reach"),
-    ];
-    let output = executable.iter().find_map(|candidate| {
-        Command::new(candidate)
-            .args(["doctor", "--json"])
-            .output()
-            .ok()
-            .filter(|output| output.status.success())
-    });
-    let parsed = output
-        .and_then(|output| serde_json::from_slice::<Value>(&output.stdout).ok())
+    let parsed = ai_employee_runtime::runtime_dependency::agent_reach_doctor()
         .and_then(|value| value.as_object().cloned())
         .unwrap_or_default();
 
@@ -3021,7 +3074,7 @@ fn employees_list(
         Connection::open(database.ok_or_else(usage)?).map_err(|e| e.to_string())?;
     migrate(&mut connection).map_err(|e| e.to_string())?;
     if let Some(root) = repository_root {
-        ensure_default_agent(&mut connection, &root)?;
+        ensure_builtin_agents(&mut connection, &root)?;
     }
     let mut statement = connection.prepare(
         "SELECT a.id,a.name,a.role,p.department,p.soul_json,
@@ -3297,14 +3350,7 @@ fn employee_delete(arguments: impl Iterator<Item = String>) -> Result<serde_json
         [&id],
     )
     .map_err(|error| error.to_string())?;
-    if id == DEFAULT_AGENT_ID {
-        tx.execute(
-            "INSERT INTO runtime_flags(key,value,updated_at) VALUES (?1,'1',?2)
-             ON CONFLICT(key) DO UPDATE SET value='1',updated_at=excluded.updated_at",
-            rusqlite::params![DEFAULT_AGENT_DISMISSED_FLAG, now()],
-        )
-        .map_err(|error| error.to_string())?;
-    } else if SPECIALIST_AGENT_IDS.contains(&id.as_str()) {
+    if SPECIALIST_AGENT_IDS.contains(&id.as_str()) {
         tx.execute(
             "INSERT INTO runtime_flags(key,value,updated_at) VALUES (?1,'1',?2)
              ON CONFLICT(key) DO UPDATE SET value='1',updated_at=excluded.updated_at",
@@ -3498,7 +3544,7 @@ fn chat_send(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
     let database_path = database.ok_or_else(usage)?;
     let mut connection = Connection::open(&database_path).map_err(|error| error.to_string())?;
     migrate(&mut connection).map_err(|error| error.to_string())?;
-    ensure_default_agent(&mut connection, &root)?;
+    ensure_builtin_agents(&mut connection, &root)?;
     let conversation_id = conversation_id.ok_or_else(usage)?;
     let agent_id = agent_id.ok_or_else(usage)?;
     let input = input.ok_or_else(usage)?.trim().to_owned();
@@ -4209,6 +4255,7 @@ fn list_tasks(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
                       'tool_id', a.tool_id,
                       'action', COALESCE(json_extract(a.input_json,'$.action'), ''),
                       'resource', COALESCE(json_extract(a.input_json,'$.arguments.path'), json_extract(a.input_json,'$.arguments.query'), ''),
+                      'argument_summary', '',
                       'rationale_summary', COALESCE(json_extract(a.input_json,'$.rationale_summary'), '')
                       ) AS action_json
                       FROM actions a WHERE a.task_id=t.id
@@ -4308,10 +4355,72 @@ fn list_tasks(mut arguments: impl Iterator<Item = String>) -> Result<serde_json:
             }))
         })
         .map_err(|error| error.to_string())?;
-    let tasks = rows
+    let mut tasks = rows
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| error.to_string())?;
+    drop(statement);
+    for task in &mut tasks {
+        for action in task["actions"].as_array_mut().into_iter().flatten() {
+            let protected = !action["resource"].is_string();
+            if !protected {
+                continue;
+            }
+            let Some(action_id) = action["action_id"].as_str() else {
+                continue;
+            };
+            let reference: Option<String> = connection
+                .query_row(
+                    "SELECT json_extract(input_json,'$.payload_ref') FROM actions WHERE id=?1",
+                    [action_id],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?
+                .flatten();
+            let Some(reference) = reference else {
+                action["resource"] = json!("受保护参数");
+                continue;
+            };
+            let payload = ai_employee_runtime::tool_payload::load(&connection, &reference)?;
+            action["resource"] = payload["arguments"]["path"]
+                .as_str()
+                .or_else(|| payload["arguments"]["query"].as_str())
+                .map_or_else(|| json!("受保护参数"), |value| json!(value));
+            action["argument_summary"] = json!(approval_argument_summary(&payload));
+        }
+    }
     Ok(json!({"schema_version":"1.0","tasks":tasks}))
+}
+
+fn approval_argument_summary(payload: &Value) -> String {
+    fn preview(value: &str) -> String {
+        let mut characters = value.chars();
+        let excerpt = characters.by_ref().take(240).collect::<String>();
+        if characters.next().is_some() {
+            format!("{excerpt}…")
+        } else {
+            excerpt
+        }
+    }
+
+    match payload["action"].as_str().unwrap_or_default() {
+        "create_file" => payload["arguments"]["content"]
+            .as_str()
+            .map(|content| format!("写入内容预览：{}", preview(content)))
+            .unwrap_or_default(),
+        "edit_file" => {
+            let before = payload["arguments"]["old_text"]
+                .as_str()
+                .unwrap_or_default();
+            let after = payload["arguments"]["new_text"]
+                .as_str()
+                .unwrap_or_default();
+            format!("替换“{}”为“{}”", preview(before), preview(after))
+        }
+        "read_file" => "读取该文件".to_owned(),
+        "search_web" => "向外部搜索服务发送该查询".to_owned(),
+        _ => String::new(),
+    }
 }
 
 fn recover_runtime(
@@ -4682,6 +4791,7 @@ fn run_skill(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::
         input,
         conversation_id: conversation_id.as_deref(),
         capability_mode: false,
+        capability_skill_ids: None,
         existing_task_id: None,
     })
 }
@@ -5058,6 +5168,7 @@ fn run_task(mut arguments: impl Iterator<Item = String>) -> Result<serde_json::V
             .map_err(|_| "input_schema_invalid".to_owned())?,
         conversation_id: None,
         capability_mode: false,
+        capability_skill_ids: None,
         existing_task_id: None,
     })
 }
@@ -5304,7 +5415,7 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     const VALID_TWO_ASSIGNMENT_PROPOSAL: &str = r#"{"schema_version":"1.0.0","intent":"multi_agent_task","title":"Research and write","objective":"Research and write a summary","missing_inputs":[],"deliverable":{"type":"markdown_document","description":"Research summary","target_path":"research-summary.md"},"assignments":[{"node_id":"research","role":"owner","employee_selector":{"preferred_id":"data-researcher","capabilities":["web-search"]},"goal":"Research the current topic","depends_on":[],"acceptance_criteria":[{"criterion_id":"sources","description":"Includes sources","evidence_type":"structured_output","required":true}]},{"node_id":"write","role":"finalizer","employee_selector":{"preferred_id":"document-writer","capabilities":["local-file-operations"]},"goal":"Write the final summary","depends_on":["research"],"acceptance_criteria":[{"criterion_id":"summary","description":"Produces the final summary","evidence_type":"structured_output","required":true}]}],"acceptance_criteria":[{"criterion_id":"complete","description":"Research and summary are complete","evidence_type":"evaluation","required":true}],"requested_resources":[],"budget_hint":{"input_tokens":0,"output_tokens":0,"tool_rounds":0,"wall_clock_ms":0}}"#;
-    const VALID_SINGLE_ASSIGNMENT_PROPOSAL: &str = r#"{"schema_version":"1.0.0","intent":"single_agent_task","title":"Write","objective":"Write the requested summary","missing_inputs":[],"deliverable":{"type":"structured_result","description":"Written summary","target_path":null},"assignments":[{"node_id":"write","role":"owner","employee_selector":{"preferred_id":"ai-product-manager","capabilities":["local-file-operations"]},"goal":"Write the requested summary","depends_on":[],"acceptance_criteria":[{"criterion_id":"summary","description":"Includes a summary","evidence_type":"structured_output","required":true}]}],"acceptance_criteria":[{"criterion_id":"summary","description":"Includes a summary","evidence_type":"structured_output","required":true}],"requested_resources":[],"budget_hint":{"input_tokens":0,"output_tokens":0,"tool_rounds":0,"wall_clock_ms":0}}"#;
+    const VALID_SINGLE_ASSIGNMENT_PROPOSAL: &str = r#"{"schema_version":"1.0.0","intent":"single_agent_task","title":"Write","objective":"Write the requested summary","missing_inputs":[],"deliverable":{"type":"structured_result","description":"Written summary","target_path":null},"assignments":[{"node_id":"write","role":"owner","employee_selector":{"preferred_id":"document-writer","capabilities":["local-file-operations"]},"goal":"Write the requested summary","depends_on":[],"acceptance_criteria":[{"criterion_id":"summary","description":"Includes a summary","evidence_type":"structured_output","required":true}]}],"acceptance_criteria":[{"criterion_id":"summary","description":"Includes a summary","evidence_type":"structured_output","required":true}],"requested_resources":[],"budget_hint":{"input_tokens":0,"output_tokens":0,"tool_rounds":0,"wall_clock_ms":0}}"#;
     static PROPOSAL_FIXTURE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     #[test]
@@ -5313,7 +5424,7 @@ mod tests {
         migrate(&mut connection).unwrap();
         let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
 
-        ensure_default_agent(&mut connection, &repository_root).unwrap();
+        ensure_builtin_agents(&mut connection, &repository_root).unwrap();
 
         for (agent_id, expected_skill, forbidden_skill) in [
             ("data-researcher", "web-search", "local-file-operations"),
@@ -5348,7 +5459,7 @@ mod tests {
         let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let mut connection = Connection::open(&database).unwrap();
         migrate(&mut connection).unwrap();
-        ensure_default_agent(&mut connection, &repository_root).unwrap();
+        ensure_builtin_agents(&mut connection, &repository_root).unwrap();
         drop(connection);
 
         employee_delete(
@@ -5363,7 +5474,7 @@ mod tests {
         .unwrap();
 
         let mut connection = Connection::open(&database).unwrap();
-        ensure_default_agent(&mut connection, &repository_root).unwrap();
+        ensure_builtin_agents(&mut connection, &repository_root).unwrap();
         assert!(!employee_exists(&connection, "data-researcher").unwrap());
         assert!(specialist_agent_dismissed(&connection, "data-researcher").unwrap());
         drop(connection);
@@ -5392,7 +5503,7 @@ mod tests {
         let mut connection = Connection::open_in_memory().unwrap();
         migrate(&mut connection).unwrap();
         let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        ensure_default_agent(&mut connection, &repository_root).unwrap();
+        ensure_builtin_agents(&mut connection, &repository_root).unwrap();
         let proposal: Value = serde_json::from_str(VALID_TWO_ASSIGNMENT_PROPOSAL).unwrap();
         let resolved = vec![
             ("data-researcher".to_owned(), vec!["web-search".to_owned()]),
@@ -5538,6 +5649,182 @@ mod tests {
     }
 
     #[test]
+    fn business_flow_continue_recovers_committed_child_and_partial_output() {
+        let (mut connection, _, _) = resumed_flow_fixture(false);
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let (root_task_id, _final_work_order_id, final_task_id): (String, String, String) =
+            connection
+                .query_row(
+                    "SELECT flow.root_task_id,work.id,work.child_task_id
+                     FROM business_flows flow JOIN work_orders work ON work.business_flow_id=flow.id
+                     WHERE flow.id='flow-resume-failure' AND work.role='finalization'",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .unwrap();
+        connection
+            .execute(
+                "UPDATE tasks SET status='succeeded',updated_at='t3' WHERE parent_task_id=?1",
+                [&root_task_id],
+            )
+            .unwrap();
+        connection.execute(
+            "INSERT INTO agent_runs(id,task_id,schema_version,phase,revision,model_turns_used,tool_calls_used,max_model_turns,max_tool_calls,deadline,waiting_reason,stop_reason,created_at,updated_at)
+             VALUES ('run-final',?1,'1.0.0','terminal',1,1,0,3,1,'9',NULL,'succeeded','t3','t3')",
+            [&final_task_id],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO deliverables(id,task_id,run_id,deliverable_type,title,summary,status,output_json,created_at,verified_at)
+             VALUES ('deliverable-final',?1,'run-final','structured_result','Document','Verified','verified','{}','t3','t3')",
+            [&final_task_id],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO evaluations(id,task_id,agent_id,score,metrics_json,created_at)
+             SELECT 'evaluation-final',?1,agent_id,1.0,
+               '{\"delivery_allowed\":true,\"criteria\":[
+                 {\"criterion_id\":\"summary\",\"description\":\"Produces the final summary\",\"evidence_type\":\"structured_output\",\"required\":true,\"passed\":true,\"evidence_refs\":[\"structured-ref\"]},
+                 {\"criterion_id\":\"complete\",\"description\":\"Research and summary are complete\",\"evidence_type\":\"evaluation\",\"required\":true,\"passed\":true,\"evidence_refs\":[\"evaluation-final\"]}
+               ]}','t3'
+             FROM tasks WHERE id=?1",
+            [&final_task_id],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO deliverable_evidence(deliverable_id,evidence_type,evidence_ref,created_at)
+             VALUES ('deliverable-final','structured_output','structured-ref','t3')",
+            [],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO deliverable_evidence(deliverable_id,evidence_type,evidence_ref,created_at)
+             VALUES ('deliverable-final','evaluation','evaluation-final','t3')",
+            [],
+        ).unwrap();
+
+        let recovered = drive_business_flow_once(
+            &mut connection,
+            &repository_root,
+            Path::new("/missing-worker-must-not-run"),
+            "flow-resume-failure",
+        )
+        .unwrap();
+
+        assert_eq!(recovered["status"], "succeeded");
+        assert_eq!(recovered["root_deliverable_id"], "deliverable-final");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT status FROM task_threads WHERE id='thread-resume-failure'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+            "succeeded"
+        );
+
+        connection
+            .execute_batch(
+                "UPDATE tasks SET status='running' WHERE id='flow-resume-failure:root';
+             UPDATE task_threads SET status='running' WHERE id='thread-resume-failure';
+             DELETE FROM runtime_events
+             WHERE task_id='flow-resume-failure:root' AND event_type='business_flow.completed';
+             DELETE FROM audit_logs WHERE id='flow-resume-failure:audit:complete';",
+            )
+            .unwrap();
+        let recovered_partial_output = drive_business_flow_once(
+            &mut connection,
+            &repository_root,
+            Path::new("/missing-worker-must-not-run"),
+            "flow-resume-failure",
+        )
+        .unwrap();
+        assert_eq!(recovered_partial_output["status"], "succeeded");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT count(*) FROM runtime_events
+                 WHERE task_id='flow-resume-failure:root' AND event_type='business_flow.completed'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT count(*) FROM audit_logs WHERE id='flow-resume-failure:audit:complete'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn historical_non_final_sink_does_not_block_a_ready_finalizer() {
+        let (mut connection, research_work_order_id, research_task_id) =
+            resumed_flow_fixture(false);
+        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        connection
+            .execute(
+                "DELETE FROM work_order_dependencies WHERE business_flow_id='flow-resume-failure'",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "UPDATE tasks SET status='succeeded',updated_at='t3' WHERE id=?1",
+                [&research_task_id],
+            )
+            .unwrap();
+        connection.execute(
+            "INSERT INTO agent_runs(id,task_id,schema_version,phase,revision,model_turns_used,tool_calls_used,max_model_turns,max_tool_calls,deadline,waiting_reason,stop_reason,created_at,updated_at)
+             VALUES ('run-research',?1,'1.0.0','terminal',1,1,0,3,1,'9',NULL,'succeeded','t3','t3')",
+            [&research_task_id],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO deliverables(id,task_id,run_id,deliverable_type,title,summary,status,output_json,created_at,verified_at)
+             VALUES ('deliverable-research',?1,'run-research','structured_result','Research','Verified','verified','{}','t3','t3')",
+            [&research_task_id],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO evaluations(id,task_id,agent_id,score,metrics_json,created_at)
+             SELECT 'evaluation-research',?1,agent_id,1.0,
+               '{\"delivery_allowed\":true,\"criteria\":[
+                 {\"criterion_id\":\"sources\",\"description\":\"Includes sources\",\"evidence_type\":\"structured_output\",\"required\":true,\"passed\":true,\"evidence_refs\":[\"structured-ref\"]}
+               ]}','t3'
+             FROM tasks WHERE id=?1",
+            [&research_task_id],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO deliverable_evidence(deliverable_id,evidence_type,evidence_ref,created_at)
+             VALUES ('deliverable-research','structured_output','structured-ref','t3'),
+                    ('deliverable-research','evaluation','evaluation-research','t3')",
+            [],
+        ).unwrap();
+
+        let result = drive_business_flow_once(
+            &mut connection,
+            &repository_root,
+            Path::new("/missing-worker"),
+            "flow-resume-failure",
+        )
+        .unwrap();
+
+        assert_eq!(result["flow"]["status"], "failed");
+        assert_eq!(result["run"]["status"], "failed");
+        assert_ne!(
+            result["flow"]["work_orders"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|work| work["id"] == research_work_order_id)
+                .unwrap()["status"],
+            "running"
+        );
+    }
+
+    #[test]
     fn business_flow_drive_settles_a_child_failed_by_worker_error() {
         let (mut connection, _, _) = resumed_flow_fixture(false);
         let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -5606,7 +5893,7 @@ mod tests {
         fn write_successful_decision_worker(&self) {
             fs::write(
                 &self.worker_path,
-                "#!/bin/sh\nprintf '%s\\n' '{\"schema_version\":\"1.0.0\",\"type\":\"complete\",\"output\":{\"summary\":\"ok\"},\"deliverable_candidates\":[],\"evidence_refs\":[]}'\n",
+                "#!/bin/sh\nif [ \"$2\" = \"app.acceptance_evaluator\" ]; then\n  /usr/bin/python3 -c 'import json,sys; r=json.load(sys.stdin); print(json.dumps({\"schema_version\":\"1.0.0\",\"criteria\":[{\"evaluation_key\":c[\"evaluation_key\"],\"passed\":bool(c[\"evidence\"]),\"reason\":\"fixture\",\"evidence_refs\":[c[\"evidence\"][0][\"ref\"]] if c[\"evidence\"] else []} for c in r[\"criteria\"]]}))'\n  exit $?\nfi\ninput=$(cat)\ncase \"$input\" in\n  *'\"id\":\"web-search\"'*) output='{\"answer\":\"ok\",\"sources\":[]}' ;;\n  *) output='{\"summary\":\"ok\"}' ;;\nesac\nprintf '%s\\n' \"{\\\"schema_version\\\":\\\"1.0.0\\\",\\\"type\\\":\\\"complete\\\",\\\"output\\\":$output,\\\"deliverable_candidates\\\":[],\\\"evidence_refs\\\":[]}\"\n",
             )
             .unwrap();
             fs::set_permissions(&self.worker_path, fs::Permissions::from_mode(0o700)).unwrap();
@@ -5686,7 +5973,7 @@ mod tests {
             env::temp_dir().join(format!("ai-employee-proposal-worker-{fixture_id}.sh"));
         let mut connection = Connection::open(&database).unwrap();
         migrate(&mut connection).unwrap();
-        ensure_default_agent(&mut connection, &repository_root).unwrap();
+        ensure_builtin_agents(&mut connection, &repository_root).unwrap();
         let stamp = now();
         let thread_id = "thread_proposal_generation".to_owned();
         connection.execute("INSERT INTO task_threads(id,title,status,current_revision,created_at,updated_at) VALUES (?1,'Research and write','drafting',1,?2,?2)", rusqlite::params![thread_id,stamp]).unwrap();
@@ -5938,7 +6225,24 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(response["execution"]["status"], "succeeded");
+        assert_eq!(response["execution"]["status"], "failed");
+        assert_eq!(
+            response["execution"]["reason"],
+            "completion_evidence_missing"
+        );
+        let locked_skills: String = Connection::open(&fixture.database)
+            .unwrap()
+            .query_row(
+                "SELECT json_group_array(skill_id) FROM (
+                   SELECT lock.skill_id FROM task_capability_locks lock
+                   JOIN task_thread_task_bindings binding ON binding.task_id=lock.task_id
+                   WHERE binding.proposal_id=?1 ORDER BY lock.ordinal
+                 )",
+                [fixture.old_proposal_id.as_deref().unwrap()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(locked_skills, r#"["local-file-operations"]"#);
         assert_eq!(
             proposal_status(&fixture.database, &fixture.old_proposal_id),
             "materialized"
@@ -6042,7 +6346,11 @@ mod tests {
         let recovered =
             task_proposal_confirm(fixture.arguments_for_confirm_with_success_worker()).unwrap();
         assert_eq!(recovered["execution"]["task_id"], prepared_task.0);
-        assert_eq!(recovered["execution"]["status"], "succeeded");
+        assert_eq!(recovered["execution"]["status"], "failed");
+        assert_eq!(
+            recovered["execution"]["reason"],
+            "completion_evidence_missing"
+        );
         let connection = Connection::open(&fixture.database).unwrap();
         assert_eq!(
             connection
@@ -6366,15 +6674,45 @@ mod tests {
     }
 
     #[test]
+    fn task_room_projects_permission_only_blocked_action_as_actionable_permission() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        migrate(&mut connection).unwrap();
+        connection
+            .execute_batch(
+                "INSERT INTO agents VALUES ('researcher','Researcher','researcher','user','active','t','t');
+                 INSERT INTO tools VALUES ('agent-reach-tool','Agent Reach','native','1.0.0','{}','active','t','t');
+                 INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','researcher','research','running','t','t');
+                 INSERT INTO task_threads(id,title,status,current_revision,created_at,updated_at) VALUES ('thread','Research','running',1,'t','t');
+                 INSERT INTO task_thread_task_bindings(thread_id,task_id,proposal_id,binding_role,created_at) VALUES ('thread','task',NULL,'single','t');
+                 INSERT INTO actions(id,task_id,tool_id,input_json,output_json,status,created_at,updated_at)
+                 VALUES ('action','task','agent-reach-tool','{\"action\":\"search_web\",\"arguments\":{\"query\":\"AI employee market\"}}',NULL,'blocked','t','t');",
+            )
+            .unwrap();
+
+        let room = task_room_timeline_projection(&connection, "thread").unwrap();
+        let action = room["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["action_id"] == "action")
+            .unwrap();
+        assert_eq!(action["kind"], "permission");
+        assert_eq!(action["status"], "blocked");
+        assert!(action["approval_id"].is_null());
+        assert_eq!(action["resource"], "AI employee market");
+        assert_eq!(action["impact"], "将该查询词发送给已配置的网络搜索服务。");
+    }
+
+    #[test]
     fn conversation_access_rejects_a_different_employee() {
         let database = env::temp_dir().join(format!("ai-employee-conversation-owner-{}.db", now()));
         let mut connection = Connection::open(&database).unwrap();
         migrate(&mut connection).unwrap();
         connection
             .execute_batch(
-                "INSERT INTO agents VALUES ('alex','Alex','ai_product_manager','user','active','t','t');
+                "INSERT INTO agents VALUES ('test_employee','Test Employee','test_role','user','active','t','t');
                  INSERT INTO agents VALUES ('writer','Writer','writer','user','active','t','t');
-                 INSERT INTO conversations VALUES ('conversation_alex_primary','alex','chat','active','t','t');",
+                 INSERT INTO conversations VALUES ('conversation_test_employee_primary','test_employee','chat','active','t','t');",
             )
             .unwrap();
         drop(connection);
@@ -6384,13 +6722,13 @@ mod tests {
                 "--database".to_owned(),
                 database.display().to_string(),
                 "--conversation-id".to_owned(),
-                "conversation_alex_primary".to_owned(),
+                "conversation_test_employee_primary".to_owned(),
                 "--employee-id".to_owned(),
                 employee_id.to_owned(),
             ]
             .into_iter()
         };
-        assert!(chat_history(arguments("alex")).is_ok());
+        assert!(chat_history(arguments("test_employee")).is_ok());
         assert_eq!(
             chat_history(arguments("writer")).unwrap_err(),
             "conversation_employee_mismatch"
@@ -6405,9 +6743,9 @@ mod tests {
         let mut connection = Connection::open(&database).unwrap();
         migrate(&mut connection).unwrap();
         connection.execute_batch(
-            "INSERT INTO agents VALUES ('alex','Alex','ai_product_manager','user','active','t','t');
-             INSERT INTO conversations VALUES ('conversation_alex_primary','alex','chat','active','t','t');
-             INSERT INTO messages (id,conversation_id,sequence,role,content,created_at) VALUES ('m1','conversation_alex_primary',1,'user','hello','t');"
+            "INSERT INTO agents VALUES ('test_employee','Test Employee','test_role','user','active','t','t');
+             INSERT INTO conversations VALUES ('conversation_test_employee_primary','test_employee','chat','active','t','t');
+             INSERT INTO messages (id,conversation_id,sequence,role,content,created_at) VALUES ('m1','conversation_test_employee_primary',1,'user','hello','t');"
         ).unwrap();
         drop(connection);
         let retention = |operation: &str| {
@@ -6415,9 +6753,9 @@ mod tests {
                 "--database".to_owned(),
                 database.display().to_string(),
                 "--conversation-id".to_owned(),
-                "conversation_alex_primary".to_owned(),
+                "conversation_test_employee_primary".to_owned(),
                 "--employee-id".to_owned(),
-                "alex".to_owned(),
+                "test_employee".to_owned(),
                 "--operation".to_owned(),
                 operation.to_owned(),
             ]
@@ -6428,9 +6766,9 @@ mod tests {
                 "--database".to_owned(),
                 database.display().to_string(),
                 "--conversation-id".to_owned(),
-                "conversation_alex_primary".to_owned(),
+                "conversation_test_employee_primary".to_owned(),
                 "--employee-id".to_owned(),
-                "alex".to_owned(),
+                "test_employee".to_owned(),
             ]
             .into_iter()
         };
@@ -6573,7 +6911,7 @@ mod tests {
         let database = env::temp_dir().join(format!("ai-employee-list-tasks-{}.db", now()));
         let mut connection = Connection::open(&database).unwrap();
         migrate(&mut connection).unwrap();
-        connection.execute("INSERT INTO agents VALUES ('alex','Alex','ai_product_manager','package','active','t','t')", []).unwrap();
+        connection.execute("INSERT INTO agents VALUES ('test_employee','Test Employee','test_role','package','active','t','t')", []).unwrap();
         connection
             .execute(
                 "INSERT INTO tools VALUES ('tool','Tool','native','1.0.0','{}','active','t','t')",
@@ -6582,7 +6920,7 @@ mod tests {
             .unwrap();
         connection
             .execute(
-                "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','alex','input','running','t','t')",
+                "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','test_employee','input','running','t','t')",
                 [],
             )
             .unwrap();
@@ -6630,13 +6968,13 @@ mod tests {
         migrate(&mut connection).unwrap();
         connection
             .execute(
-                "INSERT INTO agents VALUES ('alex','Alex','role','package','active','t','t')",
+                "INSERT INTO agents VALUES ('test_employee','Test Employee','role','package','active','t','t')",
                 [],
             )
             .unwrap();
         connection
             .execute(
-                "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','alex','input','succeeded','1','9')",
+                "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','test_employee','input','succeeded','1','9')",
                 [],
             )
             .unwrap();
@@ -6671,7 +7009,7 @@ mod tests {
         assert_eq!(task["verified_artifact_path"], "/tmp/linked");
         assert_eq!(task["actions"][0]["action_id"], "action-a");
         assert_eq!(task["actions"][1]["action_id"], "action-b");
-        assert_eq!(task["events"][0]["payload"]["agent_id"], "alex");
+        assert_eq!(task["events"][0]["payload"]["agent_id"], "test_employee");
         fs::remove_file(database).unwrap();
     }
 
@@ -6789,13 +7127,13 @@ mod tests {
         migrate(&mut connection).unwrap();
         connection
             .execute(
-                "INSERT INTO agents VALUES ('alex','Alex','ai_product_manager','package','active','t','t')",
+                "INSERT INTO agents VALUES ('test_employee','Test Employee','test_role','package','active','t','t')",
                 [],
             )
             .unwrap();
         connection
             .execute(
-                "INSERT INTO conversations VALUES ('c1','alex','chat','active','t','t')",
+                "INSERT INTO conversations VALUES ('c1','test_employee','chat','active','t','t')",
                 [],
             )
             .unwrap();
@@ -6873,13 +7211,13 @@ mod tests {
         migrate(&mut connection).unwrap();
         connection
             .execute(
-                "INSERT INTO agents VALUES ('alex','Alex','role','package','active','t','t')",
+                "INSERT INTO agents VALUES ('test_employee','Test Employee','role','package','active','t','t')",
                 [],
             )
             .unwrap();
         connection
             .execute(
-                "INSERT INTO conversations VALUES ('c1','alex','chat','active','t','t')",
+                "INSERT INTO conversations VALUES ('c1','test_employee','chat','active','t','t')",
                 [],
             )
             .unwrap();

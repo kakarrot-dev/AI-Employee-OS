@@ -245,17 +245,17 @@ mod tests {
     use crate::storage::migrate;
 
     #[test]
-    fn installs_alex_and_persona_from_the_real_package() {
+    fn installs_builtin_employee_and_persona_from_the_real_package() {
         let mut connection = Connection::open_in_memory().unwrap();
         migrate(&mut connection).unwrap();
         let package_path =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/agents/ai-product-manager");
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/agents/document-writer");
 
         let agent =
             install_agent_package(&mut connection, &package_path, "2026-08-04T00:00:00Z").unwrap();
 
-        assert_eq!(agent.id, "ai-product-manager");
-        assert_eq!(agent.name, "Alex");
+        assert_eq!(agent.id, "document-writer");
+        assert_eq!(agent.name, "文档编写员工");
         assert_eq!(agent.status, "active");
         let persona_count: i64 = connection
             .query_row("SELECT count(*) FROM personas", [], |row| row.get(0))
@@ -268,12 +268,12 @@ mod tests {
         let mut connection = Connection::open_in_memory().unwrap();
         migrate(&mut connection).unwrap();
         let package_path =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/agents/ai-product-manager");
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/agents/document-writer");
 
         install_agent_package(&mut connection, &package_path, "2026-08-04T00:00:00Z").unwrap();
         connection
             .execute(
-                "UPDATE agents SET status = 'disabled' WHERE id = 'ai-product-manager'",
+                "UPDATE agents SET status = 'disabled' WHERE id = 'document-writer'",
                 [],
             )
             .unwrap();

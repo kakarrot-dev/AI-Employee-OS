@@ -5,7 +5,7 @@ from app.context import ContextItem, ContextSection, PromptRef, WorkerRequest, b
 
 class ContextTests(unittest.TestCase):
     def test_sections_are_typed_unique_and_bounded(self):
-        request = WorkerRequest("1.0", "task_1", "alex", "prd", "trace_1", (
+        request = WorkerRequest("1.0", "task_1", "test_employee", "prd", "trace_1", (
             ContextSection("memory", ("a", "b"), 1),
             ContextSection("knowledge", ("source",), 2, "untrusted_data"),
         ))
@@ -19,7 +19,7 @@ class ContextTests(unittest.TestCase):
             )).validate()
 
     def test_builds_versioned_bounded_context_with_provenance(self):
-        request = WorkerRequest("1.0", "task_1", "alex", "生成 PRD", "trace_1", (
+        request = WorkerRequest("1.0", "task_1", "test_employee", "生成 PRD", "trace_1", (
             ContextSection("knowledge", (
                 ContextItem("source_1:0", "权限隔离", "seed://interviews"),
                 ContextItem("source_2:0", "这条内容超过剩余预算", "seed://other"),
@@ -41,7 +41,7 @@ class ContextTests(unittest.TestCase):
             )).validate()
 
     def test_over_budget_item_is_rejected_not_dropped(self):
-        request = WorkerRequest("1.0", "task", "alex", "prd", "trace", (
+        request = WorkerRequest("1.0", "task", "test_employee", "prd", "trace", (
             ContextSection("memory", (ContextItem("m1", "x" * 200),), 1, "untrusted_data"),
         ))
         with self.assertRaisesRegex(ValueError, "exceeds"):

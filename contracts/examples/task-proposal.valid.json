@@ -5,7 +5,7 @@
   "objective": "读取项目说明并生成摘要",
   "missing_inputs": [],
   "deliverable": {"type": "structured_output", "description": "项目摘要", "target_path": null},
-  "assignments": [{"node_id": "work", "role": "owner", "employee_selector": {"preferred_id": "ai-product-manager", "capabilities": ["local-file-operations"]}, "goal": "读取并总结项目说明", "depends_on": [], "acceptance_criteria": [{"criterion_id": "work-summary", "description": "完成摘要", "evidence_type": "evaluation", "required": true}]}],
+  "assignments": [{"node_id": "work", "role": "owner", "employee_selector": {"preferred_id": "test-employee", "capabilities": ["local-file-operations"]}, "goal": "读取并总结项目说明", "depends_on": [], "acceptance_criteria": [{"criterion_id": "work-summary", "description": "完成摘要", "evidence_type": "evaluation", "required": true}]}],
   "acceptance_criteria": [{"criterion_id": "summary", "description": "摘要覆盖核心内容", "evidence_type": "evaluation", "required": true}],
   "requested_resources": [],
   "budget_hint": {"input_tokens": 4000, "output_tokens": 2000, "tool_rounds": 4, "wall_clock_ms": 120000}

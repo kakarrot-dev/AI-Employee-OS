@@ -11,6 +11,8 @@ class EvalCase:
     input: dict
     expected_tool: str | None = None
     expected_error: str | None = None
+    probe_tool: str | None = None
+    tool_arguments: dict | None = None
 
     @property
     def category(self) -> str:
@@ -85,6 +87,8 @@ def load_cases(path: Path) -> tuple[EvalCase, ...]:
     for case in cases:
         if bool(case.expected_tool) == bool(case.expected_error):
             raise ValueError(f"eval case {case.id} must declare exactly one expected outcome")
+        if not case.tool_arguments or not (case.expected_tool or case.probe_tool):
+            raise ValueError(f"eval case {case.id} requires an executable Tool probe")
         if not isinstance(case.input, dict) or not case.input:
             raise ValueError(f"eval case {case.id} input must be a non-empty object")
     if suite.get("schema_version") != "1.0.0" or not suite.get("skill_id") or suite.get("cases") != path.name:

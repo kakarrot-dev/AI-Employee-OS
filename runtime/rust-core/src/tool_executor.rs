@@ -12,6 +12,7 @@ use std::{
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 use crate::json_schema;
 use crate::tool::{
@@ -93,6 +94,19 @@ impl<'a> ToolExecutor<'a> {
         let execution = execute_native_with_timeout(call, action, authorized_root);
         match execution {
             Ok((output, side_effect_state)) => {
+                let serialized_size = serde_json::to_vec(&output)
+                    .map(|bytes| bytes.len() as u64)
+                    .unwrap_or(u64::MAX);
+                if serialized_size > action.result_size_limit {
+                    let result = failed_result(
+                        call,
+                        now,
+                        "RESULT_TOO_LARGE",
+                        "tool result exceeded result_size_limit",
+                        side_effect_state,
+                    );
+                    return self.persist_or_unknown(call, result, now);
+                }
                 if let Err(message) = json_schema::validate(&action.output_schema, &output) {
                     let result = failed_result(
                         call,
@@ -252,20 +266,34 @@ impl<'a> ToolExecutor<'a> {
             }
         }
 
-        if action.risk_level >= 2 {
+        let requires_approval = action.confirmation == "always"
+            || (action.confirmation == "on_risk" && action.risk_level >= 2);
+        if requires_approval {
             let approval_id = call
                 .approval_id
                 .as_ref()
                 .ok_or(("APPROVAL_REQUIRED", "approval is required".to_owned()))?;
+            let input_sha256 = format!(
+                "{:x}",
+                Sha256::digest(call.arguments.to_string().as_bytes())
+            );
             let approved: bool = self
                 .connection
                 .query_row(
                     "SELECT EXISTS(
                        SELECT 1 FROM approvals
                        WHERE id = ?1 AND task_id = ?2 AND agent_id = ?3
-                         AND action = ?4 AND status = 'approved'
+                         AND action = ?4 AND action_id=?5 AND input_sha256=?6
+                         AND status = 'approved'
                      )",
-                    params![approval_id, call.task_id, call.agent_id, call.action],
+                    params![
+                        approval_id,
+                        call.task_id,
+                        call.agent_id,
+                        call.action,
+                        call.action_id,
+                        input_sha256
+                    ],
                     |row| row.get(0),
                 )
                 .map_err(|error| ("EXECUTION_FAILED", error.to_string()))?;
@@ -508,11 +536,35 @@ impl<'a> ToolExecutor<'a> {
             SideEffectState::Confirmed => "confirmed",
             SideEffectState::Unknown => "unknown",
         };
-        let result_json = serde_json::to_string(result).ok();
-        let action_output = result
-            .output
-            .as_ref()
-            .and_then(|output| serde_json::to_string(output).ok());
+        let manifest = self.resolve_manifest(call).map_err(|(_, message)| {
+            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(message)))
+        })?;
+        let action_manifest = manifest
+            .tool
+            .actions
+            .iter()
+            .find(|item| item.name == call.action)
+            .ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+        let full_result = serde_json::to_value(result)
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        let (mut persisted_result, protected) =
+            crate::tool_payload::redact(&full_result, &action_manifest.sensitive_fields, "result");
+        if protected {
+            let reference = crate::tool_payload::store(
+                self.connection,
+                &format!("result:{}", call.call_id),
+                &full_result,
+            )
+            .map_err(|message| {
+                rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(message)))
+            })?;
+            persisted_result["result_ref"] = json!(reference);
+        }
+        let result_json = Some(persisted_result.to_string());
+        let action_output = persisted_result
+            .get("output")
+            .filter(|output| !output.is_null())
+            .map(Value::to_string);
         let transaction = self.connection.transaction()?;
         let execution_updated = transaction.execute(
             "UPDATE tool_executions SET status = ?1, side_effect_state = ?2,
@@ -658,12 +710,10 @@ fn execute_native_with_timeout(
     let tool_id = call.tool_id.clone();
     let action_name = call.action.clone();
     let arguments = call.arguments.clone();
-    if action.side_effect != "none" {
-        return execute_native(&tool_id, &action_name, &arguments, &root);
-    }
+    let result_size_limit = action.result_size_limit;
     let (sender, receiver) = mpsc::sync_channel(1);
     std::thread::spawn(move || {
-        let result = execute_native(&tool_id, &action_name, &arguments, &root);
+        let result = execute_native(&tool_id, &action_name, &arguments, &root, result_size_limit);
         let _ = sender.send(result);
     });
     match receiver.recv_timeout(Duration::from_millis(action.timeout_ms)) {
@@ -691,13 +741,14 @@ fn execute_native(
     action_name: &str,
     arguments: &Value,
     root: &Path,
+    result_size_limit: u64,
 ) -> NativeExecution {
     match (tool_id, action_name) {
-        ("file-tool", "read_file") => read_file(arguments, root),
+        ("file-tool", "read_file") => read_file(arguments, root, result_size_limit),
         ("file-tool", "create_file") => create_file(arguments, root),
         ("file-tool", "edit_file") => edit_file(arguments, root),
         ("document-tool", "create_markdown") => create_markdown(arguments, root),
-        ("agent-reach-tool", "search_web") => search_web(arguments),
+        ("agent-reach-tool", "search_web") => search_web(arguments, result_size_limit),
         #[cfg(test)]
         ("document-tool", "slow_write") => {
             std::thread::sleep(Duration::from_millis(20));
@@ -723,6 +774,7 @@ fn requested_path(arguments: &Value) -> Result<&Path, (&'static str, String, Sid
 fn read_file(
     arguments: &Value,
     root: &Path,
+    result_size_limit: u64,
 ) -> Result<(Value, SideEffectState), (&'static str, String, SideEffectState)> {
     let path = requested_path(arguments)?;
     let canonical_root = root
@@ -735,6 +787,16 @@ fn read_file(
         return Err((
             "PERMISSION_DENIED",
             "path is outside authorized root".to_owned(),
+            SideEffectState::None,
+        ));
+    }
+    let size = fs::metadata(&canonical_path)
+        .map_err(|error| ("EXECUTION_FAILED", error.to_string(), SideEffectState::None))?
+        .len();
+    if size > result_size_limit {
+        return Err((
+            "RESULT_TOO_LARGE",
+            "file exceeds result_size_limit".to_owned(),
             SideEffectState::None,
         ));
     }
@@ -939,6 +1001,7 @@ fn atomic_replace(
 
 fn search_web(
     arguments: &Value,
+    result_size_limit: u64,
 ) -> Result<(Value, SideEffectState), (&'static str, String, SideEffectState)> {
     let query = required_string(arguments, "query")?;
     if query.trim().is_empty() {
@@ -998,10 +1061,10 @@ fn search_web(
             SideEffectState::None,
         )
     })?;
-    if content.len() > 1_048_576 {
+    if content.len() as u64 > result_size_limit {
         return Err((
             "RESULT_TOO_LARGE",
-            "search result exceeded 1 MiB".to_owned(),
+            "search result exceeded result_size_limit".to_owned(),
             SideEffectState::None,
         ));
     }
@@ -1192,7 +1255,7 @@ mod tests {
         migrate(&mut connection).unwrap();
         let now = "2026-08-04T00:00:00Z";
         connection.execute(
-            "INSERT INTO agents VALUES ('ai-product-manager', 'Alex', 'AI Product Manager', '/agents/alex', 'active', ?1, ?1)",
+            "INSERT INTO agents VALUES ('test-employee', '测试员工', '测试角色', '/agents/test-employee', 'active', ?1, ?1)",
             [now],
         ).unwrap();
         let manifest = json!({
@@ -1226,7 +1289,14 @@ mod tests {
                     "required_permissions": [permission],
                     "risk_level": risk_level,
                     "side_effect": if tool_id == "file-tool" { "none" } else { "reversible" },
-                    "timeout_ms": 10000
+                    "confirmation": if risk_level >= 2 { "always" } else { "never" },
+                    "timeout_ms": 10000,
+                    "result_size_limit": 1048576,
+                    "sensitive_fields": if tool_id == "file-tool" {
+                        json!(["arguments.path", "result.output.content"])
+                    } else {
+                        json!(["arguments.path", "arguments.content"])
+                    }
                 }]
             }
         });
@@ -1237,7 +1307,7 @@ mod tests {
             )
             .unwrap();
         connection.execute(
-            "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task_1', 'ai-product-manager', 'test', 'running', ?1, ?1)",
+            "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task_1', 'test-employee', 'test', 'running', ?1, ?1)",
             [now],
         ).unwrap();
         connection.execute(
@@ -1245,7 +1315,7 @@ mod tests {
             params![tool_id, now],
         ).unwrap();
         connection.execute(
-            "INSERT INTO permissions VALUES ('grant_1', 'agent', 'ai-product-manager', ?1, ?2, 'allow', ?3, ?3)",
+            "INSERT INTO permissions VALUES ('grant_1', 'agent', 'test-employee', ?1, ?2, 'allow', ?3, ?3)",
             params![root.to_string_lossy(), permission, now],
         ).unwrap();
         connection
@@ -1257,7 +1327,7 @@ mod tests {
             call_id: "call_1".to_owned(),
             task_id: "task_1".to_owned(),
             action_id: "action_1".to_owned(),
-            agent_id: "ai-product-manager".to_owned(),
+            agent_id: "test-employee".to_owned(),
             tool_id: tool_id.to_owned(),
             tool_version: "1.0.0".to_owned(),
             action: action.to_owned(),
@@ -1342,6 +1412,19 @@ mod tests {
             .query_row("SELECT count(*) FROM audit_logs", [], |row| row.get(0))
             .unwrap();
         assert_eq!((execution_count, audit_count), (1, 1));
+        let persisted_result: String = connection
+            .query_row(
+                "SELECT result_json FROM tool_executions WHERE call_id='call_1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(!persisted_result.contains("evidence"));
+        let protected: Value = serde_json::from_str(&persisted_result).unwrap();
+        let restored =
+            crate::tool_payload::load(&connection, protected["result_ref"].as_str().unwrap())
+                .unwrap();
+        assert_eq!(restored["output"]["content"], "evidence");
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -1410,20 +1493,18 @@ mod tests {
             2,
             &root,
         );
+        let arguments = json!({"path": target, "content": "# PRD"});
+        let input_sha256 = format!("{:x}", Sha256::digest(arguments.to_string().as_bytes()));
         connection
             .execute(
-                "INSERT INTO approvals VALUES (
-               'approval_1', 'task_1', 'ai-product-manager', 'create_markdown',
-               2, 'approved', ?1, ?1
+                "INSERT INTO approvals(id,task_id,agent_id,action,risk_level,status,created_at,resolved_at,action_id,input_sha256) VALUES (
+               'approval_1', 'task_1', 'test-employee', 'create_markdown',
+               2, 'approved', ?1, ?1, 'action_1', ?2
              )",
-                ["2026-08-04T00:00:00Z"],
+                params!["2026-08-04T00:00:00Z", input_sha256],
             )
             .unwrap();
-        let mut approved_call = call(
-            "document-tool",
-            "create_markdown",
-            json!({"path": target, "content": "# PRD"}),
-        );
+        let mut approved_call = call("document-tool", "create_markdown", arguments);
         approved_call.approval_id = Some("approval_1".to_owned());
         let result =
             ToolExecutor::new(&mut connection).execute(&approved_call, "2026-08-04T00:00:01Z");
@@ -1545,7 +1626,7 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO permissions VALUES (
-               'deny_1', 'agent', 'ai-product-manager', ?1, 'filesystem.read',
+               'deny_1', 'agent', 'test-employee', ?1, 'filesystem.read',
                'deny', ?2, ?2
              )",
                 params!["/", "2026-08-04T00:00:00Z"],
@@ -1583,7 +1664,7 @@ mod tests {
     }
 
     #[test]
-    fn side_effecting_native_call_settles_before_returning() {
+    fn side_effecting_native_timeout_returns_result_unknown() {
         let root = temp_root("timeout");
         let mut connection = setup("document-tool", "slow_write", "document.write", 0, &root);
         let manifest_json: String = connection
@@ -1609,8 +1690,8 @@ mod tests {
             ),
             "2026-08-04T00:00:01Z",
         );
-        assert_eq!(result.status, ToolResultStatus::Succeeded);
-        assert_eq!(result.side_effect_state, SideEffectState::Confirmed);
+        assert_eq!(result.status, ToolResultStatus::ResultUnknown);
+        assert_eq!(result.side_effect_state, SideEffectState::Unknown);
         let persisted: String = connection
             .query_row(
                 "SELECT status FROM tool_executions WHERE call_id = 'call_1'",
@@ -1618,7 +1699,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(persisted, "succeeded");
+        assert_eq!(persisted, "result_unknown");
         fs::remove_dir_all(root).unwrap();
     }
 

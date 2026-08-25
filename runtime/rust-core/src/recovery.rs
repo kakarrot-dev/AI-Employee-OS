@@ -131,11 +131,11 @@ mod tests {
     use crate::storage::migrate;
 
     fn seed(connection: &Connection, id: &str, side_effect_state: &str) {
-        connection.execute("INSERT OR IGNORE INTO agents VALUES ('alex','Alex','ai_product_manager','packages/agents/ai-product-manager','active','t','t')", []).unwrap();
+        connection.execute("INSERT OR IGNORE INTO agents VALUES ('test_employee','Test Employee','test_role','packages/agents/test-employee','active','t','t')", []).unwrap();
         connection.execute("INSERT OR IGNORE INTO tools VALUES ('tool','tool','native','1.0.0','{}','active','t','t')", []).unwrap();
         connection
             .execute(
-                "INSERT OR IGNORE INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','alex','input','running','t','t')",
+                "INSERT OR IGNORE INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','test_employee','input','running','t','t')",
                 [],
             )
             .unwrap();
@@ -199,11 +199,11 @@ mod tests {
         migrate(&mut connection).unwrap();
         connection
             .execute(
-                "INSERT INTO agents VALUES ('alex','Alex','role','path','active','t','t')",
+                "INSERT INTO agents VALUES ('test_employee','Test Employee','role','path','active','t','t')",
                 [],
             )
             .unwrap();
-        connection.execute("INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','alex','{}','running','t','t')", []).unwrap();
+        connection.execute("INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','test_employee','{}','running','t','t')", []).unwrap();
         connection.execute("INSERT INTO agent_runs(id,task_id,schema_version,phase,revision,model_turns_used,tool_calls_used,max_model_turns,max_tool_calls,deadline,waiting_reason,stop_reason,created_at,updated_at) VALUES ('run','task','1.0.0','model_decision',1,1,0,2,1,'9999999999',NULL,NULL,'t','t')", []).unwrap();
         let summary = reconcile_interrupted(&mut connection, "t2").unwrap();
         assert_eq!(summary.safe_failures, 1);

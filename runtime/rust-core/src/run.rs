@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::{
+    business_flow::AcceptanceCriterion,
     context_pipeline,
     decision::AgentDecision,
     employee_prompt::compile_effective_prompt,
@@ -28,6 +29,7 @@ pub struct RunSkillConfig<'a> {
     pub input: Value,
     pub conversation_id: Option<&'a str>,
     pub capability_mode: bool,
+    pub capability_skill_ids: Option<Vec<String>>,
     pub existing_task_id: Option<&'a str>,
 }
 
@@ -72,6 +74,7 @@ pub fn run_agent(
         input,
         conversation_id,
         capability_mode: true,
+        capability_skill_ids: None,
         existing_task_id: None,
     })
 }
@@ -104,6 +107,51 @@ pub fn materialize_agent_task(
     Ok(())
 }
 
+pub fn lock_task_capabilities(
+    transaction: &Transaction<'_>,
+    task_id: &str,
+    skill_ids: &[String],
+    now: &str,
+) -> Result<(), String> {
+    if skill_ids.is_empty() {
+        return Err("task_capability_lock_empty".to_owned());
+    }
+    for (ordinal, skill_id) in skill_ids.iter().enumerate() {
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO task_capability_locks(task_id,skill_id,ordinal,created_at)
+                 VALUES (?1,?2,?3,?4)",
+                params![task_id, skill_id, ordinal as i64, now],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    let persisted: Vec<String> = {
+        let mut statement = transaction
+            .prepare("SELECT skill_id FROM task_capability_locks WHERE task_id=?1 ORDER BY ordinal")
+            .map_err(|error| error.to_string())?;
+        statement
+            .query_map([task_id], |row| row.get::<_, String>(0))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?
+    };
+    if persisted != skill_ids {
+        return Err("task_capability_lock_conflict".to_owned());
+    }
+    Ok(())
+}
+
+fn task_capability_ids(connection: &Connection, task_id: &str) -> Result<Vec<String>, String> {
+    let mut statement = connection
+        .prepare("SELECT skill_id FROM task_capability_locks WHERE task_id=?1 ORDER BY ordinal")
+        .map_err(|error| error.to_string())?;
+    statement
+        .query_map([task_id], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
+}
+
 pub fn run_prepared_agent_task(
     connection: &mut Connection,
     repository_root: &Path,
@@ -121,7 +169,7 @@ pub fn run_prepared_agent_task(
         return Err("prepared_task_not_dispatchable".to_owned());
     }
     let input: Value = serde_json::from_str(&input).map_err(|_| "task_input_invalid")?;
-    let skills = crate::skill_resolver::ready_skill_ids(connection, &agent_id)?;
+    let skills = task_capability_ids(connection, task_id)?;
     let first = skills.first().ok_or("capability_not_found")?.clone();
     run_skill(RunSkillConfig {
         connection,
@@ -132,6 +180,7 @@ pub fn run_prepared_agent_task(
         input,
         conversation_id: None,
         capability_mode: true,
+        capability_skill_ids: Some(skills),
         existing_task_id: Some(task_id),
     })
 }
@@ -154,7 +203,7 @@ pub fn run_existing_agent_task(
     }
     let input: Value = serde_json::from_str(&input).map_err(|_| "task_input_invalid")?;
     let input = resolve_shared_context(connection, task_id, &agent_id, input)?;
-    let skills = crate::skill_resolver::ready_skill_ids(connection, &agent_id)?;
+    let skills = task_capability_ids(connection, task_id)?;
     let first = skills.first().ok_or("capability_not_found")?.clone();
     run_skill(RunSkillConfig {
         connection,
@@ -165,6 +214,7 @@ pub fn run_existing_agent_task(
         input,
         conversation_id: None,
         capability_mode: true,
+        capability_skill_ids: Some(skills),
         existing_task_id: Some(task_id),
     })
 }
@@ -254,11 +304,12 @@ pub fn run_skill(mut config: RunSkillConfig<'_>) -> Result<Value, String> {
         Ok(decision) => decision,
         Err(error) => return fail_run(config.connection, &locked, &error, &now),
     };
+    let observable_raw = observable_model_decision(&raw);
     observe(
         config.connection,
         &locked.run_id,
         "model_decision",
-        &raw,
+        &observable_raw,
         &now,
     )?;
     match decision {
@@ -305,6 +356,8 @@ pub fn run_skill(mut config: RunSkillConfig<'_>) -> Result<Value, String> {
             ..
         } => finalize_existing_run(
             config.connection,
+            config.repository_root,
+            config.python,
             &locked.task_id,
             &locked.run_id,
             config.agent_id,
@@ -379,11 +432,12 @@ fn run_workflow(config: RunSkillConfig<'_>, locked: LockedRun, now: &str) -> Res
             Some((config.connection, &locked.run_id)),
         )?;
         let decision = AgentDecision::parse(raw.clone())?;
+        let observable_raw = observable_model_decision(&raw);
         observe(
             config.connection,
             &locked.run_id,
             "model_decision",
-            &raw,
+            &observable_raw,
             now,
         )?;
         let output = match decision {
@@ -411,6 +465,8 @@ fn run_workflow(config: RunSkillConfig<'_>, locked: LockedRun, now: &str) -> Res
     }
     finalize_existing_run(
         config.connection,
+        config.repository_root,
+        config.python,
         &locked.task_id,
         &locked.run_id,
         config.agent_id,
@@ -423,13 +479,13 @@ fn run_workflow(config: RunSkillConfig<'_>, locked: LockedRun, now: &str) -> Res
 
 pub fn continue_run(config: ContinueRunConfig<'_>) -> Result<Value, String> {
     let now = timestamp();
-    let row: (String, String, String, String, String, String) = config
+    let row: (String, String, String, String, String, Option<String>) = config
         .connection
         .query_row(
             "SELECT r.task_id,t.agent_id,a.id,a.tool_id,a.input_json,ap.id
          FROM agent_runs r JOIN tasks t ON t.id=r.task_id
          JOIN actions a ON a.task_id=t.id AND a.status='blocked'
-         JOIN approvals ap ON ap.task_id=t.id AND ap.status='pending'
+         LEFT JOIN approvals ap ON ap.action_id=a.id AND ap.task_id=t.id AND ap.status='pending'
          WHERE r.id=?1 AND r.phase='waiting_approval' ORDER BY a.created_at DESC LIMIT 1",
             [config.run_id],
             |row| {
@@ -450,7 +506,11 @@ pub fn continue_run(config: ContinueRunConfig<'_>) -> Result<Value, String> {
             .connection
             .transaction()
             .map_err(|error| error.to_string())?;
-        let approval_changed = tx.execute("UPDATE approvals SET status='rejected',resolved_at=?1 WHERE id=?2 AND status='pending'",params![now,approval_id]).map_err(|error| error.to_string())?;
+        let approval_changed = if let Some(approval_id) = &approval_id {
+            tx.execute("UPDATE approvals SET status='rejected',resolved_at=?1 WHERE id=?2 AND status='pending'",params![now,approval_id]).map_err(|error| error.to_string())?
+        } else {
+            1
+        };
         let action_changed = tx
             .execute(
                 "UPDATE actions SET status='failed',updated_at=?1 WHERE id=?2 AND status='blocked'",
@@ -471,8 +531,11 @@ pub fn continue_run(config: ContinueRunConfig<'_>) -> Result<Value, String> {
             json!({"schema_version":"1.0.0","task_id":task_id,"run_id":config.run_id,"status":"failed","phase":"terminal","reason":"approval_rejected"}),
         );
     }
-    let input: Value =
+    let mut input: Value =
         serde_json::from_str(&action_input).map_err(|_| "checkpoint_conflict".to_owned())?;
+    if let Some(reference) = input["payload_ref"].as_str() {
+        input = crate::tool_payload::load(config.connection, reference)?;
+    }
     let action = input["action"].as_str().ok_or("checkpoint_conflict")?;
     let mut arguments = input["arguments"].clone();
     if let Some(path) = arguments.get("path").and_then(Value::as_str) {
@@ -514,11 +577,17 @@ pub fn continue_run(config: ContinueRunConfig<'_>) -> Result<Value, String> {
         .connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|error| error.to_string())?;
-    let approval_changed = tx.execute(
-        "UPDATE approvals SET status='approved',resolved_at=?1 WHERE id=?2 AND status='pending'",
-        params![now, approval_id],
-    )
-    .map_err(|error| error.to_string())?;
+    let approved_input_sha256 = sha256(&arguments.to_string());
+    let approval_changed = if let Some(approval_id) = &approval_id {
+        tx.execute(
+            "UPDATE approvals SET status='approved',resolved_at=?1,input_sha256=?3
+             WHERE id=?2 AND status='pending' AND action_id=?4",
+            params![now, approval_id, approved_input_sha256, action_id],
+        )
+        .map_err(|error| error.to_string())?
+    } else {
+        1
+    };
     let action_changed = tx
         .execute(
             "UPDATE actions SET status='running',updated_at=?1 WHERE id=?2 AND status='blocked'",
@@ -560,7 +629,7 @@ pub fn continue_run(config: ContinueRunConfig<'_>) -> Result<Value, String> {
             "{task_id}:{action_id}:{tool_id}:{action}:{action_input}"
         )),
         permission_context: PermissionContext { grant_ids },
-        approval_id: Some(approval_id),
+        approval_id: approval_id.clone(),
         deadline,
         trace_id: format!("trace_{}", nonce()),
         attempt: 1,
@@ -573,19 +642,26 @@ pub fn continue_run(config: ContinueRunConfig<'_>) -> Result<Value, String> {
         &now,
     )?;
     let result = ToolExecutor::new(config.connection).execute(&call, &now);
+    if let Some(reference) = serde_json::from_str::<Value>(&action_input)
+        .ok()
+        .and_then(|value| value["payload_ref"].as_str().map(str::to_owned))
+    {
+        crate::tool_payload::remove(config.connection, &reference);
+    }
     let result_value = serde_json::to_value(&result).map_err(|error| error.to_string())?;
+    let observable_result = observable_tool_result(&result_value);
     checkpoint(
         config.connection,
         config.run_id,
         "tool_result_persisted",
-        &result_value,
+        &observable_result,
         &now,
     )?;
     observe(
         config.connection,
         config.run_id,
         "tool_result",
-        &result_value,
+        &observable_result,
         &now,
     )?;
     match result.status {
@@ -672,7 +748,23 @@ pub fn resolve_unknown_action(
         return Err("recovery_requires_verification".to_owned());
     }
     let tx = connection.transaction().map_err(|e| e.to_string())?;
-    tx.execute("UPDATE actions SET status=?1,output_json=?2,updated_at=?3 WHERE id=?4 AND status='result_unknown'",params![status,evidence.to_string(),now,action_id]).map_err(|e|e.to_string())?;
+    let action_changed = tx.execute("UPDATE actions SET status=?1,output_json=?2,updated_at=?3 WHERE id=?4 AND status='result_unknown'",params![status,evidence.to_string(),now,action_id]).map_err(|e|e.to_string())?;
+    let execution_changed = tx.execute(
+        "UPDATE tool_executions
+         SET status=?1,
+             side_effect_state=CASE WHEN ?1='succeeded' THEN 'confirmed' ELSE 'not_started' END,
+             result_json=?2,finished_at=?3
+         WHERE action_id=?4 AND status='result_unknown'",
+        params![
+            status,
+            json!({"schema_version":"1.0","status":status,"output":Value::Null,"verification":evidence}).to_string(),
+            now,
+            action_id
+        ],
+    ).map_err(|e|e.to_string())?;
+    if action_changed != 1 || execution_changed != 1 {
+        return Err("recovery_requires_verification".to_owned());
+    }
     tx.execute("INSERT INTO audit_logs(id,agent_id,task_id,approval_id,action,resource,result,created_at) VALUES (?1,?2,?3,NULL,'resolve_result_unknown','redacted',?4,?5)",params![format!("audit_resolution_{}",nonce()),agent_id,task_id,status,now]).map_err(|e|e.to_string())?;
     if status == "failed" {
         tx.execute(
@@ -776,13 +868,25 @@ fn resume_after_observation(
     let is_capability_run = capability_lock.get("skills").is_some();
     let first_capability = &capability_set.as_array().ok_or("checkpoint_conflict")?[0];
     let skill = if is_capability_run {
+        let requires_tool_evidence = capability_set
+            .as_array()
+            .is_some_and(|items| items.iter().any(capability_declares_tools));
+        let output_schema = if capability_set
+            .as_array()
+            .is_some_and(|items| items.len() == 1)
+        {
+            first_capability["output_schema"].clone()
+        } else {
+            json!({"type":"object"})
+        };
         json!({
-            "id":"agent-capability-set","name":"工作结果","output_schema":{"type":"object"},
+            "id":"agent-capability-set","name":"工作结果","output_schema":output_schema,
             "execution":{"max_model_turns":8,"max_tool_calls":8},
-            "deliverables":{"required":false,"evidence":"output_schema"}
+            "deliverables":{"required":false,"evidence":"output_schema"},
+            "completion_policy":{"requires_tool_evidence":requires_tool_evidence}
         })
     } else {
-        first_capability["manifest"]["skill"].clone()
+        skill_with_completion_policy(first_capability["manifest"]["skill"].clone())
     };
     let (max_model_turns, max_tool_calls): (i64, i64) = config
         .connection
@@ -850,11 +954,12 @@ fn resume_after_observation(
             return fail_existing_run(config.connection, task_id, config.run_id, &error, now);
         }
     };
+    let observable_raw = observable_model_decision(&raw);
     observe(
         config.connection,
         config.run_id,
         "model_decision",
-        &raw,
+        &observable_raw,
         now,
     )?;
     match decision {
@@ -864,6 +969,8 @@ fn resume_after_observation(
             ..
         } => finalize_existing_run(
             config.connection,
+            config.repository_root,
+            config.python,
             task_id,
             config.run_id,
             agent_id,
@@ -935,6 +1042,8 @@ fn resume_after_observation(
 
 fn finalize_existing_run(
     connection: &Connection,
+    repository_root: &Path,
+    python: &Path,
     task_id: &str,
     run_id: &str,
     agent_id: &str,
@@ -944,6 +1053,26 @@ fn finalize_existing_run(
     now: &str,
 ) -> Result<Value, String> {
     validate_output(&skill["output_schema"], &output)?;
+    if skill["completion_policy"]["requires_tool_evidence"] == true {
+        let successful_tools: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM tool_executions execution
+                 JOIN actions action ON action.id=execution.action_id
+                 WHERE action.task_id=?1 AND execution.status='succeeded'",
+                [task_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if successful_tools == 0 {
+            return fail_existing_run(
+                connection,
+                task_id,
+                run_id,
+                "completion_evidence_missing",
+                now,
+            );
+        }
+    }
     let deliverable_id = format!("deliverable_{}", nonce());
     let tx = connection
         .unchecked_transaction()
@@ -1021,15 +1150,18 @@ fn finalize_existing_run(
         )
         .map_err(|error| error.to_string())?;
     }
-    let usage: (i64, i64) = tx
-        .query_row(
-            "SELECT model_turns_used,tool_calls_used FROM agent_runs WHERE id=?1",
-            [run_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .map_err(|error| error.to_string())?;
     let evaluation_id = format!("eval_{}", nonce());
-    let evaluation = deterministic_evaluation(&tx, run_id, task_id, usage.0, usage.1)?;
+    let evaluation = deterministic_evaluation(
+        &tx,
+        repository_root,
+        python,
+        run_id,
+        task_id,
+        &deliverable_id,
+        &evaluation_id,
+        &output,
+        now,
+    )?;
     let delivery_allowed = evaluation["delivery_allowed"].as_bool() == Some(true);
     let score = evaluation["score"].as_f64().unwrap_or(0.0);
     tx.execute("INSERT INTO evaluations(id,task_id,agent_id,score,metrics_json,created_at) VALUES (?1,?2,?3,?4,?5,?6)",params![evaluation_id,task_id,agent_id,score,evaluation.to_string(),now]).map_err(|error| error.to_string())?;
@@ -1039,13 +1171,36 @@ fn finalize_existing_run(
     )
     .map_err(|error| error.to_string())?;
     if !delivery_allowed {
-        tx.execute(
-            "UPDATE deliverables SET status='rejected' WHERE id=?1 AND status='candidate'",
-            [&deliverable_id],
-        )
-        .map_err(|error| error.to_string())?;
+        let rejected = tx
+            .execute(
+                "UPDATE deliverables SET status='rejected' WHERE id=?1 AND status='candidate'",
+                [&deliverable_id],
+            )
+            .map_err(|error| error.to_string())?;
+        let task_changed = tx
+            .execute(
+                "UPDATE tasks SET status='failed',updated_at=?1 WHERE id=?2 AND status='running'",
+                params![now, task_id],
+            )
+            .map_err(|error| error.to_string())?;
+        let run_changed = tx.execute(
+            "UPDATE agent_runs SET phase='terminal',stop_reason='evaluation_blocked',revision=revision+1,updated_at=?1
+             WHERE id=?2 AND phase!='terminal'",
+            params![now, run_id],
+        ).map_err(|error| error.to_string())?;
+        if rejected != 1 || task_changed != 1 || run_changed != 1 {
+            return Err("run_state_conflict".to_owned());
+        }
         tx.commit().map_err(|error| error.to_string())?;
-        return Err("evaluation_blocked".to_owned());
+        return Ok(json!({
+            "schema_version":"1.0.0",
+            "task_id":task_id,
+            "run_id":run_id,
+            "status":"failed",
+            "phase":"terminal",
+            "reason":"evaluation_blocked",
+            "deliverable_id":deliverable_id
+        }));
     }
     ensure_run_can_advance(&tx, task_id, run_id)?;
     let verified = tx.execute("UPDATE deliverables SET status='verified',verified_at=?2 WHERE id=?1 AND status='candidate'",params![deliverable_id,now]).map_err(|error|error.to_string())?;
@@ -1067,10 +1222,14 @@ fn finalize_existing_run(
 
 fn deterministic_evaluation(
     connection: &Connection,
+    repository_root: &Path,
+    python: &Path,
     run_id: &str,
     task_id: &str,
-    model_turns: i64,
-    tool_calls: i64,
+    deliverable_id: &str,
+    evaluation_id: &str,
+    output: &Value,
+    now: &str,
 ) -> Result<Value, String> {
     let unsafe_actions: i64 = connection.query_row("SELECT count(*) FROM actions WHERE task_id=?1 AND status IN ('blocked','running','result_unknown')",[task_id],|row|row.get(0)).map_err(|error|error.to_string())?;
     let failed_tools: i64 = connection.query_row("SELECT count(*) FROM tool_executions execution JOIN actions action ON action.id=execution.action_id WHERE action.task_id=?1 AND execution.status!='succeeded'",[task_id],|row|row.get(0)).map_err(|error|error.to_string())?;
@@ -1082,19 +1241,98 @@ fn deterministic_evaluation(
         )
         .map_err(|error| error.to_string())?;
     let budget_ok: bool = connection.query_row("SELECT model_turns_used<=max_model_turns AND tool_calls_used<=max_tool_calls FROM agent_runs WHERE id=?1",[run_id],|row|row.get(0)).map_err(|error|error.to_string())?;
-    let passed = [
+    let baseline_passed = [
         true,
         unsafe_actions == 0 && failed_tools == 0,
         unsafe_actions == 0,
         budget_ok,
         !cancelled,
     ];
-    let score = passed.iter().filter(|value| **value).count() as f64 / passed.len() as f64;
+    let runtime_reports_passed = baseline_passed.iter().all(|value| *value);
+    let criteria = acceptance_criteria_for_task(connection, task_id)?;
+    let criterion_inputs = criteria
+        .iter()
+        .enumerate()
+        .map(|(index, criterion)| {
+            criterion_evaluation_input(
+                connection,
+                deliverable_id,
+                evaluation_id,
+                run_id,
+                output,
+                runtime_reports_passed,
+                index,
+                criterion,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let semantic_reports = if criterion_inputs.is_empty() {
+        Vec::new()
+    } else {
+        consume_model_turn(connection, run_id, now)?;
+        let task_goal: String = connection
+            .query_row("SELECT input FROM tasks WHERE id=?1", [task_id], |row| {
+                row.get(0)
+            })
+            .map_err(|error| error.to_string())?;
+        let request = json!({
+            "schema_version":"1.0.0",
+            "task":{"id":task_id,"goal":task_goal},
+            "output":output,
+            "criteria":criterion_inputs
+        });
+        let evaluated = invoke_python_module(
+            repository_root,
+            python,
+            "app.acceptance_evaluator",
+            &request,
+            Some((connection, run_id)),
+        )?;
+        validate_semantic_acceptance(&request, &evaluated)?
+    };
+    let criterion_reports = criteria
+        .into_iter()
+        .enumerate()
+        .map(|(index, criterion)| {
+            let key = format!("criterion-{index}");
+            let report = semantic_reports
+                .iter()
+                .find(|report| report["evaluation_key"] == key)
+                .ok_or_else(|| "acceptance_evaluation_criteria_mismatch".to_owned())?;
+            Ok(json!({
+                "criterion_id":criterion.criterion_id,
+                "description":criterion.description,
+                "evidence_type":criterion.evidence_type,
+                "required":criterion.required,
+                "passed":report["passed"],
+                "reason":report["reason"],
+                "evidence_refs":report["evidence_refs"]
+            }))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let required_criteria_passed = criterion_reports
+        .iter()
+        .all(|report| report["required"] != true || report["passed"] == true);
+    let passed_count = baseline_passed.iter().filter(|value| **value).count()
+        + criterion_reports
+            .iter()
+            .filter(|report| report["passed"] == true)
+            .count();
+    let check_count = baseline_passed.len() + criterion_reports.len();
+    let score = passed_count as f64 / check_count as f64;
+    let (model_turns, tool_calls): (i64, i64) = connection
+        .query_row(
+            "SELECT model_turns_used,tool_calls_used FROM agent_runs WHERE id=?1",
+            [run_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|error| error.to_string())?;
     Ok(json!({
         "schema_version":"1.0.0",
         "run_id":run_id,
         "score":score,
-        "delivery_allowed":passed.iter().all(|value| *value),
+        "delivery_allowed":runtime_reports_passed && required_criteria_passed,
+        "criteria":criterion_reports,
         "reports":{
             "result":{"status":"passed","rule":"output_schema"},
             "trajectory":{"status":if unsafe_actions==0{"passed"}else{"failed"},"model_turns":model_turns,"unfinished_actions":unsafe_actions},
@@ -1104,6 +1342,209 @@ fn deterministic_evaluation(
             "risk":{"status":if !cancelled{"passed"}else{"failed"},"policy":"rust_authority","cancellation_requested":cancelled}
         }
     }))
+}
+
+fn criterion_evaluation_input(
+    connection: &Connection,
+    deliverable_id: &str,
+    evaluation_id: &str,
+    run_id: &str,
+    output: &Value,
+    runtime_reports_passed: bool,
+    index: usize,
+    criterion: &AcceptanceCriterion,
+) -> Result<Value, String> {
+    let evidence = match criterion.evidence_type.as_str() {
+        "evaluation" if runtime_reports_passed => vec![json!({
+            "ref":evaluation_id,
+            "content":{"runtime_reports_passed":true,"run_id":run_id,"output":output}
+        })],
+        "structured_output" => {
+            let reference: Option<String> = connection
+                .query_row(
+                    "SELECT evidence_ref FROM deliverable_evidence WHERE deliverable_id=?1 AND evidence_type='structured_output' ORDER BY evidence_ref LIMIT 1",
+                    [deliverable_id],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+            reference
+                .map(|reference| vec![json!({"ref":reference,"content":output})])
+                .unwrap_or_default()
+        }
+        "tool_result" => {
+            let mut statement = connection
+                .prepare(
+                    "SELECT evidence.evidence_ref,execution.result_json
+                     FROM deliverable_evidence evidence
+                     JOIN tool_executions execution ON execution.call_id=evidence.evidence_ref
+                     WHERE evidence.deliverable_id=?1 AND evidence.evidence_type='tool_result'
+                     ORDER BY evidence.evidence_ref",
+                )
+                .map_err(|error| error.to_string())?;
+            statement
+                .query_map([deliverable_id], |row| {
+                    let reference: String = row.get(0)?;
+                    let raw: String = row.get(1)?;
+                    Ok(json!({"ref":reference,"content":serde_json::from_str::<Value>(&raw).unwrap_or(Value::Null)}))
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?
+        }
+        "artifact" => {
+            let mut statement = connection
+                .prepare(
+                    "SELECT evidence.evidence_ref,artifact.uri
+                     FROM deliverable_evidence evidence JOIN artifacts artifact ON artifact.id=evidence.evidence_ref
+                     WHERE evidence.deliverable_id=?1 AND evidence.evidence_type='artifact'
+                       AND artifact.verification_status='verified' ORDER BY evidence.evidence_ref",
+                )
+                .map_err(|error| error.to_string())?;
+            statement
+                .query_map([deliverable_id], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?
+                .into_iter()
+                .map(|(reference, path)| {
+                    let content = std::fs::read_to_string(&path)
+                        .unwrap_or_default()
+                        .chars()
+                        .take(32_000)
+                        .collect::<String>();
+                    json!({"ref":reference,"content":{"path":path,"text":content}})
+                })
+                .collect()
+        }
+        "verification" => {
+            let mut statement = connection
+                .prepare(
+                    "SELECT evidence_ref FROM deliverable_evidence WHERE deliverable_id=?1 AND evidence_type='verification' ORDER BY evidence_ref",
+                )
+                .map_err(|error| error.to_string())?;
+            statement
+                .query_map([deliverable_id], |row| row.get::<_, String>(0))
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?
+                .into_iter()
+                .map(
+                    |reference| json!({"ref":reference,"content":{"verified_reference":reference}}),
+                )
+                .collect()
+        }
+        _ => Vec::new(),
+    };
+    Ok(json!({
+        "evaluation_key":format!("criterion-{index}"),
+        "criterion_id":criterion.criterion_id,
+        "description":criterion.description,
+        "evidence_type":criterion.evidence_type,
+        "required":criterion.required,
+        "evidence":evidence
+    }))
+}
+
+fn validate_semantic_acceptance(request: &Value, result: &Value) -> Result<Vec<Value>, String> {
+    if result["schema_version"] != "1.0.0" {
+        return Err("acceptance_evaluation_schema_invalid".to_owned());
+    }
+    let expected = request["criteria"]
+        .as_array()
+        .ok_or_else(|| "acceptance_evaluation_request_invalid".to_owned())?;
+    let reports = result["criteria"]
+        .as_array()
+        .ok_or_else(|| "acceptance_evaluation_schema_invalid".to_owned())?;
+    if reports.len() != expected.len() {
+        return Err("acceptance_evaluation_criteria_mismatch".to_owned());
+    }
+    for criterion in expected {
+        let key = criterion["evaluation_key"]
+            .as_str()
+            .ok_or_else(|| "acceptance_evaluation_request_invalid".to_owned())?;
+        let report = reports
+            .iter()
+            .find(|report| report["evaluation_key"] == key)
+            .ok_or_else(|| "acceptance_evaluation_criteria_mismatch".to_owned())?;
+        if !report["passed"].is_boolean()
+            || report["reason"]
+                .as_str()
+                .is_none_or(|reason| reason.trim().is_empty())
+        {
+            return Err("acceptance_evaluation_report_invalid".to_owned());
+        }
+        let allowed = criterion["evidence"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|evidence| evidence["ref"].as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        let references = report["evidence_refs"]
+            .as_array()
+            .ok_or_else(|| "acceptance_evaluation_report_invalid".to_owned())?;
+        if (report["passed"] == true && references.is_empty())
+            || references.iter().any(|reference| {
+                reference
+                    .as_str()
+                    .is_none_or(|reference| !allowed.contains(reference))
+            })
+        {
+            return Err("acceptance_evaluation_evidence_invalid".to_owned());
+        }
+    }
+    Ok(reports.clone())
+}
+
+fn acceptance_criteria_for_task(
+    connection: &Connection,
+    task_id: &str,
+) -> Result<Vec<AcceptanceCriterion>, String> {
+    let task_input: String = connection
+        .query_row("SELECT input FROM tasks WHERE id=?1", [task_id], |row| {
+            row.get(0)
+        })
+        .map_err(|error| error.to_string())?;
+    let input: Value = serde_json::from_str(&task_input).unwrap_or(Value::Null);
+    let mut criteria = input
+        .get("acceptance_criteria")
+        .cloned()
+        .map(serde_json::from_value::<Vec<AcceptanceCriterion>>)
+        .transpose()
+        .map_err(|_| "acceptance_contract_invalid".to_owned())?
+        .unwrap_or_default();
+    let flow_acceptance: Option<String> = connection
+        .query_row(
+            "SELECT flow.acceptance_json FROM work_orders work
+             JOIN business_flows flow ON flow.id=work.business_flow_id
+             WHERE work.child_task_id=?1 AND work.role='finalization'",
+            [task_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    if let Some(raw) = flow_acceptance {
+        criteria.extend(
+            serde_json::from_str::<Vec<AcceptanceCriterion>>(&raw)
+                .map_err(|_| "acceptance_contract_invalid".to_owned())?,
+        );
+    }
+    let mut unique = std::collections::BTreeSet::new();
+    let mut normalized = Vec::new();
+    for criterion in criteria {
+        let key = (
+            criterion.criterion_id.clone(),
+            criterion.description.clone(),
+            criterion.evidence_type.clone(),
+            criterion.required,
+        );
+        if unique.insert(key) {
+            normalized.push(criterion);
+        }
+    }
+    Ok(normalized)
 }
 
 fn ensure_run_can_advance(
@@ -1138,7 +1579,10 @@ fn consume_model_turn(connection: &Connection, run_id: &str, now: &str) -> Resul
 fn lock_run(config: &mut RunSkillConfig<'_>, now: &str) -> Result<LockedRun, String> {
     let (prompt, config_version) = compile_effective_prompt(config.connection, config.agent_id)?;
     let skill_ids = if config.capability_mode {
-        crate::skill_resolver::ready_skill_ids(config.connection, config.agent_id)?
+        match config.capability_skill_ids.clone() {
+            Some(skill_ids) => skill_ids,
+            None => crate::skill_resolver::ready_skill_ids(config.connection, config.agent_id)?,
+        }
     } else {
         vec![config.skill_id.to_owned()]
     };
@@ -1164,10 +1608,12 @@ fn lock_run(config: &mut RunSkillConfig<'_>, now: &str) -> Result<LockedRun, Str
         if !config.capability_mode {
             validate_input(&skill["input_schema"], &config.input)?;
         }
-        let instructions_path = PathBuf::from(skill_path)
-            .join(skill["instructions"].as_str().ok_or("package_invalid")?);
-        let instructions = std::fs::read_to_string(instructions_path)
-            .map_err(|_| "package_invalid: instructions unavailable".to_owned())?;
+        let skill_root = PathBuf::from(skill_path);
+        let instructions = load_skill_instructions(
+            &skill_root,
+            skill["instructions"].as_str().ok_or("package_invalid")?,
+            skill["context"]["max_bytes"].as_u64().unwrap_or(65_536) as usize,
+        )?;
         total_model_turns += skill["execution"]["max_model_turns"].as_i64().unwrap_or(1);
         total_tool_calls += skill["execution"]["max_tool_calls"].as_i64().unwrap_or(0);
         for mut surface in resolve_tool_surface(config.connection, &skill["tools"])?
@@ -1185,11 +1631,18 @@ fn lock_run(config: &mut RunSkillConfig<'_>, now: &str) -> Result<LockedRun, Str
     }
     let capability_set = Value::Array(capabilities.clone());
     let (skill, instructions, max_model_turns, max_tool_calls) = if config.capability_mode {
+        let requires_tool_evidence = capabilities.iter().any(capability_declares_tools);
+        let output_schema = if capabilities.len() == 1 {
+            capabilities[0]["output_schema"].clone()
+        } else {
+            json!({"type":"object"})
+        };
         (
             json!({
-                "id":"agent-capability-set","name":"工作结果","output_schema":{"type":"object"},
+                "id":"agent-capability-set","name":"工作结果","output_schema":output_schema,
                 "context":{"max_bytes":65536},"execution":{"mode":"agent_loop","max_model_turns":total_model_turns.clamp(2,8),"max_tool_calls":total_tool_calls.clamp(1,8)},
-                "deliverables":{"required":false,"evidence":"output_schema"}
+                "deliverables":{"required":false,"evidence":"output_schema"},
+                "completion_policy":{"requires_tool_evidence":requires_tool_evidence}
             }),
             String::new(),
             total_model_turns.clamp(2, 8),
@@ -1197,7 +1650,7 @@ fn lock_run(config: &mut RunSkillConfig<'_>, now: &str) -> Result<LockedRun, Str
         )
     } else {
         let first = &capabilities[0];
-        let locked_skill = first["manifest"]["skill"].clone();
+        let locked_skill = skill_with_completion_policy(first["manifest"]["skill"].clone());
         let explicit_model_turns = locked_skill["execution"]["max_model_turns"]
             .as_i64()
             .ok_or("package_invalid")?;
@@ -1311,6 +1764,75 @@ fn lock_run(config: &mut RunSkillConfig<'_>, now: &str) -> Result<LockedRun, Str
     })
 }
 
+fn capability_declares_tools(capability: &Value) -> bool {
+    capability["manifest"]["skill"]["tools"]
+        .as_array()
+        .is_some_and(|tools| !tools.is_empty())
+}
+
+fn skill_with_completion_policy(mut skill: Value) -> Value {
+    let requires_tool_evidence = skill["tools"]
+        .as_array()
+        .is_some_and(|tools| !tools.is_empty());
+    skill["completion_policy"] = json!({"requires_tool_evidence":requires_tool_evidence});
+    skill
+}
+
+fn load_skill_instructions(
+    root: &Path,
+    instructions: &str,
+    max_bytes: usize,
+) -> Result<String, String> {
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|_| "package_invalid: Skill root unavailable".to_owned())?;
+    let instructions_path = canonical_root.join(instructions);
+    let canonical_instructions = instructions_path
+        .canonicalize()
+        .map_err(|_| "package_invalid: instructions unavailable".to_owned())?;
+    if !canonical_instructions.starts_with(&canonical_root) {
+        return Err("package_invalid: instructions escape package".to_owned());
+    }
+    let mut combined = std::fs::read_to_string(canonical_instructions)
+        .map_err(|_| "package_invalid: instructions unavailable".to_owned())?;
+    let references = canonical_root.join("references");
+    if references.is_dir() {
+        let mut files = std::fs::read_dir(&references)
+            .map_err(|_| "package_invalid: references unavailable".to_owned())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| "package_invalid: references unavailable".to_owned())?;
+        files.sort_by_key(|entry| entry.file_name());
+        for entry in files {
+            let metadata = entry
+                .file_type()
+                .map_err(|_| "package_invalid: reference metadata unavailable".to_owned())?;
+            if metadata.is_symlink() || !metadata.is_file() {
+                continue;
+            }
+            let path = entry.path();
+            if path.extension().and_then(|value| value.to_str()) != Some("md") {
+                continue;
+            }
+            let canonical = path
+                .canonicalize()
+                .map_err(|_| "package_invalid: reference unavailable".to_owned())?;
+            if !canonical.starts_with(&canonical_root) {
+                return Err("package_invalid: reference escapes package".to_owned());
+            }
+            let reference = std::fs::read_to_string(&canonical)
+                .map_err(|_| "package_invalid: reference unavailable".to_owned())?;
+            combined.push_str("\n\n---\nReference: ");
+            combined.push_str(&entry.file_name().to_string_lossy());
+            combined.push_str("\n\n");
+            combined.push_str(&reference);
+        }
+    }
+    if combined.len() > max_bytes {
+        return Err("context_budget_exceeded: Skill instructions and references".to_owned());
+    }
+    Ok(combined)
+}
+
 fn claim_prepared_task_run(
     transaction: &Transaction<'_>,
     task_id: &str,
@@ -1405,8 +1927,18 @@ fn invoke_worker(
     request: &Value,
     run: Option<(&Connection, &str)>,
 ) -> Result<Value, String> {
+    invoke_python_module(root, python, "app.task_worker", request, run)
+}
+
+fn invoke_python_module(
+    root: &Path,
+    python: &Path,
+    module: &str,
+    request: &Value,
+    run: Option<(&Connection, &str)>,
+) -> Result<Value, String> {
     let mut child = Command::new(python)
-        .args(["-m", "app.task_worker"])
+        .args(["-m", module])
         .current_dir(root.join("runtime/python-agent"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -1558,7 +2090,13 @@ fn completed_tool_observations(
     for row in rows {
         let (call_id, tool_id, input_raw, result_raw) = row.map_err(|error| error.to_string())?;
         let input: Value = serde_json::from_str(&input_raw).map_err(|_| "checkpoint_conflict")?;
-        let result: Value = serde_json::from_str(&result_raw).map_err(|_| "checkpoint_conflict")?;
+        let persisted_result: Value =
+            serde_json::from_str(&result_raw).map_err(|_| "checkpoint_conflict")?;
+        let result = if let Some(reference) = persisted_result["result_ref"].as_str() {
+            crate::tool_payload::load(connection, reference)?
+        } else {
+            persisted_result
+        };
         latest_is_in_history |= &result == latest_observation;
         observations.push(compact_observation(&json!({
             "kind":"completed_tool_call",
@@ -1589,6 +2127,43 @@ fn append_protocol_error_observation(request: &mut Value, error: &str) -> Result
             "instruction":"Return exactly one valid decision object matching the contract. Do not repeat a completed Tool call."
         }));
     Ok(())
+}
+
+fn observable_model_decision(raw: &Value) -> Value {
+    let mut observable = raw.clone();
+    if observable["type"] == "tool_call" {
+        if let Some(arguments) = observable.get("arguments") {
+            observable["arguments"] = json!({
+                "redacted": true,
+                "sha256": sha256(&arguments.to_string())
+            });
+        }
+    }
+    observable
+}
+
+fn observable_tool_result(result: &Value) -> Value {
+    json!({
+        "schema_version": result["schema_version"],
+        "call_id": result["call_id"],
+        "status": result["status"],
+        "output": result.get("output").filter(|value| !value.is_null()).map(|value| json!({
+            "redacted": true,
+            "sha256": sha256(&value.to_string())
+        })),
+        "error": result.get("error").filter(|value| !value.is_null()).map(|value| json!({
+            "code": value["code"],
+            "retryable": value["retryable"]
+        })),
+        "side_effect_state": result["side_effect_state"],
+        "verification": result["verification"],
+        "artifacts": result["artifacts"],
+        "result_ref": result["result_ref"],
+        "started_at": result["started_at"],
+        "finished_at": result["finished_at"],
+        "duration_ms": result["duration_ms"],
+        "trace_id": result["trace_id"]
+    })
 }
 
 fn set_phase(
@@ -1767,8 +2342,30 @@ fn request_tool(
         .ok_or_else(|| "tool_action_not_allowed".to_owned())?;
     let reuses_workflow_action = existing_action_id.is_some();
     let action_id = existing_action_id.unwrap_or_else(|| format!("action_{}", nonce()));
-    let approval_id = format!("approval_{}", nonce());
     let risk_level = tool_action["risk_level"].as_i64().unwrap_or(3);
+    let confirmation = tool_action["confirmation"].as_str().unwrap_or("always");
+    let requires_confirmation =
+        confirmation == "always" || (confirmation == "on_risk" && risk_level >= 2);
+    let approval_id = requires_confirmation.then(|| format!("approval_{}", nonce()));
+    let action_input = json!({"skill_id":skill_id,"action":action,"arguments":arguments,"rationale_summary":rationale_summary});
+    let sensitive_fields = tool_action["sensitive_fields"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let (mut persisted_input, contains_sensitive) =
+        crate::tool_payload::redact(&action_input, &sensitive_fields, "");
+    if contains_sensitive {
+        let reference =
+            crate::tool_payload::store(connection, &format!("action:{action_id}"), &action_input)?;
+        persisted_input["payload_ref"] = json!(reference);
+    }
+    if reuses_workflow_action {
+        persisted_input["workflow"] = json!(true);
+    }
+    let input_sha256 = sha256(&arguments.to_string());
     let tx = connection
         .unchecked_transaction()
         .map_err(|error| error.to_string())?;
@@ -1776,33 +2373,48 @@ fn request_tool(
         tx.execute(
             "INSERT INTO actions(id,task_id,tool_id,input_json,output_json,status,created_at,updated_at)
              VALUES (?1,?2,?3,?4,NULL,'blocked',?5,?5)",
-            params![action_id,run.task_id,tool_id,json!({"skill_id":skill_id,"action":action,"arguments":arguments,"rationale_summary":rationale_summary}).to_string(),now],
+            params![action_id,run.task_id,tool_id,persisted_input.to_string(),now],
         ).map_err(|error| error.to_string())?;
     } else {
-        let changed = tx.execute(
-            "UPDATE actions SET tool_id=?1,input_json=?2,status='blocked',updated_at=?3
+        let changed = tx
+            .execute(
+                "UPDATE actions SET tool_id=?1,input_json=?2,status='blocked',updated_at=?3
              WHERE id=?4 AND task_id=?5 AND status='pending'",
-            params![tool_id,json!({"skill_id":skill_id,"action":action,"arguments":arguments,"rationale_summary":rationale_summary,"workflow":true}).to_string(),now,action_id,run.task_id],
-        ).map_err(|error| error.to_string())?;
+                params![
+                    tool_id,
+                    persisted_input.to_string(),
+                    now,
+                    action_id,
+                    run.task_id
+                ],
+            )
+            .map_err(|error| error.to_string())?;
         if changed != 1 {
             return Err("workflow_action_not_pending".to_owned());
         }
     }
+    if let Some(approval_id) = &approval_id {
+        tx.execute(
+            "INSERT INTO approvals(id,task_id,agent_id,action,risk_level,status,created_at,resolved_at,action_id,input_sha256)
+             VALUES (?1,?2,?3,?4,?5,'pending',?6,NULL,?7,?8)",
+            params![approval_id, run.task_id, agent_id, action, risk_level, now, action_id, input_sha256],
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    let waiting_reason = if requires_confirmation {
+        "permission_and_approval_required"
+    } else {
+        "permission_required"
+    };
     tx.execute(
-        "INSERT INTO approvals(id,task_id,agent_id,action,risk_level,status,created_at,resolved_at)
-         VALUES (?1,?2,?3,?4,?5,'pending',?6,NULL)",
-        params![approval_id, run.task_id, agent_id, action, risk_level, now],
-    )
-    .map_err(|error| error.to_string())?;
-    tx.execute(
-        "UPDATE agent_runs SET phase='waiting_approval',revision=revision+1,waiting_reason='permission_or_approval_required',updated_at=?1 WHERE id=?2",
-        params![now,run.run_id],
+        "UPDATE agent_runs SET phase='waiting_approval',revision=revision+1,waiting_reason=?3,updated_at=?1 WHERE id=?2",
+        params![now,run.run_id,waiting_reason],
     ).map_err(|error| error.to_string())?;
     tx.commit().map_err(|error| error.to_string())?;
     Ok(json!({
         "schema_version":"1.0.0","task_id":run.task_id,"run_id":run.run_id,
         "status":"running","phase":"waiting_approval","action_id":action_id,
-        "approval_id":approval_id,"reason":"permission_or_approval_required"
+        "approval_id":approval_id,"reason":waiting_reason
     }))
 }
 
@@ -1860,7 +2472,53 @@ fn timestamp_seconds() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::migrate;
     use std::{fs, os::unix::fs::PermissionsExt};
+
+    #[test]
+    fn persisted_model_observation_never_contains_tool_arguments() {
+        let decision = json!({
+            "schema_version":"2.0.0",
+            "type":"tool_call",
+            "skill_id":"local-file-operations",
+            "tool_id":"file-tool",
+            "action":"create_file",
+            "arguments":{"path":"secret.md","content":"private payload"},
+            "rationale_summary":"write"
+        });
+
+        let observable = observable_model_decision(&decision);
+
+        assert!(!observable.to_string().contains("secret.md"));
+        assert!(!observable.to_string().contains("private payload"));
+        assert_eq!(observable["arguments"]["redacted"], true);
+    }
+
+    #[test]
+    fn persisted_tool_observation_never_contains_output_or_error_message() {
+        let result = json!({
+            "schema_version":"1.0",
+            "call_id":"call",
+            "status":"failed",
+            "output":{"content":"private result"},
+            "error":{"code":"FAILED","message":"/private/path","retryable":false},
+            "side_effect_state":"none",
+            "verification":null,
+            "artifacts":[],
+            "result_ref":null,
+            "started_at":"t",
+            "finished_at":"t",
+            "duration_ms":0,
+            "trace_id":"trace"
+        });
+
+        let observable = observable_tool_result(&result);
+
+        assert!(!observable.to_string().contains("private result"));
+        assert!(!observable.to_string().contains("/private/path"));
+        assert_eq!(observable["output"]["redacted"], true);
+        assert_eq!(observable["error"]["code"], "FAILED");
+    }
 
     #[test]
     fn protocol_retry_preserves_completed_tool_observations() {
@@ -1951,16 +2609,52 @@ mod tests {
     }
 
     #[test]
+    fn verified_unknown_result_updates_action_and_tool_execution_together() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        migrate(&mut connection).unwrap();
+        connection.execute_batch(
+            "INSERT INTO agents VALUES ('test-employee','测试员工','测试角色','user','active','t','t');
+             INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','test-employee','{}','running','t','t');
+             INSERT INTO agent_runs(id,task_id,schema_version,phase,revision,model_turns_used,tool_calls_used,max_model_turns,max_tool_calls,deadline,created_at,updated_at)
+             VALUES ('run','task','1.0.0','terminal',1,1,1,3,1,'9','t','t');
+             INSERT INTO actions(id,task_id,tool_id,input_json,output_json,status,created_at,updated_at)
+             VALUES ('action','task',NULL,'{}',NULL,'result_unknown','t','t');
+             INSERT INTO tool_executions(call_id,action_id,idempotency_key,attempt,status,side_effect_state,result_json,started_at,finished_at,trace_id)
+             VALUES ('call','action','key',1,'result_unknown','unknown','{}','t','t','trace');"
+        ).unwrap();
+
+        let result = resolve_unknown_action(
+            &mut connection,
+            "action",
+            "succeeded",
+            json!({"method":"manual","observation":"verified","observed_at":"t2"}),
+        )
+        .unwrap();
+
+        assert_eq!(result["phase"], "observe");
+        let states: (String, String) = connection
+            .query_row(
+                "SELECT action.status,execution.status FROM actions action
+                 JOIN tool_executions execution ON execution.action_id=action.id
+                 WHERE action.id='action'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(states, ("succeeded".to_owned(), "succeeded".to_owned()));
+    }
+
+    #[test]
     fn cancellation_prevents_a_terminal_run_from_advancing() {
         let mut connection = Connection::open_in_memory().unwrap();
         crate::storage::migrate(&mut connection).unwrap();
         connection
             .execute(
-                "INSERT INTO agents VALUES ('alex','Alex','role','path','active','t','t')",
+                "INSERT INTO agents VALUES ('test_employee','Test Employee','role','path','active','t','t')",
                 [],
             )
             .unwrap();
-        connection.execute("INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','alex','{}','cancelled','t','t')", []).unwrap();
+        connection.execute("INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','test_employee','{}','cancelled','t','t')", []).unwrap();
         connection.execute("INSERT INTO agent_runs(id,task_id,schema_version,phase,revision,model_turns_used,tool_calls_used,max_model_turns,max_tool_calls,deadline,waiting_reason,stop_reason,created_at,updated_at) VALUES ('run','task','1.0.0','terminal',1,0,0,1,1,'9999999999',NULL,'cancelled','t','t')", []).unwrap();
         connection
             .execute(
@@ -1980,7 +2674,7 @@ mod tests {
         crate::storage::migrate(&mut connection).unwrap();
         connection
             .execute(
-                "INSERT INTO agents VALUES ('alex','Alex','role','path','active','t','t')",
+                "INSERT INTO agents VALUES ('test_employee','Test Employee','role','path','active','t','t')",
                 [],
             )
             .unwrap();
@@ -1988,7 +2682,14 @@ mod tests {
         let input = json!({"objective":"write"});
         for _ in 0..2 {
             let transaction = connection.transaction().unwrap();
-            materialize_agent_task(&transaction, "proposal:r1:task", "alex", &input, "t").unwrap();
+            materialize_agent_task(
+                &transaction,
+                "proposal:r1:task",
+                "test_employee",
+                &input,
+                "t",
+            )
+            .unwrap();
             transaction.commit().unwrap();
         }
         let first = connection.transaction().unwrap();
@@ -1996,7 +2697,7 @@ mod tests {
             claim_prepared_task_run(
                 &first,
                 "proposal:r1:task",
-                "alex",
+                "test_employee",
                 "run:first",
                 2,
                 1,
@@ -2011,7 +2712,7 @@ mod tests {
             !claim_prepared_task_run(
                 &second,
                 "proposal:r1:task",
-                "alex",
+                "test_employee",
                 "run:second",
                 2,
                 1,
@@ -2035,5 +2736,90 @@ mod tests {
                 .unwrap(),
             1
         );
+    }
+
+    #[test]
+    fn rejected_acceptance_terminates_the_task_and_run() {
+        let root = std::env::temp_dir().join(format!("acceptance-rejected-{}", nonce()));
+        fs::create_dir_all(root.join("runtime/python-agent")).unwrap();
+        let evaluator = root.join("fake-python");
+        fs::write(
+            &evaluator,
+            "#!/bin/sh\nprintf '%s\\n' '{\"schema_version\":\"1.0.0\",\"criteria\":[{\"evaluation_key\":\"criterion-0\",\"passed\":false,\"reason\":\"criterion not satisfied\",\"evidence_refs\":[]}]}'\n",
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&evaluator).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&evaluator, permissions).unwrap();
+
+        let mut connection = Connection::open_in_memory().unwrap();
+        migrate(&mut connection).unwrap();
+        connection
+            .execute(
+                "INSERT INTO agents VALUES ('test_employee','Test Employee','role','package','active','t','t')",
+                [],
+            )
+            .unwrap();
+        let input = json!({
+            "objective":"write",
+            "acceptance_criteria":[{
+                "criterion_id":"semantic-quality",
+                "description":"The output satisfies the requested objective",
+                "evidence_type":"evaluation",
+                "required":true
+            }]
+        });
+        connection.execute(
+            "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','test_employee',?1,'running','t','t')",
+            [input.to_string()],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO agent_runs(id,task_id,schema_version,phase,revision,model_turns_used,tool_calls_used,max_model_turns,max_tool_calls,deadline,created_at,updated_at)
+             VALUES ('run','task','1.0.0','model_decision',1,0,0,3,1,'9999999999','t','t')",
+            [],
+        ).unwrap();
+        let skill = json!({
+            "name":"Writer",
+            "output_schema":{"type":"object","additionalProperties":true},
+            "completion_policy":{"requires_tool_evidence":false}
+        });
+
+        let result = finalize_existing_run(
+            &connection,
+            &root,
+            &evaluator,
+            "task",
+            "run",
+            "test_employee",
+            &skill,
+            json!({"summary":"wrong answer"}),
+            vec![],
+            "t2",
+        )
+        .unwrap();
+
+        assert_eq!(result["status"], "failed");
+        assert_eq!(result["phase"], "terminal");
+        assert_eq!(result["reason"], "evaluation_blocked");
+        let states: (String, String, Option<String>, String) = connection
+            .query_row(
+                "SELECT task.status,run.phase,run.stop_reason,deliverable.status
+                 FROM tasks task JOIN agent_runs run ON run.task_id=task.id
+                 JOIN deliverables deliverable ON deliverable.run_id=run.id
+                 WHERE task.id='task'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            states,
+            (
+                "failed".to_owned(),
+                "terminal".to_owned(),
+                Some("evaluation_blocked".to_owned()),
+                "rejected".to_owned()
+            )
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 }

@@ -91,5 +91,8 @@ pub struct ToolAction {
     pub required_permissions: Vec<String>,
     pub risk_level: u8,
     pub side_effect: String,
+    pub confirmation: String,
     pub timeout_ms: u64,
+    pub result_size_limit: u64,
+    pub sensitive_fields: Vec<String>,
 }

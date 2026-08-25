@@ -297,19 +297,19 @@ mod tests {
         let mut connection = Connection::open_in_memory().unwrap();
         migrate(&mut connection).unwrap();
         let package_path =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/agents/ai-product-manager");
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/agents/document-writer");
         install_agent_package(&mut connection, &package_path, "2026-08-04T00:00:00Z").unwrap();
         (connection, EventLog::default())
     }
 
     #[test]
-    fn creates_and_completes_a_task_for_alex() {
+    fn creates_and_completes_a_task_for_an_employee() {
         let (mut connection, mut events) = setup();
         let mut service = TaskService::new(&mut connection, &mut events);
         let created = service
             .create(
                 "task_1",
-                "ai-product-manager",
+                "document-writer",
                 "为企业 AI 知识库设计一个 PRD",
                 "2026-08-04T00:00:01Z",
             )
@@ -353,36 +353,26 @@ mod tests {
         let (mut connection, mut events) = setup();
         connection
             .execute(
-                "UPDATE agents SET status = 'disabled' WHERE id = 'ai-product-manager'",
+                "UPDATE agents SET status = 'disabled' WHERE id = 'document-writer'",
                 [],
             )
             .unwrap();
         let mut service = TaskService::new(&mut connection, &mut events);
         assert!(matches!(
-            service.create(
-                "task_1",
-                "ai-product-manager",
-                "test",
-                "2026-08-04T00:00:01Z"
-            ),
+            service.create("task_1", "document-writer", "test", "2026-08-04T00:00:01Z"),
             Err(TaskServiceError::AgentUnavailable(_))
         ));
         drop(service);
 
         connection
             .execute(
-                "UPDATE agents SET status = 'active' WHERE id = 'ai-product-manager'",
+                "UPDATE agents SET status = 'active' WHERE id = 'document-writer'",
                 [],
             )
             .unwrap();
         let mut service = TaskService::new(&mut connection, &mut events);
         service
-            .create(
-                "task_2",
-                "ai-product-manager",
-                "test",
-                "2026-08-04T00:00:02Z",
-            )
+            .create("task_2", "document-writer", "test", "2026-08-04T00:00:02Z")
             .unwrap();
         service
             .transition("task_2", TaskEvent::Cancel, "2026-08-04T00:00:03Z")
@@ -398,7 +388,7 @@ mod tests {
         let (mut connection, mut events) = setup();
         let mut service = TaskService::new(&mut connection, &mut events);
         service
-            .create("task_3", "ai-product-manager", "test", "t1")
+            .create("task_3", "document-writer", "test", "t1")
             .unwrap();
         service
             .start_with_snapshot(

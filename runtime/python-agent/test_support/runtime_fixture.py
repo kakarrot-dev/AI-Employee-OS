@@ -14,8 +14,7 @@ def seed_document_runtime(
     repository = Path(__file__).parents[3]
     with closing(sqlite3.connect(database)) as connection:
         connection.execute("PRAGMA foreign_keys = ON")
-        for migration in range(1, 10):
-            path = next((repository / "storage/migrations").glob(f"{migration:03d}_*.sql"))
+        for path in sorted((repository / "storage/migrations").glob("[0-9][0-9][0-9]_*.sql")):
             connection.executescript(path.read_text(encoding="utf-8"))
         now = "2026-08-04T00:00:00Z"
         manifest = {
@@ -41,13 +40,16 @@ def seed_document_runtime(
                     "required_permissions": ["document.write"],
                     "risk_level": 2,
                     "side_effect": "reversible",
+                    "confirmation": "always",
                     "timeout_ms": 10000,
+                    "result_size_limit": 65536,
+                    "sensitive_fields": ["arguments.path", "arguments.content"],
                 }],
             },
         }
         connection.execute(
             "INSERT INTO agents VALUES (?,?,?,?,?,?,?)",
-            ("ai-product-manager", "Alex", "AI Product Manager", "package", "active", now, now),
+            ("test-employee", "Test Employee", "Test Role", "package", "active", now, now),
         )
         connection.execute(
             "INSERT INTO tools VALUES (?,?,?,?,?,?,?,?)",
@@ -55,7 +57,7 @@ def seed_document_runtime(
         )
         connection.execute(
             "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES (?,?,?,?,?,?)",
-            (task_id, "ai-product-manager", "eval", "running", now, now),
+            (task_id, "test-employee", "eval", "running", now, now),
         )
         connection.execute(
             "INSERT INTO actions VALUES (?,?,?,?,?,?,?,?)",
@@ -63,12 +65,23 @@ def seed_document_runtime(
         )
         connection.execute(
             "INSERT INTO permissions VALUES (?,?,?,?,?,?,?,?)",
-            (f"grant-{task_id}", "agent", "ai-product-manager", str(root), "document.write", "allow", now, now),
+            (f"grant-{task_id}", "agent", "test-employee", str(root), "document.write", "allow", now, now),
         )
         if approval_id is not None:
             connection.execute(
-                "INSERT INTO approvals VALUES (?,?,?,?,?,?,?,?)",
-                (approval_id, task_id, "ai-product-manager", "create_markdown", 2, "approved", now, now),
+                "INSERT INTO approvals(id,task_id,agent_id,action,risk_level,status,created_at,resolved_at,action_id,input_sha256) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (
+                    approval_id,
+                    task_id,
+                    "test-employee",
+                    "create_markdown",
+                    2,
+                    "approved",
+                    now,
+                    now,
+                    action_id,
+                    None,
+                ),
             )
         connection.commit()
 

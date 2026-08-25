@@ -33,5 +33,5 @@ tool:
       concurrency_safe: true
       retry_policy: {max_attempts: 1, retry_on: []}
       result_size_limit: 1048576
-      sensitive_fields: [arguments.query]
+      sensitive_fields: [arguments.query, result.output.content]
       verification: none

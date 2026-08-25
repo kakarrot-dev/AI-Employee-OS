@@ -249,6 +249,17 @@ impl ScenarioProposal {
         if execution_order.last() != Some(&finalization[0].node_id) {
             return Err("scenario_finalization_must_be_last".into());
         }
+        let sinks = nodes
+            .keys()
+            .filter(|node_id| {
+                !unique_edges
+                    .iter()
+                    .any(|(predecessor, _)| predecessor == *node_id)
+            })
+            .collect::<Vec<_>>();
+        if sinks.len() != 1 || sinks[0].as_str() != finalization[0].node_id {
+            return Err("scenario_finalization_must_be_unique_sink".into());
+        }
 
         let canonical = serde_json::to_vec(&self).map_err(|_| "scenario_serialization_failed")?;
         let proposal_hash = format!("{:x}", Sha256::digest(canonical));
@@ -288,7 +299,7 @@ mod tests {
             title: "Launch".into(),
             objective: "Ship".into(),
             overall_acceptance_criteria: vec![criterion("overall", "evaluation")],
-            coordinator_agent_id: "alex".into(),
+            coordinator_agent_id: "test_employee".into(),
             nodes: vec![
                 node("research", ScenarioNodeRole::Executor),
                 node("finalize", ScenarioNodeRole::Finalization),
@@ -309,7 +320,7 @@ mod tests {
             node_id: id.into(),
             role,
             goal: id.into(),
-            suggested_agent_id: "alex".into(),
+            suggested_agent_id: "test_employee".into(),
             required_capabilities: vec!["local-file-operations".into()],
             input_refs: vec![],
             acceptance_criteria: vec![criterion("verified", "evaluation")],
@@ -354,6 +365,18 @@ mod tests {
     }
 
     #[test]
+    fn rejects_a_finalizer_that_is_not_the_unique_sink() {
+        let mut disconnected = proposal();
+        disconnected.nodes[1].node_id = "write".into();
+        disconnected.edges.clear();
+
+        assert_eq!(
+            disconnected.validate().unwrap_err(),
+            "scenario_finalization_must_be_unique_sink"
+        );
+    }
+
+    #[test]
     fn rejects_excessive_budget_and_participants() {
         let mut excessive = proposal();
         excessive.nodes[0].budget.max_input_tokens = MAX_WORK_INPUT_TOKENS + 1;
@@ -371,7 +394,7 @@ mod tests {
             too_many.nodes.push(item);
         }
         let mut finalization = node("finalize", ScenarioNodeRole::Finalization);
-        finalization.suggested_agent_id = "alex".into();
+        finalization.suggested_agent_id = "test_employee".into();
         too_many.nodes.push(finalization);
         assert_eq!(
             too_many.validate().unwrap_err(),

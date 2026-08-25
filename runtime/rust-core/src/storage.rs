@@ -34,7 +34,9 @@ pub const MIGRATION_018: &str =
     include_str!("../../../storage/migrations/018_employee_work_snapshots.sql");
 pub const MIGRATION_019: &str =
     include_str!("../../../storage/migrations/019_business_flow_task_threads.sql");
-const LATEST_SCHEMA_VERSION: i64 = 19;
+pub const MIGRATION_020: &str =
+    include_str!("../../../storage/migrations/020_execution_policy_locks.sql");
+const LATEST_SCHEMA_VERSION: i64 = 20;
 
 pub fn migrate(connection: &mut Connection) -> Result<()> {
     connection.busy_timeout(Duration::from_secs(5))?;
@@ -101,6 +103,9 @@ pub fn migrate(connection: &mut Connection) -> Result<()> {
     if current < 19 {
         transaction.execute_batch(MIGRATION_019)?;
     }
+    if current < 20 {
+        transaction.execute_batch(MIGRATION_020)?;
+    }
     transaction.commit()
 }
 
@@ -141,7 +146,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 53); // 52 canonical tables plus schema_migrations.
+        assert_eq!(count, 54); // 53 canonical tables plus schema_migrations.
 
         let integrity: String = connection
             .query_row("PRAGMA integrity_check", [], |row| row.get(0))
@@ -153,7 +158,7 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(migration_count, 19);
+        assert_eq!(migration_count, 20);
     }
 
     #[test]
@@ -165,9 +170,9 @@ mod tests {
                 "INSERT INTO agents VALUES (?1, ?2, ?3, ?4, 'active', ?5, ?5)",
                 (
                     "agent_1",
-                    "Alex",
-                    "AI Product Manager",
-                    "/agents/alex",
+                    "测试员工",
+                    "测试角色",
+                    "/agents/test-employee",
                     "2026-08-04T00:00:00Z",
                 ),
             )
@@ -206,9 +211,9 @@ mod tests {
                 "INSERT INTO agents VALUES (?1, ?2, ?3, ?4, 'active', ?5, ?5)",
                 (
                     "agent_1",
-                    "Alex",
-                    "AI Product Manager",
-                    "/agents/alex",
+                    "Test Employee",
+                    "Test Role",
+                    "/agents/test_employee",
                     "2026-08-04T00:00:00Z",
                 ),
             )
@@ -227,7 +232,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(index_count, 40);
+        assert_eq!(index_count, 42);
     }
 
     #[test]
@@ -236,7 +241,7 @@ mod tests {
         migrate(&mut connection).unwrap();
         connection
             .execute(
-                "INSERT INTO agents VALUES ('agent_1','Alex','Coordinator','package','active','t','t')",
+                "INSERT INTO agents VALUES ('agent_1','Test Employee','Coordinator','package','active','t','t')",
                 [],
             )
             .unwrap();
@@ -292,9 +297,9 @@ mod tests {
                 "INSERT INTO agents VALUES (?1, ?2, ?3, ?4, 'active', ?5, ?5)",
                 (
                     "agent_1",
-                    "Alex",
-                    "AI Product Manager",
-                    "/agents/alex",
+                    "Test Employee",
+                    "Test Role",
+                    "/agents/test_employee",
                     "2026-08-04T00:00:00Z",
                 ),
             )
@@ -306,7 +311,7 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(name, "Alex");
+        assert_eq!(name, "Test Employee");
     }
 
     #[test]
@@ -372,6 +377,112 @@ mod tests {
     }
 
     #[test]
+    fn migration_020_retires_the_removed_legacy_generalist() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        for migration in [
+            MIGRATION_001,
+            MIGRATION_002,
+            MIGRATION_003,
+            MIGRATION_004,
+            MIGRATION_005,
+            MIGRATION_006,
+            MIGRATION_007,
+            MIGRATION_008,
+            MIGRATION_009,
+            MIGRATION_010,
+            MIGRATION_011,
+            MIGRATION_012,
+            MIGRATION_013,
+            MIGRATION_014,
+            MIGRATION_015,
+            MIGRATION_016,
+            MIGRATION_017,
+            MIGRATION_018,
+            MIGRATION_019,
+        ] {
+            connection.execute_batch(migration).unwrap();
+        }
+        connection.execute_batch(
+            "INSERT INTO agents VALUES ('ai-product-manager','Legacy Generalist','Role','legacy','active','t','t');
+             INSERT INTO employee_profiles(agent_id,department,mission,responsibilities_json,boundaries_json,soul_json,base_prompt,config_version,created_at,updated_at)
+             VALUES ('ai-product-manager','Legacy','Mission','[]','[]','[]','Prompt',1,'t','t');
+             INSERT INTO conversations VALUES ('conversation','ai-product-manager','Legacy','active','t','t');
+             INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','ai-product-manager','{}','running','t','t');
+             INSERT INTO actions VALUES ('action','task',NULL,'{}',NULL,'running','t','t');
+             INSERT INTO tool_executions VALUES ('call','action','key',1,'running','unknown',NULL,'t',NULL,'trace');
+             INSERT INTO agent_runs VALUES ('run','task','1.0.0','tool_execution',1,1,0,2,1,'9999999999',NULL,NULL,'t','t');
+             INSERT INTO approvals VALUES ('approval','task','ai-product-manager','write',2,'pending','t',NULL);",
+        ).unwrap();
+
+        migrate(&mut connection).unwrap();
+
+        let legacy_exists: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM agents WHERE id='ai-product-manager')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(!legacy_exists);
+        let task: (String, String) = connection
+            .query_row(
+                "SELECT agent_id,status FROM tasks WHERE id='task'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            task,
+            ("system:historical-employee".to_owned(), "failed".to_owned())
+        );
+        let execution: (String, String) = connection
+            .query_row(
+                "SELECT action.status,execution.status FROM actions action
+                 JOIN tool_executions execution ON execution.action_id=action.id
+                 WHERE action.id='action'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            execution,
+            ("result_unknown".to_owned(), "result_unknown".to_owned())
+        );
+        let approval: (String, String) = connection
+            .query_row(
+                "SELECT agent_id,status FROM approvals WHERE id='approval'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            approval,
+            (
+                "system:historical-employee".to_owned(),
+                "expired".to_owned()
+            )
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT historical_agent_id FROM task_participant_snapshots WHERE task_id='task'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+            "ai-product-manager"
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
     fn current_schema_migration_does_not_compete_for_an_existing_write_lock() {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -403,13 +514,13 @@ mod tests {
         migrate(&mut connection).unwrap();
         connection
             .execute(
-                "INSERT INTO agents VALUES ('alex','Alex','assistant','package','active','t','t')",
+                "INSERT INTO agents VALUES ('test_employee','Test Employee','assistant','package','active','t','t')",
                 [],
             )
             .unwrap();
         connection
             .execute(
-                "INSERT INTO conversations VALUES ('conversation','alex','Chat','active','t','t')",
+                "INSERT INTO conversations VALUES ('conversation','test_employee','Chat','active','t','t')",
                 [],
             )
             .unwrap();
@@ -435,9 +546,9 @@ mod tests {
                 "INSERT INTO agents VALUES (?1, ?2, ?3, ?4, 'active', ?5, ?5)",
                 (
                     "agent_1",
-                    "Alex",
-                    "AI Product Manager",
-                    "/agents/alex",
+                    "Test Employee",
+                    "Test Role",
+                    "/agents/test_employee",
                     "2026-08-04T00:00:00Z",
                 ),
             )

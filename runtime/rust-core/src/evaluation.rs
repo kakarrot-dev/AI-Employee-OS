@@ -188,10 +188,10 @@ mod tests {
     fn persists_quality_metric_and_validates_feedback() {
         let mut connection = Connection::open_in_memory().unwrap();
         migrate(&mut connection).unwrap();
-        connection.execute("INSERT INTO agents VALUES ('alex','Alex','ai_product_manager','package','active','t','t')", []).unwrap();
+        connection.execute("INSERT INTO agents VALUES ('test_employee','Test Employee','test_role','package','active','t','t')", []).unwrap();
         connection
             .execute(
-                "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','alex','input','running','t','t')",
+                "INSERT INTO tasks(id,agent_id,input,status,created_at,updated_at) VALUES ('task','test_employee','input','running','t','t')",
                 [],
             )
             .unwrap();
@@ -199,7 +199,7 @@ mod tests {
             &mut connection,
             "eval",
             "task",
-            "alex",
+            "test_employee",
             &evaluate_prd(&complete()),
             "t",
         )
