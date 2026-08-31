@@ -38,7 +38,6 @@ for marker in (
     'id="cream-timeline-template"',
     "function renderCreamTimeline(host, source)",
     'data-timeline-source="gallery"',
-    'data-timeline-source="chat"',
     'data-timeline-source="work"',
     'data-timeline-density="compact"',
     'data-timeline-density="regular"',

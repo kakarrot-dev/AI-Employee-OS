@@ -538,29 +538,25 @@ def main() -> int:
         failures.append("component preview uses transition: all")
 
     preview_typography_requirements = {
-        "refined typography default": 'data-type-scale="refined"',
-        "current typography option": 'data-type-choice="current"',
-        "refined typography option": 'data-type-choice="refined"',
+        "single refined client typography scope": ".client-preview-shell {",
         "semantic display size": "--type-display:",
         "semantic reading size": "--type-reading:",
-        "typography switch behavior": "function applyTypeScale(choice)",
     }
     for description, marker in preview_typography_requirements.items():
         if marker not in preview_source:
             failures.append(f"component preview lacks {description}")
+    for stale_typography_control in ('data-type-choice=', "function applyTypeScale(choice)"):
+        if stale_typography_control in preview_source:
+            failures.append(f"component preview still exposes removed typography switching: {stale_typography_control}")
 
     preview_page_requirements = {
         "client page switch behavior": "function applyClientPage(choice)",
         "client page preview shell": "data-client-preview",
-        "refined client density scope": 'html[data-type-scale="refined"] .client-preview-shell',
         "shared client navigation height": "--client-nav-height:",
         "shared client page padding": "--client-page-pad-y:",
         "shared client sidebar type": "--client-sidebar-nav-font:",
         "shared client list title type": "--client-list-title-font:",
         "shared client list metadata type": "--client-list-meta-font:",
-        "office page mapping": 'data-client-panel="office"',
-        "contacts page mapping": 'data-client-panel="contacts"',
-        "chat page mapping": 'data-client-panel="chat"',
         "shared timeline template": 'id="cream-timeline-template"',
         "shared timeline renderer": "function renderCreamTimeline(host, source)",
         "shared timeline markdown system": "cream-timeline-markdown",
@@ -569,13 +565,13 @@ def main() -> int:
         "shared client composer system": "client-shared-composer",
         "compact composer size variant": 'data-composer-size="compact"',
         "regular composer size variant": 'data-composer-size="regular"',
-        "expanded composer size variant": 'data-composer-size="expanded"',
+        "composer attachment action": 'aria-label="添加附件"',
+        "composer model label": "client-composer-model",
         "timeline copy action": "data-timeline-copy",
         "work page mapping": 'data-client-panel="work"',
-        "knowledge page mapping": 'data-client-panel="knowledge"',
+        "agents page mapping": 'data-client-panel="agents"',
         "skills page mapping": 'data-client-panel="skills"',
         "tools page mapping": 'data-client-panel="tools"',
-        "archive page mapping": 'data-client-panel="archive"',
         "settings page mapping": 'data-client-panel="settings"',
     }
     for description, marker in preview_page_requirements.items():
