@@ -483,14 +483,19 @@ Delivery 至少包含：摘要、产物、证据、验收结果、未解决问�
 - 未经用户授权的任意本地目录或系统访问
 - 静默模型、Tool、MCP 或 Runtime 回退
 
-## 17. 尚待技术验证
+## 17. 技术验证状态
+
+### 17.1 已完成决策
 
 - Eigent 逐文件组件抽取时的传递依赖与资产许可证；根 Apache-2.0 与 `package.json` MIT 元数据冲突须在首次分发派生代码前向上游确认。整仓 Fork 已因壳层与 Runtime、高权限 IPC 和云端链路高度耦合而排除。
-- Deep Agents 当前 Sub-agent、Checkpoint、流式事件和取消接口。
+- Deep Agents 固定版本可以完成临时员工委派、动态 Tool Interrupt、持久 Checkpoint、节点完成后安全停止、跨进程恢复和 Root/Sub-agent Streaming；硬取消会重放未完成节点，不能作为安全暂停。采用范围仅是受限 Harness，默认 General-purpose、并行委派、Filesystem/Execute Tool 和权限规则不得直接进入产品。详见 [Phase 0：Deep Agents 编排与恢复审计](audits/phase-0/deep-agents-orchestration-audit.md)。
+
+### 17.2 尚待技术验证
+
 - Poe 与 DeepSeek 官方 API 的模型枚举、Tool Calling、结构化输出、Token 和错误语义。
 - MemoryCore 能否与 Hub/Proxy 完全解耦，以固定版本、无 Docker、纯本地存储和应用级加密形态独立运行；失败时转为最小本地实现。
 - 本地 Embedding 模型的中文召回质量、许可证、体积、内存和首次加载时间。
 - agent-reach 各数据源后端的运行时依赖、Credential、平台条款、分发许可、健康检查和受管 Tool/MCP 重建方式；不得依赖用户全局安装或允许 Agent 直接执行 Shell。
-- Deep Agents 的 Tool interrupt、节点级安全停止、持久 Checkpoint 和取消后的消息修复语义。
+- Deep Agents Checkpoint Store 与产品数据库的跨库提交、Outbox、补偿和清理策略；真实 Provider 下取消后的消息修复仍需验证。
 - Electron 主进程、Runtime、Provider 与 MCP 进程在统一签名和不同签名下的 Keychain ACL 行为。
 - macOS 打包、签名、公证、Sidecar 生命周期、应用内运行时与升级回滚。

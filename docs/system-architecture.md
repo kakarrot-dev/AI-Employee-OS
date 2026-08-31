@@ -91,6 +91,8 @@ Runtime 不负责生成业务内容；业务规划和内容生成由 Deep Agents
 
 Worker 只接收 Runtime 签发的短期 Provider 会话和本地代理地址，不接收 API Key、Cookie 或其他 Secret，也不继承系统权限。Deep Agents 的 Tool interrupt 只用于暂停图执行并持久化提案；审批、Action ID、幂等键、执行和终态仍由 Runtime 决定。生产运行必须配置持久 Checkpointer，并将 Deep Agents `thread_id` 与不可变 Run/Assignment 引用绑定。
 
+当前已验证基线为 `deepagents==0.7.11`、`langchain==1.3.18`、`langgraph==1.2.11`。Worker 必须通过产品自有 `DeepAgentsAdapter` 关闭默认 General-purpose Sub-agent，拒绝并行 `task`、Async Sub-agent、动态 Sub-agent、`execute` 和未冻结 Tool，并覆盖默认递归上限。声明式员工只能注册无副作用 Proposal Tool；完整约束见 [Phase 0：Deep Agents 编排与恢复审计](audits/phase-0/deep-agents-orchestration-audit.md)。
+
 ### 3.4 Provider Subprocess
 
 - Poe 与 DeepSeek 使用独立 Adapter。
@@ -385,12 +387,14 @@ pending → running → succeeded
 
 “安全停止点”是节点完成、持久 Checkpoint 已提交且 ToolAction 已收敛的边界，不是任意 Token 或任意函数执行位置。硬取消只能作为故障终止手段，不能伪装成可恢复暂停。
 
+Deep Agents 动态 Tool Interrupt 和 LangGraph 静态节点断点是不同机制：前者产生 Interrupt Payload，后者在节点完成后可只表现为存在下一个待执行节点。客户端不得读取两者自行推断 Run 状态；Runtime 结合暂停请求、Checkpoint、`state.next`、Assignment 和 ToolAction 投影唯一产品状态。
+
 ## 13. 待 Spike 决策
 
 以下内容需通过后续 Spike 确定：
 
 - Local Control Runtime 的实现语言及与新客户端骨架的 IPC 方式。
-- Deep Agents 的 Tool interrupt、节点级安全停止、持久 Checkpointer，以及 Checkpoint Store 与 Runtime 产品数据库的提交/补偿边界。
+- Deep Agents Checkpoint Store 与 Runtime 产品数据库的跨库提交、Outbox、补偿和清理边界。
 - MemoryCore 能否脱离 Hub/Proxy、以无 Docker、纯本地形态独立运行；若采用，验证其加密 Store 改造方式，否则选择最小本地实现。
 - Provider 子进程的短期会话、受认证本地代理、Secret 注入和网络隔离方式。
 - MCP/CLI Tool 的受管打包、沙箱技术、平台条款、Credential 与 macOS 权限模型。

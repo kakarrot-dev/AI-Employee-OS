@@ -1,7 +1,7 @@
 # AI Employee OS 从零实施路线图
 
 版本：v0.1
-状态：Phase 0 进行中；Eigent 子审计已完成
+状态：Phase 0 进行中；Eigent、Deep Agents 子审计已完成
 
 ## 1. 实施原则
 
@@ -27,7 +27,7 @@
 
 - 依赖版本与许可证清单
 - [Eigent 保留/删除/替换清单](audits/phase-0/eigent-client-shell-audit.md)（已完成）
-- Deep Agents 最小编排 Spike
+- [Deep Agents 最小编排与恢复 Spike](audits/phase-0/deep-agents-orchestration-audit.md)（已完成；[可执行脚本](../spikes/deep-agents/README.md)）
 - MemoryCore 独立运行/最小本地实现决策与加密召回 Spike
 - Poe/DeepSeek 能力矩阵
 - agent-reach 路由知识 → 受管 Tool/MCP 映射、许可与降级清单
@@ -37,7 +37,7 @@
 ### 门禁
 
 - 能证明 Eigent 的产品壳可以与原 Runtime 解耦，或明确切换到组件抽取方案。
-- 能运行总管委派一个临时员工，在节点完成后安全中断并从持久 Checkpoint 恢复；硬取消的不可恢复边界有真实记录。
+- 能运行总管委派一个临时员工，在节点完成后安全中断并从持久 Checkpoint 恢复；硬取消的不可恢复边界有真实记录。（已通过）
 - 能在不使用 Docker 的情况下启动固定版本 MemoryCore，并证明 Hub/Proxy/Skill/Wiki/CodeGraph 可完全关闭；否则明确采用最小本地实现。
 - 能完成本地 Embedding、分类过滤、召回和删除。
 - 能证明至少一个 Poe 或 DeepSeek 模型满足总管要求。

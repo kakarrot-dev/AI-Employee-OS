@@ -1,1 +1,4 @@
 .DS_Store
+spikes/deep-agents/.spike-data/
+spikes/deep-agents/.venv/
+spikes/deep-agents/__pycache__/
