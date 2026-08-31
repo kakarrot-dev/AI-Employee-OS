@@ -11,9 +11,10 @@
 1. [MVP 产品规格](docs/product-spec.md)
 2. [系统架构方案](docs/system-architecture.md)
 3. [实施路线图](docs/implementation-roadmap.md)
+4. [Phase 0：Eigent 客户端壳审计](docs/audits/phase-0/eigent-client-shell-audit.md)
 
 发生冲突时，以产品规格为产品边界，以系统架构方案为技术边界；实施路线图不得扩大前两者定义的 MVP。
 
 ## 当前阶段
 
-处于方案冻结前阶段，尚未开始代码实现。下一步先审计 Eigent、Deep Agents、TencentDB Agent Memory 与 agent-reach 的可复用边界，再建立新代码骨架。
+产品规格 v0.1 已冻结，Phase 0 外部依赖审计进行中。Eigent 子审计已完成：不采用整仓 Fork，Phase 1 将新建最小 Electron 骨架并只抽取通过逐文件审计的通用组件。下一步继续审计 Deep Agents、TencentDB Agent Memory、模型 Provider、agent-reach 与多进程安全边界。

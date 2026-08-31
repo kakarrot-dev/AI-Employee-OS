@@ -1,7 +1,7 @@
 # AI Employee OS MVP 产品规格
 
 版本：v0.1
-状态：本轮讨论基线
+状态：v0.1 已冻结；变更需重新评估 MVP 边界
 语言：用户可见内容优先使用简体中文；Token、Tool、Skill、MCP、System Prompt 等专有名词保留英文。
 
 ## 1. 产品定义
@@ -351,7 +351,7 @@ Delivery 至少包含：摘要、产物、证据、验收结果、未解决问�
 - 记忆
 - 设置
 
-采用 Eigent 的产品壳和可复用组件，通过 Bloome 的视觉语言重新主题化：窄图标栏、上下文列表、宽内容区、低边框、圆角和轻量状态。不得引入联系人、群聊、分享、邀请或社交发现。
+客户端新建最小 Electron 骨架，只允许按文件审计后抽取 Eigent 的通用 UI Primitive 或纯函数，不采用其产品壳、路由、状态管理、Main/Preload 或原 Runtime。界面以 Bloome 为唯一视觉事实源：窄图标栏、上下文列表、宽内容区、低边框、圆角和轻量状态。不得引入联系人、群聊、分享、邀请或社交发现。具体边界见 [Phase 0：Eigent 客户端壳审计](audits/phase-0/eigent-client-shell-audit.md)。
 
 ### 12.2 工作台
 
@@ -485,7 +485,7 @@ Delivery 至少包含：摘要、产物、证据、验收结果、未解决问�
 
 ## 17. 尚待技术验证
 
-- Eigent 客户端壳与原 Runtime 的实际耦合程度及许可证义务。
+- Eigent 逐文件组件抽取时的传递依赖与资产许可证；根 Apache-2.0 与 `package.json` MIT 元数据冲突须在首次分发派生代码前向上游确认。整仓 Fork 已因壳层与 Runtime、高权限 IPC 和云端链路高度耦合而排除。
 - Deep Agents 当前 Sub-agent、Checkpoint、流式事件和取消接口。
 - Poe 与 DeepSeek 官方 API 的模型枚举、Tool Calling、结构化输出、Token 和错误语义。
 - MemoryCore 能否与 Hub/Proxy 完全解耦，以固定版本、无 Docker、纯本地存储和应用级加密形态独立运行；失败时转为最小本地实现。

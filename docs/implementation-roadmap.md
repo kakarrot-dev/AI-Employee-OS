@@ -1,7 +1,7 @@
 # AI Employee OS 从零实施路线图
 
 版本：v0.1
-状态：待产品规格确认后执行
+状态：Phase 0 进行中；Eigent 子审计已完成
 
 ## 1. 实施原则
 
@@ -26,7 +26,7 @@
 ### 产物
 
 - 依赖版本与许可证清单
-- Eigent 保留/删除/替换清单
+- [Eigent 保留/删除/替换清单](audits/phase-0/eigent-client-shell-audit.md)（已完成）
 - Deep Agents 最小编排 Spike
 - MemoryCore 独立运行/最小本地实现决策与加密召回 Spike
 - Poe/DeepSeek 能力矩阵
@@ -49,8 +49,8 @@
 
 ### 工作
 
-- 建立 Fork 基线与版权声明。
-- 删除 Eigent 业务页面、云端依赖和原 Agent Runtime 接口。
+- 新建最小 Electron + React + TypeScript 客户端骨架，固定 Node、包管理器并提交 lockfile。
+- 按逐文件清单抽取通过许可证、传递依赖和权限审计的 Eigent 通用组件，保留来源 Commit、版权、许可证和修改说明；不复制原产品壳、Main/Preload、业务页面、云端依赖或 Agent Runtime。
 - 建立 Bloome 风格 Design Token。
 - 实现工作台、任务、团队、资源、记忆、设置的空壳与导航。
 - 建立本地 IPC 客户端和领域事件订阅骨架。
@@ -60,7 +60,8 @@
 - 六个模块可导航。
 - 窗口、菜单栏和重连行为可验证。
 - 客户端不直接调用模型或 Tool。
-- 不存在原 Eigent Runtime 的静默执行入口。
+- Renderer 不启用 Node Integration 或 `webviewTag`，Preload 不暴露通用 `ipcRenderer`。
+- 不存在原 Eigent Runtime、Cloud、Updater 或高权限 IPC 的静默执行入口。
 
 ## 4. Phase 2：Local Control Runtime 与契约
 
@@ -200,7 +201,7 @@
 
 ### 工作
 
-- 打包 Eigent 客户端、运行时、Provider、本地记忆及全部受管 Tool/MCP Sidecar。
+- 打包 AI Employee OS 客户端、运行时、Provider、本地记忆及全部受管 Tool/MCP Sidecar。
 - 实现首次初始化、Embedding 自动下载和进度恢复。
 - 完成签名、公证、升级、Migration 和回滚验证。
 - 验证关闭窗口继续运行、显式退出安全暂停和崩溃恢复。

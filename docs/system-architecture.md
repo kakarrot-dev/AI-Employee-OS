@@ -1,7 +1,7 @@
 # AI Employee OS 系统架构方案
 
 版本：v0.1
-状态：目标架构，待外部依赖审计验证
+状态：目标架构；Phase 0 外部依赖审计进行中
 
 ## 1. 架构目标
 
@@ -19,7 +19,7 @@
 
 ```text
 ┌────────────────────────────────────────────────────────────┐
-│ Eigent Client Shell                                        │
+│ AI Employee OS Client                                      │
 │ Bloome visual language                                     │
 │ 工作台 / 任务 / 团队 / 资源 / 记忆 / 设置                 │
 └───────────────────────┬────────────────────────────────────┘
@@ -349,7 +349,7 @@ pending → running → succeeded
 
 一个客户端 Release 固定以下兼容组合：
 
-- Eigent Client 基线
+- AI Employee OS Client 基线及经审计抽取组件的来源 Commit
 - Deep Agents
 - Local Memory Subsystem 及采用时的 MemoryCore 固定版本
 - Agent 能力、Skill、Tool、MCP Bundle
@@ -387,10 +387,9 @@ pending → running → succeeded
 
 ## 13. 待 Spike 决策
 
-以下内容不能在未读代码时凭空确定：
+以下内容需通过后续 Spike 确定：
 
-- Eigent 的桌面框架、Renderer/Main 边界和可抽离组件清单。
-- Local Control Runtime 的实现语言及与 Eigent 的 IPC 方式。
+- Local Control Runtime 的实现语言及与新客户端骨架的 IPC 方式。
 - Deep Agents 的 Tool interrupt、节点级安全停止、持久 Checkpointer，以及 Checkpoint Store 与 Runtime 产品数据库的提交/补偿边界。
 - MemoryCore 能否脱离 Hub/Proxy、以无 Docker、纯本地形态独立运行；若采用，验证其加密 Store 改造方式，否则选择最小本地实现。
 - Provider 子进程的短期会话、受认证本地代理、Secret 注入和网络隔离方式。
