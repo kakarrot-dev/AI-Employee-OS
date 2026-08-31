@@ -1,7 +1,7 @@
 # AI Employee OS 从零实施路线图
 
 版本：v0.1
-状态：Phase 0 进行中；Eigent、Deep Agents 子审计已完成
+状态：Phase 0 进行中；Eigent、Deep Agents、Memory 子审计已完成
 
 ## 1. 实施原则
 
@@ -28,7 +28,7 @@
 - 依赖版本与许可证清单
 - [Eigent 保留/删除/替换清单](audits/phase-0/eigent-client-shell-audit.md)（已完成）
 - [Deep Agents 最小编排与恢复 Spike](audits/phase-0/deep-agents-orchestration-audit.md)（已完成；[可执行脚本](../spikes/deep-agents/README.md)）
-- MemoryCore 独立运行/最小本地实现决策与加密召回 Spike
+- [MemoryCore/最小本地实现决策与加密召回 Spike](audits/phase-0/memorycore-local-memory-audit.md)（已完成；[可执行脚本](../spikes/local-memory/README.md)）
 - Poe/DeepSeek 能力矩阵
 - agent-reach 路由知识 → 受管 Tool/MCP 映射、许可与降级清单
 - 多进程 Keychain ACL 与 Provider 本地代理 Spike
@@ -38,8 +38,8 @@
 
 - 能证明 Eigent 的产品壳可以与原 Runtime 解耦，或明确切换到组件抽取方案。
 - 能运行总管委派一个临时员工，在节点完成后安全中断并从持久 Checkpoint 恢复；硬取消的不可恢复边界有真实记录。（已通过）
-- 能在不使用 Docker 的情况下启动固定版本 MemoryCore，并证明 Hub/Proxy/Skill/Wiki/CodeGraph 可完全关闭；否则明确采用最小本地实现。
-- 能完成本地 Embedding、分类过滤、召回和删除。
+- 能在不使用 Docker 的情况下启动固定版本 MemoryCore，并证明 Hub/Proxy/Skill/Wiki/CodeGraph 可完全关闭；否则明确采用最小本地实现。（已选择最小本地实现）
+- 能完成本地 Embedding、分类过滤、召回和删除。（Spike 已通过）
 - 能证明至少一个 Poe 或 DeepSeek 模型满足总管要求。
 - 能证明 Worker 只访问受认证本地 Provider 代理且无法读取 API Key。
 - 至少两个独立来源后端可以无用户全局 Node/Python/CLI 安装、无 Agent Shell 直通地受管执行；其许可和平台风险可接受。
@@ -156,18 +156,19 @@
 - “完全访问”下的注入内容仍不能扩大 RunGrant、读取未授权文件或把本地内容编码进网络请求。
 - 正式 Run 不依赖 `~/.agent-reach`、`npm -g` 或用户预装 CLI，也不存在上游组件运行时自更新。
 
-## 9. Phase 7：MemoryCore 与本地召回
+## 9. Phase 7：最小本地记忆与召回
 
 ### 工作
 
-- 按 Phase 0 决策集成固定版本 MemoryCore Standalone，或实现满足同一 Adapter 契约的最小本地记忆子系统。
-- 采用 MemoryCore 时关闭 Hub、Proxy、Skill、Wiki 和 CodeGraph。
+- 按 Phase 0 决策实现产品自有 Memory Adapter 与最小本地记忆子系统，不集成 MemoryCore Standalone。
+- 不实现 Memory Hub、Proxy、Skill、Wiki、CodeGraph 或 User/Team/Agent/Task 元数据副本。
 - 实现客户端 ID 到 Memory Scope 的单向映射。
 - 实现对话级和任务级异步沉淀。
 - 实现本地 Embedding 下载、校验、预热、索引和迁移。
 - 实现 BM25、向量、分类过滤、重排和 Token 预算。
 - 实现记忆查看、修正、停用、冲突和永久删除。
 - 实现记忆数据库与向量索引加密。
+- 以 FastEmbed `0.8.0` 和固定 `Qdrant/bge-small-zh-v1.5` ONNX 为首个候选基线，完成正式质量、性能和分发门禁后才进入产品。
 
 ### 门禁
 

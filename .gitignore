@@ -2,3 +2,7 @@
 spikes/deep-agents/.spike-data/
 spikes/deep-agents/.venv/
 spikes/deep-agents/__pycache__/
+spikes/local-memory/.spike-data/
+spikes/local-memory/.model-cache/
+spikes/local-memory/.venv/
+spikes/local-memory/__pycache__/

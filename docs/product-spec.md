@@ -265,7 +265,7 @@ Tool 自身超时由内置定义提供。有副作用动作不因超时自动重
 
 ### 10.1 采用范围
 
-MVP 的产品边界是本地 L0–L3 记忆，不依赖 Memory Hub、Proxy、自动 Skill 提取、Wiki 或 CodeGraph。TencentDB Agent Memory 的 MemoryCore Standalone 是 Phase 0 候选实现，只有在证明它能以固定版本、无 Docker、纯本地存储、独立进程和可加密形态运行后才允许集成；否则按相同产品契约实现最小本地记忆子系统，不为兼容上游而扩大 MVP。
+MVP 的产品边界是本地 L0–L3 记忆，不依赖 Memory Hub、Proxy、自动 Skill 提取、Wiki 或 CodeGraph。Phase 0 已排除 TencentDB Agent Memory `v2.0.1`：其发布物不可复现构建，本地 Embedding 配置不可达，明文 JSONL/WAL 和删除语义不满足加密与永久删除门禁。产品按本节契约实现自有 Memory Adapter 与最小本地记忆子系统，不为兼容上游而扩大 MVP。详见 [Phase 0：MemoryCore 与最小本地记忆审计](audits/phase-0/memorycore-local-memory-audit.md)。
 
 只启用：
 
@@ -316,7 +316,7 @@ Embedding 模型在首次配置后由客户端自动下载，校验版本与 SHA
 
 用户可以修改分类、标签、范围和内容，停用、恢复、解决冲突或永久删除记忆。普通修改产生新版本；永久删除必须清除应用管理范围内的原文、派生摘要、向量、索引、缓存、队列和可还原存储页，只保留不含内容的审计墓碑。用户自行创建的 Time Machine、磁盘镜像或外部备份不在应用可验证范围内，产品必须在删除确认中明确说明。
 
-API Key 使用 Keychain；记忆数据库和向量索引必须在应用层加密，解锁密钥由 Keychain 管理。日常启动和召回不反复要求用户输入系统密码。具体加密实现需要在技术 Spike 中验证。
+API Key 使用 Keychain；记忆数据库和向量索引必须在应用层加密，解锁密钥由 Keychain 管理。日常启动和召回不反复要求用户输入系统密码。Phase 0 已验证 AES-256-GCM 加密正文、标签和向量，磁盘不保留明文 BM25 索引，并能在删除后截断 WAL、清理可还原页；Keychain ACL、密钥轮换、Migration、崩溃恢复和规模性能仍是生产门禁。
 
 ## 11. 本地工作区与交付
 
@@ -489,12 +489,13 @@ Delivery 至少包含：摘要、产物、证据、验收结果、未解决问�
 
 - Eigent 逐文件组件抽取时的传递依赖与资产许可证；根 Apache-2.0 与 `package.json` MIT 元数据冲突须在首次分发派生代码前向上游确认。整仓 Fork 已因壳层与 Runtime、高权限 IPC 和云端链路高度耦合而排除。
 - Deep Agents 固定版本可以完成临时员工委派、动态 Tool Interrupt、持久 Checkpoint、节点完成后安全停止、跨进程恢复和 Root/Sub-agent Streaming；硬取消会重放未完成节点，不能作为安全暂停。采用范围仅是受限 Harness，默认 General-purpose、并行委派、Filesystem/Execute Tool 和权限规则不得直接进入产品。详见 [Phase 0：Deep Agents 编排与恢复审计](audits/phase-0/deep-agents-orchestration-audit.md)。
+- MemoryCore `v2.0.1` 可无 Docker 启动，但锁定构建、测试、本地 Embedding、应用层加密、永久删除和单一事实源门禁失败，不进入产品。最小本地替代 Spike 已完成中文本地 Embedding、分类/Scope 过滤、混合召回、加密落盘和删除验证。详见 [Phase 0：MemoryCore 与最小本地记忆审计](audits/phase-0/memorycore-local-memory-audit.md)。
 
 ### 17.2 尚待技术验证
 
 - Poe 与 DeepSeek 官方 API 的模型枚举、Tool Calling、结构化输出、Token 和错误语义。
-- MemoryCore 能否与 Hub/Proxy 完全解耦，以固定版本、无 Docker、纯本地存储和应用级加密形态独立运行；失败时转为最小本地实现。
-- 本地 Embedding 模型的中文召回质量、许可证、体积、内存和首次加载时间。
+- 固定中文 Embedding 模型的正式 Eval Set、Recall@K、nDCG、误召回、长文本截断、批量延迟、峰值内存和打包体积；当前三个确定性样例不代表质量结论。
+- 最小本地记忆的 Keychain ACL、密钥轮换、版本/冲突/墓碑、Migration、备份、崩溃恢复、并发删除和十万级规模性能。
 - agent-reach 各数据源后端的运行时依赖、Credential、平台条款、分发许可、健康检查和受管 Tool/MCP 重建方式；不得依赖用户全局安装或允许 Agent 直接执行 Shell。
 - Deep Agents Checkpoint Store 与产品数据库的跨库提交、Outbox、补偿和清理策略；真实 Provider 下取消后的消息修复仍需验证。
 - Electron 主进程、Runtime、Provider 与 MCP 进程在统一签名和不同签名下的 Keychain ACL 行为。

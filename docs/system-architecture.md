@@ -11,7 +11,7 @@
 - Deep Agents 负责 Agent 编排，但不是权限内核。
 - 所有 Tool 副作用经过可验证的本地安全边界。
 - Secret 不进入 Agent、Tool、数据库、日志和记忆。
-- 本地记忆子系统只负责 L0–L3 记忆，不接管产品实体；MemoryCore 是待 Spike 验证的候选实现。
+- 本地记忆子系统只负责 L0–L3 记忆，不接管产品实体；Phase 0 已排除 MemoryCore，采用产品自有最小实现。
 - 客户端关闭窗口后任务可以继续，崩溃后可以从检查点恢复。
 - 所有正式执行引用不可变版本，不能因配置更新发生静默漂移。
 
@@ -41,7 +41,7 @@
         ▼                  ▼                     ▼
 ┌───────────────┐  ┌────────────────┐  ┌────────────────────┐
 │ Poe/DeepSeek  │  │ Local Memory   │  │ Built-in Tool /   │
-│ Provider      │  │ MemoryCore or  │  │ built-in MCP      │
+│ Provider      │  │ encrypted      │  │ built-in MCP      │
 │ subprocess    │  │ minimal store  │  │                    │
 └───────────────┘  └────────────────┘  └────────────────────┘
 ```
@@ -117,7 +117,8 @@ Worker 只接收 Runtime 签发的短期 Provider 会话和本地代理地址，
 - 通过 Memory Adapter 接收客户端稳定 ID、允许范围和来源引用。
 - 不创建或治理客户端 Employee、Task、Skill 等实体。
 - 不直接调用 Deep Agents，也不代理 Poe/DeepSeek 主对话。
-- MemoryCore Standalone 只有通过独立启动、模块解耦、本地存储、迁移、加密和删除 Spike 后才可作为固定版本 Sidecar；否则使用满足同一 Adapter 契约的最小本地实现。
+- 使用产品自有最小实现；不加载 MemoryCore 的 Metadata、Skill、Knowledge、Offload 或兼容路由。Phase 0 证据与约束见 [MemoryCore 与最小本地记忆审计](audits/phase-0/memorycore-local-memory-audit.md)。
+- 首个候选基线是 FastEmbed `0.8.0` 与固定 `Qdrant/bge-small-zh-v1.5` ONNX（512 维）；正式发布前仍须通过质量、性能、分发和 Keychain 门禁。
 
 ## 4. 关键数据流
 
@@ -353,7 +354,7 @@ pending → running → succeeded
 
 - AI Employee OS Client 基线及经审计抽取组件的来源 Commit
 - Deep Agents
-- Local Memory Subsystem 及采用时的 MemoryCore 固定版本
+- Local Memory Subsystem、FastEmbed 与 Embedding Artifact 固定版本
 - Agent 能力、Skill、Tool、MCP Bundle
 - Provider Adapter
 - Embedding 模型与向量维度
@@ -367,7 +368,7 @@ pending → running → succeeded
 - 记忆数据库、向量索引和自动更新日志需要应用级静态加密。
 - 登录 macOS 后正常启动不要求重复密码。
 - 内部 Run 工作区使用当前用户权限隔离；敏感任务可在未来增加按任务加密，不进入 MVP。
-- 在选择 SQLCipher、加密容器或自定义 Store Adapter 前，必须验证与本地记忆实现、SQLite 扩展、备份、迁移和崩溃恢复的兼容性；采用 MemoryCore 时增加其 Store 兼容验证。
+- Phase 0 参考路径使用 AES-256-GCM 加密正文、标签和向量，BM25 索引只在解锁后的进程内存在；生产 Store 仍须验证 Keychain、密钥轮换、备份、Migration、并发、崩溃恢复和大规模重建成本。
 - Keychain 访问主体必须固定为签名后的 Client/Runtime/Provider/MCP 进程集合；开发签名、正式签名和升级后的 ACL 行为都要单独验证，禁止退回共享明文配置文件。
 - 产品数据库、记忆、Checkpoint、Run 工作区、事件、审计和诊断日志分别设置配额与保留策略。清理只能删除可重建缓存或到期过程数据，不能破坏 Artifact、Evidence、Delivery、审计墓碑或运行中恢复点。
 - 崩溃诊断默认本地、脱敏和有期限；上传前由用户预览并单次授权。
@@ -395,11 +396,11 @@ Deep Agents 动态 Tool Interrupt 和 LangGraph 静态节点断点是不同机�
 
 - Local Control Runtime 的实现语言及与新客户端骨架的 IPC 方式。
 - Deep Agents Checkpoint Store 与 Runtime 产品数据库的跨库提交、Outbox、补偿和清理边界。
-- MemoryCore 能否脱离 Hub/Proxy、以无 Docker、纯本地形态独立运行；若采用，验证其加密 Store 改造方式，否则选择最小本地实现。
+- 最小本地记忆的生产 Store、Keychain ACL、密钥轮换、Migration、并发删除、崩溃恢复与规模性能。
 - Provider 子进程的短期会话、受认证本地代理、Secret 注入和网络隔离方式。
 - MCP/CLI Tool 的受管打包、沙箱技术、平台条款、Credential 与 macOS 权限模型。
 - agent-reach 路由知识到产品内 Tool/MCP 的重建清单，以及不依赖全局 Node/Python/CLI 安装的可交付来源范围。
 - 多进程代码签名与 Keychain ACL 在开发、升级和正式发布环境中的兼容性。
-- Embedding 模型、下载源和许可证。
+- Embedding 模型正式质量门禁、下载镜像、Artifact 签名与分发许可。
 
 这些 Spike 只能验证目标架构，不得反向扩大 MVP。
