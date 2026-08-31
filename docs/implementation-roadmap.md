@@ -1,7 +1,7 @@
 # AI Employee OS 从零实施路线图
 
 版本：v0.1
-状态：Phase 0 进行中；Eigent、Deep Agents、Memory、Agent Reach 子审计已完成，Provider 协议与本地隔离已完成、真实模型门禁待验证
+状态：Phase 0 进行中；Eigent、Deep Agents、Memory、Agent Reach 子审计已完成，Provider 协议与多进程安全边界已选型，真实 Apple 签名包与真实模型门禁待验证
 
 ## 1. 实施原则
 
@@ -21,7 +21,7 @@
 - 审计 Poe、DeepSeek 官方 API 的协议能力，并使用用户明确配置的 Credential 验证至少一个精确模型。
 - 审计 Provider 本地代理、短期 Grant 和 Worker 不接触 API Key 的实现路径。
 - 审计 agent-reach 的平台路由、上游运行时依赖、CLI/MCP、Credential、平台条款、分发、健康检查和受管重建方式。（已完成）
-- 审计 Electron Client、Runtime、Provider、MCP 多进程签名与 Keychain ACL。
+- 审计 Electron Client、Runtime、Provider、MCP 多进程签名、Keychain ACL/Access Group 与网络沙箱。（架构与临时证据已完成；真实签名包待验证）
 
 ### 产物
 
@@ -31,7 +31,7 @@
 - [MemoryCore/最小本地实现决策与加密召回 Spike](audits/phase-0/memorycore-local-memory-audit.md)（已完成；[可执行脚本](../spikes/local-memory/README.md)）
 - [Poe/DeepSeek 协议矩阵与 Provider 本地代理 Spike](audits/phase-0/provider-and-local-proxy-audit.md)（协议与确定性隔离已完成；真实模型待验证）
 - [Agent Reach 路由知识 → 受管 Research Adapter、许可与降级清单](audits/phase-0/agent-reach-managed-research-audit.md)（已完成；[可执行脚本](../spikes/managed-research/README.md)）
-- Provider 本地代理 Spike；多进程 Keychain ACL 与签名验证
+- [macOS 多进程 Keychain、签名与网络沙箱审计](audits/phase-0/macos-process-keychain-sandbox-audit.md)（临时 Keychain ACL 与失败模型已验证；[可执行脚本](../spikes/macos-process-security/README.md)；真实 Apple 签名包待验证）
 - 已验证兼容矩阵
 
 ### 门禁
@@ -41,9 +41,9 @@
 - 能在不使用 Docker 的情况下启动固定版本 MemoryCore，并证明 Hub/Proxy/Skill/Wiki/CodeGraph 可完全关闭；否则明确采用最小本地实现。（已选择最小本地实现）
 - 能完成本地 Embedding、分类过滤、召回和删除。（Spike 已通过）
 - 能证明至少一个 Poe 或 DeepSeek 精确模型满足总管要求。（当前尚未使用 Credential，门禁未通过）
-- 能证明 Worker 只访问受认证本地 Provider 代理且无法读取 API Key。（确定性 Fake Upstream 路径已通过，生产签名/Keychain/出站限制待验证）
+- 能证明 Worker 只通过 Runtime 私有 IPC 使用 Provider 且无法读取 API Key 或访问公网。（确定性 Fake Upstream 与临时 ACL 已通过；真实 XPC/签名包/出站限制待验证）
 - 至少两个独立来源后端可以无用户全局 Node/Python/CLI 安装、无 Agent Shell 直通地受管执行；其许可和平台风险可接受。（GitHub REST + RSS/Atom Spike 与真实只读协议已通过）
-- 开发签名和目标发布签名下的 Keychain 日常访问不反复弹窗，Secret 不退回文件或环境常驻。
+- Apple Development 与 Developer ID 目标包升级前后的 Keychain Access Group 日常访问不反复弹窗，负例目标被拒绝，Secret 不退回文件或环境常驻。（架构已确定，真实 Profile/升级矩阵未通过）
 
 ## 3. Phase 1：空客户端壳
 
@@ -84,9 +84,9 @@
 
 ### 工作
 
-- 实现 Keychain 服务。
+- 实现按 Provider、Memory 和 MCP Secret 类别隔离的 Data Protection Keychain Access Group；Renderer、Runtime 和 Worker 不获得长期 Secret Group。
 - 实现 Poe 与 DeepSeek Provider Adapter。
-- 实现受认证本地 Provider 代理和 Runtime 签发的短期会话，禁止 Worker 直连 Provider。
+- 实现 `Worker → Runtime 私有 Pipe/UDS → Provider XPC/签名 Helper` 和 Runtime 签发的短期会话，禁止 Worker 获得网络 Client 权限或直连 Provider。
 - 实现模型配置、能力探测、预算和 Usage 规范化。
 - 接入内置总管和流式对话。
 - 实现离线状态、超时、取消和错误展示。

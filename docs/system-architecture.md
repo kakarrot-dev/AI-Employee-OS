@@ -57,7 +57,7 @@
 - UI、表单、只读资源展示、时间线和用户审批。
 - 读取 Runtime 投影，不直接读写 Runtime 数据库。
 - 通过受认证的本地 IPC 发送命令和订阅事件。
-- 通过系统 API 请求 Keychain 操作，但不把 Secret 暴露给渲染进程。
+- 通过窄 IPC 请求对应 Provider/Memory/MCP Service 保存或撤销 Credential；Renderer、Preload 和 Main 不加入业务 Secret Access Group，也不持久化 Secret。
 
 禁止：
 
@@ -89,19 +89,20 @@ Runtime 不负责生成业务内容；业务规划和内容生成由 Deep Agents
 - 通过无副作用的提案 Tool 提交 ToolAction Proposal，而不是执行真实 Tool。
 - 生成结构化 Artifact、Evidence 引用和 Delivery 候选。
 
-Worker 只接收 Runtime 签发的短期 Provider 会话和本地代理地址，不接收 API Key、Cookie 或其他 Secret，也不继承系统权限。Deep Agents 的 Tool interrupt 只用于暂停图执行并持久化提案；审批、Action ID、幂等键、执行和终态仍由 Runtime 决定。生产运行必须配置持久 Checkpointer，并将 Deep Agents `thread_id` 与不可变 Run/Assignment 引用绑定。
+Worker 只接收 Runtime 签发的短期 Provider 会话并通过私有 Pipe/Unix Domain Socket 与 Runtime 通信，不接收 API Key、Cookie、Provider 公网地址或其他 Secret，不加入 Keychain Access Group，也不获得网络 Client 权限。Deep Agents 的 Tool interrupt 只用于暂停图执行并持久化提案；审批、Action ID、幂等键、执行和终态仍由 Runtime 决定。生产运行必须配置持久 Checkpointer，并将 Deep Agents `thread_id` 与不可变 Run/Assignment 引用绑定。
 
 当前已验证基线为 `deepagents==0.7.11`、`langchain==1.3.18`、`langgraph==1.2.11`。Worker 必须通过产品自有 `DeepAgentsAdapter` 关闭默认 General-purpose Sub-agent，拒绝并行 `task`、Async Sub-agent、动态 Sub-agent、`execute` 和未冻结 Tool，并覆盖默认递归上限。声明式员工只能注册无副作用 Proposal Tool；完整约束见 [Phase 0：Deep Agents 编排与恢复审计](audits/phase-0/deep-agents-orchestration-audit.md)。
 
 ### 3.4 Provider Subprocess
 
 - Poe 与 DeepSeek 使用独立 Adapter。
-- 只有 Provider 子进程按需从 Keychain 读取长期 API Key；Worker 只接收 Runtime 签发的短期本地 Grant。
-- Provider 在本机暴露受认证、仅面向 Worker 的代理端点；Worker 的模型客户端只能连接该端点，不能直连公网 Provider。
+- 只有独立签名的 Provider Service 加入 Provider Secret Access Group，并按需从 Data Protection Keychain 读取长期 API Key；Client、Runtime 和 Worker 都不是该 Group 成员。
+- Worker 通过 Runtime 私有 Pipe/Unix Domain Socket 提交版本化模型请求；Runtime 再通过嵌入式 XPC 或签名 Helper IPC 调用 Provider。Provider 不向 Worker 暴露 TCP 回环端点。
+- Provider 是该链路中唯一拥有模型公网 `network.client` 权限的主体，并固定上游 Origin；Runtime 与 Worker 不通过它获得通用网络代理能力。
 - Grant 绑定 Run、Provider、精确 Model ID、过期时间、输入/输出和金额预算；Provider 只接受版本化内部请求，拒绝 Worker 覆盖 Base URL、模型、服务端 Tool 或会话范围。
 - Adapter 将厂商 Streaming、结构化结果、单个 Proposal Tool、Usage、取消和错误映射为内部事件；丢弃隐藏推理正文，并对 Tool 参数和结构化结果执行本地 Schema 校验。
 
-Phase 0 确定性 Spike 已验证上述本地代理路径、任意目标拒绝、错误规范化和取消断连；尚未验证真实 Credential、Keychain ACL、代码签名和 Worker 公网出站限制。协议证据与剩余门禁见 [Poe、DeepSeek 与 Provider 本地代理审计](audits/phase-0/provider-and-local-proxy-audit.md)。
+Phase 0 确定性 Spike 已验证短期 Grant、任意目标拒绝、错误规范化和取消断连；后续安全审计将默认 IPC 从 Worker 回环 TCP 修订为 Runtime 中继的 Pipe/UDS + XPC/签名 Helper，并用隔离临时 Keychain 证明签名身份变化会拒绝静默读取。真实 Credential、Apple 签名/Profile、升级和 Worker 无网仍待目标包验证。协议与安全证据见 [Poe、DeepSeek 与 Provider 本地代理审计](audits/phase-0/provider-and-local-proxy-audit.md)及 [macOS 多进程 Keychain、签名与网络沙箱审计](audits/phase-0/macos-process-keychain-sandbox-audit.md)。
 - 将请求、流式事件、Tool Call、Usage 和错误规范化为内部契约。
 - 不记录完整 Prompt、响应或 API Key；调试日志必须经过脱敏。
 
@@ -110,6 +111,7 @@ Phase 0 确定性 Spike 已验证上述本地代理路径、任意目标拒绝�
 - 每个 Tool 调用使用 Runtime 生成的 Action ID 和幂等键。
 - MCP Credential 只注入对应 MCP 进程。
 - Runner 只拥有 RunGrant 明确授予的目录、网络和动作范围。
+- Local/File Runner 不获得 `network.client`；Provider、MCP 和 Research Runner 按独立签名目标授予网络权限，不能共享通用网络 Runner。
 - CLI/HTTP/浏览器后端必须随客户端受管打包或由已审计 MCP 提供，不能依赖 Agent 直接执行 Shell、用户全局安装目录或运行时自更新。
 - 网络出站动作校验目标域、协议、参数来源、长度、编码和敏感信息模式；外部内容生成的参数默认按非可信处理。
 - Phase 0 首批 Research Runner 固定为 `github.repositories.search@research-source/v1` 与 `rss.read@research-source/v1`。前者固定 GitHub REST Origin/Path/Method，后者只读取用户授权的公网 HTTPS Feed；两者不运行 Agent Reach 或任何上游 CLI。失败形成 SourceAttempt，外部结果始终标记为非可信数据。详见 [Agent Reach 与受管网络调研审计](audits/phase-0/agent-reach-managed-research-audit.md)。
@@ -338,14 +340,15 @@ pending → running → succeeded
 11. 外部内容始终是不可信数据，不能改变系统指令、任务验收标准、RunGrant 或授权策略。
 12. 所有网络出站参数都必须经过敏感信息与来源检查；本地内容不得通过 URL、查询或请求体被非预期外传。
 13. Agent 不得直接执行 agent-reach 或其他上游 Shell/CLI；只有版本锁定、已审计、受 Runner 管理的 Tool/MCP 可以产生真实效果。
+14. Worker、Runtime、Renderer 和 Preload 不加入 Provider、Memory 或 MCP Secret Access Group；网络 Client entitlement 不能替代目标 Origin 与数据出口校验。
 
 提示注入分类器和规则只能提高风险等级，不能成为授权依据。即使检测器漏报，真实副作用仍必须被 Schema、RunGrant、资源隔离和出站校验约束。
 
 ## 9. 本地 IPC
 
-具体协议在 Spike 后决定，但必须满足：
+默认协议已确定为 Client/Runtime 与 Runtime/Sidecar 间的私有 XPC、版本化 Pipe 或 Unix Domain Socket；不得为 Worker 提供 TCP 回环 Provider 端点。实现必须满足：
 
-- 只监听回环或使用 Unix Domain Socket。
+- 优先使用应用内私有 XPC；语言边界使用应用控制目录中的 Unix Domain Socket 或继承 Pipe，不监听局域网和公网。
 - 客户端启动时生成短期会话凭据。
 - 命令具备请求 ID、版本和幂等语义。
 - 事件流可恢复，客户端重连后从事件游标继续。
@@ -368,12 +371,12 @@ pending → running → succeeded
 
 ## 11. 加密设计约束
 
-- API Key 与保险库密钥保存在 Keychain。
+- API Key 与保险库密钥保存在 Data Protection Keychain，并按 Provider、Memory 和 MCP Secret 类别拆分 Access Group。
 - 记忆数据库、向量索引和自动更新日志需要应用级静态加密。
 - 登录 macOS 后正常启动不要求重复密码。
 - 内部 Run 工作区使用当前用户权限隔离；敏感任务可在未来增加按任务加密，不进入 MVP。
 - Phase 0 参考路径使用 AES-256-GCM 加密正文、标签和向量，BM25 索引只在解锁后的进程内存在；生产 Store 仍须验证 Keychain、密钥轮换、备份、Migration、并发、崩溃恢复和大规模重建成本。
-- Keychain 访问主体必须固定为签名后的 Client/Runtime/Provider/MCP 进程集合；开发签名、正式签名和升级后的 ACL 行为都要单独验证，禁止退回共享明文配置文件。
+- Keychain 访问主体必须收敛为真正消费对应 Secret 的独立签名 Provider/Memory/MCP Service；Client、Runtime、Renderer、Preload 和 Worker 不加入业务 Secret Group。Apple Development、Developer ID 和升级后的 Access Group 行为都要单独验证，禁止退回共享明文配置文件。
 - 产品数据库、记忆、Checkpoint、Run 工作区、事件、审计和诊断日志分别设置配额与保留策略。清理只能删除可重建缓存或到期过程数据，不能破坏 Artifact、Evidence、Delivery、审计墓碑或运行中恢复点。
 - 崩溃诊断默认本地、脱敏和有期限；上传前由用户预览并单次授权。
 
@@ -400,11 +403,11 @@ Deep Agents 动态 Tool Interrupt 和 LangGraph 静态节点断点是不同机�
 
 - Local Control Runtime 的实现语言及与新客户端骨架的 IPC 方式。
 - Deep Agents Checkpoint Store 与 Runtime 产品数据库的跨库提交、Outbox、补偿和清理边界。
-- 最小本地记忆的生产 Store、Keychain ACL、密钥轮换、Migration、并发删除、崩溃恢复与规模性能。
-- Provider 代理的生产级端点防抢占、Peer Identity、Worker 公网出站限制、崩溃清理和内存 Secret 生命周期；确定性本地路径已通过 Spike。
+- 最小本地记忆的生产 Store、Memory Keychain Access Group、密钥轮换、Migration、并发删除、崩溃恢复与规模性能。
+- Provider XPC/签名 Helper 的 Peer Identity、Worker 无网、UDS 防抢占、崩溃清理和内存 Secret 生命周期；确定性 Grant 与临时 ACL 路径已通过 Spike。
 - MCP/CLI Tool 的受管打包、沙箱技术、平台条款、Credential 与 macOS 权限模型。
 - GitHub/RSS Runner 的 DNS Rebinding/TOCTOU、受批准代理、OS Sandbox、签名、Keychain 和缓存生命周期；重建清单与最小契约已由 Phase 0 Spike 确定。
-- 多进程代码签名与 Keychain ACL 在开发、升级和正式发布环境中的兼容性。
+- Apple Development/Developer ID 真实包的 Access Group、App Sandbox、无弹窗升级、公证和回滚矩阵；临时 Keychain ACL 只证明签名身份边界。
 - Embedding 模型正式质量门禁、下载镜像、Artifact 签名与分发许可。
 
 这些 Spike 只能验证目标架构，不得反向扩大 MVP。

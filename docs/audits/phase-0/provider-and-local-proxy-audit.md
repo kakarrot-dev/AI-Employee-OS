@@ -9,7 +9,7 @@
 **Poe 与 DeepSeek 保留为 MVP 的两个固定 Provider，但只能通过独立 Adapter 接入；本轮不把任何模型标记为“已验证可用”。**
 
 - **协议 Go：** 两家官方接口都能覆盖文本对话、流式输出、函数调用、结构化输出、Usage 和可分类错误，具备进入真实调用验证的基础。
-- **隔离 Go：** 确定性 Spike 已证明 Worker 只需获得短期本地 Grant 和回环地址；上游 API Key、固定 Base URL、模型 Allowlist、预算校验与协议转换可以留在 Provider 进程。
+- **隔离 Go：** 确定性 Spike 已证明上游 API Key、固定 Base URL、模型 Allowlist、预算校验与协议转换可以留在 Provider 进程，Worker 只需短期本地 Grant。该 Spike 使用的回环地址已被后续多进程安全审计修订为 `Worker → Runtime 私有 Pipe/UDS → Provider XPC/签名 Helper`，避免给 Worker 网络 Client 权限。
 - **直接兼容层 No-Go：** 两家都存在“接受但静默忽略”参数，且 Tool、结构化输出、Streaming 终止、状态保持与推理内容语义不同，不能用一个通用 OpenAI Client 加配置项代替独立 Adapter。
 - **Phase 0 门禁未关闭：** 当前没有使用用户的 Poe 或 DeepSeek Credential，也没有产生付费请求；“至少一个真实模型完成 Streaming + 结构化输出 + Tool Proposal + Usage + 取消 + 错误探测”仍待验证。
 
@@ -124,7 +124,7 @@ python3 spikes/provider-proxy/provider_proxy_spike.py
 | 取消传播与上游连接关闭 | 通过；Fake Upstream 观察到断连 |
 | 审计事件、Worker stdout/stderr 不含上游 Credential | 通过 |
 
-该 Spike 证明的是协议和进程职责可行性，不证明 Python 标准库实现可以直接进入生产。生产实现仍须覆盖 Unix Domain Socket 或随机回环端口的防抢占、Grant 的 Audience/Nonce/单次使用与重放防护、单实例生命周期、mTLS/Peer Identity 取舍、Keychain ACL、代码签名、崩溃清理、内存清零和 Worker 公网出站限制。
+该 Spike 证明的是协议和进程职责可行性，不证明 Python 标准库实现可以直接进入生产。后续 [macOS 多进程 Keychain、签名与网络沙箱审计](macos-process-keychain-sandbox-audit.md) 已排除 Worker 回环 TCP，生产实现改为 Runtime 私有 Pipe/UDS 中继到 Provider XPC/签名 Helper，并仍须覆盖 Grant 的 Audience/Nonce/单次使用与重放防护、Peer Identity、Data Protection Keychain Access Group、真实代码签名、崩溃清理和内存清零。
 
 ## 7. 保存时真实模型探测计划
 
@@ -152,6 +152,6 @@ python3 spikes/provider-proxy/provider_proxy_spike.py
 | 任意 Base URL、模型和 Tool 覆盖被拒绝 | 通过 |
 | 取消、错误、Usage 与日志脱敏内部契约 | 通过（确定性 Fake Upstream） |
 | 至少一个真实模型完成全套能力探测 | **未通过：本轮未使用 Credential** |
-| Keychain ACL、代码签名、升级和崩溃恢复 | 未验证，进入多进程安全审计 |
+| Keychain/签名/网络架构 | 已由后续多进程安全审计选型；真实 Apple 签名包、升级和崩溃恢复未验证 |
 
 **当前判定：Provider 协议和本地隔离方案允许进入实现准备；在真实模型门禁通过前，Phase 0 Provider 子审计不得标记完成，也不得声称 Poe 或 DeepSeek 已可用于生产 Run。**

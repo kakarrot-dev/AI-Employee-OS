@@ -234,7 +234,7 @@ MCP 不可用
 - 普通启动和日常运行不要求反复输入 macOS 密码。
 - 仅查看明文 Secret、导出敏感数据或重置保险库等高风险操作可以要求系统认证。
 - Secret 不进入数据库、日志、Trace、记忆、Agent Context 或 Tool 子进程。
-- Provider 进程按需从 Keychain 读取长期 API Key；Worker 只获得 Runtime 签发的短期、绑定 Run/Provider/模型/预算的本地 Grant 和回环代理地址。短期 Grant 不得访问任意 Base URL、模型或 Tool。
+- 独立签名的 Provider Service 按需从其 Keychain Access Group 读取长期 API Key；Worker 只获得 Runtime 签发的短期、绑定 Run/Provider/模型/预算的本地 Grant，并通过 Runtime 私有 Pipe/UDS 间接调用 Provider。Worker 不获得回环代理地址、Provider 公网地址、网络 Client 权限或任意 Base URL、模型和 Tool。
 
 ## 9. 预算、超时与重试
 
@@ -317,7 +317,7 @@ Embedding 模型在首次配置后由客户端自动下载，校验版本与 SHA
 
 用户可以修改分类、标签、范围和内容，停用、恢复、解决冲突或永久删除记忆。普通修改产生新版本；永久删除必须清除应用管理范围内的原文、派生摘要、向量、索引、缓存、队列和可还原存储页，只保留不含内容的审计墓碑。用户自行创建的 Time Machine、磁盘镜像或外部备份不在应用可验证范围内，产品必须在删除确认中明确说明。
 
-API Key 使用 Keychain；记忆数据库和向量索引必须在应用层加密，解锁密钥由 Keychain 管理。日常启动和召回不反复要求用户输入系统密码。Phase 0 已验证 AES-256-GCM 加密正文、标签和向量，磁盘不保留明文 BM25 索引，并能在删除后截断 WAL、清理可还原页；Keychain ACL、密钥轮换、Migration、崩溃恢复和规模性能仍是生产门禁。
+API Key 与记忆主密钥使用 Data Protection Keychain，并按 Provider、Memory 和 MCP Secret 类别拆分 Access Group；Client、Runtime、Renderer、Preload 和 Worker 不加入业务 Secret Group。记忆数据库和向量索引必须在应用层加密。日常启动和召回不反复要求用户输入系统密码。Phase 0 已验证 AES-256-GCM 加密正文、标签和向量，磁盘不保留明文 BM25 索引，并能在删除后截断 WAL、清理可还原页；真实 Apple 签名/Profile 下的 Access Group、密钥轮换、Migration、崩溃恢复和规模性能仍是生产门禁。
 
 ## 11. 本地工作区与交付
 
@@ -493,13 +493,14 @@ Delivery 至少包含：摘要、产物、证据、验收结果、未解决问�
 - MemoryCore `v2.0.1` 可无 Docker 启动，但锁定构建、测试、本地 Embedding、应用层加密、永久删除和单一事实源门禁失败，不进入产品。最小本地替代 Spike 已完成中文本地 Embedding、分类/Scope 过滤、混合召回、加密落盘和删除验证。详见 [Phase 0：MemoryCore 与最小本地记忆审计](audits/phase-0/memorycore-local-memory-audit.md)。
 - Poe/DeepSeek 官方文档与无凭证协议已审计；两家都存在静默忽略参数和端点语义差异，必须使用独立 Adapter。确定性 Fake Upstream 已验证 Worker 不接触 API Key、固定目标、预算、Proposal Tool、Streaming、结构化输出、Usage、错误规范化和取消传播；真实模型全套探测与 Keychain/签名仍未完成。详见 [Phase 0：Poe、DeepSeek 与 Provider 本地代理审计](audits/phase-0/provider-and-local-proxy-audit.md)。
 - Agent Reach `v1.5.0` 是依赖全局安装与 Agent Shell 的诊断/路由层，且固定 Tag 的依赖约束自相矛盾，不进入产品 Runtime。首批产品自有 GitHub REST + RSS Adapter 已通过无 Shell 确定性 Spike 和真实只读协议探测；社交、媒体、招聘、播客和金融渠道延期或排除。详见 [Phase 0：Agent Reach 与受管网络调研审计](audits/phase-0/agent-reach-managed-research-audit.md)。
+- macOS 多进程安全边界采用最小 Keychain Access Group、独立签名 Sidecar 和 Worker 无网络方案；Worker 通过 Runtime 私有 Pipe/UDS 间接调用 Provider XPC/签名 Helper，不再直连回环 TCP。临时 Keychain ACL 正负例已通过，`sandbox-exec` 仅作弃用失败模型；真实 Apple 签名/Profile、App Sandbox、升级与公证仍待验证。详见 [Phase 0：macOS 多进程 Keychain、签名与网络沙箱审计](audits/phase-0/macos-process-keychain-sandbox-audit.md)。
 
 ### 17.2 尚待技术验证
 
 - 使用用户明确配置的 Credential，让至少一个 Poe 或 DeepSeek 精确模型通过 Streaming、结构化输出、单 Tool Proposal、Usage、取消和错误真实探测。
 - 固定中文 Embedding 模型的正式 Eval Set、Recall@K、nDCG、误召回、长文本截断、批量延迟、峰值内存和打包体积；当前三个确定性样例不代表质量结论。
-- 最小本地记忆的 Keychain ACL、密钥轮换、版本/冲突/墓碑、Migration、备份、崩溃恢复、并发删除和十万级规模性能。
+- 最小本地记忆的真实 Keychain Access Group、密钥轮换、版本/冲突/墓碑、Migration、备份、崩溃恢复、并发删除和十万级规模性能。
 - GitHub/RSS 正式 Runner 的 DNS Rebinding/TOCTOU、OS Sandbox、签名、Keychain、崩溃恢复、缓存清理和性能；Exa/Jina 如进入后续版本须单独完成 Credential、数据使用和用户披露门禁。
 - Deep Agents Checkpoint Store 与产品数据库的跨库提交、Outbox、补偿和清理策略；真实 Provider 下取消后的消息修复仍需验证。
-- Electron 主进程、Runtime、Provider 与 MCP 进程在统一签名和不同签名下的 Keychain ACL 行为。
-- macOS 打包、签名、公证、Sidecar 生命周期、应用内运行时与升级回滚。
+- Electron 主进程、Runtime、Provider、Memory 与 MCP 目标在 Apple Development/Developer ID 签名、正确/错误 Access Group 和升级前后的 Keychain 行为。
+- macOS App Sandbox 真实 Profile、嵌套签名、公证、Sidecar 生命周期、应用内运行时与升级回滚。
