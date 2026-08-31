@@ -1,1 +1,0 @@
-{"id":"flow_launch001:work:draft","business_flow_id":"flow_launch001","node_id":"draft","child_task_id":"flow_launch001:task:draft","assignee_agent_id":"writer-002","role":"executor","goal":"形成草案","status":"waiting_dependency","revision":1,"dependency_ids":["flow_launch001:work:research"]}

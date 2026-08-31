@@ -1,8 +1,0 @@
-{
-  "schema_version": "1.0",
-  "suite": {"suite_id": "prd-generation", "suite_version": "1.0.0", "dataset_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
-  "subject": {"target_type": "skill", "target_id": "prd-generation", "target_version": "1.0.0", "target_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
-  "summary": {"total": 2, "passed": 1, "average_score": 0.85, "threshold": 0.8, "gate_passed": false},
-  "categories": {"standard": {"total": 2, "passed": 1, "average_score": 0.85}},
-  "failures": [{"case_id": "case-2", "category": "standard", "score": 0.7}]
-}

@@ -1,14 +1,1 @@
 .DS_Store
-.env
-.env.*
-!.env.example
-target/
-dist/
-outputs/
-apps/macos/AIEmployee/.build/
-__pycache__/
-*.py[cod]
-.venv/
-.worktrees/
-storage/database/*.db
-storage/database/*.db-*

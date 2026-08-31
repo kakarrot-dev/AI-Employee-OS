@@ -1,4 +1,0 @@
-interface:
-  display_name: "本地文件操作"
-  short_description: "在授权目录中安全读取、创建和精确编辑本地文本文件"
-  default_prompt: "使用 $local-file-operations 根据当前对话理解并完成用户要求的本地文件操作。"

@@ -1,1 +1,0 @@
-{"schema_version":"1.0.0","id":"h","business_flow_id":"flow","source_work_order_id":"a","target_work_order_id":"b","deliverable_id":"d","deliverable_status":"candidate","target_agent_allowed":true,"acceptance":"accepted","summary":"bad"}
