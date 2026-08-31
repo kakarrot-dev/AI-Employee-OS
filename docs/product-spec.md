@@ -216,7 +216,7 @@ MCP 不可用
 - Poe
 - DeepSeek 官方
 
-两者使用独立 Provider Adapter。底层保留统一接口，但首版不开放通用模型厂商配置。
+两者使用独立 Provider Adapter。底层保留统一内部请求和事件接口，但首版不开放通用模型厂商配置。Poe 固定 `https://api.poe.com/v1`，DeepSeek 固定 `https://api.deepseek.com`；Base URL 只读，不允许用户、Worker 或模型请求覆盖。两家 MVP 文本 Adapter 首选各自 Responses API，但不能透传 OpenAI 参数：只发送明确支持的字段，并在本地执行 Tool 参数和结构化输出 Schema 校验。
 
 ### 8.2 模型配置
 
@@ -226,7 +226,7 @@ MCP 不可用
 - 模型配置保存 Model ID、Temperature、推理强度、Context、输出限制和价格元数据。
 - 总管、每个 Agent 员工和记忆处理任务可分别选择模型配置。
 
-保存模型配置时执行能力探测：普通对话、流式输出、Tool Calling、结构化输出、Token 用量、超时、取消和错误格式。正式任务只能选择满足角色要求的模型，不能静默回退。
+保存模型配置时对“Provider + 精确 Model ID + Endpoint + Adapter 版本”执行真实能力探测：普通对话、流式输出、Tool Calling、结构化输出、Token 用量、超时、取消和错误格式。Provider 文档或模型枚举只能生成候选项，不能自动声明能力。正式任务只能选择满足角色要求且探测仍有效的模型，不能静默回退。Poe Points、DeepSeek Token 价格和限流元数据带来源与采集时间保存，不能作为永久常量。
 
 ### 8.3 Secret
 
@@ -234,6 +234,7 @@ MCP 不可用
 - 普通启动和日常运行不要求反复输入 macOS 密码。
 - 仅查看明文 Secret、导出敏感数据或重置保险库等高风险操作可以要求系统认证。
 - Secret 不进入数据库、日志、Trace、记忆、Agent Context 或 Tool 子进程。
+- Provider 进程按需从 Keychain 读取长期 API Key；Worker 只获得 Runtime 签发的短期、绑定 Run/Provider/模型/预算的本地 Grant 和回环代理地址。短期 Grant 不得访问任意 Base URL、模型或 Tool。
 
 ## 9. 预算、超时与重试
 
@@ -490,10 +491,11 @@ Delivery 至少包含：摘要、产物、证据、验收结果、未解决问�
 - Eigent 逐文件组件抽取时的传递依赖与资产许可证；根 Apache-2.0 与 `package.json` MIT 元数据冲突须在首次分发派生代码前向上游确认。整仓 Fork 已因壳层与 Runtime、高权限 IPC 和云端链路高度耦合而排除。
 - Deep Agents 固定版本可以完成临时员工委派、动态 Tool Interrupt、持久 Checkpoint、节点完成后安全停止、跨进程恢复和 Root/Sub-agent Streaming；硬取消会重放未完成节点，不能作为安全暂停。采用范围仅是受限 Harness，默认 General-purpose、并行委派、Filesystem/Execute Tool 和权限规则不得直接进入产品。详见 [Phase 0：Deep Agents 编排与恢复审计](audits/phase-0/deep-agents-orchestration-audit.md)。
 - MemoryCore `v2.0.1` 可无 Docker 启动，但锁定构建、测试、本地 Embedding、应用层加密、永久删除和单一事实源门禁失败，不进入产品。最小本地替代 Spike 已完成中文本地 Embedding、分类/Scope 过滤、混合召回、加密落盘和删除验证。详见 [Phase 0：MemoryCore 与最小本地记忆审计](audits/phase-0/memorycore-local-memory-audit.md)。
+- Poe/DeepSeek 官方文档与无凭证协议已审计；两家都存在静默忽略参数和端点语义差异，必须使用独立 Adapter。确定性 Fake Upstream 已验证 Worker 不接触 API Key、固定目标、预算、Proposal Tool、Streaming、结构化输出、Usage、错误规范化和取消传播；真实模型全套探测与 Keychain/签名仍未完成。详见 [Phase 0：Poe、DeepSeek 与 Provider 本地代理审计](audits/phase-0/provider-and-local-proxy-audit.md)。
 
 ### 17.2 尚待技术验证
 
-- Poe 与 DeepSeek 官方 API 的模型枚举、Tool Calling、结构化输出、Token 和错误语义。
+- 使用用户明确配置的 Credential，让至少一个 Poe 或 DeepSeek 精确模型通过 Streaming、结构化输出、单 Tool Proposal、Usage、取消和错误真实探测。
 - 固定中文 Embedding 模型的正式 Eval Set、Recall@K、nDCG、误召回、长文本截断、批量延迟、峰值内存和打包体积；当前三个确定性样例不代表质量结论。
 - 最小本地记忆的 Keychain ACL、密钥轮换、版本/冲突/墓碑、Migration、备份、崩溃恢复、并发删除和十万级规模性能。
 - agent-reach 各数据源后端的运行时依赖、Credential、平台条款、分发许可、健康检查和受管 Tool/MCP 重建方式；不得依赖用户全局安装或允许 Agent 直接执行 Shell。

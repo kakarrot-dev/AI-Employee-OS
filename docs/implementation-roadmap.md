@@ -1,7 +1,7 @@
 # AI Employee OS 从零实施路线图
 
 版本：v0.1
-状态：Phase 0 进行中；Eigent、Deep Agents、Memory 子审计已完成
+状态：Phase 0 进行中；Eigent、Deep Agents、Memory 子审计已完成，Provider 协议与本地隔离已完成、真实模型门禁待验证
 
 ## 1. 实施原则
 
@@ -18,8 +18,8 @@
 - 审计 Eigent 的许可证、目录、桌面技术栈、组件、路由、状态管理和原 Agent Runtime 耦合。
 - 审计 Deep Agents 的 Root/Sub-agent、提案 Tool、持久 Checkpointer、Streaming、Interrupt、节点级安全停止和硬取消语义。
 - 审计 MemoryCore 能否与 Hub/Proxy 解耦，以无 Docker、纯本地存储和独立进程形态运行，并验证 API、SDK、Migration、删除和加密扩展点。
-- 审计 Poe、DeepSeek 官方 API 的真实能力。
-- 审计 Provider 本地代理、短期会话和 Worker 不接触 Secret 的实现路径。
+- 审计 Poe、DeepSeek 官方 API 的协议能力，并使用用户明确配置的 Credential 验证至少一个精确模型。
+- 审计 Provider 本地代理、短期 Grant 和 Worker 不接触 API Key 的实现路径。
 - 审计 agent-reach 的平台路由、上游运行时依赖、CLI/MCP、Credential、平台条款、分发、健康检查和受管重建方式。
 - 审计 Electron Client、Runtime、Provider、MCP 多进程签名与 Keychain ACL。
 
@@ -29,9 +29,9 @@
 - [Eigent 保留/删除/替换清单](audits/phase-0/eigent-client-shell-audit.md)（已完成）
 - [Deep Agents 最小编排与恢复 Spike](audits/phase-0/deep-agents-orchestration-audit.md)（已完成；[可执行脚本](../spikes/deep-agents/README.md)）
 - [MemoryCore/最小本地实现决策与加密召回 Spike](audits/phase-0/memorycore-local-memory-audit.md)（已完成；[可执行脚本](../spikes/local-memory/README.md)）
-- Poe/DeepSeek 能力矩阵
+- [Poe/DeepSeek 协议矩阵与 Provider 本地代理 Spike](audits/phase-0/provider-and-local-proxy-audit.md)（协议与确定性隔离已完成；真实模型待验证）
 - agent-reach 路由知识 → 受管 Tool/MCP 映射、许可与降级清单
-- 多进程 Keychain ACL 与 Provider 本地代理 Spike
+- Provider 本地代理 Spike；多进程 Keychain ACL 与签名验证
 - 已验证兼容矩阵
 
 ### 门禁
@@ -40,8 +40,8 @@
 - 能运行总管委派一个临时员工，在节点完成后安全中断并从持久 Checkpoint 恢复；硬取消的不可恢复边界有真实记录。（已通过）
 - 能在不使用 Docker 的情况下启动固定版本 MemoryCore，并证明 Hub/Proxy/Skill/Wiki/CodeGraph 可完全关闭；否则明确采用最小本地实现。（已选择最小本地实现）
 - 能完成本地 Embedding、分类过滤、召回和删除。（Spike 已通过）
-- 能证明至少一个 Poe 或 DeepSeek 模型满足总管要求。
-- 能证明 Worker 只访问受认证本地 Provider 代理且无法读取 API Key。
+- 能证明至少一个 Poe 或 DeepSeek 精确模型满足总管要求。（当前尚未使用 Credential，门禁未通过）
+- 能证明 Worker 只访问受认证本地 Provider 代理且无法读取 API Key。（确定性 Fake Upstream 路径已通过，生产签名/Keychain/出站限制待验证）
 - 至少两个独立来源后端可以无用户全局 Node/Python/CLI 安装、无 Agent Shell 直通地受管执行；其许可和平台风险可接受。
 - 开发签名和目标发布签名下的 Keychain 日常访问不反复弹窗，Secret 不退回文件或环境常驻。
 

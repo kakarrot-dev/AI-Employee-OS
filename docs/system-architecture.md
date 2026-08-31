@@ -96,9 +96,12 @@ Worker 只接收 Runtime 签发的短期 Provider 会话和本地代理地址，
 ### 3.4 Provider Subprocess
 
 - Poe 与 DeepSeek 使用独立 Adapter。
-- 只有 Provider 子进程接收短期 Secret。
+- 只有 Provider 子进程按需从 Keychain 读取长期 API Key；Worker 只接收 Runtime 签发的短期本地 Grant。
 - Provider 在本机暴露受认证、仅面向 Worker 的代理端点；Worker 的模型客户端只能连接该端点，不能直连公网 Provider。
-- Provider 只接受版本化内部请求并校验 Run、模型、预算和会话范围，拒绝任意 Base URL 转发。
+- Grant 绑定 Run、Provider、精确 Model ID、过期时间、输入/输出和金额预算；Provider 只接受版本化内部请求，拒绝 Worker 覆盖 Base URL、模型、服务端 Tool 或会话范围。
+- Adapter 将厂商 Streaming、结构化结果、单个 Proposal Tool、Usage、取消和错误映射为内部事件；丢弃隐藏推理正文，并对 Tool 参数和结构化结果执行本地 Schema 校验。
+
+Phase 0 确定性 Spike 已验证上述本地代理路径、任意目标拒绝、错误规范化和取消断连；尚未验证真实 Credential、Keychain ACL、代码签名和 Worker 公网出站限制。协议证据与剩余门禁见 [Poe、DeepSeek 与 Provider 本地代理审计](audits/phase-0/provider-and-local-proxy-audit.md)。
 - 将请求、流式事件、Tool Call、Usage 和错误规范化为内部契约。
 - 不记录完整 Prompt、响应或 API Key；调试日志必须经过脱敏。
 
@@ -397,7 +400,7 @@ Deep Agents 动态 Tool Interrupt 和 LangGraph 静态节点断点是不同机�
 - Local Control Runtime 的实现语言及与新客户端骨架的 IPC 方式。
 - Deep Agents Checkpoint Store 与 Runtime 产品数据库的跨库提交、Outbox、补偿和清理边界。
 - 最小本地记忆的生产 Store、Keychain ACL、密钥轮换、Migration、并发删除、崩溃恢复与规模性能。
-- Provider 子进程的短期会话、受认证本地代理、Secret 注入和网络隔离方式。
+- Provider 代理的生产级端点防抢占、Peer Identity、Worker 公网出站限制、崩溃清理和内存 Secret 生命周期；确定性本地路径已通过 Spike。
 - MCP/CLI Tool 的受管打包、沙箱技术、平台条款、Credential 与 macOS 权限模型。
 - agent-reach 路由知识到产品内 Tool/MCP 的重建清单，以及不依赖全局 Node/Python/CLI 安装的可交付来源范围。
 - 多进程代码签名与 Keychain ACL 在开发、升级和正式发布环境中的兼容性。
