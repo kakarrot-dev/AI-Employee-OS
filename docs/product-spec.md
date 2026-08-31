@@ -173,7 +173,7 @@ Agent 能力是给员工绑定的产品级能力包，可组合多个 Skill、To
 - Tool 调用的审批对象是具体动作，而不是笼统批准整个 MCP。
 - Agent 只能提交 ToolAction Proposal，不能直接执行 Tool。
 
-`agent-reach` 只作为来源选择、依赖诊断和路由知识的参考能力层，不作为可直接嵌入的执行边界。其上游 CLI、HTTP、MCP 或浏览器后端只有在被重新封装为受 Runtime 管理的具体 Tool/MCP、通过许可与安全审计并随客户端固定版本发布后，才能进入正式 Run。Agent 不得直接调用 agent-reach 推荐的 Shell 命令或使用其全局安装目录。
+`agent-reach` 只作为来源选择、依赖诊断和路由知识的参考能力层，不作为可直接嵌入的执行边界。Phase 0 已确定首批重建 `github.repositories.search@research-source/v1` 与 `rss.read@research-source/v1`；两者使用产品私有 HTTP/解析器，不运行 `agent-reach`、`gh`、`curl`、`mcporter`、Node、Shell 或用户全局 CLI。Exa 与 Jina 仅为后续 Conditional 来源；浏览器登录态、Cookie、非官方抓取、媒体下载和第三方转写渠道不进入 MVP。详见 [Agent Reach 与受管网络调研审计](audits/phase-0/agent-reach-managed-research-audit.md)。
 
 ### 7.2 授权模式
 
@@ -449,7 +449,7 @@ Delivery 至少包含：摘要、产物、证据、验收结果、未解决问�
 → 交付报告与来源清单
 ```
 
-内置“多源网络调研”Skill 可以吸收 `agent-reach` 的渠道路由知识，但正式执行不直接调用其 Shell 命令。实际搜索、网页读取、GitHub、视频或社交平台后端分别封装为版本锁定的 Tool/MCP，经过许可、凭据、平台条款、沙箱、出站和健康检查后再授权。无法受管打包或合规风险不可接受的渠道不进入 MVP；首条闭环只要求至少两个通过审计的独立来源类型。
+内置“多源网络调研”Skill 可以吸收固定 Agent Reach Commit 的渠道路由知识，但正式执行不直接调用其 Shell 命令。MVP 首条闭环固定使用 GitHub 公开仓库搜索与用户授权的 RSS/Atom Feed；来源不足时明确报告，不静默改用 Exa、Jina、浏览器会话、视频或社交平台。新增来源必须分别通过许可、Credential、平台条款、沙箱、出站和健康检查后再授权。
 
 所有来源内容均按非可信数据进入 ResearchBundle。验收必须包含提示注入样例，并证明来源中的伪指令不能扩大 RunGrant、读取本地敏感内容、改变验收标准或通过查询参数向外泄露数据。
 
@@ -492,13 +492,14 @@ Delivery 至少包含：摘要、产物、证据、验收结果、未解决问�
 - Deep Agents 固定版本可以完成临时员工委派、动态 Tool Interrupt、持久 Checkpoint、节点完成后安全停止、跨进程恢复和 Root/Sub-agent Streaming；硬取消会重放未完成节点，不能作为安全暂停。采用范围仅是受限 Harness，默认 General-purpose、并行委派、Filesystem/Execute Tool 和权限规则不得直接进入产品。详见 [Phase 0：Deep Agents 编排与恢复审计](audits/phase-0/deep-agents-orchestration-audit.md)。
 - MemoryCore `v2.0.1` 可无 Docker 启动，但锁定构建、测试、本地 Embedding、应用层加密、永久删除和单一事实源门禁失败，不进入产品。最小本地替代 Spike 已完成中文本地 Embedding、分类/Scope 过滤、混合召回、加密落盘和删除验证。详见 [Phase 0：MemoryCore 与最小本地记忆审计](audits/phase-0/memorycore-local-memory-audit.md)。
 - Poe/DeepSeek 官方文档与无凭证协议已审计；两家都存在静默忽略参数和端点语义差异，必须使用独立 Adapter。确定性 Fake Upstream 已验证 Worker 不接触 API Key、固定目标、预算、Proposal Tool、Streaming、结构化输出、Usage、错误规范化和取消传播；真实模型全套探测与 Keychain/签名仍未完成。详见 [Phase 0：Poe、DeepSeek 与 Provider 本地代理审计](audits/phase-0/provider-and-local-proxy-audit.md)。
+- Agent Reach `v1.5.0` 是依赖全局安装与 Agent Shell 的诊断/路由层，且固定 Tag 的依赖约束自相矛盾，不进入产品 Runtime。首批产品自有 GitHub REST + RSS Adapter 已通过无 Shell 确定性 Spike 和真实只读协议探测；社交、媒体、招聘、播客和金融渠道延期或排除。详见 [Phase 0：Agent Reach 与受管网络调研审计](audits/phase-0/agent-reach-managed-research-audit.md)。
 
 ### 17.2 尚待技术验证
 
 - 使用用户明确配置的 Credential，让至少一个 Poe 或 DeepSeek 精确模型通过 Streaming、结构化输出、单 Tool Proposal、Usage、取消和错误真实探测。
 - 固定中文 Embedding 模型的正式 Eval Set、Recall@K、nDCG、误召回、长文本截断、批量延迟、峰值内存和打包体积；当前三个确定性样例不代表质量结论。
 - 最小本地记忆的 Keychain ACL、密钥轮换、版本/冲突/墓碑、Migration、备份、崩溃恢复、并发删除和十万级规模性能。
-- agent-reach 各数据源后端的运行时依赖、Credential、平台条款、分发许可、健康检查和受管 Tool/MCP 重建方式；不得依赖用户全局安装或允许 Agent 直接执行 Shell。
+- GitHub/RSS 正式 Runner 的 DNS Rebinding/TOCTOU、OS Sandbox、签名、Keychain、崩溃恢复、缓存清理和性能；Exa/Jina 如进入后续版本须单独完成 Credential、数据使用和用户披露门禁。
 - Deep Agents Checkpoint Store 与产品数据库的跨库提交、Outbox、补偿和清理策略；真实 Provider 下取消后的消息修复仍需验证。
 - Electron 主进程、Runtime、Provider 与 MCP 进程在统一签名和不同签名下的 Keychain ACL 行为。
 - macOS 打包、签名、公证、Sidecar 生命周期、应用内运行时与升级回滚。

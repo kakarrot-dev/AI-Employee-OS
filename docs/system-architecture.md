@@ -112,6 +112,7 @@ Phase 0 确定性 Spike 已验证上述本地代理路径、任意目标拒绝�
 - Runner 只拥有 RunGrant 明确授予的目录、网络和动作范围。
 - CLI/HTTP/浏览器后端必须随客户端受管打包或由已审计 MCP 提供，不能依赖 Agent 直接执行 Shell、用户全局安装目录或运行时自更新。
 - 网络出站动作校验目标域、协议、参数来源、长度、编码和敏感信息模式；外部内容生成的参数默认按非可信处理。
+- Phase 0 首批 Research Runner 固定为 `github.repositories.search@research-source/v1` 与 `rss.read@research-source/v1`。前者固定 GitHub REST Origin/Path/Method，后者只读取用户授权的公网 HTTPS Feed；两者不运行 Agent Reach 或任何上游 CLI。失败形成 SourceAttempt，外部结果始终标记为非可信数据。详见 [Agent Reach 与受管网络调研审计](audits/phase-0/agent-reach-managed-research-audit.md)。
 - 结果通过结构化协议返回 Runtime；Runner 不能直接写产品数据库。
 
 ### 3.6 Local Memory Subsystem
@@ -402,7 +403,7 @@ Deep Agents 动态 Tool Interrupt 和 LangGraph 静态节点断点是不同机�
 - 最小本地记忆的生产 Store、Keychain ACL、密钥轮换、Migration、并发删除、崩溃恢复与规模性能。
 - Provider 代理的生产级端点防抢占、Peer Identity、Worker 公网出站限制、崩溃清理和内存 Secret 生命周期；确定性本地路径已通过 Spike。
 - MCP/CLI Tool 的受管打包、沙箱技术、平台条款、Credential 与 macOS 权限模型。
-- agent-reach 路由知识到产品内 Tool/MCP 的重建清单，以及不依赖全局 Node/Python/CLI 安装的可交付来源范围。
+- GitHub/RSS Runner 的 DNS Rebinding/TOCTOU、受批准代理、OS Sandbox、签名、Keychain 和缓存生命周期；重建清单与最小契约已由 Phase 0 Spike 确定。
 - 多进程代码签名与 Keychain ACL 在开发、升级和正式发布环境中的兼容性。
 - Embedding 模型正式质量门禁、下载镜像、Artifact 签名与分发许可。
 

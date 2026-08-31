@@ -1,7 +1,7 @@
 # AI Employee OS 从零实施路线图
 
 版本：v0.1
-状态：Phase 0 进行中；Eigent、Deep Agents、Memory 子审计已完成，Provider 协议与本地隔离已完成、真实模型门禁待验证
+状态：Phase 0 进行中；Eigent、Deep Agents、Memory、Agent Reach 子审计已完成，Provider 协议与本地隔离已完成、真实模型门禁待验证
 
 ## 1. 实施原则
 
@@ -20,7 +20,7 @@
 - 审计 MemoryCore 能否与 Hub/Proxy 解耦，以无 Docker、纯本地存储和独立进程形态运行，并验证 API、SDK、Migration、删除和加密扩展点。
 - 审计 Poe、DeepSeek 官方 API 的协议能力，并使用用户明确配置的 Credential 验证至少一个精确模型。
 - 审计 Provider 本地代理、短期 Grant 和 Worker 不接触 API Key 的实现路径。
-- 审计 agent-reach 的平台路由、上游运行时依赖、CLI/MCP、Credential、平台条款、分发、健康检查和受管重建方式。
+- 审计 agent-reach 的平台路由、上游运行时依赖、CLI/MCP、Credential、平台条款、分发、健康检查和受管重建方式。（已完成）
 - 审计 Electron Client、Runtime、Provider、MCP 多进程签名与 Keychain ACL。
 
 ### 产物
@@ -30,7 +30,7 @@
 - [Deep Agents 最小编排与恢复 Spike](audits/phase-0/deep-agents-orchestration-audit.md)（已完成；[可执行脚本](../spikes/deep-agents/README.md)）
 - [MemoryCore/最小本地实现决策与加密召回 Spike](audits/phase-0/memorycore-local-memory-audit.md)（已完成；[可执行脚本](../spikes/local-memory/README.md)）
 - [Poe/DeepSeek 协议矩阵与 Provider 本地代理 Spike](audits/phase-0/provider-and-local-proxy-audit.md)（协议与确定性隔离已完成；真实模型待验证）
-- agent-reach 路由知识 → 受管 Tool/MCP 映射、许可与降级清单
+- [Agent Reach 路由知识 → 受管 Research Adapter、许可与降级清单](audits/phase-0/agent-reach-managed-research-audit.md)（已完成；[可执行脚本](../spikes/managed-research/README.md)）
 - Provider 本地代理 Spike；多进程 Keychain ACL 与签名验证
 - 已验证兼容矩阵
 
@@ -42,7 +42,7 @@
 - 能完成本地 Embedding、分类过滤、召回和删除。（Spike 已通过）
 - 能证明至少一个 Poe 或 DeepSeek 精确模型满足总管要求。（当前尚未使用 Credential，门禁未通过）
 - 能证明 Worker 只访问受认证本地 Provider 代理且无法读取 API Key。（确定性 Fake Upstream 路径已通过，生产签名/Keychain/出站限制待验证）
-- 至少两个独立来源后端可以无用户全局 Node/Python/CLI 安装、无 Agent Shell 直通地受管执行；其许可和平台风险可接受。
+- 至少两个独立来源后端可以无用户全局 Node/Python/CLI 安装、无 Agent Shell 直通地受管执行；其许可和平台风险可接受。（GitHub REST + RSS/Atom Spike 与真实只读协议已通过）
 - 开发签名和目标发布签名下的 Keychain 日常访问不反复弹窗，Secret 不退回文件或环境常驻。
 
 ## 3. Phase 1：空客户端壳
@@ -143,7 +143,7 @@
 - 实现“请求批准”和“完全访问”。
 - 实现幂等、超时、结果验证和 `result_unknown`。
 - 建立 Skill/Tool/MCP 内置版本包和只读资源页面。
-- 将 agent-reach 作为路由知识来源，重写为内置“多源网络调研”Skill；将通过审计的平台后端分别封装为受管 Tool/MCP，不执行上游 Skill 中的 Shell 命令。
+- 以固定 Agent Reach Commit 的路由知识为输入，重写内置“多源网络调研”Skill；首批只实现 `github.repositories.search@research-source/v1` 与 `rss.read@research-source/v1`，不打包或执行 Agent Reach 及其上游命令。
 - 实现数据源健康检查、Credential 状态和可用性传播。
 - 实现非可信来源标记、提示注入检测、出站参数来源追踪与敏感信息阻断。
 
