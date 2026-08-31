@@ -71,11 +71,11 @@ MVP 只验证一条完整闭环：
 | --- | --- | --- |
 | 总管定义 | 只读，可选择模型和运行参数 | 客户端内置 |
 | Agent 员工 | 增删改查、测试、发布、停用、归档 | 用户创建 |
-| Agent 能力 | 只读，可绑定给员工 | Codex 编写并随客户端发布 |
-| Skill | 只读 | Codex 编写并随客户端发布 |
+| Agent 能力 | 只读，可绑定给员工 | 由开发方随客户端版本包发布 |
+| Skill | 只读 | 由开发方随客户端版本包发布 |
 | Tool | 只读，调用受授权策略控制 | 内置或由内置 MCP 发现 |
 | MCP | 定义只读；Credential 和连接状态可配置 | 客户端内置 |
-| 记忆 | 自动沉淀；用户可查看和治理 | MemoryCore 与用户操作 |
+| 记忆 | 自动沉淀；用户可查看和治理 | Local Memory Subsystem 与用户操作 |
 
 Agent 能力是给员工绑定的产品级能力包，可组合多个 Skill、Tool、MCP 依赖、模型要求和权限要求。Skill 负责告诉 Agent 在什么场景、按什么步骤组合使用 Tool；Tool 是实际执行的原子动作；MCP 是 Tool 的来源或连接通道。
 
@@ -156,7 +156,7 @@ Agent 能力是给员工绑定的产品级能力包，可组合多个 Skill、To
 - 员工原始输出可在诊断界面查看，但不作为面向用户的正式消息。
 - 用户在执行过程中仍只与总管沟通。
 
-用户提出需求变化时，总管创建 ChangeRequest。当前员工到达安全停止点后暂停；用户确认差异后创建新的 `TaskRevision` 和 Run。旧 Run 被新 Run 取代，但不能原地改写。
+用户提出需求变化时，总管创建 ChangeRequest。当前员工在当前 Deep Agents 节点完成、状态写入 Checkpoint 且没有未收敛 ToolAction 后进入安全停止点；系统不承诺任意指令中途立即暂停。用户确认差异后创建新的 `TaskRevision` 和 Run。旧 Run 被新 Run 取代，但不能原地改写。
 
 ### 6.5 完成与返工
 
@@ -172,6 +172,8 @@ Agent 能力是给员工绑定的产品级能力包，可组合多个 Skill、To
 - 一个 MCP 可以提供多个 Tool；内置 Tool 可以没有 MCP 来源。
 - Tool 调用的审批对象是具体动作，而不是笼统批准整个 MCP。
 - Agent 只能提交 ToolAction Proposal，不能直接执行 Tool。
+
+`agent-reach` 只作为来源选择、依赖诊断和路由知识的参考能力层，不作为可直接嵌入的执行边界。其上游 CLI、HTTP、MCP 或浏览器后端只有在被重新封装为受 Runtime 管理的具体 Tool/MCP、通过许可与安全审计并随客户端固定版本发布后，才能进入正式 Run。Agent 不得直接调用 agent-reach 推荐的 Shell 命令或使用其全局安装目录。
 
 ### 7.2 授权模式
 
@@ -195,6 +197,15 @@ MCP 不可用
 ```
 
 系统不得静默使用替代 Tool、MCP 或模型。
+
+### 7.4 非可信内容与出站控制
+
+- 网页、搜索结果、代码仓库、视频字幕和社交平台内容一律标记为非可信数据，不能覆盖 System Prompt、任务约束、RunGrant 或 Tool 授权。
+- ToolAction Proposal 必须保留参数来源；由外部内容诱导生成的 URL、查询、文件名和请求体按非可信参数处理。
+- 具备网络出站能力的 Tool 必须校验目标域、协议、参数长度、编码形式和敏感信息模式，禁止把本地文件、Secret、记忆或工作区内容拼入查询和 URL。
+- “完全访问”只省略逐次人工批准，不省略 Schema、范围、出站、敏感信息和提示注入检查。
+- 检测到指令注入、越权请求或来源内容与任务目标冲突时，动作进入 `blocked` 并留下可解释证据。
+- 注入检测只是风险信号，不能作为唯一防线；即使未命中检测规则，Runtime 的最小权限、参数来源追踪和出站校验仍必须阻止越权效果。
 
 ## 8. 模型
 
@@ -254,7 +265,7 @@ Tool 自身超时由内置定义提供。有副作用动作不因超时自动重
 
 ### 10.1 采用范围
 
-MVP 只采用 TencentDB Agent Memory 的 MemoryCore Standalone，并锁定到客户端经过验证的版本。
+MVP 的产品边界是本地 L0–L3 记忆，不依赖 Memory Hub、Proxy、自动 Skill 提取、Wiki 或 CodeGraph。TencentDB Agent Memory 的 MemoryCore Standalone 是 Phase 0 候选实现，只有在证明它能以固定版本、无 Docker、纯本地存储、独立进程和可加密形态运行后才允许集成；否则按相同产品契约实现最小本地记忆子系统，不为兼容上游而扩大 MVP。
 
 只启用：
 
@@ -263,7 +274,7 @@ MVP 只采用 TencentDB Agent Memory 的 MemoryCore Standalone，并锁定到客
 - L2 场景记忆
 - L3 核心画像
 
-关闭 Memory Hub、Proxy、自动 Skill 提取、Wiki 和 CodeGraph。Agent 员工、Skill、任务等产品对象仍由客户端作为唯一事实源，MemoryCore 只接收稳定 ID 用于范围和来源关联。
+Agent 员工、Skill、任务等产品对象仍由产品数据库作为唯一事实源。记忆实现只接收稳定 ID、允许范围和来源引用，不创建或治理这些产品对象。
 
 ### 10.2 自动沉淀
 
@@ -274,7 +285,7 @@ MVP 只采用 TencentDB Agent Memory 的 MemoryCore Standalone，并锁定到客
 - 支持新增、增强、修正、合并、冲突和失效记录。
 - 冲突不能静默覆盖。
 
-记忆处理模型由用户从已验证的 Poe 或 DeepSeek 模型配置中单独选择。用量单独记录并计入预算。模型不可用时进入待处理队列，不能静默切换。
+记忆处理模型由用户从已验证的 Poe 或 DeepSeek 模型配置中单独选择。启用前必须明确说明哪些对话或任务内容会被发送给该云端 Provider；Runtime 只发送完成提取所需的最小内容，并执行 Secret、非相关文件内容和敏感字段清理。未经用户授权不得新增数据出口或切换 Provider。用量单独记录并计入预算；模型不可用时进入待处理队列，不能静默切换。
 
 ### 10.3 分类与范围
 
@@ -303,7 +314,7 @@ Embedding 模型在首次配置后由客户端自动下载，校验版本与 SHA
 
 ### 10.5 治理与加密
 
-用户可以修改分类、标签、范围和内容，停用、恢复、解决冲突或永久删除记忆。普通修改产生新版本；永久删除不保留原文，只保留不含内容的审计墓碑。
+用户可以修改分类、标签、范围和内容，停用、恢复、解决冲突或永久删除记忆。普通修改产生新版本；永久删除必须清除应用管理范围内的原文、派生摘要、向量、索引、缓存、队列和可还原存储页，只保留不含内容的审计墓碑。用户自行创建的 Time Machine、磁盘镜像或外部备份不在应用可验证范围内，产品必须在删除确认中明确说明。
 
 API Key 使用 Keychain；记忆数据库和向量索引必须在应用层加密，解锁密钥由 Keychain 管理。日常启动和召回不反复要求用户输入系统密码。具体加密实现需要在技术 Spike 中验证。
 
@@ -321,6 +332,13 @@ evidence/     验收证据
 总管审核通过后固化产物版本、Hash 和来源，再导出到用户授权目录。遇到同名文件时保留扩展名并自动添加最小可用后缀：`报告.md`、`报告_1.md`、`报告_2.md`。不得覆盖原文件。
 
 Delivery 至少包含：摘要、产物、证据、验收结果、未解决问题、TaskRevision、Run 和计划版本。
+
+存储治理要求：
+
+- 设置可查看产品数据库、记忆、Checkpoint、Run 工作区、日志和缓存的占用。
+- 每个 Run 配置磁盘预算；达到软上限时告警，达到硬上限时安全暂停，不能静默清理运行中证据。
+- 已交付 Run 的过程文件、Checkpoint、事件和诊断日志采用明确的默认保留期；Artifact、Evidence、Delivery 和审计墓碑不得随缓存清理级联删除。
+- 崩溃诊断默认只保存在本机并脱敏；任何上传都必须由用户单次明确授权并预览内容。
 
 ## 12. 客户端信息架构
 
@@ -348,6 +366,8 @@ Delivery 至少包含：摘要、产物、证据、验收结果、未解决问�
 任务只能从总管对话产生，不提供“新建任务”按钮。
 
 筛选：全部、草稿、待开始、运行中、需要处理、已完成、失败、已取消。
+
+这些是 Runtime 提供的只读投影，不是新的 Task 状态：草稿来自 `TaskDraft`；待开始对应 Task `pending` 且 Run `created`；运行中对应 Task/Run `running`；需要处理由 Run `paused`、待审批 ToolAction、`blocked` 或 `result_unknown` 投影；其余分别映射 Task `succeeded`、`failed`、`cancelled`。客户端不得自行组合底层状态。
 
 详情：概览、计划、时间线、审批、产物与证据、交付、版本与变更。
 
@@ -401,7 +421,7 @@ Delivery 至少包含：摘要、产物、证据、验收结果、未解决问�
 ## 14. 后台、离线与恢复
 
 - 关闭窗口后应用进入菜单栏，任务继续运行。
-- 用户显式退出应用时，Run 到达检查点后安全暂停。
+- 用户显式退出应用时，Run 在当前节点完成并写入持久 Checkpoint 后安全暂停；若存在运行中的 ToolAction，必须先收敛为确定终态或 `result_unknown`。
 - 崩溃后下次启动展示恢复摘要，由用户确认是否继续。
 - 恢复前验证 Checkpoint、模型、MCP、Tool Schema、Agent 能力、目录和权限是否漂移。
 - 无网络时可以浏览和治理本地数据、使用本地记忆搜索；依赖 Poe 或 DeepSeek 的对话、测试和任务不能执行。
@@ -413,14 +433,14 @@ Delivery 至少包含：摘要、产物、证据、验收结果、未解决问�
 
 ### 15.1 员工
 
-1. 网络调研员：绑定“多源网络调研”Agent 能力，使用内置 `agent-reach` Skill。
+1. 网络调研员：绑定“多源网络调研”Agent 能力，使用内置“多源网络调研”Skill；该 Skill 可以吸收 agent-reach 的路由知识，但不直接执行其命令。
 2. 调研分析师：绑定“调研分析报告”Agent 能力，只读取经过验证的 ResearchBundle。
 
 ### 15.2 执行
 
 ```text
 总管确认任务范围和验收标准
-→ 网络调研员通过 agent-reach 路由多个可用来源
+→ 网络调研员通过受管 Tool/MCP 路由多个已审计来源
 → 生成 ResearchBundle
 → 经总管完成结构化 Handoff
 → 调研分析师交叉分析并生成 Markdown 报告
@@ -428,7 +448,9 @@ Delivery 至少包含：摘要、产物、证据、验收结果、未解决问�
 → 交付报告与来源清单
 ```
 
-`agent-reach` 是 Skill；实际搜索、网页读取、GitHub、视频或社交平台能力分别作为 Tool/MCP 注册、检查和授权。
+内置“多源网络调研”Skill 可以吸收 `agent-reach` 的渠道路由知识，但正式执行不直接调用其 Shell 命令。实际搜索、网页读取、GitHub、视频或社交平台后端分别封装为版本锁定的 Tool/MCP，经过许可、凭据、平台条款、沙箱、出站和健康检查后再授权。无法受管打包或合规风险不可接受的渠道不进入 MVP；首条闭环只要求至少两个通过审计的独立来源类型。
+
+所有来源内容均按非可信数据进入 ResearchBundle。验收必须包含提示注入样例，并证明来源中的伪指令不能扩大 RunGrant、读取本地敏感内容、改变验收标准或通过查询参数向外泄露数据。
 
 ### 15.3 ResearchBundle 最小契约
 
@@ -466,7 +488,9 @@ Delivery 至少包含：摘要、产物、证据、验收结果、未解决问�
 - Eigent 客户端壳与原 Runtime 的实际耦合程度及许可证义务。
 - Deep Agents 当前 Sub-agent、Checkpoint、流式事件和取消接口。
 - Poe 与 DeepSeek 官方 API 的模型枚举、Tool Calling、结构化输出、Token 和错误语义。
-- MemoryCore Standalone 的稳定 API、版本迁移及应用级加密改造路径。
+- MemoryCore 能否与 Hub/Proxy 完全解耦，以固定版本、无 Docker、纯本地存储和应用级加密形态独立运行；失败时转为最小本地实现。
 - 本地 Embedding 模型的中文召回质量、许可证、体积、内存和首次加载时间。
-- agent-reach 各数据源后端、Credential、分发许可、健康检查和沙箱执行方式。
-- macOS 打包、签名、公证、Sidecar 生命周期和 Keychain ACL。
+- agent-reach 各数据源后端的运行时依赖、Credential、平台条款、分发许可、健康检查和受管 Tool/MCP 重建方式；不得依赖用户全局安装或允许 Agent 直接执行 Shell。
+- Deep Agents 的 Tool interrupt、节点级安全停止、持久 Checkpoint 和取消后的消息修复语义。
+- Electron 主进程、Runtime、Provider 与 MCP 进程在统一签名和不同签名下的 Keychain ACL 行为。
+- macOS 打包、签名、公证、Sidecar 生命周期、应用内运行时与升级回滚。
