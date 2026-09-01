@@ -1,0 +1,48 @@
+{
+  "name": "ai-employee-os",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first AI employee control plane for macOS",
+  "type": "module",
+  "main": "./out/main/index.js",
+  "packageManager": "npm@11.19.0",
+  "engines": {
+    "node": "26.8.1",
+    "npm": "11.19.0"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run build:native-memory && npm run typecheck && electron-vite build",
+    "build:runtime": "node scripts/assemble_bundled_runtime.mjs",
+    "build:release-metadata": "node scripts/generate_release_metadata.mjs",
+    "package:local": "npm run build && npm run build:runtime && npm run build:release-metadata && node scripts/package_local_app.mjs",
+    "build:native-memory": "mkdir -p build/native && xcrun clang -O2 -Wall -Wextra spikes/local-memory/memory_keychain_helper.c -framework Security -framework CoreFoundation -o build/native/memory-keychain-helper",
+    "preview": "electron-vite preview",
+    "test": "npm run build:native-memory && vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.3",
+    "@types/node": "26.4.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "@vitejs/plugin-react": "5.2.0",
+    "electron": "44.0.0",
+    "electron-vite": "5.0.0",
+    "jsdom": "30.0.1",
+    "typescript": "7.0.2",
+    "vite": "7.3.6",
+    "vitest": "4.1.11"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true
+  }
+}

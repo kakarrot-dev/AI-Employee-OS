@@ -1,3 +1,11 @@
+node_modules/
+build/native/
+build/local-release/
+out/
+dist/
+coverage/
+*.log
+*.tsbuildinfo
 .DS_Store
 spikes/deep-agents/.spike-data/
 spikes/deep-agents/.venv/

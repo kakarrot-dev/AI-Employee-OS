@@ -1,0 +1,168 @@
+import type { AgentCapabilityVersionView, EmployeeDetail, EmployeeDraftInput, EmployeeSummary } from './employee-contract'
+import type { TaskDetailView, TaskDraftInputView, TaskEvent } from './task-contract'
+import type { ResourceCatalogView } from './resource-contract'
+import type { MemoryCategoryView, MemoryHealthView, MemoryQueueItemView, MemoryScopeTypeView, MemorySearchResultView, MemoryStatusView, MemoryViewModel } from './memory-contract'
+
+export const RUNTIME_IPC = {
+  getStatus: 'runtime:get-status',
+  reconnect: 'runtime:reconnect',
+  statusChanged: 'runtime:status-changed'
+} as const
+
+export const PROVIDER_IPC = {
+  getStatus: 'provider:get-status'
+} as const
+
+export const CONVERSATION_IPC = {
+  send: 'conversation:send',
+  cancel: 'conversation:cancel',
+  history: 'conversation:history',
+  event: 'conversation:event'
+} as const
+
+export const EMPLOYEE_IPC = {
+  list: 'employee:list',
+  capabilities: 'employee:capabilities',
+  detail: 'employee:detail',
+  create: 'employee:create',
+  beginEdit: 'employee:begin-edit',
+  saveDraft: 'employee:save-draft',
+  addTestCase: 'employee:add-test-case',
+  runTest: 'employee:run-test',
+  confirmTest: 'employee:confirm-test',
+  publish: 'employee:publish',
+  rollback: 'employee:rollback',
+  setDisabled: 'employee:set-disabled',
+  archive: 'employee:archive',
+  restore: 'employee:restore',
+  deleteDraft: 'employee:delete-draft',
+  event: 'employee:event'
+} as const
+
+export const TASK_IPC = { list: 'task:list', createDraft: 'task:create-draft', updateDraft: 'task:update-draft', start: 'task:start', requestChange: 'task:request-change', acceptChange: 'task:accept-change', rejectChange: 'task:reject-change', approveTool: 'task:approve-tool', rejectTool: 'task:reject-tool', resolveTool: 'task:resolve-tool', event: 'task:event' } as const
+
+export const RESOURCE_IPC = { list: 'resource:list', probe: 'resource:probe' } as const
+export const MEMORY_IPC = { status: 'memory:status', downloadModel: 'memory:download-model', list: 'memory:list', search: 'memory:search', update: 'memory:update', disable: 'memory:disable', restore: 'memory:restore', resolveConflict: 'memory:resolve-conflict', permanentlyDelete: 'memory:permanently-delete', queue: 'memory:queue', migrateEmbeddings: 'memory:migrate-embeddings' } as const
+
+export type RuntimeConnectionState = 'disconnected' | 'connecting' | 'connected'
+
+export interface RuntimeStatus {
+  state: RuntimeConnectionState
+  checkedAt: string
+  message: string
+}
+
+export interface DomainEvent<TPayload = unknown> {
+  schemaVersion: 1
+  eventId: string
+  occurredAt: string
+  type: string
+  payload: TPayload
+}
+
+export interface RuntimeBridge {
+  getStatus(): Promise<RuntimeStatus>
+  reconnect(): Promise<RuntimeStatus>
+  onStatusChanged(listener: (status: RuntimeStatus) => void): () => void
+}
+
+export interface ProviderModelStatus {
+  provider: 'deepseek' | 'poe'
+  modelId: string
+  modality: 'text' | 'image' | 'video'
+  verification: 'verified' | 'unverified'
+}
+
+export interface ProviderStatus {
+  state: 'starting' | 'ready' | 'degraded' | 'stopped'
+  credentialStatus: { deepseek: 'configured' | 'missing'; poe: 'configured' | 'missing' }
+  models: ProviderModelStatus[]
+  checkedAt: string
+}
+
+export interface ProviderBridge {
+  getStatus(): Promise<ProviderStatus>
+}
+
+export interface ResourceBridge {
+  list(): Promise<ResourceCatalogView>
+  probe(): Promise<ResourceCatalogView>
+}
+
+export interface MemoryBridge {
+  status(): Promise<MemoryHealthView>
+  downloadModel(): Promise<MemoryHealthView>
+  list(filters?: { scopeType?: MemoryScopeTypeView; scopeId?: string; category?: MemoryCategoryView; status?: MemoryStatusView }): Promise<MemoryViewModel[]>
+  search(input: { query: string; allowedScopes: Array<{ type: MemoryScopeTypeView; id: string }>; categories?: MemoryCategoryView[]; tags?: string[]; limit?: number; tokenBudget?: number }): Promise<MemorySearchResultView[]>
+  update(id: string, changes: Partial<Pick<MemoryViewModel, 'scopeType' | 'scopeId' | 'category' | 'content' | 'tags'>>): Promise<MemoryViewModel>
+  disable(id: string): Promise<MemoryViewModel>
+  restore(id: string): Promise<MemoryViewModel>
+  resolveConflict(chosenId: string): Promise<MemoryViewModel>
+  permanentlyDelete(id: string): Promise<{ deleted: true; memoryId: string; externalBackupsExcluded: true }>
+  queue(): Promise<MemoryQueueItemView[]>
+  migrateEmbeddings(): Promise<{ migrated: number }>
+}
+
+export interface ConversationMessageView {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  createdAt: string
+  modelId?: string
+}
+
+export type ConversationStreamEvent =
+  | { type: 'output_delta'; requestId: string; delta: string }
+  | { type: 'usage'; requestId: string; inputTokens: number; outputTokens: number; totalTokens: number; source: 'provider_actual' }
+  | { type: 'completed'; requestId: string; providerRequestId?: string }
+  | { type: 'failed'; requestId: string; code: string }
+
+export interface ConversationBridge {
+  send(conversationId: string, text: string): Promise<{ accepted: true; requestId: string; messageId: string }>
+  cancel(requestId: string): Promise<{ accepted: true }>
+  history(conversationId: string): Promise<ConversationMessageView[]>
+  onEvent(listener: (event: ConversationStreamEvent) => void): () => void
+}
+
+export interface EmployeeEvent {
+  type: 'test_progress' | 'test_completed' | 'test_failed'
+  employeeId: string
+  testRunId: string
+  code?: string
+}
+
+export interface EmployeeBridge {
+  list(): Promise<EmployeeSummary[]>
+  capabilities(): Promise<AgentCapabilityVersionView[]>
+  detail(employeeId: string): Promise<EmployeeDetail>
+  create(input: EmployeeDraftInput): Promise<EmployeeDetail>
+  beginEdit(employeeId: string): Promise<EmployeeDetail>
+  saveDraft(employeeId: string, input: EmployeeDraftInput): Promise<EmployeeDetail>
+  addTestCase(employeeId: string, input: { name: string; prompt: string; acceptanceCriteria: string; expectedContains?: string }): Promise<EmployeeDetail>
+  runTest(employeeId: string, testCaseId: string): Promise<{ accepted: true; requestId: string; testRunId: string }>
+  confirmTest(employeeId: string, testRunId: string): Promise<EmployeeDetail>
+  publish(employeeId: string): Promise<EmployeeDetail>
+  rollback(employeeId: string, versionId: string): Promise<EmployeeDetail>
+  setDisabled(employeeId: string, disabled: boolean): Promise<EmployeeDetail>
+  archive(employeeId: string): Promise<EmployeeDetail>
+  restore(employeeId: string): Promise<EmployeeDetail>
+  deleteDraft(employeeId: string): Promise<{ accepted: true }>
+  onEvent(listener: (event: EmployeeEvent) => void): () => void
+}
+
+export interface TaskBridge {
+  list(): Promise<TaskDetailView[]>
+  createDraft(input: TaskDraftInputView): Promise<TaskDetailView>
+  updateDraft(draftId: string, changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds'>): Promise<TaskDetailView>
+  start(draftId: string): Promise<TaskDetailView>
+  requestChange(taskId: string, sourceMessageId: string, requestedDiff: Record<string, unknown>): Promise<{ accepted: true; changeRequestId: string }>
+  acceptChange(changeRequestId: string, changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds'>): Promise<TaskDetailView>
+  rejectChange(changeRequestId: string): Promise<TaskDetailView>
+  approveTool(actionId: string): Promise<TaskDetailView>
+  rejectTool(actionId: string): Promise<TaskDetailView>
+  resolveTool(actionId: string, outcome: 'succeeded' | 'failed', evidence: Record<string, unknown>): Promise<TaskDetailView>
+  onEvent(listener: (event: TaskEvent) => void): () => void
+}
+
+export type { AgentCapabilityVersionView, EmployeeDetail, EmployeeDraftInput, EmployeeSummary } from './employee-contract'
+export type { TaskDetailView, TaskDraftInputView, TaskEvent } from './task-contract'
