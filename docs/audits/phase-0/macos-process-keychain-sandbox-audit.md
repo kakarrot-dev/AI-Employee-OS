@@ -10,7 +10,7 @@
 
 ## 1. 结论
 
-**架构 Conditional Go；真实签名包门禁未关闭。**
+**本地开发 Go；真实 Apple 签名包属于 Phase 9 发布门禁。**
 
 - **Go：** 每个可执行主体必须成为独立签名目标；长期 Secret 按用途拆分 Keychain Access Group，只授予真正消费该 Secret 的 Provider、Memory 或 MCP Credential Service。
 - **Go：** Worker 不再通过 TCP 回环地址直连 Provider。目标链路改为 `Worker → Runtime 私有 Pipe/Unix Domain Socket → Provider XPC/签名 Helper → 固定公网 Origin`，使 Worker 可以没有网络 Client 权限。
@@ -19,9 +19,9 @@
 - **No-Go：** ad-hoc 签名、路径级 Trusted Application ACL、共享明文配置、环境变量、命令行参数或用户全局 Keychain 项作为生产 Secret 方案。
 - **No-Go：** `sandbox-exec`、`sandbox_init` 或私有 SBPL 作为产品沙箱。当前系统手册已将它们标记为 Deprecated。
 - **No-Go：** 给 Worker `com.apple.security.network.client` 后仅靠代码内 Allowlist 阻止公网。Apple 的 entitlement 只控制能否发起连接，不提供域名、IP 或端口级限制。
-- **Conditional：** Keychain Access Group、App Sandbox 与升级后无弹窗必须在 Apple Development + Provisioning Profile 和 Developer ID + 目标 Profile 的真实 App/XPC 包上复验。本轮没有使用现有登录 Keychain 私钥，也没有执行公证。
+- **Deferred Release Gate：** Keychain Access Group、App Sandbox 与升级后无弹窗必须在 Apple Development + Provisioning Profile 和 Developer ID + 目标 Profile 的真实 App/XPC 包上复验。本轮没有使用现有登录 Keychain 私钥，也没有执行公证；按用户确认的本地运行边界，不阻塞 Phase 1–8，但阻塞 Phase 9 发布候选完成。
 
-Phase 0 因此得到可实施的安全边界，但不能声称目标发布包、升级包或真实 Provider Credential 已通过。
+Phase 0 因此得到可实施的本地安全边界。稳定本地签名足以进入客户端与 Runtime 的本地实现，但不能据此声称目标发布包、升级包、Access Group 或公证已通过。
 
 ## 2. 第一性原理拆解
 
@@ -184,15 +184,30 @@ Unix Domain Socket 只作为无法直接接入 XPC 的语言边界；Socket 必�
 
 对带 App Sandbox entitlement 的 ad-hoc 签名裸 CLI 的尝试中，`no-network` 和 `network-client` 两个变体都在连接前被系统终止。缺少 Provisioning Profile 与真实签名身份时，结果不能区分 entitlement 行为。本轮保留两份语法有效的 entitlement 模板，但把运行时验证明确列入真实签名包门禁。
 
-## 8. 开发、发布与升级验收矩阵
+### 7.3 稳定本地签名升级
 
-### 8.1 开发签名
+`run_stable_signing_upgrade_spike.sh` 使用项目专用 `AI Employee OS Local Development` 身份签署两个内容不同但 Bundle Identifier 相同的 Reader，并在隔离临时 Keychain 上验证：
 
-- 使用 Apple Development 身份和匹配的 Provisioning Profile 测试 Access Group 与 App Sandbox。
-- 不允许回退 ad-hoc；身份或 Profile 缺失时构建失败。
-- 本地自签稳定证书可以复现 Designated Requirement 连续性，但不能替代 Apple entitlement/Profile 验证。
+| 断言 | 结果 |
+|---|---|
+| 初始稳定签名 Reader 无交互读取测试 Secret | 通过 |
+| 同一身份、同一标识、变更后二进制无交互读取 | 通过 |
+| 同一路径改为 ad-hoc 签名链后读取 | 拒绝 |
+| 输出或写入登录 Keychain 业务 Secret | 未发生 |
 
-### 8.2 发布签名
+该结果补充证明稳定 Designated Requirement 可以跨二进制变化保持旧式 ACL 身份连续性。它使用本地自签身份，不含 Apple Team、Access Group、Provisioning Profile、App Sandbox 或公证，因此不能替代真实开发/发布包门禁。
+
+## 8. 本地开发、发布与升级验收矩阵
+
+当前执行顺序是：Phase 1–8 使用项目稳定本地签名身份完成本地闭环；Phase 9 再引入 Apple Development、Developer ID、Provisioning Profile 与公证材料。延期只改变执行顺序，不降低发布验收标准。
+
+### 8.1 本地开发签名
+
+- Phase 1–8 使用项目稳定本地签名身份，保持 Bundle Identifier 和签名链稳定；不使用 ad-hoc 作为正常开发身份。
+- 本地 Credential 只用于明确授权的开发探测；不得把登录 Keychain 旧项、环境变量或文件迁移为产品 Credential 方案。
+- 本地自签稳定证书可以复现 Designated Requirement 连续性，但不能替代 Apple entitlement/Profile 验证；涉及 Access Group 或正式 App Sandbox 的断言保持未验证。
+
+### 8.2 Phase 9 发布签名
 
 - 使用 Developer ID Application 身份，所有嵌套可执行目标从内到外签名。
 - 所有目标启用 Hardened Runtime 与安全时间戳。
@@ -236,7 +251,7 @@ UI 自动化只能判断产品没有主动展示重复弹窗；系统授权对�
 - Provider 读取真实 Key 前，必须通过签名、Peer Identity、固定 Origin、日志脱敏和内存生命周期检查。
 - 至少一个真实 Provider 的 Streaming、结构化输出、Tool Proposal、Usage、取消和错误探测仍需用户明确配置 Credential。
 
-## 10. 未关闭风险
+## 10. 延期到 Phase 9 的发布风险
 
 - 当前没有 Apple Development/Developer ID 目标 Profile，未验证最终 Access Group entitlement 是否被系统接受。
 - 当前没有 Electron App、XPC Bundle 或冻结 Python Worker，未验证真实打包结构、嵌套签名和语言间 IPC。
@@ -246,4 +261,4 @@ UI 自动化只能判断产品没有主动展示重复弹窗；系统授权对�
 - App Sandbox 不能提供目标域 Allowlist；Provider/Runner 的 DNS Rebinding、代理、重定向和敏感数据出口仍需应用层和网络测试。
 - Secret 在授权进程内的最短生命周期、内存清理、Crash Dump 和诊断上传仍待正式实现验证。
 
-**最终判定：多进程安全边界已经从“所有签名进程共享 Keychain + Worker 回环 TCP”修订为“最小 Access Group + Worker 无网络 + Runtime 私有 IPC + 独立 Provider/Runner 权限”。该设计允许进入真实签名包 Spike；在 Apple 签名/Profile、无弹窗升级矩阵和至少一个真实 Provider 都通过前，Phase 0 仍不能整体关闭。**
+**最终判定：多进程安全边界已经从“所有签名进程共享 Keychain + Worker 回环 TCP”修订为“最小 Access Group + Worker 无网络 + Runtime 私有 IPC + 独立 Provider/Runner 权限”。本地稳定签名和真实 DeepSeek 已满足本地 Phase 0 门禁；Apple 签名/Profile、无弹窗升级与公证矩阵延期到 Phase 9，未通过前不得形成发布候选。**

@@ -1,0 +1,88 @@
+{
+  "cancellation": {
+    "boundary": "client_connection_closed; provider-side billing stop is not observable",
+    "cancel_after_first_stream_activity": true,
+    "connection_closed_ms": 908,
+    "reasoning_content_logged": false,
+    "status": "passed"
+  },
+  "credential_logged": false,
+  "endpoint": "https://api.deepseek.com/responses",
+  "errors": {
+    "invalid_auth": {
+      "error_code": "invalid_request_error",
+      "error_type": "authentication_error",
+      "http_status": 401,
+      "raw_error_body_logged": false,
+      "request_id": null
+    },
+    "invalid_model": {
+      "error_code": "invalid_request_error",
+      "error_type": "invalid_request_error",
+      "http_status": 400,
+      "raw_error_body_logged": false,
+      "request_id": null
+    },
+    "rate_limit_and_balance": "not_forced_to_avoid_account_or_service_harm",
+    "status": "passed"
+  },
+  "model": "deepseek-v4-pro",
+  "non_stream": {
+    "output_bytes": 5,
+    "response_id": "ab880d12-4073-4775-bb9e-cc627720a950",
+    "status": "passed",
+    "usage": {
+      "input_tokens": 10,
+      "output_tokens": 1,
+      "total_tokens": 11
+    }
+  },
+  "probed_at": "2026-08-31T10:48:06.130288+00:00",
+  "provider": "deepseek",
+  "reasoning_content_logged": false,
+  "response_text_logged": false,
+  "schema_version": "ai-employee-os.phase0.deepseek-responses-probe/v1",
+  "stream": {
+    "first_delta_ms": 751,
+    "normal_completion": true,
+    "output_bytes": 5,
+    "reasoning_content_logged": false,
+    "response_id": "63ca8133-60a9-498b-9ce6-eb175a838605",
+    "status": "passed",
+    "usage": {
+      "input_tokens": 10,
+      "output_tokens": 1,
+      "total_tokens": 11
+    }
+  },
+  "structured": {
+    "local_schema_validation": "passed",
+    "response_id": "5384b29f-fa73-4567-8b0e-dbf0338fbf15",
+    "status": "passed",
+    "usage": {
+      "input_tokens": 66,
+      "output_tokens": 5,
+      "total_tokens": 71
+    }
+  },
+  "tool_forbidden": {
+    "response_id": "3a1f8c98-9b65-43c3-afcb-2b2fabc4d0a4",
+    "status": "passed",
+    "usage": {
+      "input_tokens": 10,
+      "output_tokens": 1,
+      "total_tokens": 11
+    }
+  },
+  "tool_proposal": {
+    "local_schema_validation": "passed",
+    "proposal_count": 1,
+    "response_id": "feda5e19-8012-42aa-a0b6-8b547b8200db",
+    "status": "passed",
+    "usage": {
+      "input_tokens": 298,
+      "output_tokens": 37,
+      "total_tokens": 335
+    }
+  }
+}

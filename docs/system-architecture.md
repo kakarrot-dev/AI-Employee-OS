@@ -1,7 +1,7 @@
 # AI Employee OS 系统架构方案
 
 版本：v0.1
-状态：目标架构；Phase 0 外部依赖审计进行中
+状态：目标架构；Phase 0–9 的本地运行边界已完成；Apple 签名与公开分发门禁未执行
 
 ## 1. 架构目标
 
@@ -93,16 +93,18 @@ Worker 只接收 Runtime 签发的短期 Provider 会话并通过私有 Pipe/Uni
 
 当前已验证基线为 `deepagents==0.7.11`、`langchain==1.3.18`、`langgraph==1.2.11`。Worker 必须通过产品自有 `DeepAgentsAdapter` 关闭默认 General-purpose Sub-agent，拒绝并行 `task`、Async Sub-agent、动态 Sub-agent、`execute` 和未冻结 Tool，并覆盖默认递归上限。声明式员工只能注册无副作用 Proposal Tool；完整约束见 [Phase 0：Deep Agents 编排与恢复审计](audits/phase-0/deep-agents-orchestration-audit.md)。
 
+Phase 5 已将该基线接入正式本地任务闭环：Runtime 以固定路径和最小环境启动 Worker，业务载荷经标准输入传递，Root Tool 仅为 `task`，Employee Tool 为空；持久 `SqliteSaver` Checkpoint 经 Runtime 验证后才允许总管审核。实现与真实交付证据见 [Phase 5：Deep Agents 正式任务闭环实施验收](audits/phase-5/formal-task-implementation.md)。发布级签名、XPC 与系统网络沙箱仍在 Phase 9 验证。
+
 ### 3.4 Provider Subprocess
 
-- Poe 与 DeepSeek 使用独立 Adapter。
+- DeepSeek 使用独立文本 Adapter；Poe 再按能力拆为 Claude Responses 文本、GPT Image 2 Chat Completions 非流式图像、Seedance Chat Completions 非流式视频三条 Adapter 路径。Poe 精确 Model Allowlist 仅为 `claude-sonnet-4.6`、`gpt-image-2`、`seedance-2.0`。
 - 只有独立签名的 Provider Service 加入 Provider Secret Access Group，并按需从 Data Protection Keychain 读取长期 API Key；Client、Runtime 和 Worker 都不是该 Group 成员。
 - Worker 通过 Runtime 私有 Pipe/Unix Domain Socket 提交版本化模型请求；Runtime 再通过嵌入式 XPC 或签名 Helper IPC 调用 Provider。Provider 不向 Worker 暴露 TCP 回环端点。
 - Provider 是该链路中唯一拥有模型公网 `network.client` 权限的主体，并固定上游 Origin；Runtime 与 Worker 不通过它获得通用网络代理能力。
 - Grant 绑定 Run、Provider、精确 Model ID、过期时间、输入/输出和金额预算；Provider 只接受版本化内部请求，拒绝 Worker 覆盖 Base URL、模型、服务端 Tool 或会话范围。
 - Adapter 将厂商 Streaming、结构化结果、单个 Proposal Tool、Usage、取消和错误映射为内部事件；丢弃隐藏推理正文，并对 Tool 参数和结构化结果执行本地 Schema 校验。
 
-Phase 0 确定性 Spike 已验证短期 Grant、任意目标拒绝、错误规范化和取消断连；后续安全审计将默认 IPC 从 Worker 回环 TCP 修订为 Runtime 中继的 Pipe/UDS + XPC/签名 Helper，并用隔离临时 Keychain 证明签名身份变化会拒绝静默读取。真实 Credential、Apple 签名/Profile、升级和 Worker 无网仍待目标包验证。协议与安全证据见 [Poe、DeepSeek 与 Provider 本地代理审计](audits/phase-0/provider-and-local-proxy-audit.md)及 [macOS 多进程 Keychain、签名与网络沙箱审计](audits/phase-0/macos-process-keychain-sandbox-audit.md)。
+Phase 0 确定性 Spike 已验证短期 Grant、任意目标拒绝、错误规范化和取消断连；后续安全审计将默认 IPC 从 Worker 回环 TCP 修订为 Runtime 中继的 Pipe/UDS + XPC/签名 Helper，并用隔离临时 Keychain 证明签名身份变化会拒绝静默读取。DeepSeek `deepseek-v4-pro` 已完成真实 Responses 探测；Poe 三模型、Apple 签名/Profile、升级和 Worker 无网仍待对应实现阶段验证，Apple 发布材料不阻塞本地 Phase 1–8。协议与安全证据见 [Poe、DeepSeek 与 Provider 本地代理审计](audits/phase-0/provider-and-local-proxy-audit.md)及 [macOS 多进程 Keychain、签名与网络沙箱审计](audits/phase-0/macos-process-keychain-sandbox-audit.md)。
 - 将请求、流式事件、Tool Call、Usage 和错误规范化为内部契约。
 - 不记录完整 Prompt、响应或 API Key；调试日志必须经过脱敏。
 
@@ -117,6 +119,8 @@ Phase 0 确定性 Spike 已验证短期 Grant、任意目标拒绝、错误规�
 - Phase 0 首批 Research Runner 固定为 `github.repositories.search@research-source/v1` 与 `rss.read@research-source/v1`。前者固定 GitHub REST Origin/Path/Method，后者只读取用户授权的公网 HTTPS Feed；两者不运行 Agent Reach 或任何上游 CLI。失败形成 SourceAttempt，外部结果始终标记为非可信数据。详见 [Agent Reach 与受管网络调研审计](audits/phase-0/agent-reach-managed-research-audit.md)。
 - 结果通过结构化协议返回 Runtime；Runner 不能直接写产品数据库。
 
+Phase 6 已实现 Proposal → Runtime 校验 → Approval/Full Access → Runner → Verified ToolResult → 模型续跑，并用产品自有 GitHub REST 与 RSS/Atom Adapter 形成真实 ResearchBundle。数据源健康、Credential 状态和不可用性动态传播到能力与员工门禁；实现与验证证据见 [Phase 6 实施验收](audits/phase-6/tool-gateway-and-managed-research-implementation.md)。
+
 ### 3.6 Local Memory Subsystem
 
 - 只启用 L0–L3 Chat Memory，监听回环地址或运行在 Runtime 内部，不对局域网和公网暴露。
@@ -124,7 +128,9 @@ Phase 0 确定性 Spike 已验证短期 Grant、任意目标拒绝、错误规�
 - 不创建或治理客户端 Employee、Task、Skill 等实体。
 - 不直接调用 Deep Agents，也不代理 Poe/DeepSeek 主对话。
 - 使用产品自有最小实现；不加载 MemoryCore 的 Metadata、Skill、Knowledge、Offload 或兼容路由。Phase 0 证据与约束见 [MemoryCore 与最小本地记忆审计](audits/phase-0/memorycore-local-memory-audit.md)。
-- 首个候选基线是 FastEmbed `0.8.0` 与固定 `Qdrant/bge-small-zh-v1.5` ONNX（512 维）；正式发布前仍须通过质量、性能、分发和 Keychain 门禁。
+- 首个候选基线是 FastEmbed `0.8.0` 与固定 `BAAI/bge-small-zh-v1.5` ONNX（512 维、固定 SHA-256）；本地代表性质量和单次延迟门禁已通过，正式发布前仍须通过规模、分发和 Apple Keychain 门禁。
+
+Phase 7 已实现异步加密待授权队列、范围/分类/标签过滤、内存 BM25、加密向量、RRF 重排、Token 预算、版本/冲突/停用/删除治理和正式 Assignment 召回。未获得云端记忆提取授权时只排队，不调用 Provider；实现与证据见 [Phase 7 实施验收](audits/phase-7/local-memory-implementation.md)。
 
 ## 4. 关键数据流
 

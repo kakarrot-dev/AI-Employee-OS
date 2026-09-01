@@ -2,16 +2,16 @@
 
 日期：2026-08-31
 
-结论状态：协议与本地隔离已完成；真实模型门禁待凭证验证
+结论状态：协议、本地隔离与 `deepseek-v4-pro` Responses API 真实模型门禁已完成
 
 ## 1. 决策
 
-**Poe 与 DeepSeek 保留为 MVP 的两个固定 Provider，但只能通过独立 Adapter 接入；本轮不把任何模型标记为“已验证可用”。**
+**Poe 与 DeepSeek 保留为 MVP 的两个固定 Provider，但只能通过独立 Adapter 接入；当前仅 `deepseek-v4-pro` 的 DeepSeek Responses 路径标记为“已验证可用”，Poe 候选仍为目录级证据。**
 
 - **协议 Go：** 两家官方接口都能覆盖文本对话、流式输出、函数调用、结构化输出、Usage 和可分类错误，具备进入真实调用验证的基础。
 - **隔离 Go：** 确定性 Spike 已证明上游 API Key、固定 Base URL、模型 Allowlist、预算校验与协议转换可以留在 Provider 进程，Worker 只需短期本地 Grant。该 Spike 使用的回环地址已被后续多进程安全审计修订为 `Worker → Runtime 私有 Pipe/UDS → Provider XPC/签名 Helper`，避免给 Worker 网络 Client 权限。
 - **直接兼容层 No-Go：** 两家都存在“接受但静默忽略”参数，且 Tool、结构化输出、Streaming 终止、状态保持与推理内容语义不同，不能用一个通用 OpenAI Client 加配置项代替独立 Adapter。
-- **Phase 0 门禁未关闭：** 当前没有使用用户的 Poe 或 DeepSeek Credential，也没有产生付费请求；“至少一个真实模型完成 Streaming + 结构化输出 + Tool Proposal + Usage + 取消 + 错误探测”仍待验证。
+- **真实模型 Go：** 用户明确授权后，`deepseek-v4-pro` 在官方 `/responses` 端点完成非流式、语义 Streaming、JSON Schema、单个 Proposal Tool、禁止 Tool、Usage、连接取消、无效模型和无效认证探测；Credential、响应正文、隐藏推理和原始错误正文均未记录。
 
 ## 2. 证据等级
 
@@ -19,7 +19,7 @@
 
 1. **官方声明：** 只证明当前文档描述了该能力。
 2. **无凭证协议探测：** 只证明公开端点、HTTP 状态、响应外形或认证边界。
-3. **真实模型探测：** 必须使用有效 Credential 调用明确 Model ID 才能证明；本轮没有此类证据。
+3. **真实模型探测：** 必须使用有效 Credential 调用明确 Model ID 才能证明；当前只有 `deepseek-v4-pro` + DeepSeek `/responses` 达到此等级。
 
 因此，模型配置中的能力标志必须来自“Provider + 精确 Model ID + Endpoint + Adapter 版本”的实测记录，不能从 Provider 级文档或 OpenAI 兼容标签继承。
 
@@ -43,6 +43,27 @@
 | 限流 | 官方声明每用户每分钟 500 请求 | 解析请求限流 Header 和 `Retry-After` |
 
 主要依据：[Poe OpenAI Compatible API](https://creator.poe.com/docs/external-applications/openai-compatible-api)、[Poe External Application Guide](https://creator.poe.com/docs/external-applications/external-application-guide)。
+
+#### 3.1.1 公开目录收窄结果
+
+2026-08-31T10:53:57Z 读取 Poe 官方公开 `/v1/models`，未使用 Credential。原始目录含 349 个条目；其中 143 个声明 `tools`，48 个声明 `/v1/responses`。按“文本输入 + 文本输出 + `/v1/responses` + `tools`”四个条件交集收窄后为 41 个候选。机器可读摘要与原始响应 Hash 见 [`evidence/poe-model-catalog-2026-08-31.json`](evidence/poe-model-catalog-2026-08-31.json)，复核工具见 [`poe_model_catalog.py`](../../../spikes/provider-proxy/poe_model_catalog.py)。
+
+用户将 Poe 接入范围明确收窄为 Claude 文本、ChatGPT Image 2 图像和 Seedance 视频。目录中的精确 ID 与产品角色固定如下，不将目录元数据误当真实调用结论：
+
+| 精确 Model ID | 产品角色与协议 | 目录事实 | 当前结论 |
+| --- | --- | --- | --- |
+| `claude-sonnet-4.6` | 总管文本；`/v1/responses`；允许 Streaming | 983,040 Context、128k 最大输出、Tools、Web Search；目录价输入 `$0.0000025758/token`、输出 `$0.0000128788/token` | **Poe 候选，未验证** |
+| `gpt-image-2` | 图像生成/编辑；`/v1/chat/completions`；`stream=false` | 文本/图像输入、图像输出；`size`、`quality`、`use_mask` 参数；目录未声明支持端点 | **Poe 候选，未验证** |
+| `seedance-2.0` | 视频生成；`/v1/chat/completions`；`stream=false` | 文本输入、视频输出；480p/720p、4–15 秒、6 种画幅；目录未声明支持端点与价格 | **Poe 候选，未验证** |
+
+`claude-sonnet-4.6` 是 Claude 家族的最小 MVP 默认项：比 Opus 目录价低，同时保留 Responses、Tools、Web Search 与长上下文；Haiku、Opus、`claude-code` 不进入 Allowlist。`gpt-image-2` 是用户所称 “chatgpt-image2” 在当前官方目录中的精确 ID。Seedance 选择 ByteDance 的 `seedance-2.0`，不接 `seedance-2-fast` 或第三方 `*-el` 包装条目。
+
+价格字段按 Poe 官方 Bot Pricing 定义记录为每 Token 美元成本，但用户实际使用 API 消耗 Poe 账户 Points，不能据此直接推导单次请求扣点。图像和视频的真实计费更不能从空价格字段推导，需结合实际请求、返回 Usage 和账户侧 Points 记录核对。
+
+以下两类条目不进入首轮精确模型门禁：
+
+- `assistant` 会由 Poe 按任务和订阅动态选择底层模型，不能冻结真实 Model ID。
+- 目录未给 `gpt-image-2` 与 `seedance-2.0` 填写 `supported_endpoints`。官方通用协议说明图像、视频 Bot 使用 OpenAI-Compatible API 且推荐 `stream=false`，但仍必须在有效 Poe Credential 下分别真实探测返回的媒体引用、超时、取消、错误和 Points 消耗。
 
 ### 3.2 DeepSeek
 
@@ -141,6 +162,25 @@ python3 spikes/provider-proxy/provider_proxy_spike.py
 
 真实探测只允许使用用户明确配置的 Credential，并会消耗 Poe Points 或 DeepSeek 余额。缺少 Credential 时配置保持 `unverified`，不能凭官方文档自动启用总管或员工角色。
 
+可执行工具位于 [`real_deepseek_probe.py`](../../../spikes/provider-proxy/real_deepseek_probe.py) 与首选协议 [`real_deepseek_responses_probe.py`](../../../spikes/provider-proxy/real_deepseek_responses_probe.py)。工具默认拒绝执行；只有同时提供精确 Model ID、明确的 Credential 输入和 `--acknowledge-paid-request` 才会发起请求。它们不接受命令行参数或环境变量中的 Secret，不打印 Prompt、响应正文、隐藏推理或原始错误正文。
+
+### 7.1 真实 DeepSeek 结果
+
+探测时间：2026-08-31T10:48:06Z。精确模型：`deepseek-v4-pro`。Endpoint：`https://api.deepseek.com/responses`。机器可读证据见 [`evidence/deepseek-responses-v4-pro-2026-08-31.json`](evidence/deepseek-responses-v4-pro-2026-08-31.json)。
+
+| 能力 | 真实结果 |
+| --- | --- |
+| 非流式与实际 Usage | 通过；11 Total Tokens |
+| 语义 Streaming | 通过；首个可见 Delta 751 ms，以 `response.completed` 收敛 |
+| JSON Schema | 通过；Provider 结构化输出再经本地精确 Schema 校验 |
+| Proposal Function | 通过；只返回一个 `submit_proposal`，参数本地校验通过 |
+| 禁止 Tool | 通过；`tool_choice=none` 未返回 Function Call |
+| 取消 | 通过；首个流式活动后 908 ms 内关闭客户端连接；服务端停止计费不可从客户端证明 |
+| 无效模型与认证 | 分别返回 400 与 401；错误正文未记录 |
+| Credential、响应与隐藏推理日志 | 未记录 |
+
+前置 Chat Completions 探测还发现精确模型差异：`deepseek-v4-flash` 的 Thinking 模式拒绝 `tool_choice=required`，改为 `auto` 后本轮未生成 Tool Proposal；`deepseek-v4-pro` 在 `auto` 下可生成 Proposal。该结果说明能力必须绑定“Provider + 精确 Model ID + Endpoint + Adapter 版本”，不能从 Provider 目录继承。
+
 ## 8. 门禁结果
 
 | Phase 0 Provider 门禁 | 结果 |
@@ -151,7 +191,7 @@ python3 spikes/provider-proxy/provider_proxy_spike.py
 | Worker 不接触 API Key 的本地代理路径 | 通过（确定性 Fake Upstream） |
 | 任意 Base URL、模型和 Tool 覆盖被拒绝 | 通过 |
 | 取消、错误、Usage 与日志脱敏内部契约 | 通过（确定性 Fake Upstream） |
-| 至少一个真实模型完成全套能力探测 | **未通过：本轮未使用 Credential** |
+| 至少一个真实模型完成全套能力探测 | **通过：`deepseek-v4-pro` + `/responses`** |
 | Keychain/签名/网络架构 | 已由后续多进程安全审计选型；真实 Apple 签名包、升级和崩溃恢复未验证 |
 
-**当前判定：Provider 协议和本地隔离方案允许进入实现准备；在真实模型门禁通过前，Phase 0 Provider 子审计不得标记完成，也不得声称 Poe 或 DeepSeek 已可用于生产 Run。**
+**当前判定：Phase 0 Provider 子审计完成，`deepseek-v4-pro` Responses API 可作为 Phase 3 首个真实实现基线；Poe Allowlist 只包含 `claude-sonnet-4.6`、`gpt-image-2`、`seedance-2.0`，三者在配置 Poe Credential 前保持 `unverified`。文本、图像、视频必须使用分离的 Adapter 能力路径。**

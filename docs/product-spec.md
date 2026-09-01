@@ -216,7 +216,9 @@ MCP 不可用
 - Poe
 - DeepSeek 官方
 
-两者使用独立 Provider Adapter。底层保留统一内部请求和事件接口，但首版不开放通用模型厂商配置。Poe 固定 `https://api.poe.com/v1`，DeepSeek 固定 `https://api.deepseek.com`；Base URL 只读，不允许用户、Worker 或模型请求覆盖。两家 MVP 文本 Adapter 首选各自 Responses API，但不能透传 OpenAI 参数：只发送明确支持的字段，并在本地执行 Tool 参数和结构化输出 Schema 校验。
+两者使用独立 Provider Adapter。底层保留统一内部请求和事件接口，但首版不开放通用模型厂商配置。Poe 固定 `https://api.poe.com/v1`，DeepSeek 固定 `https://api.deepseek.com`；Base URL 只读，不允许用户、Worker 或模型请求覆盖。
+
+Poe 只允许三个精确 Model ID：`claude-sonnet-4.6` 用于总管文本，走 Responses API 与 Streaming；`gpt-image-2` 用于图像生成/编辑，走 Chat Completions 且 `stream=false`；`seedance-2.0` 用于视频生成，走 Chat Completions 且 `stream=false`。三条能力路径使用分离 Adapter，不接 Poe 其他 Claude、GPT/Gemini 文本、图像或视频模型。DeepSeek 首个基线为 `deepseek-v4-pro` + Responses API。所有 Adapter 只发送明确支持的字段，并在本地执行 Tool 参数和结构化输出 Schema 校验。
 
 ### 8.2 模型配置
 
@@ -491,13 +493,13 @@ Delivery 至少包含：摘要、产物、证据、验收结果、未解决问�
 - Eigent 逐文件组件抽取时的传递依赖与资产许可证；根 Apache-2.0 与 `package.json` MIT 元数据冲突须在首次分发派生代码前向上游确认。整仓 Fork 已因壳层与 Runtime、高权限 IPC 和云端链路高度耦合而排除。
 - Deep Agents 固定版本可以完成临时员工委派、动态 Tool Interrupt、持久 Checkpoint、节点完成后安全停止、跨进程恢复和 Root/Sub-agent Streaming；硬取消会重放未完成节点，不能作为安全暂停。采用范围仅是受限 Harness，默认 General-purpose、并行委派、Filesystem/Execute Tool 和权限规则不得直接进入产品。详见 [Phase 0：Deep Agents 编排与恢复审计](audits/phase-0/deep-agents-orchestration-audit.md)。
 - MemoryCore `v2.0.1` 可无 Docker 启动，但锁定构建、测试、本地 Embedding、应用层加密、永久删除和单一事实源门禁失败，不进入产品。最小本地替代 Spike 已完成中文本地 Embedding、分类/Scope 过滤、混合召回、加密落盘和删除验证。详见 [Phase 0：MemoryCore 与最小本地记忆审计](audits/phase-0/memorycore-local-memory-audit.md)。
-- Poe/DeepSeek 官方文档与无凭证协议已审计；两家都存在静默忽略参数和端点语义差异，必须使用独立 Adapter。确定性 Fake Upstream 已验证 Worker 不接触 API Key、固定目标、预算、Proposal Tool、Streaming、结构化输出、Usage、错误规范化和取消传播；真实模型全套探测与 Keychain/签名仍未完成。详见 [Phase 0：Poe、DeepSeek 与 Provider 本地代理审计](audits/phase-0/provider-and-local-proxy-audit.md)。
+- Poe/DeepSeek 官方文档与协议已审计；两家都存在静默忽略参数和端点语义差异，必须使用独立 Adapter。确定性 Fake Upstream 已验证 Worker 不接触 API Key、固定目标、预算、Proposal Tool、Streaming、结构化输出、Usage、错误规范化和取消传播；`deepseek-v4-pro` + DeepSeek Responses 已完成真实探测。Poe 当前公开目录含 349 个条目，但产品 Allowlist 只保留 `claude-sonnet-4.6`、`gpt-image-2`、`seedance-2.0`，三者仍待 Poe Credential 真实探测。详见 [Phase 0：Poe、DeepSeek 与 Provider 本地代理审计](audits/phase-0/provider-and-local-proxy-audit.md)。
 - Agent Reach `v1.5.0` 是依赖全局安装与 Agent Shell 的诊断/路由层，且固定 Tag 的依赖约束自相矛盾，不进入产品 Runtime。首批产品自有 GitHub REST + RSS Adapter 已通过无 Shell 确定性 Spike 和真实只读协议探测；社交、媒体、招聘、播客和金融渠道延期或排除。详见 [Phase 0：Agent Reach 与受管网络调研审计](audits/phase-0/agent-reach-managed-research-audit.md)。
-- macOS 多进程安全边界采用最小 Keychain Access Group、独立签名 Sidecar 和 Worker 无网络方案；Worker 通过 Runtime 私有 Pipe/UDS 间接调用 Provider XPC/签名 Helper，不再直连回环 TCP。临时 Keychain ACL 正负例已通过，`sandbox-exec` 仅作弃用失败模型；真实 Apple 签名/Profile、App Sandbox、升级与公证仍待验证。详见 [Phase 0：macOS 多进程 Keychain、签名与网络沙箱审计](audits/phase-0/macos-process-keychain-sandbox-audit.md)。
+- macOS 多进程安全边界采用最小 Keychain Access Group、独立签名 Sidecar 和 Worker 无网络方案；Worker 通过 Runtime 私有 Pipe/UDS 间接调用 Provider XPC/签名 Helper，不再直连回环 TCP。临时 Keychain ACL、稳定本地签名升级正负例已通过，`sandbox-exec` 仅作弃用失败模型；本地开发可进入 Phase 1，真实 Apple 签名/Profile、App Sandbox、升级与公证延期到 Phase 9 发布门禁。详见 [Phase 0：macOS 多进程 Keychain、签名与网络沙箱审计](audits/phase-0/macos-process-keychain-sandbox-audit.md)。
 
 ### 17.2 尚待技术验证
 
-- 使用用户明确配置的 Credential，让至少一个 Poe 或 DeepSeek 精确模型通过 Streaming、结构化输出、单 Tool Proposal、Usage、取消和错误真实探测。
+- 使用用户明确配置的 Poe Credential，分别验证 `claude-sonnet-4.6` 文本、`gpt-image-2` 图像和 `seedance-2.0` 视频路径；DeepSeek `deepseek-v4-pro` 全套文本能力探测已完成。
 - 固定中文 Embedding 模型的正式 Eval Set、Recall@K、nDCG、误召回、长文本截断、批量延迟、峰值内存和打包体积；当前三个确定性样例不代表质量结论。
 - 最小本地记忆的真实 Keychain Access Group、密钥轮换、版本/冲突/墓碑、Migration、备份、崩溃恢复、并发删除和十万级规模性能。
 - GitHub/RSS 正式 Runner 的 DNS Rebinding/TOCTOU、OS Sandbox、签名、Keychain、崩溃恢复、缓存清理和性能；Exa/Jina 如进入后续版本须单独完成 Credential、数据使用和用户披露门禁。
