@@ -11,6 +11,7 @@ const rendererStyles = await readFile(`${repositoryRoot}/src/renderer/src/protot
 const rendererComponents = await readFile(`${repositoryRoot}/src/renderer/src/components/client-ui.tsx`, 'utf8')
 const rendererMessageComponents = await readFile(`${repositoryRoot}/src/renderer/src/components/message-ui.tsx`, 'utf8')
 const rendererApp = await readFile(`${repositoryRoot}/src/renderer/src/App.tsx`, 'utf8')
+const rendererSystem = await readFile(`${repositoryRoot}/src/renderer/src/SystemModule.tsx`, 'utf8')
 
 const requiredTokens = [
   '--layout-window-default-width',
@@ -188,6 +189,30 @@ if (!app.includes('function ChatMessage') || !app.includes('message-block--${sou
   errors.push('用户与总管消息必须复用左右对齐的 ChatMessage 气泡组件')
 }
 
+if (app.includes('name="你"') || rendererApp.includes("isUser ? '你'")) {
+  errors.push('聊天时间线必须展示个人资料名称，不得把用户身份硬编码为“你”')
+}
+
+if (app.includes('className="settings-intro"') || rendererSystem.includes('className="settings-intro"') || styles.includes('.settings-intro')) {
+  errors.push('系统设置正文必须直接展示设置模块，不得保留重复标题、图标或分割线')
+}
+
+if (!styles.includes('.system-page .detail-canvas > .settings-block:first-child') || !styles.includes('border-top: 0')) {
+  errors.push('系统设置首个内容模块不得显示顶部边线')
+}
+
+for (const copy of ['平台权限与安全规则始终优先。', '文本 · Responses API', '图像 · Chat Completions API', '视频 · Chat Completions API']) {
+  if (app.includes(copy) || rendererSystem.includes(copy)) errors.push(`系统设置仍包含无操作价值或面向实现者的文案: ${copy}`)
+}
+
+for (const marker of ['SettingsBlock title="身份"', 'className="employee-identity-editor"', 'aria-label="个人名称"']) {
+  if (!app.includes(marker) || !rendererSystem.includes(marker)) errors.push(`个人资料未复用精简身份布局: ${marker}`)
+}
+
+for (const marker of ['aria-label="身份说明"', 'aria-label="个人简介"']) {
+  if (app.includes(marker) || rendererSystem.includes(marker)) errors.push(`个人资料只保留头像和名称: ${marker}`)
+}
+
 for (const marker of ['.message-block--user {', 'flex-direction: row-reverse', '.message-block--user .message-bubble']) {
   if (!styles.includes(marker)) errors.push(`缺少用户头像右置与气泡右对齐契约: ${marker}`)
 }
@@ -196,12 +221,16 @@ if (app.includes('className="participants"') || app.includes('aria-label="新建
   errors.push('会话标题栏不得固定展示事项团队，事项只能由总管根据对话意图创建')
 }
 
-if (app.includes('className="topic-bar__count"') || app.includes('>任务 <')) {
-  errors.push('消息页不得展示事项累计数量，也不得把顶层事项命名为任务')
+if (app.includes('>任务 <')) {
+  errors.push('消息页不得把顶层事项命名为任务')
 }
 
-for (const marker of ['className="topic-bar__attention"', 'className="matter-route-note message-stream-item"', 'className="matter-event message-stream-item"', 'className="matter-index-card"', 'className="matter-team-avatars"']) {
+for (const marker of ['className="topic-bar__count"', 'className="matter-route-note message-stream-item"', 'className="matter-event message-stream-item"', 'className="matter-index-card"', 'className="matter-team-avatars"']) {
   if (!app.includes(marker)) errors.push(`缺少会话事项结构: ${marker}`)
+}
+
+for (const marker of ['{conversationTasks.length}</span>', 'conversationTasks.map((task) => <MatterEvent', 'src: employeeAvatarSrc({ employeeVersionId: assignment.employeeVersionId, avatarDataUrl: assignment.avatarDataUrl })']) {
+  if (!rendererApp.includes(marker)) errors.push(`客户端事项数量或头像未复用当前会话事实: ${marker}`)
 }
 
 if (!app.includes('{hasMatters && <div className="topic-bar"')) {
@@ -212,11 +241,11 @@ for (const marker of ['function MarkdownMessage', '<ReactMarkdown remarkPlugins=
   if (!app.includes(marker)) errors.push(`缺少消息折叠或附件导航复用组件: ${marker}`)
 }
 
-for (const marker of ['variant="progress"', '<MarkdownMessage compact>', 'className="delivery-card__eyebrow">结果', 'className="delivery-card__verification"', 'className="matter-event__body"><small>目标']) {
+for (const marker of ['variant="timeline"', '<MarkdownMessage compact>', 'className="message-delivery__eyebrow">结果', 'className="message-delivery__verification"', 'className="matter-event__body"><small>目标']) {
   if (!rendererApp.includes(marker)) errors.push(`客户端信息流缺少目标、过程或结果分层契约: ${marker}`)
 }
 
-for (const marker of ['matter-route-note message-stream-item', 'matter-event message-stream-item', 'approval-card message-stream-item', 'message-stream-item`', 'runtime-route-note message-stream-item', 'change-card message-stream-item', 'boundary-note message-stream-item']) {
+for (const marker of ['matter-route-note message-stream-item', 'matter-event message-stream-item', 'approval-card message-stream-item', 'message-block--timeline message-stream-item', 'runtime-route-note message-stream-item', 'change-card message-stream-item', 'boundary-note message-stream-item']) {
   if (!rendererApp.includes(marker) && !rendererMessageComponents.includes(marker)) errors.push(`客户端信息流组件未复用最大宽度与自适应契约: ${marker}`)
 }
 
@@ -224,8 +253,16 @@ if (/\.(?:matter-event|approval-card|delivery-card)\s*\{[^}]*width:\s*calc\(100%
   errors.push('事项、审批和交付组件不得继续使用固定左缩进计算宽度')
 }
 
-for (const marker of ['message-block--progress', '--layout-message-process-collapse-lines', '.delivery-card__verification']) {
+for (const marker of ['message-block--timeline', '--layout-message-process-collapse-lines', '.message-delivery__verification']) {
   if (!styles.includes(marker)) errors.push(`信息流视觉层级未复用共享样式契约: ${marker}`)
+}
+
+if (!/\.matter-event\s*\{[^}]*border:\s*0;/s.test(styles)) {
+  errors.push('时间线事项入口必须使用无描边的共享信息流样式')
+}
+
+if (app.includes('className="delivery-card delivery-card--complete message-stream-item"') || rendererApp.includes('className={`delivery-card delivery-card--')) {
+  errors.push('时间线交付结果必须复用 ChatMessage 契约，不得继续维护独立描边卡片')
 }
 
 for (const marker of ['function AttachmentOpenMenu', '<MenuTrigger>', 'className="attachment-open-trigger"', '使用系统默认应用打开', '打开所在文件夹']) {

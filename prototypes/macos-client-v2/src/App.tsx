@@ -107,8 +107,6 @@ interface Agent {
 
 interface UserProfile {
   name: string
-  role: string
-  description: string
   avatarUrl: string | null
 }
 
@@ -451,7 +449,7 @@ function SummaryCard({ title, description, leading }: { title: ReactNode; descri
 function ConversationRow({ conversation, selected, onPress, onDelete }: { conversation: Conversation; selected: boolean; onPress: () => void; onDelete: () => void }): React.JSX.Element {
   return (
     <div className="conversation-row">
-      <ListRow selected={selected} title={conversation.title} subtitle={conversation.preview} meta={conversation.time} marker={conversation.unread ? <span className="unread-count">{conversation.unread}</span> : conversation.attention ? <span className="attention-dot" aria-label="待处理" /> : undefined} onPress={onPress} />
+      <ListRow selected={selected} title={conversation.title} subtitle={conversation.preview} meta={conversation.time} marker={conversation.unread ? <span className="unread-dot" aria-label="未读消息" /> : undefined} onPress={onPress} />
       <IconButton className="conversation-row__delete" label={`删除会话 ${conversation.title}`} icon={Trash} onPress={onDelete} />
     </div>
   )
@@ -564,8 +562,8 @@ function MatterEvent({ matter, title, description, time, onOpen }: { matter: Con
   return <Button className="matter-event message-stream-item" aria-label={`查看事项：${matter.title}`} onPress={onOpen}><span className="matter-event__body"><small>目标</small><strong>{matter.title}</strong><span>{description}</span></span><span className="matter-event__meta"><span>{title}</span><time>{time}</time><NavArrowRight aria-hidden width={15} height={15} /></span></Button>
 }
 
-function ChatMessage({ source, name, initials, color, time, avatarSrc, children }: { source: 'user' | 'agent'; name: string; initials: string; color: string; time: string; avatarSrc?: string | null; children: ReactNode }): React.JSX.Element {
-  return <article className={`message-block message-block--${source}`}><Avatar label={name} initials={initials} color={color} size="small" src={avatarSrc} /><div className="message-block__stack"><div className="message-author"><strong>{name}</strong><time>{time}</time></div><div className="message-bubble">{children}</div></div></article>
+function ChatMessage({ source, name, initials, color, time, avatarSrc, variant = 'message', status, children }: { source: 'user' | 'agent'; name: string; initials: string; color: string; time: string; avatarSrc?: string | null; variant?: 'message' | 'timeline'; status?: ReactNode; children: ReactNode }): React.JSX.Element {
+  return <article className={`message-block message-block--${source}${variant === 'timeline' ? ' message-block--timeline message-stream-item' : ''}`}><Avatar label={name} initials={initials} color={color} size="small" src={avatarSrc} /><div className="message-block__stack"><div className="message-author"><strong>{name}</strong><time>{time}</time></div><div className="message-bubble">{status && <div className="message-bubble__status">{status}</div>}{children}</div></div></article>
 }
 
 function AttachmentUploadButton({ onFiles }: { onFiles: (files: File[]) => void }): React.JSX.Element {
@@ -703,7 +701,6 @@ function MessagesPage({ conversationId, userProfile, onOpenMatter, onOpenDetail 
   const [localMessages, setLocalMessages] = useState<LocalMessage[]>([])
   const conversation = conversations.find((item) => item.id === conversationId) ?? conversations[0]
   const hasMatters = conversationId === 'sea-saas'
-  const hasAttention = hasMatters && conversationMatters.some((matter) => matter.group === 'attention')
   const addAttachments = (files: File[]): void => setDraftAttachments((items) => [...items, ...files.map((file, index) => ({ id: `${file.name}-${file.lastModified}-${index}`, name: file.name, detail: fileDetail(file) }))])
   const removeAttachment = (id: string): void => setDraftAttachments((items) => items.filter((item) => item.id !== id))
   const submit = (event: FormEvent): void => { event.preventDefault(); if (!draft.trim() && !draftAttachments.length) return; setLocalMessages((items) => [...items, { text: draft.trim(), attachments: draftAttachments }]); setDraft(''); setDraftAttachments([]) }
@@ -714,13 +711,13 @@ function MessagesPage({ conversationId, userProfile, onOpenMatter, onOpenDetail 
     <div className="workspace-page message-page">
       {hasMatters && <div className="topic-bar" role="tablist" aria-label="会话内容视图">
         <button type="button" role="tab" aria-selected={activeView === 'conversation'} className={activeView === 'conversation' ? 'is-active' : ''} onClick={() => setActiveView('conversation')}><ChatBubble aria-hidden width={16} height={16} />对话</button>
-        <button type="button" role="tab" aria-selected={activeView === 'matter'} className={activeView === 'matter' ? 'is-active' : ''} onClick={() => setActiveView('matter')}><Page aria-hidden width={16} height={16} />事项 {hasAttention && <span className="topic-bar__attention" aria-label="存在需要你处理的事项" />}</button>
+        <button type="button" role="tab" aria-selected={activeView === 'matter'} className={activeView === 'matter' ? 'is-active' : ''} onClick={() => setActiveView('matter')}><Page aria-hidden width={16} height={16} />事项<span className="topic-bar__count">{conversationMatters.length}</span></button>
       </div>}
       {activeView === 'conversation' ? <>
       <div className="message-scroll" role="tabpanel" aria-label="对话">
         <div className="message-canvas">
           <div className="date-divider"><span>今天</span></div>
-          {!hasMatters && <><ChatMessage source="user" name="你" initials={userProfile.name.slice(0, 1) || '你'} color="#d9c5a6" avatarSrc={userProfile.avatarUrl} time="12:24"><MarkdownMessage>{`我在规划 **Agent 产品的消息机制**，希望先明确什么时候由总管直接回答，什么时候需要创建事项并组织多个 Agent。
+          {!hasMatters && <><ChatMessage source="user" name={userProfile.name.trim() || '本地用户'} initials={userProfile.name.trim().slice(0, 1) || '用'} color="#d9c5a6" avatarSrc={userProfile.avatarUrl} time="12:24"><MarkdownMessage>{`我在规划 **Agent 产品的消息机制**，希望先明确什么时候由总管直接回答，什么时候需要创建事项并组织多个 Agent。
 
 请覆盖这些判断条件：
 
@@ -740,19 +737,19 @@ function MessagesPage({ conversationId, userProfile, onOpenMatter, onOpenDetail 
 
 归类不确定时，总管先向用户确认，并显示 \`已归入事项\` 或 \`已创建事项\` 的轻量提示。`}</MarkdownMessage></ChatMessage></>}
           {hasMatters && <>
-          <ChatMessage source="user" name="你" initials={userProfile.name.slice(0, 1) || '你'} color="#d9c5a6" avatarSrc={userProfile.avatarUrl} time="13:40"><MarkdownMessage>整理东南亚 **SaaS 市场进入机会**，重点看六个主要市场、竞争格局和进入风险。最终给我一份能直接评审的报告。</MarkdownMessage><MessageAttachmentGroup attachments={exampleUserAttachments} source="user" /></ChatMessage>
+          <ChatMessage source="user" name={userProfile.name.trim() || '本地用户'} initials={userProfile.name.trim().slice(0, 1) || '用'} color="#d9c5a6" avatarSrc={userProfile.avatarUrl} time="13:40"><MarkdownMessage>整理东南亚 **SaaS 市场进入机会**，重点看六个主要市场、竞争格局和进入风险。最终给我一份能直接评审的报告。</MarkdownMessage><MessageAttachmentGroup attachments={exampleUserAttachments} source="user" /></ChatMessage>
           <MatterRouteNote title="东南亚 SaaS 市场进入研究" mode="created" />
           <ChatMessage source="agent" name="总管" initials="总" color="#aebd83" avatarSrc={supervisorAvatar} time="13:41"><MarkdownMessage>已明确**目标和验收标准**。我会组织网络情报员收集并核验来源，再由文档编写员整理成可评审报告。</MarkdownMessage></ChatMessage>
           <MatterEvent matter={conversationMatters[0]} title="临时团队已组建" description="网络情报员、文档编写员开始执行" time="13:42" onOpen={() => onOpenMatter('market-entry')} />
           <article className="approval-card is-resolved message-stream-item"><div><Key aria-hidden width={19} height={19} /><p>你已批准网络情报员在当前事项中只读访问 GitHub 公开仓库。</p><IconButton label="查看审批详情" icon={Eye} onPress={() => onOpenDetail('approval-detail')} /></div></article>
-          <article className="delivery-card delivery-card--complete message-stream-item"><header className="delivery-card__header"><span className="delivery-card__state"><Check aria-hidden width={18} height={18} /><span>已交付</span></span><time>14:32</time></header><div className="delivery-card__body"><span className="delivery-card__eyebrow">结果</span><h3>东南亚 SaaS 市场进入研究报告</h3><p className="delivery-card__summary">六个主要市场已覆盖，竞争格局和进入风险均有来源支持。</p><div className="delivery-card__verification" aria-label="交付概况"><span><strong>2/2</strong><small>完成要求</small></span><span><strong>20</strong><small>来源证据</small></span><span><strong>2</strong><small>交付文件</small></span></div><MessageAttachmentGroup attachments={generatedAttachments} source="agent" embedded /><Button className="text-action" onPress={() => onOpenDetail('delivery-evidence')}>查看完整验收记录 <NavArrowRight aria-hidden width={14} height={14} /></Button></div></article>
-          <ChatMessage source="user" name="你" initials={userProfile.name.slice(0, 1) || '你'} color="#d9c5a6" avatarSrc={userProfile.avatarUrl} time="15:05"><MarkdownMessage>基于刚才通过验收的报告，再整理一套**官网发布稿、管理层摘要和视觉方案**。</MarkdownMessage></ChatMessage>
+          <ChatMessage source="agent" variant="timeline" name="总管" initials="总" color="#aebd83" avatarSrc={supervisorAvatar} time="14:32" status={<StatusLight tone="success" label="已交付" />}><div className="message-delivery"><span className="message-delivery__eyebrow">结果</span><h3>东南亚 SaaS 市场进入研究报告</h3><p className="message-delivery__summary">六个主要市场已覆盖，竞争格局和进入风险均有来源支持。</p><div className="message-delivery__verification" aria-label="交付概况"><span><strong>2/2</strong><small>完成要求</small></span><span><strong>20</strong><small>来源证据</small></span><span><strong>2</strong><small>交付文件</small></span></div><MessageAttachmentGroup attachments={generatedAttachments} source="agent" embedded /><Button className="text-action" onPress={() => onOpenDetail('delivery-evidence')}>查看完整验收记录 <NavArrowRight aria-hidden width={14} height={14} /></Button></div></ChatMessage>
+          <ChatMessage source="user" name={userProfile.name.trim() || '本地用户'} initials={userProfile.name.trim().slice(0, 1) || '用'} color="#d9c5a6" avatarSrc={userProfile.avatarUrl} time="15:05"><MarkdownMessage>基于刚才通过验收的报告，再整理一套**官网发布稿、管理层摘要和视觉方案**。</MarkdownMessage></ChatMessage>
           <MatterRouteNote title="市场报告发布包" mode="created" />
           <ChatMessage source="agent" name="总管" initials="总" color="#aebd83" avatarSrc={supervisorAvatar} time="15:06"><MarkdownMessage>这是新的交付目标。我已创建关联事项，由**文档编写员**负责整理，**网络情报员**补充来源核验；上一事项的团队不会自动延续。</MarkdownMessage></ChatMessage>
           <MatterEvent matter={conversationMatters[1]} title="临时团队已组建" description="文档编写员、网络情报员开始执行" time="15:08" onOpen={() => onOpenMatter('publication-pack')} />
           <article className="approval-card message-stream-item"><div><Key aria-hidden width={19} height={19} /><p>总管需要你确认发布物料的视觉方向，确认后临时团队将继续制作。</p><IconButton label="查看事项详情" icon={Eye} onPress={() => onOpenMatter('publication-pack')} /></div><div className="approval-actions"><Button className="button button--quiet">提出修改</Button><Button className="button button--primary">确认方向</Button></div></article>
           </>}
-          {localMessages.map((message, index) => <ChatMessage source="user" name="你" initials={userProfile.name.slice(0, 1) || '你'} color="#d9c5a6" avatarSrc={userProfile.avatarUrl} time="刚刚" key={`${message.text}-${index}`}><MarkdownMessage>{message.text || '已添加附件'}</MarkdownMessage><MessageAttachmentGroup attachments={message.attachments} source="user" /></ChatMessage>)}
+          {localMessages.map((message, index) => <ChatMessage source="user" name={userProfile.name.trim() || '本地用户'} initials={userProfile.name.trim().slice(0, 1) || '用'} color="#d9c5a6" avatarSrc={userProfile.avatarUrl} time="刚刚" key={`${message.text}-${index}`}><MarkdownMessage>{message.text || '已添加附件'}</MarkdownMessage><MessageAttachmentGroup attachments={message.attachments} source="user" /></ChatMessage>)}
         </div>
       </div>
       <form className="composer" onSubmit={submit}>
@@ -805,12 +802,9 @@ function DependencyGroup({ icon: Icon, title, items }: { icon: IconComponent; ti
 }
 
 function SystemPage({ section, theme, onTheme, userProfile, onUserProfile, supervisorPrompt, onSupervisorPrompt, onOpenDetail }: { section: string; theme: ThemeMode; onTheme: (theme: ThemeMode) => void; userProfile: UserProfile; onUserProfile: (profile: UserProfile) => void; supervisorPrompt: string; onSupervisorPrompt: (prompt: string) => void; onOpenDetail: (view: DetailView) => void }): React.JSX.Element {
-  const definition = systemSections.find((item) => item.id === section) ?? systemSections[0]
-  const Icon = definition.icon
   return (
     <div className="workspace-page detail-page system-page">
       <div className="detail-canvas">
-        <section className="settings-intro"><span>{section === 'supervisor' ? <Avatar label="总管" initials="总" color="#aebd83" size="medium" src={supervisorAvatar} /> : <Icon aria-hidden width={24} height={24} />}</span><div><h2>{definition.label}</h2><p>{systemDescription(section)}</p></div></section>
         {section === 'profile' && <ProfileSettings profile={userProfile} onProfile={onUserProfile} />}
         {section === 'general' && <GeneralSettings theme={theme} onTheme={onTheme} />}
         {section === 'supervisor' && <SupervisorSettings prompt={supervisorPrompt} onPrompt={onSupervisorPrompt} />}
@@ -822,12 +816,6 @@ function SystemPage({ section, theme, onTheme, userProfile, onUserProfile, super
       </div>
     </div>
   )
-}
-
-function systemDescription(section: string): string {
-  return {
-    profile: '管理个人用户在客户端中的头像与身份信息。', general: '设置外观、启动行为与本地通知。', supervisor: '定义总管如何理解目标、组织临时团队并验收交付。', models: '管理模型连接和验证状态，Credential 明文不会回显。', resources: '查看 Tool、MCP 和数据源状态，并设置默认授权策略。', memory: '查看系统记住的内容，管理索引、本地存储与删除。', usage: '了解本周期用量、预算和成本来源。', about: '查看版本、Runtime 健康状态并导出诊断信息。'
-  }[section] ?? ''
 }
 
 function SettingsBlock({ title, description, children }: { title: string; description?: string; children: ReactNode }): React.JSX.Element {
@@ -842,7 +830,7 @@ function ProfileSettings({ profile, onProfile }: { profile: UserProfile; onProfi
     reader.onload = () => update('avatarUrl', typeof reader.result === 'string' ? reader.result : null)
     reader.readAsDataURL(file)
   }
-  return <><SettingsBlock title="个人身份" description="这是个人用户资料，不属于总管或任何 Agent 员工。"><div><div className="avatar-editor"><label className="avatar-upload"><input type="file" accept="image/png,image/jpeg,image/webp" aria-label="从本地上传个人头像" onChange={(event) => changeAvatar(event.currentTarget.files?.[0] ?? null)} /><Avatar label={profile.name} initials={profile.name.trim().slice(0, 1) || '用'} color="#d7b36a" size="large" src={profile.avatarUrl} /><span className="avatar-upload__affordance" aria-hidden="true"><EditPencil width={16} height={16} /></span></label></div><TextField value={profile.name} onChange={(value) => update('name', value)} className="form-field"><Label>显示名称</Label><Input /></TextField><TextField value={profile.role} onChange={(value) => update('role', value)} className="form-field"><Label>身份说明</Label><Input placeholder="例如：产品经理" /></TextField><TextField value={profile.description} onChange={(value) => update('description', value)} className="form-field"><Label>个人简介</Label><TextArea rows={4} placeholder="补充你的工作方向与协作偏好。" /></TextField></div></SettingsBlock><SettingsBlock title="资料范围"><SettingRow title="本地个人资料" description="只用于当前客户端的身份展示，不会创建 Agent 员工"><StatusLight tone="success" label="本机" /></SettingRow></SettingsBlock></>
+  return <SettingsBlock title="身份"><div className="employee-identity-editor"><div className="employee-avatar-setting"><label className="avatar-upload"><input type="file" accept="image/png,image/jpeg,image/webp" aria-label="从本地上传个人头像" onChange={(event) => changeAvatar(event.currentTarget.files?.[0] ?? null)} /><Avatar label={profile.name || '本地用户'} initials={profile.name.trim().slice(0, 1) || '用'} color="#d7b36a" size="large" src={profile.avatarUrl} /><span className="avatar-upload__affordance" aria-hidden="true"><EditPencil width={16} height={16} /></span></label></div><TextField value={profile.name} onChange={(value) => update('name', value)} className="form-field"><Label>名称</Label><Input maxLength={20} aria-label="个人名称" /></TextField></div></SettingsBlock>
 }
 
 function GeneralSettings({ theme, onTheme }: { theme: ThemeMode; onTheme: (theme: ThemeMode) => void }): React.JSX.Element {
@@ -850,7 +838,7 @@ function GeneralSettings({ theme, onTheme }: { theme: ThemeMode; onTheme: (theme
 }
 
 function SupervisorSettings({ prompt, onPrompt }: { prompt: string; onPrompt: (prompt: string) => void }): React.JSX.Element {
-  return <SettingsBlock title="总管定义" description="这是系统级配置，不属于任何 Agent 员工。"><TextField value={prompt} onChange={onPrompt} className="form-field"><Label>System Prompt</Label><TextArea rows={13} /></TextField></SettingsBlock>
+  return <SettingsBlock title="系统提示词"><TextField value={prompt} onChange={onPrompt} className="form-field"><TextArea rows={13} aria-label="总管系统提示词" /></TextField></SettingsBlock>
 }
 
 function ModelSettings(): React.JSX.Element {
@@ -858,19 +846,19 @@ function ModelSettings(): React.JSX.Element {
   const [configured, setConfigured] = useState(false)
   const [verifiedModels, setVerifiedModels] = useState<string[]>([])
   const models = [
-    { id: 'claude-sonnet-4.6', detail: '文本 · Responses API' },
-    { id: 'gpt-image-2', detail: '图像 · Chat Completions API' },
-    { id: 'seedance-2.0', detail: '视频 · Chat Completions API' }
+    { id: 'claude-sonnet-4.6', detail: '文本模型' },
+    { id: 'gpt-image-2', detail: '图像模型' },
+    { id: 'seedance-2.0', detail: '视频模型' }
   ]
-  return <><SettingsBlock title="DeepSeek"><ProviderRow name="deepseek-v4-pro" status="已验证" tone="success" detail="文本 · Responses API" /></SettingsBlock><SettingsBlock title="Poe" description="一个 API Key 连接文本、图像和视频模型；模型验证互相独立。"><div className="provider-credential-panel"><TextField value={credential} onChange={setCredential} className="form-field provider-credential-field"><Label>Poe API Key</Label><div className="provider-credential-control"><Input type="password" placeholder={configured ? '输入新 Key 可替换当前连接' : '输入 Poe API Key'} /><Button className="button button--primary" isDisabled={credential.trim().length < 8} onPress={() => { setConfigured(true); setCredential(''); setVerifiedModels([]) }}>保存连接</Button></div></TextField><p>验证会向对应模型发起一次真实请求；图像和视频请求可能消耗较多 Poe Points。</p></div>{models.map((model) => <ProviderRow key={model.id} name={model.id} status={verifiedModels.includes(model.id) ? '已验证' : configured ? '待验证' : '待配置'} tone={verifiedModels.includes(model.id) ? 'success' : 'waiting'} detail={model.detail} actionLabel="验证" onConfigure={configured ? () => setVerifiedModels((items) => items.includes(model.id) ? items : [...items, model.id]) : undefined} />)}</SettingsBlock></>
+  return <><SettingsBlock title="DeepSeek"><ProviderRow name="deepseek-v4-pro" status="已验证" tone="success" detail="文本模型" /></SettingsBlock><SettingsBlock title="Poe"><div className="provider-credential-panel"><TextField value={credential} onChange={setCredential} className="form-field provider-credential-field"><Label>Poe API Key</Label><div className="provider-credential-control"><Input type="password" placeholder={configured ? '输入新 Key 可替换当前连接' : '输入 Poe API Key'} /><Button className="button button--primary" isDisabled={credential.trim().length < 8} onPress={() => { setConfigured(true); setCredential(''); setVerifiedModels([]) }}>保存连接</Button></div></TextField><p>验证图像或视频模型会消耗 Poe 积分。</p></div>{models.map((model) => <ProviderRow key={model.id} name={model.id} status={verifiedModels.includes(model.id) ? '已验证' : configured ? '待验证' : '待配置'} tone={verifiedModels.includes(model.id) ? 'success' : 'waiting'} detail={model.detail} actionLabel="验证" onConfigure={configured ? () => setVerifiedModels((items) => items.includes(model.id) ? items : [...items, model.id]) : undefined} />)}</SettingsBlock></>
 }
 
-function ProviderRow({ name, status, tone, detail, actionLabel = '配置', onConfigure }: { name: string; status: string; tone: StatusTone; detail: string; actionLabel?: string; onConfigure?: () => void }): React.JSX.Element {
-  return <div className="provider-row"><span><strong>{name}</strong><small>{detail}</small></span><StatusLight tone={tone} label={status} breathing={tone === 'waiting'} />{onConfigure && <Button className="button button--quiet" onPress={onConfigure}>{actionLabel}</Button>}</div>
+function ProviderRow({ name, status, tone, detail, actionLabel = '配置', onConfigure }: { name: string; status: string; tone: StatusTone; detail?: string; actionLabel?: string; onConfigure?: () => void }): React.JSX.Element {
+  return <div className="provider-row"><span><strong>{name}</strong>{detail && <small>{detail}</small>}</span><StatusLight tone={tone} label={status} breathing={tone === 'waiting'} />{onConfigure && <Button className="button button--quiet" onPress={onConfigure}>{actionLabel}</Button>}</div>
 }
 
 function ResourceSettings(): React.JSX.Element {
-  return <><SettingsBlock title="默认授权策略" description="运行中不能静默扩大已冻结的权限范围。"><div className="permission-choice"><Button className="is-active"><Check aria-hidden width={17} height={17} /><span><strong>平衡</strong><small>只读动作自动执行，有副作用动作需要审批</small></span></Button><Button><span><strong>每次询问</strong><small>包括只读动作在内，所有 Tool 都需要审批</small></span></Button></div></SettingsBlock><SettingsBlock title="资源健康"><ProviderRow name="GitHub Repository Search" status="可用" tone="success" detail="最近检查 38ms" /><ProviderRow name="RSS Reader" status="可用" tone="success" detail="最近检查 84ms" /><ProviderRow name="Image Generation" status="不可用" tone="danger" detail="缺少 Poe Credential" /></SettingsBlock></>
+  return <><SettingsBlock title="默认权限"><div className="permission-choice"><Button className="is-active"><Check aria-hidden width={17} height={17} /><span><strong>平衡</strong><small>读取操作自动执行，其他操作需要确认</small></span></Button><Button><span><strong>每次询问</strong><small>所有操作都需要确认</small></span></Button></div></SettingsBlock><SettingsBlock title="资源状态"><ProviderRow name="GitHub Repository Search" status="可用" tone="success" /><ProviderRow name="RSS Reader" status="可用" tone="success" /><ProviderRow name="Image Generation" status="不可用" tone="danger" detail="缺少 Poe 连接凭证" /></SettingsBlock></>
 }
 
 function MemorySettings({ onOpenDetail }: { onOpenDetail: (view: DetailView) => void }): React.JSX.Element {
@@ -888,11 +876,11 @@ function UsageSettings(): React.JSX.Element {
 }
 
 function AboutSettings({ onOpenDetail }: { onOpenDetail: (view: DetailView) => void }): React.JSX.Element {
-  return <><SettingsBlock title="应用"><SettingRow title="AI Employee OS" description="本地开发版本"><span>0.1.0</span></SettingRow><SettingRow title="Runtime" description="Local Control Runtime"><StatusLight tone="success" label="已连接" /></SettingRow><SettingRow title="数据库" description="本地版本化存储"><StatusLight tone="success" label="正常" /></SettingRow></SettingsBlock><SettingsBlock title="诊断"><SettingRow title="重新检查系统状态" description="不会修改业务数据"><Button className="button button--quiet"><Refresh aria-hidden width={16} height={16} />检查</Button></SettingRow><SettingRow title="导出诊断信息" description="默认排除 Credential 与记忆正文"><Button className="button button--quiet">导出</Button></SettingRow></SettingsBlock><Button className="advanced-disclosure" onPress={() => onOpenDetail('about-advanced')}>查看高级信息 <NavArrowRight aria-hidden width={14} height={14} /></Button></>
+  return <><SettingsBlock title="应用"><SettingRow title="AI Employee OS"><span>0.1.0</span></SettingRow><SettingRow title="本地服务"><StatusLight tone="success" label="已连接" /></SettingRow><SettingRow title="本地数据"><StatusLight tone="success" label="正常" /></SettingRow></SettingsBlock><SettingsBlock title="诊断"><SettingRow title="检查本地服务"><Button className="button button--quiet"><Refresh aria-hidden width={16} height={16} />检查</Button></SettingRow><SettingRow title="导出诊断信息" description="不包含连接凭证和记忆正文"><Button className="button button--quiet">导出</Button></SettingRow></SettingsBlock><Button className="advanced-disclosure" onPress={() => onOpenDetail('about-advanced')}>查看高级信息 <NavArrowRight aria-hidden width={14} height={14} /></Button></>
 }
 
-function SettingRow({ title, description, children }: { title: string; description: string; children: ReactNode }): React.JSX.Element {
-  return <div className="setting-row"><span><strong>{title}</strong><small>{description}</small></span>{children}</div>
+function SettingRow({ title, description, children }: { title: string; description?: string; children: ReactNode }): React.JSX.Element {
+  return <div className="setting-row"><span><strong>{title}</strong>{description && <small>{description}</small>}</span>{children}</div>
 }
 
 function CreateAgentModal({ isOpen, onClose, onCreate }: { isOpen: boolean; onClose: () => void; onCreate: (agent: Agent) => void }): React.JSX.Element {
@@ -1012,7 +1000,7 @@ export function App(): React.JSX.Element {
   const [selectedCapability, setSelectedCapability] = useState('research')
   const [systemSection, setSystemSection] = useState('profile')
   const [theme, setTheme] = useState<ThemeMode>('system')
-  const [userProfile, setUserProfile] = useState<UserProfile>({ name: 'Kakarrot', role: '产品经理', description: '使用 AI Employee OS 组织个人工作、Agent 员工和可验收交付。', avatarUrl: null })
+  const [userProfile, setUserProfile] = useState<UserProfile>({ name: 'Kakarrot', avatarUrl: null })
   const [supervisorPrompt, setSupervisorPrompt] = useState('你是 AI Employee OS 的总管，也是用户唯一的对话入口。你负责理解用户目标，判断请求是直接回答、归入已有事项还是创建新事项；当事项需要多步执行、持续状态、等待、交付物或用户确认时，按最小权限原则组织临时 Agent 团队。员工不直接代表系统向用户回复，由你汇总关键事件和最终交付。不得自行扩大权限、预算或访问范围。')
   const [selectedMatterId, setSelectedMatterId] = useState<ConversationMatterId>('market-entry')
   const [modal, setModal] = useState<ModalState>(null)
