@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { MarkdownMessage, MatterRouteNote, MessageAttachmentGroup } from './message-ui'
+import { ChatMessage, MarkdownMessage, MatterRouteNote, MessageAttachmentGroup } from './message-ui'
 
 describe('message UI contracts', () => {
   afterEach(() => vi.restoreAllMocks())
@@ -66,5 +66,12 @@ describe('message UI contracts', () => {
   it('uses the compact disclosure boundary for process messages', () => {
     const { container } = render(<MarkdownMessage compact>过程内容</MarkdownMessage>)
     expect(container.querySelector('.markdown-message')).toHaveClass('markdown-message--compact')
+  })
+
+  it('uses one borderless chat contract for timeline messages and their status', () => {
+    const { container } = render(<ChatMessage source="agent" variant="timeline" name="网络情报员" initials="网" color="#9ebd79" time="12:49" status={<span>阶段完成</span>}><MarkdownMessage compact>已完成多源检索。</MarkdownMessage></ChatMessage>)
+    expect(container.querySelector('.message-block')).toHaveClass('message-block--timeline', 'message-stream-item')
+    expect(container.querySelector('.message-bubble__status')).toHaveTextContent('阶段完成')
+    expect(container.querySelector('.message-block--progress')).toBeNull()
   })
 })

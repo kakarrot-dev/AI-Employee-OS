@@ -42,8 +42,20 @@ export function MarkdownMessage({ children, compact = false }: { children: strin
   return <div className={`markdown-message${compact ? ' markdown-message--compact' : ''}`}><div ref={contentRef} className={`markdown-message__content${collapsible ? ' is-collapsible' : ''}${expanded ? ' is-expanded' : ''}`}><MarkdownContent>{children}</MarkdownContent></div>{(collapsible || expanded) && <Button className="message-expand-button" aria-expanded={expanded} onPress={() => setExpanded((value) => !value)}>{expanded ? '收起' : '展开全文'}<NavArrowDown aria-hidden width={14} height={14} className={expanded ? 'is-expanded' : ''} /></Button>}</div>
 }
 
-export function ChatMessage({ source, name, initials, color, time, avatarSrc, variant = 'message', children }: { source: 'user' | 'agent'; name: string; initials: string; color: string; time: string; avatarSrc?: string; variant?: 'message' | 'progress'; children: ReactNode }): React.JSX.Element {
-  return <article className={`message-block message-block--${source}${variant === 'progress' ? ' message-block--progress' : ''}`}><Avatar label={name} initials={initials} color={color} size="small" src={avatarSrc} /><div className="message-block__stack"><div className="message-author"><strong>{name}</strong><time>{time}</time></div><div className="message-bubble">{children}</div></div></article>
+export interface ChatMessageProps {
+  source: 'user' | 'agent'
+  name: string
+  initials: string
+  color: string
+  time: string
+  avatarSrc?: string
+  variant?: 'message' | 'timeline'
+  status?: ReactNode
+  children: ReactNode
+}
+
+export function ChatMessage({ source, name, initials, color, time, avatarSrc, variant = 'message', status, children }: ChatMessageProps): React.JSX.Element {
+  return <article className={`message-block message-block--${source}${variant === 'timeline' ? ' message-block--timeline message-stream-item' : ''}`}><Avatar label={name} initials={initials} color={color} size="small" src={avatarSrc} /><div className="message-block__stack"><div className="message-author"><strong>{name}</strong><time>{time}</time></div><div className="message-bubble">{status && <div className="message-bubble__status">{status}</div>}{children}</div></div></article>
 }
 
 export function AttachmentOpenMenu({ attachment, onOpen, onReveal }: { attachment: MessageAttachment; onOpen?: (id: string) => void; onReveal?: (id: string) => void }): React.JSX.Element {

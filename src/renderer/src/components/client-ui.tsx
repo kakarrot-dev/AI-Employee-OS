@@ -155,8 +155,8 @@ export function SettingsBlock({ title, description, children }: { title: string;
   return <section className="settings-block"><div className="settings-block__heading"><h3>{title}</h3>{description && <p>{description}</p>}</div><div className="settings-block__content">{children}</div></section>
 }
 
-export function SettingRow({ title, description, children }: { title: string; description: string; children: ReactNode }): React.JSX.Element {
-  return <div className="setting-row"><span><strong>{title}</strong><small>{description}</small></span>{children}</div>
+export function SettingRow({ title, description, children }: { title: string; description?: string; children: ReactNode }): React.JSX.Element {
+  return <div className="setting-row"><span><strong>{title}</strong>{description && <small>{description}</small>}</span>{children}</div>
 }
 
 export function ClientModal({ open, title, eyebrow, identity, headerMeta, size = 'large', nested = false, onClose, children }: { open: boolean; title: string; eyebrow?: ReactNode; identity?: ReactNode; headerMeta?: ReactNode; size?: 'small' | 'medium' | 'large'; nested?: boolean; onClose: () => void; children: ReactNode }): React.JSX.Element | null {

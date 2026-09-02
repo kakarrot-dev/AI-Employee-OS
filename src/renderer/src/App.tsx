@@ -191,7 +191,7 @@ export function selectActiveTask(tasks: TaskDetailView[]): TaskDetailView | unde
 function MessageBlock({ message, user, supervisor }: { message: ConversationMessageView; user: PersonIdentity; supervisor: PersonIdentity }): React.JSX.Element {
   const isUser = message.role === 'user'
   const identity = isUser ? user : supervisor
-  return <ChatMessage source={isUser ? 'user' : 'agent'} name={isUser ? '你' : identity.name} initials={identity.initials} color={identity.color} avatarSrc={identity.avatarSrc ?? undefined} time={messageTime(message.createdAt)}><MarkdownMessage>{message.content}</MarkdownMessage></ChatMessage>
+  return <ChatMessage source={isUser ? 'user' : 'agent'} name={identity.name} initials={identity.initials} color={identity.color} avatarSrc={identity.avatarSrc ?? undefined} time={messageTime(message.createdAt)}><MarkdownMessage>{message.content}</MarkdownMessage></ChatMessage>
 }
 
 const employeeColors = ['#9ebd79', '#d7b36a', '#85a9c7', '#bc91b1']
@@ -217,7 +217,7 @@ function EmployeeProgressMessage({ task, assignment }: { task: TaskDetailView; a
     : assignment.state === 'running' ? `我已接手“${task.goal}”，正在执行当前阶段。`
       : assignment.state === 'failed' ? '当前阶段未能完成，详细失败原因已交给总管处理。'
         : '当前阶段已取消。')
-  return <ChatMessage source="agent" variant="progress" name={name} initials={name.trim().slice(0, 1)} color={employeeColors[(assignment.sequence - 1) % employeeColors.length]} avatarSrc={employeeAvatarSrc({ employeeVersionId: assignment.employeeVersionId, avatarDataUrl: assignment.avatarDataUrl })} time={messageTime(assignment.completedAt ?? assignment.createdAt ?? task.createdAt ?? new Date().toISOString())}><div className="employee-progress-message"><StatusLight state={statusState} label={status} breathing={assignment.state === 'running' && !waitingAction} /><MarkdownMessage compact>{content}</MarkdownMessage></div></ChatMessage>
+  return <ChatMessage source="agent" variant="timeline" name={name} initials={name.trim().slice(0, 1)} color={employeeColors[(assignment.sequence - 1) % employeeColors.length]} avatarSrc={employeeAvatarSrc({ employeeVersionId: assignment.employeeVersionId, avatarDataUrl: assignment.avatarDataUrl })} time={messageTime(assignment.completedAt ?? assignment.createdAt ?? task.createdAt ?? new Date().toISOString())} status={<StatusLight state={statusState} label={status} breathing={assignment.state === 'running' && !waitingAction} />}><MarkdownMessage compact>{content}</MarkdownMessage></ChatMessage>
 }
 
 function ManagerProgressEvent({ task, supervisor }: { task: TaskDetailView; supervisor: PersonIdentity }): React.JSX.Element | null {
@@ -245,19 +245,19 @@ function ToolApprovalCard({ task, onDecision, onOpen }: { task: TaskDetailView; 
   </article>
 }
 
-function DeliveryCard({ task, onOpen, onOpenArtifact, onRevealArtifact }: { task: TaskDetailView; onOpen: () => void; onOpenArtifact: (artifactId: string) => void; onRevealArtifact: (artifactId: string) => void }): React.JSX.Element | null {
+function DeliveryMessage({ task, supervisor, onOpen, onOpenArtifact, onRevealArtifact }: { task: TaskDetailView; supervisor: PersonIdentity; onOpen: () => void; onOpenArtifact: (artifactId: string) => void; onRevealArtifact: (artifactId: string) => void }): React.JSX.Element | null {
   const delivery = task.delivery
   if (!delivery) return null
   const passed = delivery.acceptanceResults.filter((item) => item.passed).length
   const completed = passed === delivery.acceptanceResults.length
-  return <article className={`delivery-card delivery-card--${completed ? 'complete' : 'partial'} message-stream-item`}>
-    <header className="delivery-card__header"><span className="delivery-card__state">{completed ? <Check aria-hidden width={18} height={18} /> : <InfoCircle aria-hidden width={18} height={18} />}<span>{completed ? '已交付' : '部分通过'}</span></span><time>{messageTime(delivery.createdAt ?? task.timeline.at(-1)?.createdAt ?? new Date().toISOString())}</time></header>
-    <div className="delivery-card__body"><span className="delivery-card__eyebrow">结果</span><h3>{task.goal}</h3>{delivery.summary && <p className="delivery-card__summary">{delivery.summary}</p>}{delivery.result && <div className="delivery-card__result"><MarkdownMessage compact>{delivery.result}</MarkdownMessage></div>}
-      <div className="delivery-card__verification" aria-label="交付概况">{delivery.acceptanceResults.length > 0 && <span><strong>{passed}/{delivery.acceptanceResults.length}</strong><small>完成要求</small></span>}<span><strong>{delivery.evidenceCount}</strong><small>来源证据</small></span><span><strong>{delivery.artifacts.length}</strong><small>交付文件</small></span></div>
+  const resultAlreadyShown = Boolean(delivery.result?.trim()) && task.assignments.some((assignment) => assignment.output?.trim() === delivery.result?.trim())
+  return <ChatMessage source="agent" variant="timeline" name={supervisor.name} initials={supervisor.initials} color={supervisor.color} avatarSrc={supervisor.avatarSrc ?? undefined} time={messageTime(delivery.createdAt ?? task.timeline.at(-1)?.createdAt ?? new Date().toISOString())} status={<StatusLight state={completed ? 'success' : 'waiting'} label={completed ? '已交付' : '部分通过'} />}>
+    <div className="message-delivery"><span className="message-delivery__eyebrow">结果</span><h3>{task.goal}</h3>{delivery.summary && <p className="message-delivery__summary">{delivery.summary}</p>}{delivery.result && !resultAlreadyShown && <div className="message-delivery__result"><MarkdownMessage compact>{delivery.result}</MarkdownMessage></div>}
+      <div className="message-delivery__verification" aria-label="交付概况">{delivery.acceptanceResults.length > 0 && <span><strong>{passed}/{delivery.acceptanceResults.length}</strong><small>完成要求</small></span>}<span><strong>{delivery.evidenceCount}</strong><small>来源证据</small></span><span><strong>{delivery.artifacts.length}</strong><small>交付文件</small></span></div>
       <MessageAttachmentGroup source="agent" embedded attachments={delivery.artifacts.map((artifact) => ({ id: artifact.id, name: artifact.relativePath, detail: `${artifactTypeLabel(artifact.mediaType)} · 完整性校验已记录` }))} onOpen={onOpenArtifact} onReveal={onRevealArtifact} />
       <button type="button" className="text-action" onClick={onOpen}>查看完整验收记录 <NavArrowRight aria-hidden width={14} height={14} /></button>
     </div>
-  </article>
+  </ChatMessage>
 }
 
 function MatterDetailModal({ task, onClose }: { task?: TaskDetailView; onClose: () => void }): React.JSX.Element {
@@ -328,7 +328,7 @@ function MatterIndex({ tasks, onSelect }: { tasks: TaskDetailView[]; onSelect: (
         {groups.map((group) => {
           const items = tasks.filter(group.matches)
           if (!items.length) return null
-          return <section className="matter-index-section" key={group.id}><div className="matter-index-section__heading"><h3>{group.title}</h3><span>{group.description}</span></div><div className="matter-index-list">{items.map((task) => <button type="button" className="matter-index-card" key={task.id} onClick={() => onSelect(task)}><div className="card-heading"><span className={`task-state task-state--${task.state}`}>{taskStateLabel(task.state)}</span><span>{messageTime(task.timeline.at(-1)?.createdAt ?? new Date().toISOString())}</span></div><div className="matter-index-card__body"><span><strong>{task.goal}</strong><small>{task.acceptanceCriteria.join('；')}</small></span><NavArrowRight aria-hidden width={17} height={17} /></div><div className="matter-index-card__footer"><MatterTeamAvatars team={task.assignments.filter((assignment) => !assignment.reworkOfAssignmentId).map((assignment, index) => ({ id: assignment.id, name: assignment.employeeName ?? `员工 ${assignment.sequence}`, initials: (assignment.employeeName ?? String(assignment.sequence)).slice(0, 1), color: employeeColors[index % employeeColors.length] }))} /><span>{task.timeline.length} 个进度节点</span><span>{task.delivery ? `${task.delivery.artifacts.length} 个交付文件` : '尚未交付'}</span></div></button>)}</div></section>
+          return <section className="matter-index-section" key={group.id}><div className="matter-index-section__heading"><h3>{group.title}</h3><span>{group.description}</span></div><div className="matter-index-list">{items.map((task) => <button type="button" className="matter-index-card" key={task.id} onClick={() => onSelect(task)}><div className="card-heading"><span className={`task-state task-state--${task.state}`}>{taskStateLabel(task.state)}</span><span>{messageTime(task.timeline.at(-1)?.createdAt ?? new Date().toISOString())}</span></div><div className="matter-index-card__body"><span><strong>{task.goal}</strong><small>{task.acceptanceCriteria.join('；')}</small></span><NavArrowRight aria-hidden width={17} height={17} /></div><div className="matter-index-card__footer"><MatterTeamAvatars team={task.assignments.filter((assignment) => !assignment.reworkOfAssignmentId).map((assignment, index) => ({ id: assignment.id, name: assignment.employeeName ?? `员工 ${assignment.sequence}`, initials: (assignment.employeeName ?? String(assignment.sequence)).slice(0, 1), color: employeeColors[index % employeeColors.length], src: employeeAvatarSrc({ employeeVersionId: assignment.employeeVersionId, avatarDataUrl: assignment.avatarDataUrl }) }))} /><span>{task.timeline.length} 个进度节点</span><span>{task.delivery ? `${task.delivery.artifacts.length} 个交付文件` : '尚未交付'}</span></div></button>)}</div></section>
         })}
         {tasks.length === 0 && <div className="runtime-empty-state runtime-empty-state--compact"><Page width={24} height={24} /><h2>当前会话还没有事项</h2><p>继续与总管对话。需要持续执行、审批或可验收交付物时，会在这里形成事项。</p></div>}
       </div>
@@ -508,7 +508,7 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
 
   return (
     <div className="workspace-page message-page">
-      {conversationTasks.length > 0 && <div className="topic-bar" role="tablist" aria-label="会话内容视图"><button type="button" role="tab" aria-selected={activeView === 'conversation'} className={activeView === 'conversation' ? 'is-active' : ''} onClick={() => setActiveView('conversation')}><ChatBubble aria-hidden width={16} height={16} />对话</button><button type="button" role="tab" aria-selected={activeView === 'matter'} className={activeView === 'matter' ? 'is-active' : ''} onClick={() => setActiveView('matter')}><Page aria-hidden width={16} height={16} />事项 {conversationTasks.some((task) => task.state === 'draft' || task.state === 'needs_attention' || task.state === 'failed') && <span className="topic-bar__attention" aria-label="存在需要你处理的事项" />}</button></div>}
+      {conversationTasks.length > 0 && <div className="topic-bar" role="tablist" aria-label="会话内容视图"><button type="button" role="tab" aria-selected={activeView === 'conversation'} className={activeView === 'conversation' ? 'is-active' : ''} onClick={() => setActiveView('conversation')}><ChatBubble aria-hidden width={16} height={16} />对话</button><button type="button" role="tab" aria-selected={activeView === 'matter'} className={activeView === 'matter' ? 'is-active' : ''} onClick={() => setActiveView('matter')}><Page aria-hidden width={16} height={16} />事项<span className="topic-bar__count">{conversationTasks.length}</span></button></div>}
       {activeView === 'matter' ? <MatterIndex tasks={conversationTasks} onSelect={(task) => setSelectedMatter(task)} /> : <>
       <div className="message-scroll" role="tabpanel" aria-label="对话">
         <div className="message-canvas">
@@ -523,11 +523,11 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
           )}
 
           {activeTask ? (
-            <><MatterRouteNote title={activeTask.goal} mode={activeRouteMode} busy={taskBusy} onOpenMatter={() => setSelectedMatter(activeTask)} onCreateMatter={() => void createTaskDraft()} onRequestChange={activeTask.state === 'running' && !activeTask.pendingChange ? () => void requestTaskChange() : undefined} /><MatterEvent task={activeTask} onOpen={() => setSelectedMatter(activeTask)} /><TaskWorkTimeline task={activeTask} supervisor={supervisor} />
+            <><MatterRouteNote title={activeTask.goal} mode={activeRouteMode} busy={taskBusy} onOpenMatter={() => setSelectedMatter(activeTask)} onCreateMatter={() => void createTaskDraft()} onRequestChange={activeTask.state === 'running' && !activeTask.pendingChange ? () => void requestTaskChange() : undefined} />{conversationTasks.map((task) => <MatterEvent key={task.id} task={task} onOpen={() => setSelectedMatter(task)} />)}<TaskWorkTimeline task={activeTask} supervisor={supervisor} />
               {activeTask.pendingChange && <div className="change-card message-stream-item"><strong>待处理变更</strong><p>{String(activeTask.pendingChange.requestedDiff.goal ?? '需求已变化')}</p>{activeTask.state === 'needs_attention' ? <div><button type="button" onClick={() => void decideTaskChange(false)} disabled={taskBusy}>保持原事项</button><button type="button" onClick={() => void decideTaskChange(true)} disabled={taskBusy}>接受并启动新 Revision</button></div> : <small>将在当前节点完成并提交 Checkpoint 后暂停</small>}</div>}
               {activeTask.state === 'failed' && <section className="runtime-route-note message-stream-item"><Page aria-hidden width={16} height={16} /><span>本次执行已失败，原有 Tool 审批已失效，不会继续调用外部工具。</span><button type="button" onClick={() => void createTaskDraft()} disabled={taskBusy}>{taskBusy ? '正在创建' : '重新创建事项草稿'}</button></section>}
               {activeTask.state === 'draft' && <section className="runtime-route-note message-stream-item"><Page aria-hidden width={16} height={16} /><span>{activeTask.requiresDirectories && activeTask.directories.length === 0 ? '事项已生成；选择授权文件夹后将自动开始执行。' : '事项已生成，Runtime 正在自动启动员工。'}</span>{activeTask.requiresDirectories && activeTask.directories.length === 0 && <button type="button" onClick={() => setComposerPanel('access')} disabled={taskBusy}>选择文件夹</button>}</section>}
-              <ToolApprovalCard task={activeTask} onDecision={(actionId, decision) => void decideTool(actionId, decision)} onOpen={() => setSelectedMatter(activeTask)} /><DeliveryCard task={activeTask} onOpen={() => setSelectedMatter(activeTask)} onOpenArtifact={(artifactId) => void performArtifactAction(activeTask.id, artifactId, 'open')} onRevealArtifact={(artifactId) => void performArtifactAction(activeTask.id, artifactId, 'reveal')} />{activeTask.toolActions.some((item) => item.state === 'result_unknown') && <div className="boundary-note message-stream-item">存在结果未知的 Tool Action。需要在 Runtime 记录真实外部结果后才能继续，客户端不会猜测成功或失败。</div>}</>
+              <ToolApprovalCard task={activeTask} onDecision={(actionId, decision) => void decideTool(actionId, decision)} onOpen={() => setSelectedMatter(activeTask)} /><DeliveryMessage task={activeTask} supervisor={supervisor} onOpen={() => setSelectedMatter(activeTask)} onOpenArtifact={(artifactId) => void performArtifactAction(activeTask.id, artifactId, 'open')} onRevealArtifact={(artifactId) => void performArtifactAction(activeTask.id, artifactId, 'reveal')} />{activeTask.toolActions.some((item) => item.state === 'result_unknown') && <div className="boundary-note message-stream-item">存在结果未知的 Tool Action。需要在 Runtime 记录真实外部结果后才能继续，客户端不会猜测成功或失败。</div>}</>
           ) : null}
         </div>
       </div>
@@ -676,10 +676,8 @@ export function App(): React.JSX.Element {
       <SearchBox label="搜索会话" placeholder="搜索会话" value={conversationQuery} onChange={setConversationQuery} />
       <div className="filter-row" aria-label="消息筛选">{([['all', '全部'], ['attention', '待处理'], ['unread', '未读']] as const).map(([id, label]) => <button type="button" key={id} className={conversationFilter === id ? 'is-active' : ''} onClick={() => setConversationFilter(id)}>{label}</button>)}</div>
       <div className="context-scroll">{visibleConversations.map((conversation) => {
-        const tasks = conversationTasks.filter((task) => task.conversationId === conversation.id)
-        const attention = tasks.some((task) => task.state === 'draft' || task.state === 'needs_attention' || task.state === 'failed')
         const unread = unreadCountFor(conversation)
-        return <div className="conversation-row" key={conversation.id}><ListRow title={conversation.title} subtitle={conversation.preview} meta={messageTime(conversation.updatedAt)} selected={selectedConversationId === conversation.id} identity="text" marker={unread > 0 ? <span className="unread-count">{unread}</span> : attention ? <span className="attention-dot" aria-label="待处理" /> : undefined} onClick={() => setSelectedConversationId(conversation.id)} /><IconButton label={`归档会话 ${conversation.title}`} icon={Trash} className="conversation-row__delete" onClick={() => archiveConversation(conversation.id)} /></div>
+        return <div className="conversation-row" key={conversation.id}><ListRow title={conversation.title} subtitle={conversation.preview} meta={messageTime(conversation.updatedAt)} selected={selectedConversationId === conversation.id} identity="text" marker={unread > 0 ? <span className="unread-dot" aria-label="未读消息" /> : undefined} onClick={() => setSelectedConversationId(conversation.id)} /><IconButton label={`归档会话 ${conversation.title}`} icon={Trash} className="conversation-row__delete" onClick={() => archiveConversation(conversation.id)} /></div>
       })}</div>
     </> : activeId === 'team' ? <>
       <SearchBox label="搜索 Agent" placeholder="搜索 Agent" value={employeeQuery} onChange={setEmployeeQuery} />

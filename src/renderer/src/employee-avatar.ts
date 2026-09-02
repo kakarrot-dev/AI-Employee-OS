@@ -13,7 +13,8 @@ export function supervisorIdentity(configuration?: { name?: string; avatarDataUr
 }
 
 export function userIdentity(name: string, avatarSrc?: string | null): { name: string; initials: string; color: string; avatarSrc?: string | null } {
-  return { name: name.trim() || '你', initials: name.trim().slice(0, 1) || '你', color: '#d7b36a', avatarSrc }
+  const displayName = name.trim() || '本地用户'
+  return { name: displayName, initials: displayName.slice(0, 1), color: '#d7b36a', avatarSrc }
 }
 
 const employeeAvatars: Record<string, string> = {
