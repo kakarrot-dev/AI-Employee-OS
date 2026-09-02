@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createWindowOptions, isTrustedRendererUrl } from './window-security'
-import { CLIENT_WINDOW_LAYOUT } from '../shared/layout-contract'
+import { CLIENT_WINDOW_LAYOUT, MACOS_TRAFFIC_LIGHT_POSITION } from '../shared/layout-contract'
 
 describe('Electron window security', () => {
   it('keeps the renderer sandboxed behind context isolation', () => {
@@ -23,7 +23,8 @@ describe('Electron window security', () => {
       minHeight: CLIENT_WINDOW_LAYOUT.minHeight
     })
     expect(options.titleBarStyle).toBe('hiddenInset')
-    expect(options.trafficLightPosition).toEqual({ x: 18, y: 18 })
+    expect(options.trafficLightPosition).toEqual(MACOS_TRAFFIC_LIGHT_POSITION)
+    expect(MACOS_TRAFFIC_LIGHT_POSITION.y + CLIENT_WINDOW_LAYOUT.macOSTrafficLightSize / 2).toBe(CLIENT_WINDOW_LAYOUT.toolbarHeight / 2)
   })
 
   it('accepts only the exact dev origin or packaged renderer', () => {

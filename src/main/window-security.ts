@@ -1,5 +1,5 @@
 import type { BrowserWindowConstructorOptions } from 'electron'
-import { CLIENT_WINDOW_LAYOUT } from '../shared/layout-contract'
+import { CLIENT_WINDOW_LAYOUT, MACOS_TRAFFIC_LIGHT_POSITION } from '../shared/layout-contract'
 
 export function createWindowOptions(preloadPath: string): BrowserWindowConstructorOptions {
   return {
@@ -10,7 +10,7 @@ export function createWindowOptions(preloadPath: string): BrowserWindowConstruct
     show: false,
     title: 'AI Employee OS',
     titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 18, y: 18 },
+    trafficLightPosition: MACOS_TRAFFIC_LIGHT_POSITION,
     backgroundColor: '#f4f5f2',
     webPreferences: {
       preload: preloadPath,

@@ -44,6 +44,12 @@
   --type-badge-size: var(--type-size-badge);
   --type-card-title-size: var(--type-size-heading);
   --type-card-body-size: var(--type-size-body);
+  --type-detail-summary-title-size: var(--type-size-heading);
+  --type-detail-summary-description-size: var(--type-size-body);
+  --type-detail-metric-size: var(--type-size-title);
+  --type-detail-section-title-size: var(--type-size-body);
+  --type-detail-row-title-size: var(--type-size-body);
+  --type-detail-row-support-size: var(--type-size-secondary);
   --type-markdown-h1-size: var(--type-size-title);
   --type-markdown-h2-size: var(--type-size-heading);
   --type-markdown-h3-size: var(--type-size-heading);

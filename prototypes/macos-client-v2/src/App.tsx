@@ -13,7 +13,6 @@ import {
   Database,
   EditPencil,
   Eye,
-  Flask,
   Folder,
   Group,
   HalfMoon,
@@ -45,13 +44,21 @@ import {
   Heading,
   Input,
   Label,
+  Menu,
+  MenuItem,
+  MenuTrigger,
   Modal,
   ModalOverlay,
+  Popover,
   TextArea,
   TextField,
   Tooltip,
   TooltipTrigger
 } from 'react-aria-components'
+import networkIntelligenceAvatar from '../../../src/renderer/src/assets/employee-avatars/network-intelligence.png'
+import documentWriterAvatar from '../../../src/renderer/src/assets/employee-avatars/document-writer.png'
+import supervisorAvatar from '../../../src/renderer/src/assets/employee-avatars/supervisor.png'
+import { EMPLOYEE_FIELD_LIMITS } from '../../../src/shared/employee-contract'
 
 type PageId = 'messages' | 'contacts' | 'capabilities' | 'system'
 type ThemeMode = 'system' | 'light' | 'dark'
@@ -73,6 +80,12 @@ interface Conversation {
   attention?: boolean
   avatar: string
   color: string
+}
+
+function employeeAvatarForName(name: string): string | undefined {
+  if (name.includes('网络') || name.includes('情报')) return networkIntelligenceAvatar
+  if (name.includes('文档') || name.includes('编辑')) return documentWriterAvatar
+  return undefined
 }
 
 interface Agent {
@@ -97,15 +110,6 @@ interface UserProfile {
   role: string
   description: string
   avatarUrl: string | null
-}
-
-interface ModelConnection {
-  id: string
-  provider: 'DeepSeek' | 'Poe'
-  baseUrl: string
-  credentialConfigured: boolean
-  verified: boolean
-  lastVerified?: string
 }
 
 interface Capability {
@@ -190,35 +194,35 @@ const conversationMatters: ConversationMatter[] = [
     output: '3 个交付文件',
     group: 'completed',
     team: [
-      { name: '网络调研员', initials: '研', color: '#b8c982' },
-      { name: '调研分析师', initials: '析', color: '#c5b8e3' }
+      { name: '网络情报员', initials: '网', color: '#b8c982' },
+      { name: '文档编写员', initials: '文', color: '#d7b36a' }
     ],
     timeline: [
       { state: 'done', title: '目标与验收标准已确认', meta: '13:42' },
-      { state: 'done', title: '网络调研员完成公开来源收集', meta: '14:02' },
-      { state: 'done', title: '调研分析师完成交叉核验', meta: '14:18' },
+      { state: 'done', title: '网络情报员完成公开来源收集', meta: '14:02' },
+      { state: 'done', title: '文档编写员完成交叉核验与成稿', meta: '14:18' },
       { state: 'done', title: '总管完成最终验收', meta: '14:32' }
     ]
   },
   {
     id: 'publication-pack',
     title: '市场报告发布包',
-    description: '基于已验收报告，整理官网发布稿、管理层摘要和配套视觉方案。',
+    description: '基于已验收报告，整理官网发布稿和管理层摘要。',
     status: '需要你处理',
     tone: 'waiting',
     updatedAt: '15:18',
     progress: '2 / 4',
-    nextStep: '确认视觉方向后继续制作',
-    output: '等待确认视觉方向',
+    nextStep: '确认发布范围后继续整理',
+    output: '等待确认发布范围',
     group: 'attention',
     team: [
-      { name: '内容编辑', initials: '编', color: '#dfb58e' },
-      { name: '视觉设计师', initials: '视', color: '#8ebdc1' }
+      { name: '文档编写员', initials: '文', color: '#d7b36a' },
+      { name: '网络情报员', initials: '网', color: '#b8c982' }
     ],
     timeline: [
       { state: 'done', title: '发布目标与渠道约束已确认', meta: '15:08' },
-      { state: 'done', title: '内容编辑完成发布稿结构', meta: '15:14' },
-      { state: 'active', title: '等待你确认视觉方向', meta: '现在' },
+      { state: 'done', title: '文档编写员完成发布稿结构', meta: '15:14' },
+      { state: 'active', title: '等待你确认发布范围', meta: '现在' },
       { state: 'pending', title: '总管统一验收发布包', meta: '下一步' }
     ]
   }
@@ -226,7 +230,7 @@ const conversationMatters: ConversationMatter[] = [
 
 const initialAgents: Agent[] = [
   {
-    id: 'researcher', name: '网络调研员', initials: '研', role: '多源网络调研', status: '待命', tone: 'success', color: '#b8c982',
+    id: 'employee.network-intelligence', name: '网络情报员', initials: '网', role: '公开信息检索与核验', status: '待命', tone: 'success', color: '#b8c982', avatarUrl: networkIntelligenceAvatar,
     description: '从经过授权的公开来源收集资料，形成可追溯的 ResearchBundle。',
     capabilities: ['多源网络调研', '来源核验'],
     deliveries: [
@@ -236,33 +240,13 @@ const initialAgents: Agent[] = [
     ]
   },
   {
-    id: 'analyst', name: '调研分析师', initials: '析', role: '证据综合与报告', status: '工作中', tone: 'active', color: '#c5b8e3',
-    description: '只读取经过验证的来源资料，识别冲突和信息缺口，输出结构化分析。',
-    capabilities: ['调研分析报告', '事实核验'],
+    id: 'employee.document-writer', name: '文档编写员', initials: '文', role: '结构化文档撰写', status: '工作中', tone: 'active', color: '#d7b36a', avatarUrl: documentWriterAvatar,
+    description: '只读取经过确认的任务资料，保留来源、冲突和信息缺口，输出可验收文档。',
+    capabilities: ['调研分析报告', '内容编辑', '格式检查'],
     deliveries: [
       { title: '东南亚市场进入建议', meta: '今天 14:32', state: '验收通过' },
       { title: '多智能体产品竞品分析', meta: '8 月 30 日', state: '验收通过' },
       { title: '内容渠道数据复盘', meta: '8 月 25 日', state: '验收通过' }
-    ]
-  },
-  {
-    id: 'editor', name: '内容编辑', initials: '编', role: '长文编辑与发布', status: '等待处理', tone: 'waiting', color: '#dfb58e',
-    description: '根据已确认的事实与表达边界编辑长文，并生成可发布版本。',
-    capabilities: ['内容编辑', '格式检查'],
-    deliveries: [
-      { title: 'Agent 书籍第一章修订稿', meta: '8 月 28 日', state: '验收通过' },
-      { title: '产品经理 AI 实践文章', meta: '8 月 24 日', state: '验收通过' },
-      { title: '网站项目说明', meta: '8 月 20 日', state: '验收通过' }
-    ]
-  },
-  {
-    id: 'designer', name: '视觉设计师', initials: '视', role: '视觉方案与图像生成', status: '工作中', tone: 'active', color: '#8ebdc1',
-    description: '在明确的品牌与内容约束下生成视觉方案，保留提示词和版本证据。',
-    capabilities: ['视觉方案', '图像生成'],
-    deliveries: [
-      { title: 'Claude Cream 主题封面', meta: '8 月 18 日', state: '验收通过' },
-      { title: 'AI Agent 教程配图', meta: '8 月 12 日', state: '验收通过' },
-      { title: '产品架构图视觉稿', meta: '8 月 8 日', state: '验收通过' }
     ]
   }
 ]
@@ -316,39 +300,39 @@ ${acceptance.map((item) => `- [ ] ${item}`).join('\n')}
 
 const capabilities: Capability[] = [
   {
-    id: 'research', kind: 'skill', category: 'Research Skill', name: '多源网络调研', summary: '从许可来源收集、核验并结构化外部资料。', status: '可用', tone: 'success', agents: ['网络调研员'], version: '2.1',
+    id: 'research', kind: 'skill', category: 'Research Skill', name: '多源网络调研', summary: '从许可来源收集、核验并结构化外部资料。', status: '可用', tone: 'success', agents: ['网络情报员'], version: '2.1',
     useCases: ['竞品调研', '市场研究', '公开资料核验'], skills: ['来源规划', '交叉核验', '信息缺口识别'], tools: ['GitHub Repository Search', 'RSS Reader'], permissions: ['公开网络读取', 'ResearchBundle 写入'],
     skillMarkdown: createSkillMarkdown({ name: '多源网络调研', description: '从许可来源收集、核验并结构化外部资料。', version: '2.1', useCases: ['需要外部公开资料支撑的市场、竞品与趋势研究', '需要保留来源定位与检索时间的事实核验', '需要显式标注信息冲突和缺口的研究事项'], steps: ['确认研究目标、范围、时效与验收标准', '建立来源计划并检查当前事项的访问授权', '使用获准 Tool 收集资料，记录来源 URL 与时间', '对关键事实进行交叉核验，标记冲突与缺口', '生成 ResearchBundle 并交由总管验收'], tools: ['GitHub Repository Search', 'RSS Reader'], permissions: ['只读访问公开网络来源', '向当前事项的 ResearchBundle 写入结构化资料'], output: '`ResearchBundle`：包含来源、事实、冲突、信息缺口和检索时间。', acceptance: ['每项关键事实至少有一个可定位来源', '结论与来源可以双向追溯', '冲突信息和未知项没有被隐藏'] })
   },
   {
-    id: 'analysis', kind: 'skill', category: 'Analysis Skill', name: '调研分析报告', summary: '依据已验证来源形成分析结论与可交付文档。', status: '可用', tone: 'success', agents: ['调研分析师'], version: '1.4',
+    id: 'analysis', kind: 'skill', category: 'Analysis Skill', name: '调研分析报告', summary: '依据已验证来源形成分析结论与可交付文档。', status: '可用', tone: 'success', agents: ['文档编写员'], version: '1.4',
     useCases: ['研究报告', '决策建议', '证据综合'], skills: ['Claim 综合', '冲突处理', '报告结构化'], tools: ['Document Export'], permissions: ['任务资料读取', '交付目录写入'],
     skillMarkdown: createSkillMarkdown({ name: '调研分析报告', description: '依据已验证来源形成分析结论与可交付文档。', version: '1.4', useCases: ['把 ResearchBundle 转化为可评审的分析报告', '识别事实、推断、建议之间的证据边界', '输出带有风险和信息缺口的决策材料'], steps: ['读取冻结的研究资料与验收标准', '拆分事实、推断、假设和建议', '处理来源冲突并评估证据强度', '形成报告结构与关键结论', '导出版本化文档并提交总管验收'], tools: ['Document Export'], permissions: ['读取当前事项资料', '写入当前事项交付目录'], output: '版本化分析报告、证据索引和待确认问题清单。', acceptance: ['结论均能定位到证据或明确标注为推断', '报告覆盖用户确认的验收标准', '剩余风险和信息缺口完整披露'] })
   },
   {
-    id: 'editing', kind: 'skill', category: 'Content Skill', name: '内容编辑', summary: '将确认内容编辑为符合渠道规范的发布稿。', status: '可用', tone: 'success', agents: ['内容编辑'], version: '1.2',
+    id: 'editing', kind: 'skill', category: 'Content Skill', name: '内容编辑', summary: '将确认内容编辑为符合渠道规范的发布稿。', status: '可用', tone: 'success', agents: ['文档编写员'], version: '1.2',
     useCases: ['长文编辑', '渠道改写', '格式检查'], skills: ['内容结构优化', '发布前检查'], tools: ['Markdown Export'], permissions: ['任务资料读取', '交付目录写入'],
     skillMarkdown: createSkillMarkdown({ name: '内容编辑', description: '将确认内容编辑为符合渠道规范的发布稿。', version: '1.2', useCases: ['长文结构与表达优化', '基于同一事实源生成渠道版本', '发布前格式、链接和措辞检查'], steps: ['读取已确认事实、受众与渠道约束', '保持事实边界并重组内容结构', '按渠道生成对应版本', '执行格式、链接与禁用表达检查', '导出发布稿并交由总管确认'], tools: ['Markdown Export'], permissions: ['读取当前事项已确认内容', '写入当前事项交付目录'], output: 'Markdown 发布稿、渠道版本和发布前检查结果。', acceptance: ['没有新增未经确认的事实', '结构和语气符合目标渠道', '链接、格式和禁用表达检查通过'] })
   },
   {
-    id: 'visual', kind: 'skill', category: 'Creative Skill', name: '视觉方案', summary: '从内容目标生成视觉方向、提示词和版本化资产。', status: '可用', tone: 'success', agents: ['视觉设计师'], version: '1.0',
+    id: 'visual', kind: 'skill', category: 'Creative Skill', name: '视觉方案', summary: '从内容目标生成视觉方向、提示词和版本化资产。', status: '可用', tone: 'success', agents: [], version: '1.0',
     useCases: ['文章封面', '产品配图', '视觉提案'], skills: ['视觉方向', '提示词编排'], tools: ['Image Generation'], permissions: ['图像模型调用', '交付目录写入'],
     skillMarkdown: createSkillMarkdown({ name: '视觉方案', description: '从内容目标生成视觉方向、提示词和版本化资产。', version: '1.0', useCases: ['文章封面与社交媒体配图', '产品概念和视觉方向提案', '基于既有资产进行受控图像编辑'], steps: ['确认内容目标、品牌约束与使用场景', '提出可比较的视觉方向', '获得方向确认后编排生成提示词', '调用图像 Tool 并记录模型与版本', '整理预览和源文件交由总管验收'], tools: ['Image Generation'], permissions: ['调用已配置的图像模型', '写入当前事项交付目录'], output: '视觉方向说明、生成提示词、预览图和版本化资产。', acceptance: ['视觉结果符合已确认方向', '提示词、模型和版本记录完整', '交付尺寸和格式满足使用场景'] })
   },
   {
-    id: 'github-search', kind: 'tool', category: 'MCP Tool', name: 'GitHub Repository Search', summary: '通过 MCP 搜索公开仓库、代码与发布信息。', status: '可用', tone: 'success', agents: ['网络调研员'], version: '1.3',
+    id: 'github-search', kind: 'tool', category: 'MCP Tool', name: 'GitHub Repository Search', summary: '通过 MCP 搜索公开仓库、代码与发布信息。', status: '可用', tone: 'success', agents: ['网络情报员'], version: '1.3',
     useCases: ['仓库检索', '代码证据定位', 'Release 核验'], skills: ['多源网络调研', '来源核验'], tools: ['MCP Server: github', 'Transport: stdio'], permissions: ['公开仓库读取', '搜索结果写入任务上下文']
   },
   {
-    id: 'rss-reader', kind: 'tool', category: 'MCP Tool', name: 'RSS Reader', summary: '通过 MCP 获取、解析并去重订阅源内容。', status: '可用', tone: 'success', agents: ['网络调研员'], version: '1.1',
+    id: 'rss-reader', kind: 'tool', category: 'MCP Tool', name: 'RSS Reader', summary: '通过 MCP 获取、解析并去重订阅源内容。', status: '可用', tone: 'success', agents: ['网络情报员'], version: '1.1',
     useCases: ['行业动态监控', '来源订阅', '增量内容读取'], skills: ['多源网络调研'], tools: ['MCP Server: rss', 'Transport: stdio'], permissions: ['公开订阅源读取']
   },
   {
-    id: 'document-export', kind: 'tool', category: '内置 Tool', name: 'Document Export', summary: '把验收通过的内容写入版本化交付目录。', status: '可用', tone: 'success', agents: ['调研分析师', '内容编辑'], version: '2.0',
+    id: 'document-export', kind: 'tool', category: '内置 Tool', name: 'Document Export', summary: '把验收通过的内容写入版本化交付目录。', status: '可用', tone: 'success', agents: ['文档编写员'], version: '2.0',
     useCases: ['Markdown 导出', '交付物固化', '版本记录'], skills: ['调研分析报告', '内容编辑'], tools: ['Runtime: local', 'Mode: built-in'], permissions: ['交付目录写入']
   },
   {
-    id: 'image-generation', kind: 'tool', category: '模型 Tool', name: 'Image Generation', summary: '调用已配置的图像模型生成和编辑视觉资产。', status: '可用', tone: 'success', agents: ['视觉设计师'], version: '1.0',
+    id: 'image-generation', kind: 'tool', category: '模型 Tool', name: 'Image Generation', summary: '调用已配置的图像模型生成和编辑视觉资产。', status: '可用', tone: 'success', agents: [], version: '1.0',
     useCases: ['图像生成', '局部编辑', '版本化视觉资产'], skills: ['视觉方案'], tools: ['Provider: Poe', 'Model: gpt-image-2'], permissions: ['图像模型调用', '交付目录写入']
   }
 ]
@@ -400,6 +384,39 @@ function SearchBox({ placeholder, value, onChange }: { placeholder: string; valu
   )
 }
 
+const prototypeModelOptions = [
+  { id: 'deepseek-v4-pro', provider: 'DeepSeek', description: '适合中文理解、推理与结构化输出。', status: 'Credential 已配置', tone: 'success' as const },
+  { id: 'claude-sonnet-4.6', provider: 'Poe', description: '适合长文本理解、复杂指令执行与内容生成。', status: 'Credential 待配置', tone: 'waiting' as const }
+]
+
+function selectionIncludes(values: string[], query: string): boolean {
+  const normalized = query.trim().toLocaleLowerCase('zh-CN')
+  return !normalized || values.some((value) => value.toLocaleLowerCase('zh-CN').includes(normalized))
+}
+
+function SelectionCatalog({ label, placeholder, query, result, empty, onQuery, children }: { label: string; placeholder: string; query: string; result: string; empty: string; onQuery: (value: string) => void; children: ReactNode }): React.JSX.Element {
+  const items = React.Children.toArray(children)
+  return <div className="selection-catalog"><div className="selection-catalog__toolbar"><SearchBox placeholder={placeholder} value={query} onChange={onQuery} /><span aria-label={label}>{result}</span></div><div className="selection-catalog__grid">{items.length ? items : <p className="selection-catalog__empty">{empty}</p>}</div></div>
+}
+
+function SelectionOption({ title, description, meta, status, tone, selected, leading, onSelect }: { title: string; description: string; meta: string; status: string; tone: StatusTone; selected: boolean; leading: ReactNode; onSelect: () => void }): React.JSX.Element {
+  return <Button className={`selection-option${selected ? ' is-selected' : ''}`} aria-pressed={selected} onPress={onSelect}><span className="selection-option__leading">{leading}</span><span className="selection-option__body"><span className="selection-option__title"><strong>{title}</strong><em>{meta}</em></span><small>{description}</small><span className="selection-option__status"><StatusLight tone={tone} label={status} /></span></span><span className="selection-option__indicator" aria-hidden="true">{selected && <Check width={17} height={17} />}</span></Button>
+}
+
+function ModelCapabilityPicker({ model, assignedCapabilities, onModel, onCapabilities }: { model: string; assignedCapabilities: string[]; onModel: (value: string) => void; onCapabilities: (value: string[]) => void }): React.JSX.Element {
+  const [modelQuery, setModelQuery] = useState('')
+  const [capabilityQuery, setCapabilityQuery] = useState('')
+  const models = prototypeModelOptions.filter((item) => selectionIncludes([item.id, item.provider, item.description], modelQuery))
+  const skillCapabilities = capabilities
+    .filter((item) => item.kind === 'skill' && selectionIncludes([item.name, item.summary, item.category, ...item.permissions], capabilityQuery))
+    .sort((left, right) => Number(assignedCapabilities.includes(right.name)) - Number(assignedCapabilities.includes(left.name)) || left.name.localeCompare(right.name, 'zh-CN'))
+
+  return <div className="model-capability-selection">
+    <section className="selection-config-section"><div className="selection-config-section__heading"><div><h3>运行模型</h3><p>从候选模型中选择一个作为当前员工的主模型。</p></div><span>单选 · 当前 {model}</span></div><SelectionCatalog label="模型搜索结果" placeholder="搜索模型或 Provider" query={modelQuery} result={`${models.length} 个模型`} empty="没有匹配的模型。" onQuery={setModelQuery}>{models.map((item) => <SelectionOption key={item.id} title={item.id} description={item.description} meta={`${item.provider} · 文本模型`} status={item.status} tone={item.tone} selected={model === item.id} leading={<Brain aria-hidden width={19} height={19} />} onSelect={() => onModel(item.id)} />)}</SelectionCatalog></section>
+    <section className="selection-config-section"><div className="selection-config-section__heading"><div><h3>Agent 能力</h3><p>可多选。已选能力优先显示，相关 Tool 与权限会随能力配置派生。</p></div><span>多选 · 已选 {assignedCapabilities.length} 项</span></div><SelectionCatalog label="能力搜索结果" placeholder="搜索能力、说明或权限" query={capabilityQuery} result={`${skillCapabilities.length} / ${capabilities.filter((item) => item.kind === 'skill').length} 项`} empty="没有匹配的能力。" onQuery={setCapabilityQuery}>{skillCapabilities.map((item) => { const selected = assignedCapabilities.includes(item.name); return <SelectionOption key={item.id} title={item.name} description={item.summary} meta={`v${item.version} · ${item.category}`} status={item.status} tone={item.tone} selected={selected} leading={<Sparks aria-hidden width={19} height={19} />} onSelect={() => onCapabilities(selected ? assignedCapabilities.filter((name) => name !== item.name) : [...assignedCapabilities, item.name])} /> })}</SelectionCatalog></section>
+  </div>
+}
+
 function ListRow({ selected, avatar, title, subtitle, meta, marker, onPress }: { selected?: boolean; avatar?: ReactNode; title: string; subtitle: string; meta?: string; marker?: ReactNode; onPress: () => void }): React.JSX.Element {
   return (
     <Button className={`list-row${selected ? ' is-selected' : ''}`} onPress={onPress}>
@@ -410,13 +427,56 @@ function ListRow({ selected, avatar, title, subtitle, meta, marker, onPress }: {
   )
 }
 
+function ProfileSummary({ agent }: { agent: Agent }): React.JSX.Element {
+  return <section className="profile-summary"><div className="profile-summary__identity"><Avatar label={agent.name} initials={agent.initials} color={agent.color} size="large" src={agent.avatarUrl} /><div className="profile-summary__copy"><span>{agent.name}</span><h2>{agent.role}</h2><p>{agent.description}</p></div></div></section>
+}
+
+function ProfileFacts({ items }: { items: Array<{ label: string; value: ReactNode }> }): React.JSX.Element {
+  return <section className="profile-facts"><h3>基本资料</h3><dl>{items.map((item) => <div key={item.label}><dt>{item.label}</dt><dd>{item.value}</dd></div>)}</dl></section>
+}
+
+function ProfileValueTags({ items }: { items: Array<{ label: string; value: ReactNode; accessibleValue: string }> }): React.JSX.Element {
+  return <ul className="profile-value-tags" aria-label="基本资料">{items.map((item) => <li key={item.label} aria-label={`${item.label}：${item.accessibleValue}`}>{item.value}</li>)}</ul>
+}
+
+function SummaryCardGrid({ children, emptyMessage }: { children: ReactNode; emptyMessage: string }): React.JSX.Element {
+  const items = React.Children.toArray(children)
+  return <div className="summary-card-grid">{items.length ? items : <p className="summary-card-grid__empty">{emptyMessage}</p>}</div>
+}
+
+function SummaryCard({ title, description, leading }: { title: ReactNode; description?: ReactNode; leading?: ReactNode }): React.JSX.Element {
+  return <article className="summary-card">{leading && <span className="summary-card__leading">{leading}</span>}<span className="summary-card__body"><strong>{title}</strong>{description && <small>{description}</small>}</span></article>
+}
+
 function ConversationRow({ conversation, selected, onPress, onDelete }: { conversation: Conversation; selected: boolean; onPress: () => void; onDelete: () => void }): React.JSX.Element {
   return (
     <div className="conversation-row">
-      <ListRow selected={selected} avatar={<Avatar label={conversation.title} initials={conversation.avatar} color={conversation.color} size="small" />} title={conversation.title} subtitle={conversation.preview} meta={conversation.time} marker={conversation.unread ? <span className="unread-count">{conversation.unread}</span> : conversation.attention ? <span className="attention-dot" aria-label="待处理" /> : undefined} onPress={onPress} />
+      <ListRow selected={selected} title={conversation.title} subtitle={conversation.preview} meta={conversation.time} marker={conversation.unread ? <span className="unread-count">{conversation.unread}</span> : conversation.attention ? <span className="attention-dot" aria-label="待处理" /> : undefined} onPress={onPress} />
       <IconButton className="conversation-row__delete" label={`删除会话 ${conversation.title}`} icon={Trash} onPress={onDelete} />
     </div>
   )
+}
+
+function AttachmentOpenMenu({ attachment }: { attachment: MessageAttachment }): React.JSX.Element {
+  return <MenuTrigger>
+    <Button className="attachment-open-trigger" aria-label={`打开方式 ${attachment.name}`}>
+      <OpenNewWindow aria-hidden width={16} height={16} />
+      <span>打开方式</span>
+      <NavArrowDown aria-hidden width={14} height={14} className="attachment-open-trigger__chevron" />
+    </Button>
+    <Popover className="attachment-open-popover" placement="bottom end" offset={6}>
+      <Menu className="attachment-open-menu" aria-label={`${attachment.name} 的打开方式`}>
+        <MenuItem id="open" className="attachment-open-menu__item">
+          <span className="attachment-open-menu__icon"><OpenNewWindow aria-hidden width={17} height={17} /></span>
+          <span className="attachment-open-menu__copy"><strong>使用系统默认应用打开</strong><small>使用 macOS 关联的应用</small></span>
+        </MenuItem>
+        <MenuItem id="reveal" className="attachment-open-menu__item">
+          <span className="attachment-open-menu__icon"><Folder aria-hidden width={17} height={17} /></span>
+          <span className="attachment-open-menu__copy"><strong>打开所在文件夹</strong><small>在 Finder 中定位此文件</small></span>
+        </MenuItem>
+      </Menu>
+    </Popover>
+  </MenuTrigger>
 }
 
 function MessageAttachmentGroup({ attachments, source, embedded = false, onRemove }: { attachments: MessageAttachment[]; source: 'user' | 'agent'; embedded?: boolean; onRemove?: (id: string) => void }): React.JSX.Element | null {
@@ -455,7 +515,7 @@ function MessageAttachmentGroup({ attachments, source, embedded = false, onRemov
     <div className={`message-attachments message-attachments--${source} message-attachments--${multiple ? 'multiple' : 'single'}${embedded ? ' message-attachments--embedded' : ''}${isTimelineCarousel ? ' message-attachments--carousel' : ''}`}>
       {multiple && <div className="message-attachments__header"><span>{source === 'agent' ? <Sparks aria-hidden width={16} height={16} /> : <Page aria-hidden width={16} height={16} />}{attachments.length} 个附件</span>{isTimelineCarousel && (carouselState.canPrevious || carouselState.canNext) && <span className="attachment-carousel-navigation"><small>{carouselState.current} / {attachments.length}</small><IconButton label="查看上一份附件" icon={NavArrowLeft} onPress={() => moveCarousel(-1)} isDisabled={!carouselState.canPrevious} /><IconButton label="查看下一份附件" icon={NavArrowRight} onPress={() => moveCarousel(1)} isDisabled={!carouselState.canNext} /></span>}</div>}
       <div className="message-attachments__rows" ref={rowsRef} onScroll={isTimelineCarousel ? updateCarouselState : undefined}>
-        {attachments.map((attachment) => <div className="message-attachment-row" key={attachment.id}><span className="message-attachment-row__icon"><Page aria-hidden width={18} height={18} /></span><span className="message-attachment-row__body"><strong title={attachment.name}>{attachment.name}</strong><small>{attachment.detail}</small></span>{onRemove ? <IconButton label={`移除 ${attachment.name}`} icon={Xmark} onPress={() => onRemove(attachment.id)} /> : source === 'agent' ? <span className="message-attachment-row__actions"><IconButton label={`打开 ${attachment.name}`} icon={OpenNewWindow} /><IconButton label={`在文件夹中显示 ${attachment.name}`} icon={Folder} /></span> : <IconButton label={`打开 ${attachment.name}`} icon={NavArrowRight} />}</div>)}
+        {attachments.map((attachment) => <div className="message-attachment-row" key={attachment.id}><span className="message-attachment-row__icon"><Page aria-hidden width={18} height={18} /></span><span className="message-attachment-row__body"><strong title={attachment.name}>{attachment.name}</strong><small>{attachment.detail}</small></span>{onRemove ? <IconButton label={`移除 ${attachment.name}`} icon={Xmark} onPress={() => onRemove(attachment.id)} /> : source === 'agent' ? <span className="message-attachment-row__actions"><AttachmentOpenMenu attachment={attachment} /></span> : <IconButton label={`打开 ${attachment.name}`} icon={NavArrowRight} />}</div>)}
       </div>
     </div>
   )
@@ -484,28 +544,28 @@ function MarkdownMessage({ children }: { children: string }): React.JSX.Element 
 }
 
 function MatterTeamAvatars({ team }: { team: MatterParticipant[] }): React.JSX.Element {
-  return <span className="matter-team-avatars" aria-label={`当前临时团队：${team.map((item) => item.name).join('、')}`}>{team.map((item) => <Avatar key={item.name} label={item.name} initials={item.initials} color={item.color} size="small" />)}<small>{team.map((item) => item.name).join('、')}</small></span>
+  return <span className="matter-team-avatars" aria-label={`当前临时团队：${team.map((item) => item.name).join('、')}`}>{team.map((item) => <Avatar key={item.name} label={item.name} initials={item.initials} color={item.color} size="small" src={employeeAvatarForName(item.name)} />)}<small>{team.map((item) => item.name).join('、')}</small></span>
 }
 
 function MatterRouteNote({ title, mode }: { title: string; mode: 'created' | 'linked' }): React.JSX.Element {
   const [editing, setEditing] = useState(false)
-  const [route, setRoute] = useState(mode === 'created' ? `已创建事项：${title}` : `已归入事项：${title}`)
+  const [route, setRoute] = useState(mode === 'created' ? '已创建事项' : '已归入已有事项')
   const choose = (nextRoute: string): void => { setRoute(nextRoute); setEditing(false) }
   return (
-    <div className="matter-route-note">
-      <span><Sparks aria-hidden width={14} height={14} />{route}</span>
+    <div className="matter-route-note message-stream-item">
+      <span title={title}><Sparks aria-hidden width={14} height={14} />{route}</span>
       <Button className="matter-route-note__change" onPress={() => setEditing((value) => !value)}>更改</Button>
-      {editing && <div className="matter-route-note__options" role="group" aria-label="更改消息归类"><Button onPress={() => choose(`已归入事项：${title}`)}>归入当前事项</Button><Button onPress={() => choose(`已创建事项：${title}`)}>创建新事项</Button><Button onPress={() => choose('总管直接回答，不创建事项')}>直接回答</Button></div>}
+      {editing && <div className="matter-route-note__options" role="group" aria-label="更改消息归类"><Button onPress={() => choose('已归入已有事项')}>归入当前事项</Button><Button onPress={() => choose('已创建事项')}>创建新事项</Button><Button onPress={() => choose('总管直接回答，不创建事项')}>直接回答</Button></div>}
     </div>
   )
 }
 
 function MatterEvent({ matter, title, description, time, onOpen }: { matter: ConversationMatter; title: string; description: string; time: string; onOpen: () => void }): React.JSX.Element {
-  return <Button className="matter-event" onPress={onOpen}><span className="matter-event__mark"><Page aria-hidden width={17} height={17} /></span><span className="matter-event__body"><small>{matter.title}</small><strong>{title}</strong><span>{description}</span></span><time>{time}</time><NavArrowRight aria-hidden width={16} height={16} /></Button>
+  return <Button className="matter-event message-stream-item" aria-label={`查看事项：${matter.title}`} onPress={onOpen}><span className="matter-event__body"><small>目标</small><strong>{matter.title}</strong><span>{description}</span></span><span className="matter-event__meta"><span>{title}</span><time>{time}</time><NavArrowRight aria-hidden width={15} height={15} /></span></Button>
 }
 
-function ChatMessage({ source, name, initials, color, time, children }: { source: 'user' | 'agent'; name: string; initials: string; color: string; time: string; children: ReactNode }): React.JSX.Element {
-  return <article className={`message-block message-block--${source}`}><Avatar label={name} initials={initials} color={color} size="small" /><div className="message-block__stack"><div className="message-author"><strong>{name}</strong><time>{time}</time></div><div className="message-bubble">{children}</div></div></article>
+function ChatMessage({ source, name, initials, color, time, avatarSrc, children }: { source: 'user' | 'agent'; name: string; initials: string; color: string; time: string; avatarSrc?: string | null; children: ReactNode }): React.JSX.Element {
+  return <article className={`message-block message-block--${source}`}><Avatar label={name} initials={initials} color={color} size="small" src={avatarSrc} /><div className="message-block__stack"><div className="message-author"><strong>{name}</strong><time>{time}</time></div><div className="message-bubble">{children}</div></div></article>
 }
 
 function AttachmentUploadButton({ onFiles }: { onFiles: (files: File[]) => void }): React.JSX.Element {
@@ -600,12 +660,12 @@ function ContextPane({ page, agentItems, selectedConversation, onConversation, s
         <div className="filter-row" aria-label="消息筛选">{[['all', '全部'], ['attention', '待处理'], ['unread', '未读']].map(([id, label]) => <Button key={id} className={filter === id ? 'is-active' : ''} onPress={() => setFilter(id)}>{label}</Button>)}</div>
         <div className="context-scroll">{filteredConversations.filter((item) => filter === 'all' || (filter === 'attention' ? item.attention : item.unread)).map((item) => <ConversationRow key={item.id} conversation={item} selected={selectedConversation === item.id} onPress={() => onConversation(item.id)} onDelete={() => deleteConversation(item.id)} />)}</div>
       </>}
-      {page === 'contacts' && <div className="context-scroll context-scroll--flush">{filteredAgents.map((item) => <ListRow key={item.id} selected={selectedAgent === item.id} avatar={<Avatar label={item.name} initials={item.initials} color={item.color} size="small" />} title={item.name} subtitle={item.role} meta="" marker={<StatusLight tone={item.tone} label={item.status} breathing={item.tone === 'active' || item.tone === 'waiting'} />} onPress={() => onAgent(item.id)} />)}</div>}
+      {page === 'contacts' && <div className="context-scroll context-scroll--flush">{filteredAgents.map((item) => <ListRow key={item.id} selected={selectedAgent === item.id} avatar={<Avatar label={item.name} initials={item.initials} color={item.color} size="small" src={item.avatarUrl ?? employeeAvatarForName(item.name)} />} title={item.name} subtitle={item.role} meta="" marker={<StatusLight tone={item.tone} label={item.status} breathing={item.tone === 'active' || item.tone === 'waiting'} />} onPress={() => onAgent(item.id)} />)}</div>}
       {page === 'capabilities' && <>
         <div className="filter-row capability-kind-switch">{([['skill', 'Skills'], ['tool', 'Tools']] as const).map(([id, label]) => <Button key={id} className={capabilityFilter === id ? 'is-active' : ''} onPress={() => { setCapabilityFilter(id); onCapability(capabilities.find((item) => item.kind === id)?.id ?? selectedCapability) }}>{label}</Button>)}</div>
         <div className="context-scroll context-scroll--flush">{visibleCapabilities.map((item) => <ListRow key={item.id} selected={selectedCapability === item.id} title={item.name} subtitle={item.category} marker={<StatusLight tone={item.tone} label={item.status} />} onPress={() => onCapability(item.id)} />)}</div>
       </>}
-      {page === 'system' && <div className="system-navigation">{systemSections.map((item) => { const Icon = item.icon; return <Button key={item.id} className={systemSection === item.id ? 'is-active' : ''} onPress={() => onSystemSection(item.id)}><Icon aria-hidden width={18} height={18} /><span>{item.label}</span><NavArrowRight aria-hidden width={15} height={15} /></Button> })}<div className="system-navigation__footer"><StatusLight tone="success" label="Runtime 已连接" /><small>本地数据正常</small></div></div>}
+      {page === 'system' && <div className="system-navigation">{systemSections.map((item) => { const Icon = item.icon; return <Button key={item.id} className={systemSection === item.id ? 'is-active' : ''} onPress={() => onSystemSection(item.id)}><Icon aria-hidden width={18} height={18} /><span>{item.label}</span><NavArrowRight aria-hidden width={15} height={15} /></Button> })}</div>}
     </aside>
   )
 }
@@ -636,7 +696,7 @@ function MatterIndexView({ onOpenMatter }: { onOpenMatter: (matterId: Conversati
   )
 }
 
-function MessagesPage({ conversationId, onOpenMatter, onOpenDetail }: { conversationId: string; onOpenMatter: (matterId: ConversationMatterId) => void; onOpenDetail: (view: DetailView) => void }): React.JSX.Element {
+function MessagesPage({ conversationId, userProfile, onOpenMatter, onOpenDetail }: { conversationId: string; userProfile: UserProfile; onOpenMatter: (matterId: ConversationMatterId) => void; onOpenDetail: (view: DetailView) => void }): React.JSX.Element {
   const [activeView, setActiveView] = useState<MessageView>('conversation')
   const [draft, setDraft] = useState('')
   const [draftAttachments, setDraftAttachments] = useState<MessageAttachment[]>([])
@@ -660,7 +720,7 @@ function MessagesPage({ conversationId, onOpenMatter, onOpenDetail }: { conversa
       <div className="message-scroll" role="tabpanel" aria-label="对话">
         <div className="message-canvas">
           <div className="date-divider"><span>今天</span></div>
-          {!hasMatters && <><ChatMessage source="user" name="你" initials="你" color="#d9c5a6" time="12:24"><MarkdownMessage>{`我在规划 **Agent 产品的消息机制**，希望先明确什么时候由总管直接回答，什么时候需要创建事项并组织多个 Agent。
+          {!hasMatters && <><ChatMessage source="user" name="你" initials={userProfile.name.slice(0, 1) || '你'} color="#d9c5a6" avatarSrc={userProfile.avatarUrl} time="12:24"><MarkdownMessage>{`我在规划 **Agent 产品的消息机制**，希望先明确什么时候由总管直接回答，什么时候需要创建事项并组织多个 Agent。
 
 请覆盖这些判断条件：
 
@@ -669,7 +729,7 @@ function MessagesPage({ conversationId, onOpenMatter, onOpenDetail }: { conversa
 - 是否包含多个阶段、交付文件与交叉校验
 - 连续提出多个目标时，如何区分普通追问、事项补充与新事项
 
-> 还需要避免用户把一次约束调整误解成重复创建事项。`}</MarkdownMessage></ChatMessage><ChatMessage source="agent" name="总管" initials="总" color="#d7b36a" time="12:26"><MarkdownMessage>{`### 判断原则
+> 还需要避免用户把一次约束调整误解成重复创建事项。`}</MarkdownMessage></ChatMessage><ChatMessage source="agent" name="总管" initials="总" color="#aebd83" avatarSrc={supervisorAvatar} time="12:26"><MarkdownMessage>{`### 判断原则
 
 首先判断用户期待的是**即时答案**还是**持续结果**。
 
@@ -680,19 +740,19 @@ function MessagesPage({ conversationId, onOpenMatter, onOpenDetail }: { conversa
 
 归类不确定时，总管先向用户确认，并显示 \`已归入事项\` 或 \`已创建事项\` 的轻量提示。`}</MarkdownMessage></ChatMessage></>}
           {hasMatters && <>
-          <ChatMessage source="user" name="你" initials="你" color="#d9c5a6" time="13:40"><MarkdownMessage>整理东南亚 **SaaS 市场进入机会**，重点看六个主要市场、竞争格局和进入风险。最终给我一份能直接评审的报告。</MarkdownMessage><MessageAttachmentGroup attachments={exampleUserAttachments} source="user" /></ChatMessage>
+          <ChatMessage source="user" name="你" initials={userProfile.name.slice(0, 1) || '你'} color="#d9c5a6" avatarSrc={userProfile.avatarUrl} time="13:40"><MarkdownMessage>整理东南亚 **SaaS 市场进入机会**，重点看六个主要市场、竞争格局和进入风险。最终给我一份能直接评审的报告。</MarkdownMessage><MessageAttachmentGroup attachments={exampleUserAttachments} source="user" /></ChatMessage>
           <MatterRouteNote title="东南亚 SaaS 市场进入研究" mode="created" />
-          <ChatMessage source="agent" name="总管" initials="总" color="#d7b36a" time="13:41"><MarkdownMessage>已明确**目标和验收标准**。我会组织网络调研员收集来源，再由调研分析师完成交叉核验和报告。</MarkdownMessage></ChatMessage>
-          <MatterEvent matter={conversationMatters[0]} title="临时团队已组建" description="网络调研员、调研分析师开始执行" time="13:42" onOpen={() => onOpenMatter('market-entry')} />
-          <article className="approval-card is-resolved"><div><Key aria-hidden width={19} height={19} /><p>你已批准网络调研员在当前事项中只读访问 GitHub 公开仓库。</p><IconButton label="查看审批详情" icon={Eye} onPress={() => onOpenDetail('approval-detail')} /></div></article>
-          <article className="delivery-card"><div className="delivery-card__icon"><Check aria-hidden width={22} height={22} /></div><div className="delivery-card__body"><div className="card-heading"><StatusLight tone="success" label="已交付" /><span>14:32</span></div><h3>东南亚 SaaS 市场进入研究报告</h3><p>六个主要市场已覆盖，竞争格局和进入风险均有来源支持。验收标准全部通过。</p><MessageAttachmentGroup attachments={generatedAttachments} source="agent" embedded /><Button className="text-action" onPress={() => onOpenDetail('delivery-evidence')}>查看来源、证据与完整验收记录 <NavArrowRight aria-hidden width={14} height={14} /></Button></div></article>
-          <ChatMessage source="user" name="你" initials="你" color="#d9c5a6" time="15:05"><MarkdownMessage>基于刚才通过验收的报告，再整理一套**官网发布稿、管理层摘要和视觉方案**。</MarkdownMessage></ChatMessage>
+          <ChatMessage source="agent" name="总管" initials="总" color="#aebd83" avatarSrc={supervisorAvatar} time="13:41"><MarkdownMessage>已明确**目标和验收标准**。我会组织网络情报员收集并核验来源，再由文档编写员整理成可评审报告。</MarkdownMessage></ChatMessage>
+          <MatterEvent matter={conversationMatters[0]} title="临时团队已组建" description="网络情报员、文档编写员开始执行" time="13:42" onOpen={() => onOpenMatter('market-entry')} />
+          <article className="approval-card is-resolved message-stream-item"><div><Key aria-hidden width={19} height={19} /><p>你已批准网络情报员在当前事项中只读访问 GitHub 公开仓库。</p><IconButton label="查看审批详情" icon={Eye} onPress={() => onOpenDetail('approval-detail')} /></div></article>
+          <article className="delivery-card delivery-card--complete message-stream-item"><header className="delivery-card__header"><span className="delivery-card__state"><Check aria-hidden width={18} height={18} /><span>已交付</span></span><time>14:32</time></header><div className="delivery-card__body"><span className="delivery-card__eyebrow">结果</span><h3>东南亚 SaaS 市场进入研究报告</h3><p className="delivery-card__summary">六个主要市场已覆盖，竞争格局和进入风险均有来源支持。</p><div className="delivery-card__verification" aria-label="交付概况"><span><strong>2/2</strong><small>完成要求</small></span><span><strong>20</strong><small>来源证据</small></span><span><strong>2</strong><small>交付文件</small></span></div><MessageAttachmentGroup attachments={generatedAttachments} source="agent" embedded /><Button className="text-action" onPress={() => onOpenDetail('delivery-evidence')}>查看完整验收记录 <NavArrowRight aria-hidden width={14} height={14} /></Button></div></article>
+          <ChatMessage source="user" name="你" initials={userProfile.name.slice(0, 1) || '你'} color="#d9c5a6" avatarSrc={userProfile.avatarUrl} time="15:05"><MarkdownMessage>基于刚才通过验收的报告，再整理一套**官网发布稿、管理层摘要和视觉方案**。</MarkdownMessage></ChatMessage>
           <MatterRouteNote title="市场报告发布包" mode="created" />
-          <ChatMessage source="agent" name="总管" initials="总" color="#d7b36a" time="15:06"><MarkdownMessage>这是新的交付目标。我已创建关联事项，由**内容编辑**和**视觉设计师**组成新的临时团队；上一事项的团队不会自动延续。</MarkdownMessage></ChatMessage>
-          <MatterEvent matter={conversationMatters[1]} title="临时团队已组建" description="内容编辑、视觉设计师开始执行" time="15:08" onOpen={() => onOpenMatter('publication-pack')} />
-          <article className="approval-card"><div><Key aria-hidden width={19} height={19} /><p>总管需要你确认发布物料的视觉方向，确认后临时团队将继续制作。</p><IconButton label="查看事项详情" icon={Eye} onPress={() => onOpenMatter('publication-pack')} /></div><div className="approval-actions"><Button className="button button--quiet">提出修改</Button><Button className="button button--primary">确认方向</Button></div></article>
+          <ChatMessage source="agent" name="总管" initials="总" color="#aebd83" avatarSrc={supervisorAvatar} time="15:06"><MarkdownMessage>这是新的交付目标。我已创建关联事项，由**文档编写员**负责整理，**网络情报员**补充来源核验；上一事项的团队不会自动延续。</MarkdownMessage></ChatMessage>
+          <MatterEvent matter={conversationMatters[1]} title="临时团队已组建" description="文档编写员、网络情报员开始执行" time="15:08" onOpen={() => onOpenMatter('publication-pack')} />
+          <article className="approval-card message-stream-item"><div><Key aria-hidden width={19} height={19} /><p>总管需要你确认发布物料的视觉方向，确认后临时团队将继续制作。</p><IconButton label="查看事项详情" icon={Eye} onPress={() => onOpenMatter('publication-pack')} /></div><div className="approval-actions"><Button className="button button--quiet">提出修改</Button><Button className="button button--primary">确认方向</Button></div></article>
           </>}
-          {localMessages.map((message, index) => <ChatMessage source="user" name="你" initials="你" color="#d9c5a6" time="刚刚" key={`${message.text}-${index}`}><MarkdownMessage>{message.text || '已添加附件'}</MarkdownMessage><MessageAttachmentGroup attachments={message.attachments} source="user" /></ChatMessage>)}
+          {localMessages.map((message, index) => <ChatMessage source="user" name="你" initials={userProfile.name.slice(0, 1) || '你'} color="#d9c5a6" avatarSrc={userProfile.avatarUrl} time="刚刚" key={`${message.text}-${index}`}><MarkdownMessage>{message.text || '已添加附件'}</MarkdownMessage><MessageAttachmentGroup attachments={message.attachments} source="user" /></ChatMessage>)}
         </div>
       </div>
       <form className="composer" onSubmit={submit}>
@@ -711,13 +771,13 @@ function MessagesPage({ conversationId, onOpenMatter, onOpenDetail }: { conversa
 }
 
 function ContactPage({ agent }: { agent: Agent }): React.JSX.Element {
+  const assignedSkills = capabilities.filter((capability) => capability.kind === 'skill' && agent.capabilities.includes(capability.name))
   return (
-    <div className="workspace-page detail-page">
+    <div className="workspace-page detail-page employee-detail-page">
       <div className="detail-canvas">
-        <section className="profile-intro"><Avatar label={agent.name} initials={agent.initials} color={agent.color} size="large" src={agent.avatarUrl} /><div><h2>{agent.role}</h2><p>{agent.description}</p></div></section>
-        <section className="plain-section"><h3>基本资料</h3><dl className="definition-grid"><div><dt>员工名称</dt><dd>{agent.name}</dd></div><div><dt>工作状态</dt><dd><StatusLight tone={agent.tone} label={agent.status} breathing={agent.tone === 'active' || agent.tone === 'waiting'} /></dd></div><div><dt>职责</dt><dd>{agent.role}</dd></div><div><dt>加入时间</dt><dd>{agent.joinedAt ?? '2026 年 8 月 14 日'}</dd></div></dl></section>
-        <section className="plain-section"><div className="content-section-title"><h3>能力摘要</h3><span>{agent.capabilities.length} 项</span></div><div className="capability-summary">{agent.capabilities.map((item) => <div key={item}><Sparks aria-hidden width={18} height={18} /><span><strong>{item}</strong><small>{agent.status === '待测试' ? '已绑定，测试通过后可用于正式任务' : '依赖正常，可用于正式任务'}</small></span><NavArrowRight aria-hidden width={16} height={16} /></div>)}</div></section>
-        <section className="plain-section"><div className="content-section-title"><h3>最近 3 项交付</h3><span>按时间倒序</span></div><div className="delivery-list">{agent.deliveries.length ? agent.deliveries.map((item) => <Button key={item.title}><span className="delivery-list__icon"><Check aria-hidden width={16} height={16} /></span><span><strong>{item.title}</strong><small>{item.meta}</small></span><span>{item.state}</span><NavArrowRight aria-hidden width={16} height={16} /></Button>) : <p className="empty-state">新员工尚无交付记录。</p>}</div></section>
+        <ProfileSummary agent={agent} />
+        <ProfileValueTags items={[{ label: '工作状态', accessibleValue: agent.status, value: <StatusLight tone={agent.tone} label={agent.status} breathing={agent.tone === 'active' || agent.tone === 'waiting'} /> }, { label: '加入时间', accessibleValue: agent.joinedAt ?? '2026 年 8 月 14 日', value: agent.joinedAt ?? '2026 年 8 月 14 日' }, { label: '运行模型', accessibleValue: agent.model ?? 'deepseek-v4-pro', value: agent.model ?? 'deepseek-v4-pro' }, { label: '配置版本', accessibleValue: 'v1', value: 'v1' }]} />
+        <section className="plain-section"><div className="content-section-title"><h3>能力摘要</h3><span>{assignedSkills.length} 项 Skill</span></div><SummaryCardGrid emptyMessage="尚未绑定 Skill。">{assignedSkills.map((skill) => <SummaryCard key={skill.id} leading={<Sparks aria-hidden width={18} height={18} />} title={skill.name} description={skill.summary} />)}</SummaryCardGrid></section>
       </div>
     </div>
   )
@@ -733,7 +793,7 @@ function CapabilityPage({ capability, onAgent, onOpenDetail }: { capability: Cap
         {isSkill && capability.skillMarkdown && <section className="plain-section skill-document"><div className="content-section-title"><h3>SKILL.md</h3><span>完整文档 · v{capability.version}</span></div><MarkdownContent className="skill-document__markdown">{capability.skillMarkdown}</MarkdownContent></section>}
         <section className="plain-section"><h3>{isSkill ? '适用任务' : '可用于'}</h3><div className="use-case-list">{capability.useCases.map((item) => <span key={item}>{item}</span>)}</div></section>
         <section className="plain-section"><h3>{isSkill ? '执行与依赖' : '调用关系'}</h3><div className="dependency-groups">{isSkill ? <><DependencyGroup icon={Brain} title="执行步骤" items={capability.skills} /><DependencyGroup icon={Tools} title="Tools" items={capability.tools} /></> : <><DependencyGroup icon={Sparks} title="关联 Skills" items={capability.skills} /><DependencyGroup icon={Database} title="连接与运行" items={capability.tools} /></>}<DependencyGroup icon={ShieldCheck} title="权限" items={capability.permissions} /></div></section>
-        <section className="plain-section"><div className="content-section-title"><h3>已绑定 Agent</h3><span>{capability.agents.length} 位</span></div>{capability.agents.map((name) => <Button className="linked-agent" key={name} onPress={onAgent}><Avatar label={name} initials={name.slice(0, 1)} color="#b8c982" size="small" /><span><strong>{name}</strong><small>查看员工资料</small></span><NavArrowRight aria-hidden width={16} height={16} /></Button>)}</section>
+        <section className="plain-section"><div className="content-section-title"><h3>已绑定 Agent</h3><span>{capability.agents.length} 位</span></div>{capability.agents.map((name) => <Button className="linked-agent" key={name} onPress={onAgent}><Avatar label={name} initials={name.slice(0, 1)} color="#b8c982" size="small" src={employeeAvatarForName(name)} /><span><strong>{name}</strong><small>查看员工资料</small></span><NavArrowRight aria-hidden width={16} height={16} /></Button>)}</section>
         <Button className="advanced-disclosure" onPress={() => onOpenDetail('capability-info')}>高级信息 <NavArrowRight aria-hidden width={14} height={14} /></Button>
       </div>
     </div>
@@ -750,7 +810,7 @@ function SystemPage({ section, theme, onTheme, userProfile, onUserProfile, super
   return (
     <div className="workspace-page detail-page system-page">
       <div className="detail-canvas">
-        <section className="settings-intro"><span><Icon aria-hidden width={24} height={24} /></span><div><h2>{definition.label}</h2><p>{systemDescription(section)}</p></div></section>
+        <section className="settings-intro"><span>{section === 'supervisor' ? <Avatar label="总管" initials="总" color="#aebd83" size="medium" src={supervisorAvatar} /> : <Icon aria-hidden width={24} height={24} />}</span><div><h2>{definition.label}</h2><p>{systemDescription(section)}</p></div></section>
         {section === 'profile' && <ProfileSettings profile={userProfile} onProfile={onUserProfile} />}
         {section === 'general' && <GeneralSettings theme={theme} onTheme={onTheme} />}
         {section === 'supervisor' && <SupervisorSettings prompt={supervisorPrompt} onPrompt={onSupervisorPrompt} />}
@@ -794,53 +854,19 @@ function SupervisorSettings({ prompt, onPrompt }: { prompt: string; onPrompt: (p
 }
 
 function ModelSettings(): React.JSX.Element {
-  const [connections, setConnections] = useState<ModelConnection[]>([
-    { id: 'deepseek-v4-pro', provider: 'DeepSeek', baseUrl: 'https://api.deepseek.com', credentialConfigured: true, verified: true, lastVerified: '今天 09:42' },
-    { id: 'claude-sonnet-4.6', provider: 'Poe', baseUrl: 'https://api.poe.com/v1', credentialConfigured: false, verified: false },
-    { id: 'gpt-image-2', provider: 'Poe', baseUrl: 'https://api.poe.com/v1', credentialConfigured: false, verified: false },
-    { id: 'seedance-2.0', provider: 'Poe', baseUrl: 'https://api.poe.com/v1', credentialConfigured: false, verified: false }
-  ])
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const editingConnection = connections.find((item) => item.id === editingId) ?? null
-  const saveConnection = (next: ModelConnection): void => {
-    setConnections((items) => items.map((item) => item.id === next.id ? next : item))
-    setEditingId(null)
-  }
-  const row = (connection: ModelConnection): React.JSX.Element => <ProviderRow key={connection.id} name={connection.id} status={connection.verified ? '已验证' : connection.credentialConfigured ? '待验证' : '未配置'} tone={connection.verified ? 'success' : 'waiting'} detail={connection.credentialConfigured ? `Credential 已配置${connection.lastVerified ? `，验证时间：${connection.lastVerified}` : ''}` : 'Credential 未配置'} onConfigure={() => setEditingId(connection.id)} />
-  return <><SettingsBlock title="DeepSeek">{connections.filter((item) => item.provider === 'DeepSeek').map(row)}</SettingsBlock><SettingsBlock title="Poe">{connections.filter((item) => item.provider === 'Poe').map(row)}</SettingsBlock><ModelConfigurationModal connection={editingConnection} onClose={() => setEditingId(null)} onSave={saveConnection} /></>
-}
-
-function ProviderRow({ name, status, tone, detail, onConfigure }: { name: string; status: string; tone: StatusTone; detail: string; onConfigure?: () => void }): React.JSX.Element {
-  return <div className="provider-row"><span><strong>{name}</strong><small>{detail}</small></span><StatusLight tone={tone} label={status} breathing={tone === 'waiting'} />{onConfigure && <Button className="button button--quiet" onPress={onConfigure}>配置</Button>}</div>
-}
-
-function ModelConfigurationModal({ connection, onClose, onSave }: { connection: ModelConnection | null; onClose: () => void; onSave: (connection: ModelConnection) => void }): React.JSX.Element {
-  const [modelId, setModelId] = useState('')
-  const [baseUrl, setBaseUrl] = useState('')
   const [credential, setCredential] = useState('')
-  const [testState, setTestState] = useState<'idle' | 'success'>('idle')
-  useEffect(() => {
-    if (!connection) return
-    setModelId(connection.id)
-    setBaseUrl(connection.baseUrl)
-    setCredential('')
-    setTestState('idle')
-  }, [connection])
-  if (!connection) return <></>
-  const hasCredential = connection.credentialConfigured || Boolean(credential.trim())
-  const hasTrustedBaseUrl = /^https:\/\//.test(baseUrl.trim()) || /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?(?:\/|$)/.test(baseUrl.trim())
-  const canSubmit = Boolean(modelId.trim() && baseUrl.trim() && hasCredential && hasTrustedBaseUrl)
-  const save = (): void => onSave({ ...connection, baseUrl: baseUrl.trim(), credentialConfigured: hasCredential, verified: testState === 'success' || connection.verified, lastVerified: testState === 'success' ? '原型演示' : connection.lastVerified })
-  return <ModalOverlay isOpen onOpenChange={(open) => !open && onClose()} isDismissable className="modal-overlay modal-overlay--nested"><Modal className="app-modal app-modal--medium"><Dialog className="modal-dialog" aria-label={`配置 ${connection.id}`}>
-    <div className="modal-header"><div><Heading slot="title">配置 {connection.id}</Heading><StatusLight tone={connection.verified ? 'success' : 'waiting'} label={connection.verified ? '已验证' : '待验证'} breathing={!connection.verified} /></div><IconButton label="关闭" icon={Xmark} onPress={onClose} /></div>
-    <div className="model-config-content"><div className="model-config-intro"><span><Brain aria-hidden width={22} height={22} /></span><div><h3>{connection.provider} 模型连接</h3><p>配置模型标识、服务地址和 Credential。Credential 保存后只保留配置状态。</p></div></div>
-      <TextField value={modelId} isReadOnly className="form-field"><Label>模型 ID</Label><Input /></TextField>
-      <TextField value={baseUrl} onChange={(value) => { setBaseUrl(value); setTestState('idle') }} className="form-field"><Label>服务地址</Label><Input /></TextField>
-      <TextField value={credential} onChange={(value) => { setCredential(value); setTestState('idle') }} className="form-field"><Label>Credential</Label><Input type="password" placeholder={connection.credentialConfigured ? '已配置，留空表示保持不变' : '输入 API Key 或访问令牌'} /></TextField>
-      <div className={`connection-test-result${testState === 'success' ? ' is-success' : ''}`}><ShieldCheck aria-hidden width={18} height={18} /><span><strong>{testState === 'success' ? '模拟连接测试通过' : '保存前建议测试连接'}</strong><small>{testState === 'success' ? '原型仅演示验证与保存状态，未向真实服务发起请求。' : '当前按钮用于展示交互状态，不会调用真实模型服务。'}</small></span></div>
-    </div>
-    <div className="model-config-actions"><Button className="button button--quiet" isDisabled={!canSubmit} onPress={() => setTestState('success')}><Flask aria-hidden width={17} height={17} />测试连接</Button><div><Button className="button button--quiet" onPress={onClose}>取消</Button><Button className="button button--primary" isDisabled={!canSubmit} onPress={save}>保存配置</Button></div></div>
-  </Dialog></Modal></ModalOverlay>
+  const [configured, setConfigured] = useState(false)
+  const [verifiedModels, setVerifiedModels] = useState<string[]>([])
+  const models = [
+    { id: 'claude-sonnet-4.6', detail: '文本 · Responses API' },
+    { id: 'gpt-image-2', detail: '图像 · Chat Completions API' },
+    { id: 'seedance-2.0', detail: '视频 · Chat Completions API' }
+  ]
+  return <><SettingsBlock title="DeepSeek"><ProviderRow name="deepseek-v4-pro" status="已验证" tone="success" detail="文本 · Responses API" /></SettingsBlock><SettingsBlock title="Poe" description="一个 API Key 连接文本、图像和视频模型；模型验证互相独立。"><div className="provider-credential-panel"><TextField value={credential} onChange={setCredential} className="form-field provider-credential-field"><Label>Poe API Key</Label><div className="provider-credential-control"><Input type="password" placeholder={configured ? '输入新 Key 可替换当前连接' : '输入 Poe API Key'} /><Button className="button button--primary" isDisabled={credential.trim().length < 8} onPress={() => { setConfigured(true); setCredential(''); setVerifiedModels([]) }}>保存连接</Button></div></TextField><p>验证会向对应模型发起一次真实请求；图像和视频请求可能消耗较多 Poe Points。</p></div>{models.map((model) => <ProviderRow key={model.id} name={model.id} status={verifiedModels.includes(model.id) ? '已验证' : configured ? '待验证' : '待配置'} tone={verifiedModels.includes(model.id) ? 'success' : 'waiting'} detail={model.detail} actionLabel="验证" onConfigure={configured ? () => setVerifiedModels((items) => items.includes(model.id) ? items : [...items, model.id]) : undefined} />)}</SettingsBlock></>
+}
+
+function ProviderRow({ name, status, tone, detail, actionLabel = '配置', onConfigure }: { name: string; status: string; tone: StatusTone; detail: string; actionLabel?: string; onConfigure?: () => void }): React.JSX.Element {
+  return <div className="provider-row"><span><strong>{name}</strong><small>{detail}</small></span><StatusLight tone={tone} label={status} breathing={tone === 'waiting'} />{onConfigure && <Button className="button button--quiet" onPress={onConfigure}>{actionLabel}</Button>}</div>
 }
 
 function ResourceSettings(): React.JSX.Element {
@@ -876,11 +902,11 @@ function CreateAgentModal({ isOpen, onClose, onCreate }: { isOpen: boolean; onCl
   const [description, setDescription] = useState('')
   const [prompt, setPrompt] = useState('')
   const [model, setModel] = useState('deepseek-v4-pro')
-  const [capability, setCapability] = useState('多源网络调研')
+  const [assignedCapabilities, setAssignedCapabilities] = useState<string[]>(['多源网络调研'])
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   useEffect(() => {
     if (!isOpen) return
-    setStep(0); setName(''); setRole(''); setDescription(''); setPrompt(''); setModel('deepseek-v4-pro'); setCapability('多源网络调研'); setAvatarUrl(null)
+    setStep(0); setName(''); setRole(''); setDescription(''); setPrompt(''); setModel('deepseek-v4-pro'); setAssignedCapabilities(['多源网络调研']); setAvatarUrl(null)
   }, [isOpen])
   const changeAvatar = (file: File | null): void => {
     if (!file) return
@@ -889,20 +915,21 @@ function CreateAgentModal({ isOpen, onClose, onCreate }: { isOpen: boolean; onCl
     reader.readAsDataURL(file)
   }
   const steps = [['basic', UserIcon, '基本资料'], ['prompt', EditPencil, '提示词'], ['ability', Brain, '模型与能力']] as const
-  const canContinue = step === 0 ? Boolean(name.trim() && role.trim() && description.trim()) : step === 1 ? Boolean(prompt.trim()) : Boolean(model && capability)
+  const validLength = (value: string, limits: { min: number; max: number }): boolean => [...value.trim()].length >= limits.min && [...value.trim()].length <= limits.max
+  const canContinue = step === 0 ? validLength(name, EMPLOYEE_FIELD_LIMITS.name) && validLength(role, EMPLOYEE_FIELD_LIMITS.role) && validLength(description, EMPLOYEE_FIELD_LIMITS.description) : step === 1 ? validLength(prompt, EMPLOYEE_FIELD_LIMITS.systemPrompt) : Boolean(model && assignedCapabilities.length)
   const advance = (): void => {
     if (!canContinue) return
     if (step < 2) { setStep((step + 1) as 1 | 2); return }
-    onCreate({ id: `agent-${Date.now()}`, name: name.trim(), initials: name.trim().slice(0, 1), role: role.trim(), status: '待测试', tone: 'waiting', description: description.trim(), color: '#c5b8e3', avatarUrl, prompt: prompt.trim(), model, joinedAt: new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date()), capabilities: [capability], deliveries: [] })
+    onCreate({ id: `agent-${Date.now()}`, name: name.trim(), initials: name.trim().slice(0, 1), role: role.trim(), status: '待测试', tone: 'waiting', description: description.trim(), color: '#c5b8e3', avatarUrl, prompt: prompt.trim(), model, joinedAt: new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date()), capabilities: assignedCapabilities, deliveries: [] })
   }
 
   return <ModalOverlay isOpen={isOpen} onOpenChange={(open) => !open && onClose()} isDismissable className="modal-overlay"><Modal className="app-modal app-modal--large"><Dialog className="modal-dialog" aria-label="新建 Agent 员工">
     <div className="modal-header"><div><Heading slot="title">新建 Agent 员工</Heading><span className="quiet-meta">第 {step + 1} / 3 步</span></div><IconButton label="关闭" icon={Xmark} onPress={onClose} /></div>
     <div className="modal-layout"><nav className="modal-navigation create-agent-navigation">{steps.map(([id, Icon, label], index) => <Button key={id} className={step === index ? 'is-active' : ''} onPress={() => index <= step && setStep(index as 0 | 1 | 2)}><Icon aria-hidden width={17} height={17} /><span>{label}</span>{index < step && <Check aria-hidden width={15} height={15} />}</Button>)}</nav>
       <div className="modal-content modal-content--with-footer"><div className="modal-content__main">
-        {step === 0 && <div className="form-section"><Heading>基本资料</Heading><div className="avatar-editor"><label className="avatar-upload"><input type="file" accept="image/png,image/jpeg,image/webp" aria-label="从本地上传新员工头像" onChange={(event) => changeAvatar(event.currentTarget.files?.[0] ?? null)} /><Avatar label={name || '新员工'} initials={name.trim().slice(0, 1) || '新'} color="#c5b8e3" size="large" src={avatarUrl} /><span className="avatar-upload__affordance" aria-hidden="true"><EditPencil width={16} height={16} /></span></label></div><TextField value={name} onChange={setName} className="form-field"><Label>名称</Label><Input placeholder="例如：用户研究员" /></TextField><TextField value={role} onChange={setRole} className="form-field"><Label>职责</Label><Input placeholder="例如：用户访谈与洞察分析" /></TextField><TextField value={description} onChange={setDescription} className="form-field"><Label>职责说明</Label><TextArea rows={4} placeholder="说明这个 Agent 负责什么，以及不负责什么。" /></TextField></div>}
-        {step === 1 && <div className="form-section"><Heading>提示词</Heading><TextField value={prompt} onChange={setPrompt} className="form-field form-field--prompt"><Label>System Prompt</Label><TextArea rows={14} placeholder="定义角色、工作方法、输出要求和边界。" /></TextField><div className="prompt-layers"><p><ShieldCheck aria-hidden width={17} height={17} /><span><strong>平台安全层</strong><small>系统内置，只读</small></span></p><p><Brain aria-hidden width={17} height={17} /><span><strong>运行上下文层</strong><small>任务开始时按最小范围注入</small></span></p></div></div>}
-        {step === 2 && <div className="form-section"><Heading>模型与能力</Heading><p>选择运行模型和首个业务能力。Tool、MCP 与权限会从能力派生。</p><div className="create-selection-group"><h3>模型</h3>{['deepseek-v4-pro', 'claude-sonnet-4.6'].map((item) => <Button key={item} className={`selection-card create-selection-card${model === item ? ' is-selected' : ''}`} onPress={() => setModel(item)}><Brain aria-hidden width={19} height={19} /><span><strong>{item}</strong><small>{item === 'deepseek-v4-pro' ? '已验证，可用于测试' : 'Credential 待配置'}</small></span>{model === item && <Check aria-hidden width={18} height={18} />}</Button>)}</div><div className="create-selection-group"><h3>能力</h3>{['多源网络调研', '调研分析报告', '内容编辑', '视觉方案'].map((item) => <Button key={item} className={`selection-card create-selection-card${capability === item ? ' is-selected' : ''}`} onPress={() => setCapability(item)}><Sparks aria-hidden width={19} height={19} /><span><strong>{item}</strong><small>创建后可在设置中调整</small></span>{capability === item && <Check aria-hidden width={18} height={18} />}</Button>)}</div></div>}
+        {step === 0 && <div className="form-section"><Heading>基本资料</Heading><div className="avatar-editor"><label className="avatar-upload"><input type="file" accept="image/png,image/jpeg,image/webp" aria-label="从本地上传新员工头像" onChange={(event) => changeAvatar(event.currentTarget.files?.[0] ?? null)} /><Avatar label={name || '新员工'} initials={name.trim().slice(0, 1) || '新'} color="#c5b8e3" size="large" src={avatarUrl} /><span className="avatar-upload__affordance" aria-hidden="true"><EditPencil width={16} height={16} /></span></label></div><TextField value={name} onChange={setName} className="form-field"><Label>名称</Label><Input maxLength={EMPLOYEE_FIELD_LIMITS.name.max} placeholder="例如：用户研究员" /></TextField><TextField value={role} onChange={setRole} className="form-field"><Label>职责</Label><Input maxLength={EMPLOYEE_FIELD_LIMITS.role.max} placeholder="例如：用户访谈与洞察分析" /></TextField><TextField value={description} onChange={setDescription} className="form-field"><Label>职责说明</Label><TextArea rows={4} maxLength={EMPLOYEE_FIELD_LIMITS.description.max} placeholder="说明这个 Agent 负责什么，以及不负责什么。" /></TextField></div>}
+        {step === 1 && <div className="form-section"><Heading>提示词</Heading><TextField value={prompt} onChange={setPrompt} className="form-field form-field--prompt"><Label>System Prompt</Label><TextArea rows={14} maxLength={EMPLOYEE_FIELD_LIMITS.systemPrompt.max} placeholder="定义角色、工作方法、输出要求和边界。" /></TextField><div className="prompt-layers"><p><ShieldCheck aria-hidden width={17} height={17} /><span><strong>平台安全层</strong><small>系统内置，只读</small></span></p><p><Brain aria-hidden width={17} height={17} /><span><strong>运行上下文层</strong><small>任务开始时按最小范围注入</small></span></p></div></div>}
+        {step === 2 && <div className="form-section"><Heading>模型与能力</Heading><ModelCapabilityPicker model={model} assignedCapabilities={assignedCapabilities} onModel={setModel} onCapabilities={setAssignedCapabilities} /></div>}
       </div><div className="create-agent-actions"><div><Button className="button button--quiet" onPress={step === 0 ? onClose : () => setStep((step - 1) as 0 | 1)}>{step === 0 ? '取消' : '上一步'}</Button><Button className="button button--primary" isDisabled={!canContinue} onPress={advance}>{step === 2 ? '创建员工' : '继续'}</Button></div></div></div>
     </div>
   </Dialog></Modal></ModalOverlay>
@@ -913,8 +940,10 @@ function AgentSettingsModal({ agent, isOpen, onClose, onDelete }: { agent: Agent
   const [name, setName] = useState(agent.name)
   const [description, setDescription] = useState(agent.description)
   const [prompt, setPrompt] = useState(agent.prompt ?? `你是${agent.name}。${agent.description}`)
+  const [model, setModel] = useState(agent.model ?? 'deepseek-v4-pro')
+  const [assignedCapabilities, setAssignedCapabilities] = useState(agent.capabilities)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(agent.avatarUrl ?? null)
-  useEffect(() => { if (!isOpen) return; setSection('basic'); setName(agent.name); setDescription(agent.description); setPrompt(agent.prompt ?? `你是${agent.name}。${agent.description}`); setAvatarUrl(agent.avatarUrl ?? null) }, [agent, isOpen])
+  useEffect(() => { if (!isOpen) return; setSection('basic'); setName(agent.name); setDescription(agent.description); setPrompt(agent.prompt ?? `你是${agent.name}。${agent.description}`); setModel(agent.model ?? 'deepseek-v4-pro'); setAssignedCapabilities(agent.capabilities); setAvatarUrl(agent.avatarUrl ?? null) }, [agent, isOpen])
   useEffect(() => () => { if (avatarUrl) URL.revokeObjectURL(avatarUrl) }, [avatarUrl])
   const changeAvatar = (file: File | null): void => { if (file) setAvatarUrl(URL.createObjectURL(file)) }
   const sections = [['basic', UserIcon, '基本资料'], ['prompt', EditPencil, '提示词'], ['model', Brain, '模型与能力'], ['memory', Database, '记忆']] as const
@@ -922,17 +951,17 @@ function AgentSettingsModal({ agent, isOpen, onClose, onDelete }: { agent: Agent
   return <ModalOverlay isOpen={isOpen} onOpenChange={(open) => !open && onClose()} isDismissable className="modal-overlay"><Modal className="app-modal app-modal--large"><Dialog className="modal-dialog" aria-label="Agent 设置">
     <div className="modal-header"><div className="modal-identity employee-modal-identity"><Avatar label={name} initials={name.slice(0, 1)} color={agent.color} size="medium" src={avatarUrl} /><strong>{name}</strong><StatusLight tone={agent.tone} label={agent.status} breathing={agent.tone === 'active' || agent.tone === 'waiting'} /></div><div className="modal-header__actions"><IconButton label="删除 Agent" icon={Trash} className="modal-delete-button" onPress={onDelete} /></div><IconButton label="关闭" icon={Xmark} onPress={onClose} /></div>
     <div className="modal-layout"><nav className="modal-navigation">{sections.map(([id, Icon, label]) => <Button key={id} className={section === id ? 'is-active' : ''} onPress={() => setSection(id)}><Icon aria-hidden width={17} height={17} /><span>{label}</span></Button>)}</nav>
-      <div className="modal-content"><div className="modal-content__main"><AgentFormSection section={section} name={name} description={description} prompt={prompt} model={agent.model ?? 'deepseek-v4-pro'} capabilities={agent.capabilities} avatarUrl={avatarUrl} onAvatar={changeAvatar} onName={setName} onDescription={setDescription} onPrompt={setPrompt} /></div></div>
+      <div className="modal-content"><div className="modal-content__main"><AgentFormSection section={section} name={name} description={description} prompt={prompt} model={model} capabilities={assignedCapabilities} avatarUrl={avatarUrl} onAvatar={changeAvatar} onName={setName} onDescription={setDescription} onPrompt={setPrompt} onModel={setModel} onCapabilities={setAssignedCapabilities} /></div></div>
     </div>
   </Dialog></Modal></ModalOverlay>
 }
 
 const UserIcon = Group
 
-function AgentFormSection({ section, name, description, prompt, model, capabilities: assignedCapabilities, avatarUrl, onAvatar, onName, onDescription, onPrompt }: { section: string; name: string; description: string; prompt: string; model: string; capabilities: string[]; avatarUrl: string | null; onAvatar: (file: File | null) => void; onName: (value: string) => void; onDescription: (value: string) => void; onPrompt: (value: string) => void }): React.JSX.Element {
-  if (section === 'basic') return <div className="form-section"><Heading>基本资料</Heading><div className="avatar-editor"><label className="avatar-upload"><input type="file" accept="image/png,image/jpeg,image/webp" aria-label="从本地上传头像" onChange={(event) => onAvatar(event.currentTarget.files?.[0] ?? null)} /><Avatar label={name} initials={name.slice(0, 1)} color="#b8c982" size="large" src={avatarUrl} /><span className="avatar-upload__affordance" aria-hidden="true"><EditPencil width={16} height={16} /></span></label></div><TextField value={name} onChange={onName} className="form-field"><Label>名称</Label><Input /></TextField><TextField value={description} onChange={onDescription} className="form-field"><Label>职责说明</Label><TextArea rows={4} /></TextField></div>
-  if (section === 'prompt') return <div className="form-section"><Heading>提示词</Heading><TextField value={prompt} onChange={onPrompt} className="form-field form-field--prompt"><Label>System Prompt</Label><TextArea rows={13} /></TextField><div className="prompt-layers"><p><ShieldCheck aria-hidden width={17} height={17} /><span><strong>平台安全层</strong><small>系统内置，只读</small></span></p><p><Brain aria-hidden width={17} height={17} /><span><strong>运行上下文层</strong><small>任务启动时按最小范围注入</small></span></p></div></div>
-  if (section === 'model') return <div className="form-section"><Heading>模型与能力</Heading><p>Agent 绑定能力，Skill、Tool、MCP 和权限从能力派生。</p><div className="selection-card is-selected"><Brain aria-hidden width={19} height={19} /><span><strong>{model}</strong><small>当前草稿模型</small></span><Check aria-hidden width={18} height={18} /></div>{assignedCapabilities.map((item) => <div className="selection-card is-selected" key={item}><Sparks aria-hidden width={19} height={19} /><span><strong>{item}</strong><small>创建后由总管组织测试</small></span><Check aria-hidden width={18} height={18} /></div>)}<div className="derived-tools"><h3>派生资源</h3><p><Tools aria-hidden width={17} height={17} />由已绑定 Skill 解析 Tool 与 MCP</p><p><ShieldCheck aria-hidden width={17} height={17} />运行时仍与任务授权取交集</p></div></div>
+function AgentFormSection({ section, name, description, prompt, model, capabilities: assignedCapabilities, avatarUrl, onAvatar, onName, onDescription, onPrompt, onModel, onCapabilities }: { section: string; name: string; description: string; prompt: string; model: string; capabilities: string[]; avatarUrl: string | null; onAvatar: (file: File | null) => void; onName: (value: string) => void; onDescription: (value: string) => void; onPrompt: (value: string) => void; onModel: (value: string) => void; onCapabilities: (value: string[]) => void }): React.JSX.Element {
+  if (section === 'basic') return <div className="form-section"><Heading>基本资料</Heading><div className="avatar-editor"><label className="avatar-upload"><input type="file" accept="image/png,image/jpeg,image/webp" aria-label="从本地上传头像" onChange={(event) => onAvatar(event.currentTarget.files?.[0] ?? null)} /><Avatar label={name} initials={name.slice(0, 1)} color="#b8c982" size="large" src={avatarUrl} /><span className="avatar-upload__affordance" aria-hidden="true"><EditPencil width={16} height={16} /></span></label></div><TextField value={name} onChange={onName} className="form-field"><Label>名称</Label><Input maxLength={EMPLOYEE_FIELD_LIMITS.name.max} /></TextField><TextField value={description} onChange={onDescription} className="form-field"><Label>职责说明</Label><TextArea rows={4} maxLength={EMPLOYEE_FIELD_LIMITS.description.max} /></TextField></div>
+  if (section === 'prompt') return <div className="form-section"><Heading>提示词</Heading><TextField value={prompt} onChange={onPrompt} className="form-field form-field--prompt"><Label>System Prompt</Label><TextArea rows={13} maxLength={EMPLOYEE_FIELD_LIMITS.systemPrompt.max} /></TextField><div className="prompt-layers"><p><ShieldCheck aria-hidden width={17} height={17} /><span><strong>平台安全层</strong><small>系统内置，只读</small></span></p><p><Brain aria-hidden width={17} height={17} /><span><strong>运行上下文层</strong><small>任务启动时按最小范围注入</small></span></p></div></div>
+  if (section === 'model') return <div className="form-section"><Heading>模型与能力</Heading><ModelCapabilityPicker model={model} assignedCapabilities={assignedCapabilities} onModel={onModel} onCapabilities={onCapabilities} /><div className="derived-tools"><h3>派生资源</h3><p><Tools aria-hidden width={17} height={17} />由已绑定 Skill 解析 Tool 与 MCP</p><p><ShieldCheck aria-hidden width={17} height={17} />运行时仍与任务授权取交集</p></div></div>
   return <div className="form-section"><Heading>记忆</Heading><p>正式运行时仍会与任务 RunGrant 取交集。</p><div className="choice-stack"><label><input type="checkbox" defaultChecked /><span><strong>员工记忆</strong><small>保留该员工的长期工作偏好和经验</small></span></label><label><input type="checkbox" defaultChecked /><span><strong>任务记忆</strong><small>只读取当前任务明确允许的上下文</small></span></label><label><input type="checkbox" /><span><strong>全局记忆</strong><small>读取用户确认的全局偏好与规则</small></span></label></div></div>
 }
 
@@ -955,7 +984,7 @@ function DetailModal({ view, capability, onClose }: { view: DetailView; capabili
     <div className="detail-browser-content"><div className="detail-browser-intro"><h3>{definition.title}</h3><p>{definition.description}</p></div>
       {view === 'memory-governance' && <><section><div className="content-section-title"><h3>记忆概览</h3><span>44 项</span></div><div className="memory-summary"><div><strong>38</strong><span>有效</span></div><div><strong>4</strong><span>待确认</span></div><div><strong>2</strong><span>存在冲突</span></div></div></section><section><div className="content-section-title"><h3>全部记忆</h3><span>按最近更新排序</span></div><div className="detail-data-list"><DetailDataRow title="内容输出优先使用简体中文" description="全局偏好 · 来源：用户确认 · 今天 09:18" value="有效" tone="success" /><DetailDataRow title="任务交付需要保留来源与验收证据" description="全局规则 · 来源：任务复盘 · 8 月 30 日" value="有效" tone="success" /><DetailDataRow title="旧版页面结构与当前导航存在冲突" description="任务经验 · 需要选择保留版本 · 8 月 28 日" value="待处理" tone="waiting" /><DetailDataRow title="内容编辑默认面向旧渠道格式" description="员工经验 · 已被新发布规范替代 · 8 月 20 日" value="已过期" tone="muted" /></div></section></>}
       {view === 'capability-info' && <><section><div className="content-section-title"><h3>版本与状态</h3><span>{capability.kind === 'skill' ? 'Skill' : 'Tool'}</span></div><div className="detail-data-list"><DetailDataRow title={capability.name} description={`${capability.category} · 当前版本 v${capability.version}`} value={capability.status} tone={capability.tone} /><DetailDataRow title="更新策略" description="版本由能力目录统一发布，运行中的任务继续使用冻结快照" value="版本化" /><DetailDataRow title="绑定范围" description={capability.agents.length ? capability.agents.join('、') : '尚未绑定员工'} value={`${capability.agents.length} 位`} /></div></section><section><div className="content-section-title"><h3>运行边界</h3><span>只读</span></div><div className="detail-data-list"><DetailDataRow title="依赖" description={[...capability.skills, ...capability.tools].join(' · ')} value="已解析" tone="success" /><DetailDataRow title="权限" description={capability.permissions.join(' · ')} value="任务取交集" /></div></section></>}
-      {view === 'approval-detail' && <><section><div className="content-section-title"><h3>本次申请</h3><span>等待决定</span></div><div className="detail-data-list"><DetailDataRow title="申请主体" description="网络调研员 · 东南亚 SaaS 市场研究" value="Agent" /><DetailDataRow title="访问资源" description="GitHub 公开仓库搜索，只读获取仓库与发布信息" value="只读" tone="success" /><DetailDataRow title="有效时间" description="仅当前任务、当前步骤有效，任务结束后自动失效" value="一次性" /><DetailDataRow title="副作用" description="不会写入 GitHub；检索结果会进入当前任务证据包" value="低风险" /></div></section></>}
+      {view === 'approval-detail' && <><section><div className="content-section-title"><h3>本次申请</h3><span>等待决定</span></div><div className="detail-data-list"><DetailDataRow title="申请主体" description="网络情报员 · 东南亚 SaaS 市场研究" value="Agent" /><DetailDataRow title="访问资源" description="GitHub 公开仓库搜索，只读获取仓库与发布信息" value="只读" tone="success" /><DetailDataRow title="有效时间" description="仅当前任务、当前步骤有效，任务结束后自动失效" value="一次性" /><DetailDataRow title="副作用" description="不会写入 GitHub；检索结果会进入当前任务证据包" value="低风险" /></div></section></>}
       {view === 'delivery-evidence' && <><section><div className="content-section-title"><h3>验收结果</h3><span>3 / 3 通过</span></div><div className="detail-data-list"><DetailDataRow title="市场覆盖" description="六个主要市场均有独立结论与限制说明" value="通过" tone="success" /><DetailDataRow title="来源可追溯" description="关键结论关联 18 个已核验公开来源" value="通过" tone="success" /><DetailDataRow title="风险表达" description="冲突口径和信息缺口已降低结论强度" value="通过" tone="success" /></div></section><section><div className="content-section-title"><h3>证据与交付物</h3><span>3 个文件</span></div><div className="detail-data-list"><DetailDataRow title="SEA-SaaS-Market-Entry.md" description="最终报告 · 生成于 14:32" value="286 KB" /><DetailDataRow title="Evidence-Index.csv" description="结论到来源的证据索引" value="94 KB" /><DetailDataRow title="Verified-Sources.pdf" description="已核验来源快照" value="2.4 MB" /></div></section></>}
       {view === 'about-advanced' && <section><div className="content-section-title"><h3>本地诊断</h3><span>只读</span></div><div className="detail-data-list"><DetailDataRow title="客户端版本" description="AI Employee OS macOS Prototype" value="0.1.0" /><DetailDataRow title="Runtime" description="Local Control Runtime · 最近心跳 18ms" value="已连接" tone="success" /><DetailDataRow title="数据存储" description="本地版本化存储 · 迁移版本 020" value="正常" tone="success" /><DetailDataRow title="界面契约" description="排版、布局和窗口安全检查" value="通过" tone="success" /></div></section>}
       {view === 'runtime-advanced' && <section><div className="content-section-title"><h3>运行快照</h3><span>只读</span></div><div className="detail-data-list"><DetailDataRow title="任务状态" description="目标与验收标准已冻结，当前处于最终审核" value="正在审核" tone="active" /><DetailDataRow title="配置快照" description="2 位 Agent、2 个 Skill、3 个 Tool" value="已冻结" /><DetailDataRow title="授权交集" description="任务授权 ∩ Agent 能力 ∩ Skill 权限" value="有效" tone="success" /><DetailDataRow title="恢复状态" description="最近检查点 14:18，未发现未知副作用" value="可恢复" tone="success" /></div></section>}
@@ -964,7 +993,7 @@ function DetailModal({ view, capability, onClose }: { view: DetailView; capabili
 }
 
 function MatterDetailModal({ matter, isOpen, onClose, onOpenDetail }: { matter: ConversationMatter; isOpen: boolean; onClose: () => void; onOpenDetail: (view: DetailView) => void }): React.JSX.Element {
-  return <ModalOverlay isOpen={isOpen} onOpenChange={(open) => !open && onClose()} isDismissable className="modal-overlay"><Modal className="app-modal app-modal--medium"><Dialog className="modal-dialog" aria-label="事项详情"><div className="modal-header"><div><Heading slot="title">{matter.title}</Heading><StatusLight tone={matter.tone} label={matter.status} breathing={matter.group === 'attention' || matter.group === 'active'} /></div><IconButton label="关闭" icon={Xmark} onPress={onClose} /></div><div className="matter-detail-content"><section><h3>当前阶段</h3><p>{matter.description} 当前进度 {matter.progress}，下一步：{matter.nextStep}。</p></section><section><h3>执行时间线</h3><div className="timeline">{matter.timeline.map((item) => <TimelineItem key={item.title} state={item.state} title={item.title} meta={item.meta} />)}</div></section><section><h3>当前临时团队</h3><div className="participant-list">{matter.team.map((item) => <span key={item.name}><Avatar label={item.name} initials={item.initials} color={item.color} size="small" />{item.name}</span>)}</div></section><Button className="advanced-disclosure" onPress={() => onOpenDetail('runtime-advanced')}>查看高级 Runtime 信息 <NavArrowRight aria-hidden width={14} height={14} /></Button></div></Dialog></Modal></ModalOverlay>
+  return <ModalOverlay isOpen={isOpen} onOpenChange={(open) => !open && onClose()} isDismissable className="modal-overlay"><Modal className="app-modal app-modal--medium"><Dialog className="modal-dialog" aria-label="事项详情"><div className="modal-header"><div><Heading slot="title">{matter.title}</Heading><StatusLight tone={matter.tone} label={matter.status} breathing={matter.group === 'attention' || matter.group === 'active'} /></div><IconButton label="关闭" icon={Xmark} onPress={onClose} /></div><div className="matter-detail-content"><section><h3>当前阶段</h3><p>{matter.description} 当前进度 {matter.progress}，下一步：{matter.nextStep}。</p></section><section><h3>执行时间线</h3><div className="timeline">{matter.timeline.map((item) => <TimelineItem key={item.title} state={item.state} title={item.title} meta={item.meta} />)}</div></section><section><h3>当前临时团队</h3><div className="participant-list">{matter.team.map((item) => <span key={item.name}><Avatar label={item.name} initials={item.initials} color={item.color} size="small" src={employeeAvatarForName(item.name)} />{item.name}</span>)}</div></section><Button className="advanced-disclosure" onPress={() => onOpenDetail('runtime-advanced')}>查看高级 Runtime 信息 <NavArrowRight aria-hidden width={14} height={14} /></Button></div></Dialog></Modal></ModalOverlay>
 }
 
 function TimelineItem({ state, title, meta }: { state: TimelineState; title: string; meta: string }): React.JSX.Element {
@@ -999,7 +1028,7 @@ export function App(): React.JSX.Element {
   const createAgent = (agent: Agent): void => { setAgentItems((items) => [...items, agent]); setSelectedAgent(agent.id); setModal(null) }
   const toolbarTitle = page === 'messages' ? activeConversation.title : page === 'contacts' ? activeAgent.name : page === 'capabilities' ? activeCapability.name : activeSystemSection.label
   const toolbarSupport = page === 'contacts' ? <StatusLight tone={activeAgent.tone} label={activeAgent.status} breathing={activeAgent.tone === 'active' || activeAgent.tone === 'waiting'} /> : page === 'capabilities' ? <StatusLight tone={activeCapability.tone} label={activeCapability.status} /> : undefined
-  const toolbarTrailing = page === 'contacts' ? <IconButton label="设置" icon={Settings} onPress={() => setModal('agent-settings')} /> : page === 'capabilities' ? <span className="quiet-meta">只读 {activeCapability.kind === 'skill' ? 'Skill' : 'Tool'} 目录</span> : page === 'system' ? <span className="header-description">系统设置保存在本机</span> : undefined
+  const toolbarTrailing = page === 'contacts' ? <IconButton label="设置" icon={Settings} onPress={() => setModal('agent-settings')} /> : page === 'capabilities' ? <span className="quiet-meta">只读 {activeCapability.kind === 'skill' ? 'Skill' : 'Tool'} 目录</span> : undefined
 
   useEffect(() => {
     if (resolvedTheme) document.documentElement.dataset.theme = resolvedTheme
@@ -1015,7 +1044,7 @@ export function App(): React.JSX.Element {
         <ContextPane page={page} agentItems={agentItems} selectedConversation={selectedConversation} onConversation={setSelectedConversation} selectedAgent={selectedAgent} onAgent={setSelectedAgent} onCreateAgent={() => setModal('create-agent')} selectedCapability={selectedCapability} onCapability={setSelectedCapability} onOpenDetail={setDetailView} systemSection={systemSection} onSystemSection={setSystemSection} />
         <main className="workspace">
           <div className="workspace-center">
-            {page === 'messages' && <MessagesPage conversationId={selectedConversation} onOpenMatter={(matterId) => { setSelectedMatterId(matterId); setModal('matter-detail') }} onOpenDetail={setDetailView} />}
+            {page === 'messages' && <MessagesPage conversationId={selectedConversation} userProfile={userProfile} onOpenMatter={(matterId) => { setSelectedMatterId(matterId); setModal('matter-detail') }} onOpenDetail={setDetailView} />}
             {page === 'contacts' && <ContactPage agent={activeAgent} />}
             {page === 'capabilities' && <CapabilityPage capability={activeCapability} onAgent={openLinkedAgent} onOpenDetail={setDetailView} />}
             {page === 'system' && <SystemPage section={systemSection} theme={theme} onTheme={setTheme} userProfile={userProfile} onUserProfile={setUserProfile} supervisorPrompt={supervisorPrompt} onSupervisorPrompt={setSupervisorPrompt} onOpenDetail={setDetailView} />}

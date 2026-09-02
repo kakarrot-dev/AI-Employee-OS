@@ -1,5 +1,5 @@
 import { Children, useEffect, useRef, type ComponentType, type ReactNode } from 'react'
-import { Search, Xmark } from 'iconoir-react'
+import { Check, Search, Xmark } from 'iconoir-react'
 import { Button, Input, TextField, Tooltip, TooltipTrigger } from 'react-aria-components'
 
 export type ClientIcon = ComponentType<{ width?: number | string; height?: number | string; strokeWidth?: number; 'aria-hidden'?: boolean }>
@@ -19,6 +19,17 @@ export function Avatar({ label, initials, color = '#d7b36a', size = 'small', src
   return <span className={`avatar avatar--${size}`} style={{ '--avatar-color': color } as React.CSSProperties} aria-label={label}>{src ? <img src={src} alt="" /> : initials}</span>
 }
 
+export interface PersonIdentity {
+  name: string
+  initials: string
+  color: string
+  avatarSrc?: string | null
+}
+
+export function PersonAvatar({ identity, size = 'small' }: { identity: PersonIdentity; size?: 'small' | 'medium' | 'large' }): React.JSX.Element {
+  return <Avatar label={identity.name} initials={identity.initials} color={identity.color} size={size} src={identity.avatarSrc} />
+}
+
 export function StatusLight({ state, label, breathing = false }: { state: 'active' | 'waiting' | 'success' | 'danger' | 'muted'; label: string; breathing?: boolean }): React.JSX.Element {
   return <span className="status-light"><span className={`status-light__dot status-light__dot--${state}${breathing ? ' is-breathing' : ''}`} />{label}</span>
 }
@@ -31,13 +42,83 @@ export function SearchBox({ label, placeholder, value, onChange }: { label: stri
   return <TextField aria-label={label} value={value} onChange={onChange} className="search-box"><Search aria-hidden width={17} height={17} /><Input placeholder={placeholder} /></TextField>
 }
 
-export function ListRow({ title, subtitle, meta, selected = false, avatar, marker, onClick }: { title: string; subtitle: string; meta?: string; selected?: boolean; avatar?: ReactNode; marker?: ReactNode; onClick: () => void }): React.JSX.Element {
-  return <Button className={`list-row${selected ? ' is-selected' : ''}`} onPress={onClick}>{avatar}<span className="list-row__body"><span className="list-row__title">{title}</span><span className="list-row__subtitle">{subtitle}</span></span><span className="list-row__meta">{meta}{marker}</span></Button>
+export function SelectionCatalog({ searchLabel, placeholder, query, resultLabel, emptyMessage, onQueryChange, children }: { searchLabel: string; placeholder: string; query: string; resultLabel: string; emptyMessage: string; onQueryChange: (value: string) => void; children: ReactNode }): React.JSX.Element {
+  const items = Children.toArray(children)
+  return <div className="selection-catalog"><div className="selection-catalog__toolbar"><SearchBox label={searchLabel} placeholder={placeholder} value={query} onChange={onQueryChange} /><span>{resultLabel}</span></div><div className="selection-catalog__grid">{items.length ? items : <p className="selection-catalog__empty">{emptyMessage}</p>}</div></div>
 }
 
-export function SummaryList({ children, emptyMessage }: { children: ReactNode; emptyMessage: string }): React.JSX.Element {
+export function SelectionOption({ title, description, meta, status, selected, disabled = false, leading, onSelect }: { title: string; description: string; meta: string; status: ReactNode; selected: boolean; disabled?: boolean; leading: ReactNode; onSelect: () => void }): React.JSX.Element {
+  return <Button className={`selection-option${selected ? ' is-selected' : ''}`} aria-pressed={selected} isDisabled={disabled} onPress={onSelect}><span className="selection-option__leading">{leading}</span><span className="selection-option__body"><span className="selection-option__title"><strong>{title}</strong><em>{meta}</em></span><small>{description}</small><span className="selection-option__status">{status}</span></span><span className="selection-option__indicator" aria-hidden="true">{selected && <Check width={17} height={17} />}</span></Button>
+}
+
+export function ListRow({ title, subtitle, meta, selected = false, avatar, identity = avatar ? 'person' : 'text', marker, onClick }: { title: string; subtitle: string; meta?: string; selected?: boolean; avatar?: ReactNode; identity?: 'person' | 'text'; marker?: ReactNode; onClick: () => void }): React.JSX.Element {
+  const showAvatar = identity === 'person' && avatar !== undefined && avatar !== null
+  return <Button className={`list-row list-row--${identity}${selected ? ' is-selected' : ''}`} onPress={onClick}>{showAvatar && <span className="list-row__avatar">{avatar}</span>}<span className="list-row__body"><span className="list-row__title">{title}</span><span className="list-row__subtitle">{subtitle}</span></span><span className="list-row__meta">{meta}{marker}</span></Button>
+}
+
+export function ProfileSummary({ identity, title, description, actions }: { identity: PersonIdentity; title: string; description: string; actions?: ReactNode }): React.JSX.Element {
+  return <section className="profile-summary"><div className="profile-summary__identity"><PersonAvatar identity={identity} size="large" /><div className="profile-summary__copy"><span>{identity.name}</span><h2>{title}</h2><p>{description}</p></div></div>{actions && <div className="profile-summary__actions" aria-label="资料操作">{actions}</div>}</section>
+}
+
+export interface ProfileFact {
+  label: string
+  value: ReactNode
+}
+
+export function ProfileFacts({ title = '基本资料', items }: { title?: string; items: ProfileFact[] }): React.JSX.Element {
+  return <section className="profile-facts"><h3>{title}</h3><dl>{items.map((item) => <div key={item.label}><dt>{item.label}</dt><dd>{item.value}</dd></div>)}</dl></section>
+}
+
+export interface ProfileValueTag extends ProfileFact {
+  accessibleValue: string
+}
+
+export function ProfileValueTags({ label = '基本资料', items }: { label?: string; items: ProfileValueTag[] }): React.JSX.Element {
+  return <ul className="profile-value-tags" aria-label={label}>{items.map((item) => <li key={item.label} aria-label={`${item.label}：${item.accessibleValue}`}>{item.value}</li>)}</ul>
+}
+
+export function SummaryCardGrid({ children, emptyMessage }: { children: ReactNode; emptyMessage: string }): React.JSX.Element {
   const items = Children.toArray(children)
-  return <div className="summary-list">{items.length ? items : <p className="summary-list__empty">{emptyMessage}</p>}</div>
+  return <div className="summary-card-grid">{items.length ? items : <p className="summary-card-grid__empty">{emptyMessage}</p>}</div>
+}
+
+export function SummaryCard({ title, description, leading }: { title: ReactNode; description?: ReactNode; leading?: ReactNode }): React.JSX.Element {
+  return <article className="summary-card">{leading !== undefined && leading !== null && <span className="summary-card__leading">{leading}</span>}<span className="summary-card__body"><strong>{title}</strong>{description !== undefined && description !== null && <small>{description}</small>}</span></article>
+}
+
+export function SummaryList({ children, emptyMessage, variant = 'subtle' }: { children: ReactNode; emptyMessage: string; variant?: 'subtle' | 'outlined' }): React.JSX.Element {
+  const items = Children.toArray(children)
+  return <div className={`summary-list summary-list--${variant}`}>{items.length ? items : <p className="summary-list__empty">{emptyMessage}</p>}</div>
+}
+
+export interface DetailMetric {
+  label: string
+  value: ReactNode
+}
+
+export type DetailTone = 'active' | 'waiting' | 'success' | 'danger' | 'muted'
+
+export function DetailSummaryPanel({ icon, title, description, metrics = [], tone = 'muted' }: { icon: ReactNode; title: string; description: string; metrics?: DetailMetric[]; tone?: DetailTone }): React.JSX.Element {
+  return <div className={`detail-summary-panel detail-summary-panel--${tone}`}>
+    <div className="detail-summary-panel__intro"><span className="detail-summary-panel__icon">{icon}</span><div className="detail-summary-panel__copy"><h3>{title}</h3><p>{description}</p></div></div>
+    {metrics.length > 0 && <div className="detail-metric-group" aria-label="概况指标">{metrics.map((metric) => <span className="detail-metric-group__item" key={metric.label}><strong>{metric.value}</strong><small>{metric.label}</small></span>)}</div>}
+  </div>
+}
+
+export function DetailSectionHeader({ title, description, meta }: { title: string; description?: string; meta?: ReactNode }): React.JSX.Element {
+  return <div className="detail-section-header"><div><h3>{title}</h3>{description && <p>{description}</p>}</div>{meta !== undefined && meta !== null && <span className="detail-section-header__meta">{meta}</span>}</div>
+}
+
+export function DetailListMark({ children, tone = 'muted', shape = 'circle' }: { children: ReactNode; tone?: DetailTone; shape?: 'circle' | 'rounded' }): React.JSX.Element {
+  return <span className={`detail-list-mark detail-list-mark--${shape} detail-list-mark--${tone}`}>{children}</span>
+}
+
+export function DetailState({ children, tone = 'muted' }: { children: ReactNode; tone?: DetailTone }): React.JSX.Element {
+  return <span className={`detail-state detail-state--${tone}`}>{children}</span>
+}
+
+export function DetailNote({ icon, children, tone = 'muted' }: { icon?: ReactNode; children: ReactNode; tone?: DetailTone }): React.JSX.Element {
+  return <p className={`detail-note detail-note--${tone}`}>{icon}{children}</p>
 }
 
 export function SummaryListItem({ title, subtitle, leading, trailing, onClick }: { title: ReactNode; subtitle?: ReactNode; leading?: ReactNode; trailing?: ReactNode; onClick?: () => void }): React.JSX.Element {

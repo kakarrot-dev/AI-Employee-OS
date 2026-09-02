@@ -15,9 +15,10 @@
 
   /* Page containers. */
   --layout-workspace-content-max-width: 1080px;
-  --layout-message-content-max-width: 720px;
+  --layout-message-content-max-width: 820px;
   --layout-detail-content-max-width: 820px;
   --layout-reading-content-max-width: 560px;
+  --layout-message-stream-item-max-width: 744px;
   --layout-page-inline-gutter: 22px;
   --layout-detail-inline-gutter: 24px;
   --layout-pane-header-height: 52px;
@@ -34,9 +35,17 @@
   --layout-search-height: 32px;
   --layout-list-row-min-height: 56px;
   --layout-summary-row-min-height: 50px;
+  --layout-detail-modal-inline-padding: 30px;
+  --layout-detail-modal-block-padding: 24px;
+  --layout-detail-section-block-padding: 24px;
+  --layout-detail-component-gap: 14px;
+  --layout-detail-summary-padding: 16px;
+  --layout-detail-metric-min-width: 74px;
   --layout-message-attachment-card-width: 200px;
   --layout-attachment-carousel-control-size: 24px;
+  --layout-attachment-open-menu-width: 264px;
   --layout-message-collapse-lines: 6;
+  --layout-message-process-collapse-lines: 3;
   --layout-selection-row-min-height: 54px;
   --layout-choice-row-min-height: 56px;
   --layout-test-row-min-height: 58px;

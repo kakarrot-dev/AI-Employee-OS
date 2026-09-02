@@ -1,8 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { ChatBubble } from 'iconoir-react'
+import { ChatBubble, Check, ShieldCheck } from 'iconoir-react'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { AppShell, ClientModal, ContextPane, ListRow, Rail, SummaryList, SummaryListItem, Toolbar } from './client-ui'
+import { AppShell, Avatar, ClientModal, ContextPane, DetailListMark, DetailNote, DetailSectionHeader, DetailState, DetailSummaryPanel, ListRow, ProfileFacts, ProfileSummary, ProfileValueTags, Rail, SelectionCatalog, SelectionOption, SummaryCard, SummaryCardGrid, SummaryList, SummaryListItem, Toolbar } from './client-ui'
 
 describe('client UI contracts', () => {
   it('keeps the toolbar, primary rail, context pane and workspace as stable landmarks', () => {
@@ -33,6 +33,54 @@ describe('client UI contracts', () => {
     expect(screen.getByRole('button', { name: /总管在线/ })).toHaveClass('list-row', 'is-selected')
   })
 
+  it('makes avatar visibility an explicit shared list-row contract', () => {
+    const { rerender } = render(<ListRow title="会话" subtitle="最近消息" identity="text" avatar={<Avatar label="不应显示" initials="会" />} onClick={() => undefined} />)
+    expect(screen.getByRole('button', { name: /会话最近消息/ })).toHaveClass('list-row--text')
+    expect(screen.queryByLabelText('不应显示')).not.toBeInTheDocument()
+
+    rerender(<ListRow title="员工" subtitle="职责" identity="person" avatar={<Avatar label="文档编写员" initials="文" />} onClick={() => undefined} />)
+    expect(screen.getByRole('button', { name: /员工职责/ })).toHaveClass('list-row--person')
+    expect(screen.getByLabelText('文档编写员').closest('.list-row__avatar')).toBeInTheDocument()
+  })
+
+  it('reuses the profile summary and fact contracts for identity details', () => {
+    render(<><ProfileSummary identity={{ name: '文档编写员', initials: '文', color: '#c5b8e3' }} title="结构化文档撰写" description="负责整理可追溯文档。" /><ProfileFacts items={[{ label: '工作状态', value: '可工作' }, { label: '运行模型', value: 'deepseek-v4-pro' }]} /></>)
+    expect(screen.getByRole('heading', { name: '结构化文档撰写', level: 2 }).closest('.profile-summary')).toBeInTheDocument()
+    expect(screen.getByText('工作状态').closest('.profile-facts')).toBeInTheDocument()
+  })
+
+  it('shows profile values without visible keys while keeping the field context accessible', () => {
+    render(<ProfileValueTags items={[{ label: '工作状态', accessibleValue: '可工作', value: '可工作' }, { label: '运行模型', accessibleValue: 'deepseek-v4-pro', value: 'deepseek-v4-pro' }]} />)
+    const facts = screen.getByRole('list', { name: '基本资料' })
+    expect(facts).toHaveTextContent('可工作')
+    expect(facts).toHaveTextContent('deepseek-v4-pro')
+    expect(facts).not.toHaveTextContent('工作状态')
+    expect(screen.getByLabelText('工作状态：可工作')).toBeInTheDocument()
+  })
+
+  it('renders summary cards as static information without button affordances', () => {
+    render(<SummaryCardGrid emptyMessage="尚未绑定能力"><SummaryCard leading={<Check />} title="本机文档编写" description="依赖正常，可用于正式任务" /></SummaryCardGrid>)
+    expect(screen.getByRole('article')).toHaveTextContent('本机文档编写')
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('reuses one searchable selection contract for single and multiple choices', () => {
+    const onQueryChange = vi.fn()
+    const onSelect = vi.fn()
+    render(<SelectionCatalog searchLabel="搜索能力" placeholder="搜索名称或说明" query="" resultLabel="2 项" emptyMessage="没有匹配项" onQueryChange={onQueryChange}>
+      <SelectionOption leading={<Check />} title="多源网络调研" description="收集并核验公开资料。" meta="v2 · 2 个 Tool" status="依赖可用" selected onSelect={onSelect} />
+      <SelectionOption leading={<ShieldCheck />} title="视觉方案" description="生成视觉方向与资产。" meta="v1 · 1 个 Tool" status="依赖未就绪" selected={false} disabled onSelect={() => undefined} />
+    </SelectionCatalog>)
+
+    fireEvent.change(screen.getByRole('textbox', { name: '搜索能力' }), { target: { value: '调研' } })
+    expect(onQueryChange).toHaveBeenCalledWith('调研')
+    const selected = screen.getByRole('button', { name: /多源网络调研/ })
+    expect(selected).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(selected)
+    expect(onSelect).toHaveBeenCalledOnce()
+    expect(screen.getByRole('button', { name: /视觉方案/ })).toBeDisabled()
+  })
+
   it('reuses one summary-list contract for rows and contained empty states', () => {
     const onClick = vi.fn()
     const { rerender } = render(<SummaryList emptyMessage="暂无记录"><SummaryListItem title="市场报告" subtitle="2 个交付物" trailing="已交付" onClick={onClick} /></SummaryList>)
@@ -43,6 +91,21 @@ describe('client UI contracts', () => {
     rerender(<SummaryList emptyMessage="暂无记录">{[]}</SummaryList>)
     expect(screen.getByText('暂无记录')).toHaveClass('summary-list__empty')
     expect(screen.getByText('暂无记录').parentElement).toHaveClass('summary-list')
+  })
+
+  it('composes detail summaries, sections and outlined rows from shared contracts', () => {
+    const { container } = render(<>
+      <DetailSummaryPanel icon={<ShieldCheck />} title="所有完成要求均已通过" description="交付文件和来源证据已保存。" tone="success" metrics={[{ label: '完成要求', value: '2/2' }, { label: '来源证据', value: 20 }]} />
+      <DetailSectionHeader title="交付文件与证据" description="可在下方查看" meta="2 个文件" />
+      <SummaryList emptyMessage="暂无文件" variant="outlined"><SummaryListItem leading={<DetailListMark tone="success"><Check /></DetailListMark>} title="新闻整理.md" trailing={<DetailState tone="success">已保存</DetailState>} /></SummaryList>
+      <DetailNote icon={<ShieldCheck />} tone="success">已保存 20 条来源证据</DetailNote>
+    </>)
+
+    expect(screen.getByText('所有完成要求均已通过').closest('.detail-summary-panel')).toHaveClass('detail-summary-panel--success')
+    expect(screen.getByText('交付文件与证据').closest('.detail-section-header')).toBeInTheDocument()
+    expect(screen.getByText('新闻整理.md').closest('.summary-list')).toHaveClass('summary-list--outlined')
+    expect(screen.getByText('已保存 20 条来源证据')).toHaveClass('detail-note--success')
+    expect(container.querySelector('.detail-list-mark--success')).toBeInTheDocument()
   })
 
   it('reuses the modal animation, keyboard dismissal and focus-return contract', () => {

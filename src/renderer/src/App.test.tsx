@@ -39,7 +39,9 @@ describe('App shell', () => {
         onStatusChanged: vi.fn().mockReturnValue(() => undefined)
       },
       provider: {
-        getStatus: vi.fn().mockResolvedValue({ state: 'ready', credentialStatus: { deepseek: 'configured', poe: 'missing' }, checkedAt: '2026-08-31T00:00:00Z', models: [{ provider: 'deepseek', modelId: 'deepseek-v4-pro', modality: 'text', verification: 'verified' }] })
+        getStatus: vi.fn().mockResolvedValue({ state: 'ready', credentialStatus: { deepseek: 'configured', poe: 'missing' }, checkedAt: '2026-08-31T00:00:00Z', models: [{ provider: 'deepseek', modelId: 'deepseek-v4-pro', modality: 'text', verification: 'verified' }] }),
+        configurePoe: vi.fn(),
+        verifyPoeModel: vi.fn()
       },
       conversation: {
         list: vi.fn().mockResolvedValue([{ id: 'local-supervisor', title: '与总管的对话', preview: '尚无消息', updatedAt: '2026-08-31T00:00:00Z', messageCount: 0 }]),
@@ -49,6 +51,10 @@ describe('App shell', () => {
         cancel: vi.fn().mockResolvedValue({ accepted: true }),
         history: vi.fn().mockResolvedValue([]),
         onEvent: vi.fn().mockReturnValue(() => undefined)
+      },
+      supervisor: {
+        get: vi.fn().mockResolvedValue({ schemaVersion: 1, id: 'supervisor.local', createdAt: '2026-09-02T00:00:00Z', updatedAt: '2026-09-02T00:00:00Z', name: '总管', systemPrompt: '使用简体中文，依据证据组织和验收员工工作。', modelId: 'deepseek-v4-pro', memoryScopes: ['global'] }),
+        update: vi.fn().mockImplementation(async (input) => ({ schemaVersion: 1, id: 'supervisor.local', createdAt: '2026-09-02T00:00:00Z', updatedAt: '2026-09-02T00:01:00Z', ...input }))
       },
       employee: {
         list: vi.fn().mockResolvedValue([]),
@@ -71,6 +77,8 @@ describe('App shell', () => {
       task: {
         list: vi.fn().mockResolvedValue([]),
         chooseDirectory: vi.fn().mockResolvedValue(undefined),
+        openArtifact: vi.fn().mockResolvedValue({ opened: true }),
+        revealArtifact: vi.fn().mockResolvedValue({ revealed: true }),
         createDraft: vi.fn(),
         updateDraft: vi.fn(),
         start: vi.fn(),
@@ -109,16 +117,72 @@ describe('App shell', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /模型服务/ }))
     expect(screen.getByRole('heading', { name: '模型服务', level: 1 })).toBeInTheDocument()
+    expect(screen.queryByText('系统设置保存在本机')).not.toBeInTheDocument()
+    expect(screen.queryByText('Runtime 已连接')).not.toBeInTheDocument()
+    expect(screen.queryByText('Credential 已配置，明文不会回显')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /记忆与存储/ }))
     expect(screen.getByRole('heading', { name: '记忆与存储', level: 1 })).toBeInTheDocument()
 
-    await waitFor(() => expect(screen.getByText('Runtime 尚未安装（Phase 2）')).toBeInTheDocument())
+    expect(screen.queryByText('Runtime 尚未安装（Phase 2）')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /新建任务/ })).not.toBeInTheDocument()
+  })
+
+  it('configures one Poe connection and verifies the three models independently', async () => {
+    const missing = {
+      state: 'degraded' as const,
+      credentialStatus: { deepseek: 'configured' as const, poe: 'missing' as const },
+      checkedAt: '2026-09-02T00:00:00Z',
+      models: [
+        { provider: 'deepseek' as const, modelId: 'deepseek-v4-pro', modality: 'text' as const, verification: 'verified' as const },
+        { provider: 'poe' as const, modelId: 'claude-sonnet-4.6', modality: 'text' as const, verification: 'unverified' as const },
+        { provider: 'poe' as const, modelId: 'gpt-image-2', modality: 'image' as const, verification: 'unverified' as const },
+        { provider: 'poe' as const, modelId: 'seedance-2.0', modality: 'video' as const, verification: 'unverified' as const }
+      ]
+    }
+    const configured = { ...missing, state: 'ready' as const, credentialStatus: { ...missing.credentialStatus, poe: 'configured' as const } }
+    vi.mocked(window.aiEmployeeOS.provider.getStatus).mockResolvedValue(missing)
+    vi.mocked(window.aiEmployeeOS.provider.configurePoe).mockResolvedValue(configured)
+    vi.mocked(window.aiEmployeeOS.provider.verifyPoeModel).mockResolvedValue({ ...configured, models: configured.models.map((model) => model.modelId === 'gpt-image-2' ? { ...model, verification: 'verified' as const } : model) })
+
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: '系统' }))
+    fireEvent.click(screen.getByRole('button', { name: '模型服务' }))
+    const key = await screen.findByLabelText('Poe API Key')
+    expect(screen.getByText('图像 · Chat Completions API')).toBeInTheDocument()
+    expect(screen.getByText('视频 · Chat Completions API')).toBeInTheDocument()
+    expect(screen.queryByText('Credential 已配置，明文不会回显')).not.toBeInTheDocument()
+    fireEvent.change(key, { target: { value: 'poe-valid-test-key' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存连接' }))
+    await waitFor(() => expect(window.aiEmployeeOS.provider.configurePoe).toHaveBeenCalledWith('poe-valid-test-key'))
+    fireEvent.click(screen.getByRole('button', { name: '验证 gpt-image-2' }))
+    await waitFor(() => expect(window.aiEmployeeOS.provider.verifyPoeModel).toHaveBeenCalledWith('gpt-image-2'))
+  })
+
+  it('edits the Runtime-owned supervisor identity, model, prompt and memory policy', async () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: '系统' }))
+    fireEvent.click(screen.getByRole('button', { name: '总管' }))
+    expect(await screen.findByRole('heading', { name: '总管', level: 2 })).toBeInTheDocument()
+    expect(screen.getByLabelText('从本地上传总管头像')).toBeEnabled()
+    await screen.findByDisplayValue('使用简体中文，依据证据组织和验收员工工作。')
+    expect(screen.getByRole('textbox', { name: '总管名称' })).toHaveAttribute('maxlength', '20')
+    expect(screen.getByRole('textbox', { name: '总管 System Prompt' })).toHaveAttribute('maxlength', '10000')
+    fireEvent.change(screen.getByRole('textbox', { name: '总管名称' }), { target: { value: '任务总管' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '总管 System Prompt' }), { target: { value: '使用简体中文，先检查目标与证据，再组织最少且充分的员工。' } })
+    fireEvent.click(screen.getByRole('button', { name: /claude-sonnet-4\.6/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: '读取全局记忆' }))
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    await waitFor(() => expect(window.aiEmployeeOS.supervisor.update).toHaveBeenCalledWith(expect.objectContaining({ name: '任务总管', modelId: 'claude-sonnet-4.6', memoryScopes: [] })))
+    expect(await screen.findByText('设置已保存并会用于下一次总管调用')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '任务总管', level: 2 })).toBeInTheDocument()
   })
 
   it('uses the prototype conversation list and creates a real runtime conversation', async () => {
     render(<App />)
-    expect(await screen.findByRole('button', { name: /与总管的对话尚无消息/ })).toBeInTheDocument()
+    const conversationButton = await screen.findByRole('button', { name: /与总管的对话尚无消息/ })
+    expect(conversationButton).toBeInTheDocument()
+    expect(conversationButton).toHaveClass('list-row--text')
+    expect(conversationButton.querySelector('.avatar')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '新建会话' }))
     await waitFor(() => expect(window.aiEmployeeOS.conversation.create).toHaveBeenCalledOnce())
     expect(screen.getByRole('heading', { name: '新会话', level: 1 })).toBeInTheDocument()
@@ -143,17 +207,23 @@ describe('App shell', () => {
     ])
     render(<App />)
     expect(await screen.findByText('Hi there!')).toBeInTheDocument()
+    expect((await screen.findByLabelText('总管')).querySelector('img')).toBeInTheDocument()
+    expect(screen.getByLabelText('你')).toBeInTheDocument()
     expect(screen.queryByText('这段对话尚未形成事项。')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '同意转为事项草稿' })).not.toBeInTheDocument()
   })
 
   it('uses only the narrow runtime bridge for reconnect', async () => {
     render(<App />)
-    fireEvent.click(screen.getByRole('button', { name: 'Runtime 未连接' }))
+    fireEvent.click(screen.getByRole('button', { name: '重新连接' }))
     await waitFor(() => expect(window.aiEmployeeOS.runtime.reconnect).toHaveBeenCalledOnce())
   })
 
   it('opens the prototype three-step employee creation modal', async () => {
+    vi.mocked(window.aiEmployeeOS.employee.capabilities).mockResolvedValue([
+      { schemaVersion: 1, id: 'capability-research', createdAt: '2026-09-02T00:00:00Z', name: '网络调研能力', description: '收集、核验并整理公开资料。', version: 1, skillVersionIds: ['skill-research'], toolVersionIds: [], mcpVersionIds: [], requiredModelIds: [], permissionRequirements: ['公开网络读取'], dependencies: [] },
+      { schemaVersion: 1, id: 'capability-document', createdAt: '2026-09-02T00:00:00Z', name: '文档交付能力', description: '生成可验收的结构化文档。', version: 1, skillVersionIds: ['skill-document'], toolVersionIds: ['tool-document'], mcpVersionIds: [], requiredModelIds: [], permissionRequirements: ['授权目录写入'], dependencies: [] }
+    ])
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: '通讯录' }))
     fireEvent.click(await screen.findByRole('button', { name: '新建 Agent 员工' }))
@@ -166,7 +236,10 @@ describe('App shell', () => {
     expect(screen.queryByText('所有字段稍后仍可在员工设置中修改。')).not.toBeInTheDocument()
     expect(screen.queryByText('点击头像从本地选择图片')).not.toBeInTheDocument()
     expect(screen.queryByText('使用清晰的职责名称，不使用系统内部 ID。')).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '名称' })).toHaveAttribute('maxlength', '20')
     expect(screen.getByRole('textbox', { name: '职责' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '职责' })).toHaveAttribute('maxlength', '40')
+    expect(screen.getByRole('textbox', { name: '职责说明' })).toHaveAttribute('maxlength', '500')
     expect(screen.getByRole('button', { name: '继续' })).toBeDisabled()
     fireEvent.click(within(navigation).getByRole('button', { name: '提示词' }))
     expect(screen.getByRole('alert')).toHaveTextContent('请先完成当前步骤的必填项')
@@ -177,12 +250,27 @@ describe('App shell', () => {
     fireEvent.click(screen.getByRole('button', { name: '继续' }))
     expect(screen.getByRole('heading', { name: '提示词', level: 2 })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: /^System Prompt/ })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /^System Prompt/ })).toHaveAttribute('maxlength', '10000')
+    fireEvent.change(screen.getByRole('textbox', { name: /^System Prompt/ }), { target: { value: '只使用已授权资料，输出结论时保留来源和信息缺口。' } })
+    fireEvent.click(screen.getByRole('button', { name: '继续' }))
+    expect(screen.getByRole('heading', { name: '模型与能力', level: 2 })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '搜索运行模型' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '搜索 Agent 能力' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /deepseek-v4-pro/ })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: /网络调研能力/ }))
+    fireEvent.click(screen.getByRole('button', { name: /文档交付能力/ }))
+    expect(screen.getByText('多选 · 已选 2 项')).toBeInTheDocument()
   })
 
   it('projects the same employee identity contract into the directory and detail page', async () => {
     const avatarDataUrl = 'data:image/png;base64,iVBORw0KGgo='
-    const version = { schemaVersion: 1 as const, id: 'employee-v1', createdAt: '2026-08-31T00:00:00Z', employeeId: 'employee-1', version: 1, state: 'draft' as const, name: '网络调研员', role: '多源网络调研', description: '形成可追溯的 ResearchBundle。', avatarDataUrl, systemPrompt: '只依据来源工作。', modelId: 'deepseek-v4-pro' as const, capabilityVersionIds: [], memoryScopes: ['employee' as const], testRunIds: [] }
-    vi.mocked(window.aiEmployeeOS.employee.list).mockResolvedValue([{ id: 'employee-1', name: version.name, role: version.role, avatarDataUrl, status: 'draft', draftVersionId: version.id, capabilityVersionIds: [], activeCapabilityVersionIds: [] }])
+    const version = { schemaVersion: 1 as const, id: 'employee-v1', createdAt: '2026-08-31T00:00:00Z', employeeId: 'employee-1', version: 1, state: 'draft' as const, name: '网络调研员', role: '多源网络调研', description: '形成可追溯的 ResearchBundle。', avatarDataUrl, systemPrompt: '只依据已确认的来源和任务边界工作。', modelId: 'deepseek-v4-pro' as const, capabilityVersionIds: ['capability-research'], memoryScopes: ['employee' as const], testRunIds: [] }
+    vi.mocked(window.aiEmployeeOS.employee.list).mockResolvedValue([{ id: 'employee-1', name: version.name, role: version.role, avatarDataUrl, status: 'draft', draftVersionId: version.id, capabilityVersionIds: ['capability-research'], activeCapabilityVersionIds: [] }])
+    vi.mocked(window.aiEmployeeOS.employee.capabilities).mockResolvedValue([
+      { schemaVersion: 1, id: 'capability-research', createdAt: version.createdAt, name: '网络调研能力', description: '能力聚合说明不应显示在 Skill 卡片中。', version: 1, skillVersionIds: ['skill-research'], toolVersionIds: [], mcpVersionIds: [], requiredModelIds: [], permissionRequirements: ['公开网络读取'], dependencies: [] },
+      { schemaVersion: 1, id: 'capability-document', createdAt: version.createdAt, name: '文档交付能力', description: '把已确认资料整理成结构清晰、可验收的文档。', version: 2, skillVersionIds: ['skill-document'], toolVersionIds: ['tool-document'], mcpVersionIds: [], requiredModelIds: [], permissionRequirements: ['授权目录写入'], dependencies: [] }
+    ])
+    vi.mocked(window.aiEmployeeOS.resource.list).mockResolvedValue({ skills: [{ id: 'skill-research', createdAt: version.createdAt, name: '多源网络调研', description: '从许可来源收集、核验并结构化公开资料。', version: 1, steps: [], toolVersionIds: [], available: true }], tools: [], mcps: [], healthChecks: [] })
     const detail = { employee: { schemaVersion: 1 as const, id: 'employee-1', createdAt: version.createdAt, name: version.name, draftVersionId: version.id, disabled: false, archived: false }, status: 'draft' as const, draft: version, versions: [version], testCases: [], testRuns: [], formalReferences: [] }
     vi.mocked(window.aiEmployeeOS.employee.detail).mockResolvedValue(detail)
     vi.mocked(window.aiEmployeeOS.employee.beginEdit).mockResolvedValue(detail)
@@ -193,11 +281,21 @@ describe('App shell', () => {
     expect(screen.getAllByLabelText('网络调研员').length).toBeGreaterThan(0)
     expect(await screen.findByRole('heading', { name: '多源网络调研', level: 2 })).toBeInTheDocument()
     expect(screen.getByText('形成可追溯的 ResearchBundle。')).toBeInTheDocument()
+    const profileValues = screen.getByRole('list', { name: '基本资料' })
+    expect(profileValues).toHaveTextContent('草稿')
+    expect(profileValues).toHaveTextContent('deepseek-v4-pro')
+    expect(profileValues).not.toHaveTextContent('工作状态')
+    const skillCard = await screen.findByRole('article')
+    expect(skillCard).toHaveTextContent('多源网络调研')
+    expect(skillCard).toHaveTextContent('从许可来源收集、核验并结构化公开资料。')
+    expect(skillCard).not.toHaveTextContent('能力聚合说明不应显示在 Skill 卡片中。')
+    expect(skillCard.closest('button')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '最近 3 项交付' })).not.toBeInTheDocument()
     const toolbar = screen.getByRole('banner', { name: '窗口拖拽区' })
     expect(within(toolbar).queryByRole('button', { name: '设置' })).not.toBeInTheDocument()
     expect(within(toolbar).queryByRole('button', { name: '发消息' })).not.toBeInTheDocument()
     const settingsButton = screen.getByRole('button', { name: '设置' })
-    expect(settingsButton.closest('.profile-intro__actions')).toBeInTheDocument()
+    expect(settingsButton.closest('.profile-summary__actions')).toBeInTheDocument()
     expect(settingsButton).not.toHaveTextContent('设置')
     expect(screen.queryByRole('button', { name: '发消息' })).not.toBeInTheDocument()
     fireEvent.click(settingsButton)
@@ -218,8 +316,21 @@ describe('App shell', () => {
     fireEvent.click(within(settingsDialog).getByRole('button', { name: '模型与能力' }))
     expect(within(settingsDialog).getByRole('heading', { name: '运行模型', level: 3 })).toBeInTheDocument()
     expect(within(settingsDialog).getByRole('heading', { name: 'Agent 能力', level: 3 })).toBeInTheDocument()
-    expect(settingsDialog.querySelectorAll('.settings-selection-grid')).toHaveLength(1)
-    expect(within(settingsDialog).getByText('尚无可绑定能力。')).toBeInTheDocument()
+    expect(within(settingsDialog).getByRole('textbox', { name: '搜索运行模型' })).toBeInTheDocument()
+    expect(within(settingsDialog).getByRole('textbox', { name: '搜索 Agent 能力' })).toBeInTheDocument()
+    expect(within(settingsDialog).getByRole('button', { name: /deepseek-v4-pro/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(settingsDialog).getByRole('button', { name: /网络调研能力/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(settingsDialog).getByRole('button', { name: /文档交付能力/ })).toHaveAttribute('aria-pressed', 'false')
+    expect(within(settingsDialog).getByText('能力聚合说明不应显示在 Skill 卡片中。')).toBeInTheDocument()
+    fireEvent.change(within(settingsDialog).getByRole('textbox', { name: '搜索运行模型' }), { target: { value: 'Poe' } })
+    expect(within(settingsDialog).queryByRole('button', { name: /deepseek-v4-pro/ })).not.toBeInTheDocument()
+    expect(within(settingsDialog).getByRole('button', { name: /claude-sonnet-4.6/ })).toBeInTheDocument()
+    fireEvent.change(within(settingsDialog).getByRole('textbox', { name: '搜索 Agent 能力' }), { target: { value: '不存在' } })
+    expect(within(settingsDialog).getByText('没有匹配的能力。')).toBeInTheDocument()
+    fireEvent.change(within(settingsDialog).getByRole('textbox', { name: '搜索 Agent 能力' }), { target: { value: '' } })
+    fireEvent.click(within(settingsDialog).getByRole('button', { name: /文档交付能力/ }))
+    await waitFor(() => expect(window.aiEmployeeOS.employee.saveDraft).toHaveBeenCalledWith('employee-1', expect.objectContaining({ capabilityVersionIds: ['capability-research', 'capability-document'] })), { timeout: 1_500 })
+    expect(within(settingsDialog).queryByText('尚无可绑定能力。')).not.toBeInTheDocument()
     expect(within(settingsDialog).queryByRole('button', { name: '测试与发布' })).not.toBeInTheDocument()
     for (const heading of ['新建测试用例', '测试记录', '发布状态', '历史版本']) expect(within(settingsDialog).queryByRole('heading', { name: heading, level: 3 })).not.toBeInTheDocument()
     expect(within(settingsDialog).getByText('由总管统一组织，不在员工设置中操作')).toBeInTheDocument()
@@ -248,13 +359,22 @@ describe('App shell', () => {
     expect(await screen.findByRole('tab', { name: /事项/ })).toBeInTheDocument()
     expect(screen.getAllByRole('heading', { name: '生成市场研究报告', level: 3 })).toHaveLength(1)
     expect(document.querySelector('.runtime-matter-card')).not.toBeInTheDocument()
-    expect(screen.getByText('总管已识别为事项：生成市场研究报告')).toBeInTheDocument()
+    expect(screen.getByText('已创建事项')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '查看事项：生成市场研究报告' })).toHaveTextContent('目标生成市场研究报告')
+    expect(screen.getByRole('button', { name: '查看事项：生成市场研究报告' })).toHaveClass('message-stream-item')
     expect(screen.getByText('加入工作')).toBeInTheDocument()
     expect(screen.getAllByText('网络情报员').length).toBeGreaterThan(0)
     expect(screen.getAllByText('已完成调研并提交报告。').length).toBeGreaterThan(0)
-    expect(screen.getByText('最终结果')).toBeInTheDocument()
-    expect(screen.getByText('总管验收：验收通过')).toBeInTheDocument()
-    expect(screen.getByText('1 / 1 项验收通过，4 条证据已固化。')).toBeInTheDocument()
+    expect(document.querySelector('.delivery-card__eyebrow')).toHaveTextContent('结果')
+    expect(document.querySelector('.delivery-card')).toHaveClass('message-stream-item')
+    expect(screen.getByText('验收通过')).toBeInTheDocument()
+    expect(screen.getByLabelText('交付概况')).toHaveTextContent('1/1完成要求4来源证据1交付文件')
+    fireEvent.click(screen.getByRole('button', { name: '打开方式 report.md' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /使用系统默认应用打开/ }))
+    fireEvent.click(screen.getByRole('button', { name: '打开方式 report.md' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /打开所在文件夹/ }))
+    await waitFor(() => expect(window.aiEmployeeOS.task.openArtifact).toHaveBeenCalledWith('task-view-1', 'artifact-1'))
+    expect(window.aiEmployeeOS.task.revealArtifact).toHaveBeenCalledWith('task-view-1', 'artifact-1')
     fireEvent.click(screen.getByRole('button', { name: '批准' }))
     await waitFor(() => expect(window.aiEmployeeOS.task.approveTool).toHaveBeenCalledWith('action-1'))
   })
@@ -278,7 +398,8 @@ describe('App shell', () => {
     expect(workTimeline).toHaveTextContent('网络情报员、文档编写员加入工作')
     expect(workTimeline).toHaveTextContent('已完成多源检索，并将来源交接给文档编写员。')
     expect(workTimeline).toHaveTextContent('正在整理 Markdown 结构和来源索引。')
-    expect(workTimeline).toHaveTextContent('本机文档写入 · 正在执行')
+    expect(workTimeline).toHaveTextContent('正在执行')
+    expect(workTimeline).not.toHaveTextContent('本机文档写入 · 正在执行')
   })
 
   it('starts a routed document matter automatically after its directory is attached', async () => {
@@ -317,7 +438,7 @@ describe('App shell', () => {
     vi.mocked(window.aiEmployeeOS.task.list).mockResolvedValue([failedTask])
     vi.mocked(window.aiEmployeeOS.employee.list).mockResolvedValue([
       { id: 'employee-network', name: '网络情报员', status: 'active', activeVersionId: 'employee-version.network-intelligence.v1', capabilityVersionIds: ['capability.network-intelligence.v1'], activeCapabilityVersionIds: ['capability.network-intelligence.v1'] },
-      { id: 'employee-writer', name: '文档编写员', status: 'pending_changes', activeVersionId: 'employee-version.document-writer.v1', draftVersionId: 'employee-version.document-writer.v2', capabilityVersionIds: [], activeCapabilityVersionIds: ['capability.local-document.v1'] }
+      { id: 'employee-writer', name: '文档编写员', status: 'active', activeVersionId: 'employee-version.document-writer.v1', draftVersionId: 'employee-version.document-writer.v2', capabilityVersionIds: [], activeCapabilityVersionIds: ['capability.local-document.v1'] }
     ])
     const recreated = { ...failedTask, id: 'draft-recreated', draftId: 'draft-recreated', taskId: undefined, state: 'draft' as const, frozenRevision: undefined, runId: undefined, assignments: [], toolActions: [], approvals: [], requiresDirectories: true }
     vi.mocked(window.aiEmployeeOS.task.createDraft).mockResolvedValue(recreated)

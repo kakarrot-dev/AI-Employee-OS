@@ -7,6 +7,10 @@ const contract = await readFile(`${root}/src/layout.css`, 'utf8')
 const styles = await readFile(`${root}/src/styles.css`, 'utf8')
 const app = await readFile(`${root}/src/App.tsx`, 'utf8')
 const windowContract = await readFile(`${repositoryRoot}/src/shared/layout-contract.ts`, 'utf8')
+const rendererStyles = await readFile(`${repositoryRoot}/src/renderer/src/prototype-adapter.css`, 'utf8')
+const rendererComponents = await readFile(`${repositoryRoot}/src/renderer/src/components/client-ui.tsx`, 'utf8')
+const rendererMessageComponents = await readFile(`${repositoryRoot}/src/renderer/src/components/message-ui.tsx`, 'utf8')
+const rendererApp = await readFile(`${repositoryRoot}/src/renderer/src/App.tsx`, 'utf8')
 
 const requiredTokens = [
   '--layout-window-default-width',
@@ -21,11 +25,20 @@ const requiredTokens = [
   '--layout-window-controls-safe-left',
   '--layout-window-controls-safe-top',
   '--layout-message-content-max-width',
+  '--layout-message-stream-item-max-width',
   '--layout-detail-content-max-width',
   '--layout-summary-row-min-height',
+  '--layout-detail-modal-inline-padding',
+  '--layout-detail-modal-block-padding',
+  '--layout-detail-section-block-padding',
+  '--layout-detail-component-gap',
+  '--layout-detail-summary-padding',
+  '--layout-detail-metric-min-width',
   '--layout-message-attachment-card-width',
   '--layout-attachment-carousel-control-size',
+  '--layout-attachment-open-menu-width',
   '--layout-message-collapse-lines',
+  '--layout-message-process-collapse-lines',
   '--layout-composer-control-size',
   '--layout-composer-attachment-size',
   '--layout-composer-scroll-fade-height',
@@ -47,6 +60,10 @@ const requiredUsages = [
   'grid-template-columns: var(--layout-rail-width) var(--layout-context-width) minmax(var(--layout-workspace-min-width), 1fr);',
   'width: min(100%, var(--layout-workspace-content-max-width));',
   'width: min(100%, var(--layout-message-content-max-width));',
+  'width: min(100%, var(--layout-message-stream-item-max-width));',
+  'padding: var(--layout-detail-summary-padding);',
+  'gap: var(--layout-detail-component-gap);',
+  'min-width: var(--layout-detail-metric-min-width);',
   'grid-template-columns: var(--layout-modal-navigation-width) minmax(0, 1fr);',
   'width: min(var(--layout-modal-large-width), calc(100dvw - max(var(--layout-modal-overlay-gutter), var(--layout-window-controls-safe-left)) - var(--layout-modal-overlay-gutter)));',
   'height: min(var(--layout-modal-large-height), calc(100dvh - max(var(--layout-modal-overlay-gutter), var(--layout-window-controls-safe-top)) - var(--layout-modal-overlay-gutter)));',
@@ -85,6 +102,14 @@ const missingUsages = requiredUsages.filter((usage) => !styles.includes(usage))
 
 if (missingTokens.length) errors.push(`缺少尺寸 Token: ${missingTokens.join(', ')}`)
 if (missingUsages.length) errors.push(`关键布局未使用尺寸契约:\n${missingUsages.join('\n')}`)
+
+if (cssPixels('--layout-message-content-max-width') !== cssPixels('--layout-detail-content-max-width')) {
+  errors.push('对话流与详情内容必须共享同一内容宽度边界，避免主工作区左右留白失衡')
+}
+
+if ((cssPixels('--layout-message-stream-item-max-width') ?? Infinity) > (cssPixels('--layout-message-content-max-width') ?? 0)) {
+  errors.push('信息流组件最大宽度不得超过对话内容容器')
+}
 
 const modalContentRule = styles.match(/\.modal-content\s*\{([^}]*)\}/s)?.[1] ?? ''
 const modalMainRule = styles.match(/\.modal-content__main\s*\{([^}]*)\}/s)?.[1] ?? ''
@@ -155,7 +180,7 @@ for (const marker of ['.conversation-row:hover .conversation-row__delete', '.con
   if (!styles.includes(marker)) errors.push(`缺少当前行 Hover 或键盘焦点删除操作: ${marker}`)
 }
 
-for (const label of ['删除会话', '在文件夹中显示']) {
+for (const label of ['删除会话', '打开所在文件夹']) {
   if (!app.includes(label)) errors.push(`缺少消息操作契约: ${label}`)
 }
 
@@ -175,7 +200,7 @@ if (app.includes('className="topic-bar__count"') || app.includes('>任务 <')) {
   errors.push('消息页不得展示事项累计数量，也不得把顶层事项命名为任务')
 }
 
-for (const marker of ['className="topic-bar__attention"', 'className="matter-route-note"', 'className="matter-event"', 'className="matter-index-card"', 'className="matter-team-avatars"']) {
+for (const marker of ['className="topic-bar__attention"', 'className="matter-route-note message-stream-item"', 'className="matter-event message-stream-item"', 'className="matter-index-card"', 'className="matter-team-avatars"']) {
   if (!app.includes(marker)) errors.push(`缺少会话事项结构: ${marker}`)
 }
 
@@ -185,6 +210,30 @@ if (!app.includes('{hasMatters && <div className="topic-bar"')) {
 
 for (const marker of ['function MarkdownMessage', '<ReactMarkdown remarkPlugins={[remarkGfm]}>', 'aria-expanded={expanded}', 'className="attachment-carousel-navigation"', 'label="查看上一份附件"', 'label="查看下一份附件"']) {
   if (!app.includes(marker)) errors.push(`缺少消息折叠或附件导航复用组件: ${marker}`)
+}
+
+for (const marker of ['variant="progress"', '<MarkdownMessage compact>', 'className="delivery-card__eyebrow">结果', 'className="delivery-card__verification"', 'className="matter-event__body"><small>目标']) {
+  if (!rendererApp.includes(marker)) errors.push(`客户端信息流缺少目标、过程或结果分层契约: ${marker}`)
+}
+
+for (const marker of ['matter-route-note message-stream-item', 'matter-event message-stream-item', 'approval-card message-stream-item', 'message-stream-item`', 'runtime-route-note message-stream-item', 'change-card message-stream-item', 'boundary-note message-stream-item']) {
+  if (!rendererApp.includes(marker) && !rendererMessageComponents.includes(marker)) errors.push(`客户端信息流组件未复用最大宽度与自适应契约: ${marker}`)
+}
+
+if (/\.(?:matter-event|approval-card|delivery-card)\s*\{[^}]*width:\s*calc\(100%\s*-\s*38px\)/s.test(styles)) {
+  errors.push('事项、审批和交付组件不得继续使用固定左缩进计算宽度')
+}
+
+for (const marker of ['message-block--progress', '--layout-message-process-collapse-lines', '.delivery-card__verification']) {
+  if (!styles.includes(marker)) errors.push(`信息流视觉层级未复用共享样式契约: ${marker}`)
+}
+
+for (const marker of ['function AttachmentOpenMenu', '<MenuTrigger>', 'className="attachment-open-trigger"', '使用系统默认应用打开', '打开所在文件夹']) {
+  if (!app.includes(marker) || !rendererMessageComponents.includes(marker)) errors.push(`原型与客户端缺少共享附件打开方式契约: ${marker}`)
+}
+
+if (rendererMessageComponents.includes('label={`打开 ${attachment.name}`} icon={OpenNewWindow}')) {
+  errors.push('客户端附件不得恢复两个无文字图标，文件操作必须收敛到“打开方式”菜单')
 }
 
 for (const marker of ['function MarkdownContent', 'skillMarkdown?: string', '<h2>{capability.name}</h2>', '<p>{capability.summary}</p>', '<h3>SKILL.md</h3>', '<MarkdownContent className="skill-document__markdown">']) {
@@ -197,12 +246,25 @@ if (skillCapabilityCount !== skillDocumentCount) {
   errors.push(`Skill 数量 ${skillCapabilityCount} 与 SKILL.md 文档数量 ${skillDocumentCount} 不一致`)
 }
 
-for (const usage of ['max-height: calc(1em * var(--type-leading-reading) * var(--layout-message-collapse-lines));', 'min-width: var(--layout-message-attachment-card-width);', 'width: var(--layout-attachment-carousel-control-size);']) {
+for (const usage of ['max-height: calc(1em * var(--type-leading-reading) * var(--layout-message-collapse-lines));', 'max-height: calc(1em * var(--type-leading-reading) * var(--layout-message-process-collapse-lines));', 'min-width: var(--layout-message-attachment-card-width);', 'width: var(--layout-attachment-carousel-control-size);', 'width: var(--layout-attachment-open-menu-width);']) {
   if (!styles.includes(usage)) errors.push(`消息折叠或附件导航未使用尺寸契约: ${usage}`)
 }
 
 for (const label of ['需要你处理', '进行中', '已完成', '总管直接回答，不创建事项']) {
   if (!app.includes(label)) errors.push(`缺少事项意图或分组契约: ${label}`)
+}
+
+for (const marker of ['function DetailSummaryPanel', 'function DetailSectionHeader', 'function DetailListMark', 'function DetailState', 'function DetailNote']) {
+  if (!rendererComponents.includes(marker)) errors.push(`事项详情缺少共享组件契约: ${marker}`)
+}
+
+for (const marker of ['<DetailSummaryPanel', '<DetailSectionHeader', '<SummaryList', '<DetailNote']) {
+  if (!rendererApp.includes(marker)) errors.push(`事项详情未实际复用共享组件: ${marker}`)
+}
+
+for (const legacySelector of ['.matter-summary', '.matter-section-heading', '.matter-check-list', '.matter-team-list', '.matter-artifact-list', '.matter-evidence-note']) {
+  if (rendererStyles.includes(legacySelector)) errors.push(`事项详情不得继续使用页面专用组件样式: ${legacySelector}`)
+  if (rendererApp.includes(legacySelector.slice(1))) errors.push(`事项详情不得继续渲染页面专用组件类名: ${legacySelector.slice(1)}`)
 }
 
 if (errors.length) {

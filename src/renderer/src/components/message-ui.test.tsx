@@ -10,6 +10,8 @@ describe('message UI contracts', () => {
     const onCreateMatter = vi.fn()
     const onRequestChange = vi.fn()
     render(<MatterRouteNote title="市场研究" mode="linked" onOpenMatter={onOpenMatter} onCreateMatter={onCreateMatter} onRequestChange={onRequestChange} />)
+    expect(screen.getByText('已归入已有事项')).toBeInTheDocument()
+    expect(screen.queryByText('市场研究')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '更改' }))
     const options = screen.getByRole('group', { name: '更改消息归类' })
@@ -22,14 +24,18 @@ describe('message UI contracts', () => {
     expect(onCreateMatter).toHaveBeenCalledOnce()
   })
 
-  it('reuses attachment actions for remove, open and reveal interactions', () => {
+  it('reuses one accessible attachment menu for open and reveal interactions', () => {
     const onOpen = vi.fn()
     const onReveal = vi.fn()
     const { rerender } = render(<MessageAttachmentGroup source="agent" attachments={[{ id: 'report', name: 'report.md', detail: 'Markdown · SHA-256 已记录' }]} onOpen={onOpen} onReveal={onReveal} />)
-    fireEvent.click(screen.getByRole('button', { name: '打开 report.md' }))
-    fireEvent.click(screen.getByRole('button', { name: '在文件夹中显示 report.md' }))
+    fireEvent.click(screen.getByRole('button', { name: '打开方式 report.md' }))
+    expect(screen.getByRole('menu', { name: '打开方式 report.md' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('menuitem', { name: /使用系统默认应用打开/ }))
+    fireEvent.click(screen.getByRole('button', { name: '打开方式 report.md' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /打开所在文件夹/ }))
     expect(onOpen).toHaveBeenCalledWith('report')
     expect(onReveal).toHaveBeenCalledWith('report')
+    expect(screen.queryByRole('menu', { name: '打开方式 report.md' })).not.toBeInTheDocument()
 
     const onRemove = vi.fn()
     rerender(<MessageAttachmentGroup source="user" attachments={[{ id: 'brief', name: 'brief.pdf', detail: 'PDF · 1.8 MB' }]} onRemove={onRemove} />)
@@ -55,5 +61,10 @@ describe('message UI contracts', () => {
     const { container } = render(<MarkdownMessage>Hi there!</MarkdownMessage>)
     await waitFor(() => expect(container.querySelector('.markdown-message__content')).not.toHaveClass('is-collapsible'))
     expect(screen.queryByRole('button', { name: /展开全文/ })).not.toBeInTheDocument()
+  })
+
+  it('uses the compact disclosure boundary for process messages', () => {
+    const { container } = render(<MarkdownMessage compact>过程内容</MarkdownMessage>)
+    expect(container.querySelector('.markdown-message')).toHaveClass('markdown-message--compact')
   })
 })
