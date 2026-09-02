@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { utilityProcess, type UtilityProcess } from 'electron'
 import { PROVIDER_PROTOCOL_VERSION, type ProviderCommand, type ProviderHealth, type ProviderMessage } from '../provider/protocol'
 import type { ProviderEvent, ProviderRequest } from '../provider/contract'
+import type { AllowedModelId, ProviderId } from '../provider/models'
 
 interface PendingHealth {
   resolve: (health: ProviderHealth) => void
@@ -27,12 +28,12 @@ export class ProviderSupervisor {
   private readonly executions = new Map<string, PendingExecution>()
   private readyPromise: Promise<ProviderHealth> | null = null
 
-  constructor(private readonly providerEntry: string, private readonly onEvent: (event: ProviderSupervisorEvent) => void) {}
+  constructor(private readonly providerEntry: string, private readonly keychainHelperPath: string, private readonly onEvent: (event: ProviderSupervisorEvent) => void) {}
 
   start(): Promise<ProviderHealth> {
     if (this.readyPromise) return this.readyPromise
     this.readyPromise = new Promise((resolve, reject) => {
-      const child = utilityProcess.fork(this.providerEntry, [], { serviceName: 'com.kakarrot.ai-employee-os.provider', stdio: 'pipe' })
+      const child = utilityProcess.fork(this.providerEntry, [`--keychain-helper=${this.keychainHelperPath}`], { serviceName: 'com.kakarrot.ai-employee-os.provider', stdio: 'pipe' })
       this.child = child
       const timer = setTimeout(() => reject(new Error('provider_start_timeout')), 5000)
       const onMessage = (message: unknown): void => {
@@ -56,6 +57,16 @@ export class ProviderSupervisor {
   health(): Promise<ProviderHealth> {
     const requestId = randomUUID()
     return this.request<ProviderHealth>({ schemaVersion: PROVIDER_PROTOCOL_VERSION, requestId, type: 'health', payload: {} })
+  }
+
+  configureCredential(provider: ProviderId, credential: string): Promise<ProviderHealth> {
+    const requestId = randomUUID()
+    return this.request<ProviderHealth>({ schemaVersion: PROVIDER_PROTOCOL_VERSION, requestId, type: 'credential.configure', payload: { provider, credential } }, 8000)
+  }
+
+  verifyModel(provider: ProviderId, modelId: AllowedModelId): Promise<ProviderHealth> {
+    const requestId = randomUUID()
+    return this.request<ProviderHealth>({ schemaVersion: PROVIDER_PROTOCOL_VERSION, requestId, type: 'model.verify', payload: { provider, modelId, acknowledgeBilling: true } }, 300_000)
   }
 
   cancel(providerRequestId: string): Promise<{ cancelled: boolean }> {
@@ -92,10 +103,10 @@ export class ProviderSupervisor {
     this.executions.clear()
   }
 
-  private request<TResult>(command: ProviderCommand): Promise<TResult> {
+  private request<TResult>(command: ProviderCommand, timeoutMs = 3000): Promise<TResult> {
     if (!this.child) return Promise.reject(new Error('provider_not_started'))
     return new Promise<TResult>((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(command.requestId); reject(new Error('provider_request_timeout')) }, 3000)
+      const timer = setTimeout(() => { this.pending.delete(command.requestId); reject(new Error('provider_request_timeout')) }, timeoutMs)
       this.pending.set(command.requestId, { resolve: resolve as (health: ProviderHealth) => void, reject, timer })
       this.child!.postMessage(command)
     })

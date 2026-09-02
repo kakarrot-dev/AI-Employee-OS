@@ -2,6 +2,7 @@ import type { AgentCapabilityVersionView, EmployeeDetail, EmployeeDraftInput, Em
 import type { TaskDetailView, TaskDraftInputView, TaskEvent } from './task-contract'
 import type { ResourceCatalogView } from './resource-contract'
 import type { MemoryCategoryView, MemoryHealthView, MemoryQueueItemView, MemoryScopeTypeView, MemorySearchResultView, MemoryStatusView, MemoryViewModel } from './memory-contract'
+import type { SupervisorConfigInput, SupervisorConfigView } from './supervisor-contract'
 
 export const RUNTIME_IPC = {
   getStatus: 'runtime:get-status',
@@ -10,7 +11,9 @@ export const RUNTIME_IPC = {
 } as const
 
 export const PROVIDER_IPC = {
-  getStatus: 'provider:get-status'
+  getStatus: 'provider:get-status',
+  configurePoe: 'provider:configure-poe',
+  verifyPoeModel: 'provider:verify-poe-model'
 } as const
 
 export const CONVERSATION_IPC = {
@@ -21,6 +24,11 @@ export const CONVERSATION_IPC = {
   cancel: 'conversation:cancel',
   history: 'conversation:history',
   event: 'conversation:event'
+} as const
+
+export const SUPERVISOR_IPC = {
+  get: 'supervisor:get',
+  update: 'supervisor:update'
 } as const
 
 export const EMPLOYEE_IPC = {
@@ -42,7 +50,7 @@ export const EMPLOYEE_IPC = {
   event: 'employee:event'
 } as const
 
-export const TASK_IPC = { list: 'task:list', chooseDirectory: 'task:choose-directory', createDraft: 'task:create-draft', updateDraft: 'task:update-draft', start: 'task:start', requestChange: 'task:request-change', acceptChange: 'task:accept-change', rejectChange: 'task:reject-change', approveTool: 'task:approve-tool', rejectTool: 'task:reject-tool', resolveTool: 'task:resolve-tool', event: 'task:event' } as const
+export const TASK_IPC = { list: 'task:list', chooseDirectory: 'task:choose-directory', openArtifact: 'task:open-artifact', revealArtifact: 'task:reveal-artifact', createDraft: 'task:create-draft', updateDraft: 'task:update-draft', start: 'task:start', requestChange: 'task:request-change', acceptChange: 'task:accept-change', rejectChange: 'task:reject-change', approveTool: 'task:approve-tool', rejectTool: 'task:reject-tool', resolveTool: 'task:resolve-tool', event: 'task:event' } as const
 
 export const RESOURCE_IPC = { list: 'resource:list', probe: 'resource:probe' } as const
 export const MEMORY_IPC = { status: 'memory:status', downloadModel: 'memory:download-model', list: 'memory:list', search: 'memory:search', update: 'memory:update', disable: 'memory:disable', restore: 'memory:restore', resolveConflict: 'memory:resolve-conflict', permanentlyDelete: 'memory:permanently-delete', queue: 'memory:queue', migrateEmbeddings: 'memory:migrate-embeddings' } as const
@@ -85,6 +93,8 @@ export interface ProviderStatus {
 
 export interface ProviderBridge {
   getStatus(): Promise<ProviderStatus>
+  configurePoe(credential: string): Promise<ProviderStatus>
+  verifyPoeModel(modelId: 'claude-sonnet-4.6' | 'gpt-image-2' | 'seedance-2.0'): Promise<ProviderStatus>
 }
 
 export interface ResourceBridge {
@@ -138,6 +148,11 @@ export interface ConversationBridge {
   onEvent(listener: (event: ConversationStreamEvent) => void): () => void
 }
 
+export interface SupervisorBridge {
+  get(): Promise<SupervisorConfigView>
+  update(input: SupervisorConfigInput): Promise<SupervisorConfigView>
+}
+
 export interface EmployeeEvent {
   type: 'test_progress' | 'test_completed' | 'test_failed'
   employeeId: string
@@ -167,6 +182,8 @@ export interface EmployeeBridge {
 export interface TaskBridge {
   list(): Promise<TaskDetailView[]>
   chooseDirectory(): Promise<string | undefined>
+  openArtifact(taskId: string, artifactId: string): Promise<{ opened: true }>
+  revealArtifact(taskId: string, artifactId: string): Promise<{ revealed: true }>
   createDraft(input: TaskDraftInputView): Promise<TaskDetailView>
   updateDraft(draftId: string, changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds' | 'directories'>): Promise<TaskDetailView>
   start(draftId: string): Promise<TaskDetailView>
@@ -180,4 +197,5 @@ export interface TaskBridge {
 }
 
 export type { AgentCapabilityVersionView, EmployeeDetail, EmployeeDraftInput, EmployeeSummary } from './employee-contract'
+export type { SupervisorConfigInput, SupervisorConfigView } from './supervisor-contract'
 export type { TaskDetailView, TaskDraftInputView, TaskEvent } from './task-contract'

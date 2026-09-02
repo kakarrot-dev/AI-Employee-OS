@@ -27,7 +27,7 @@ afterEach(() => {
 const draft = {
   name: '验收员工',
   role: '文本验收',
-  description: '只做文本验收',
+  description: '只负责文本结果的结构与验收检查。',
   systemPrompt: '你是一个严格遵循验收标准的员工。',
   modelId: 'deepseek-v4-pro' as const,
   capabilityVersionIds: ['capability.text-analysis.v1'],
@@ -79,7 +79,7 @@ describe('EmployeeService', () => {
     const editing = service.beginEdit(created.employee.id)
     expect(editing.draft?.version).toBe(2)
     expect(editing.active?.id).toBe(created.draft?.id)
-    expect(service.list().find((employee) => employee.id === created.employee.id)).toMatchObject({ status: 'pending_changes', activeVersionId: created.draft?.id, activeCapabilityVersionIds: ['capability.text-analysis.v1'] })
+    expect(service.list().find((employee) => employee.id === created.employee.id)).toMatchObject({ status: 'active', activeVersionId: created.draft?.id, activeCapabilityVersionIds: ['capability.text-analysis.v1'] })
     expect(() => store.deleteMutable('EmployeeVersion', created.draft!.id, { schemaVersion: 1, eventId: 'x', occurredAt: new Date().toISOString(), eventType: 'tamper', aggregateType: 'EmployeeVersion', aggregateId: created.draft!.id, payload: {} })).toThrow('immutable_entity_cannot_change')
 
     service.saveDraft(created.employee.id, { ...draft, name: '验收员工 v2', memoryScopes: [...draft.memoryScopes] })

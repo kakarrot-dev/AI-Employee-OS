@@ -40,6 +40,26 @@ describe('SupervisorRouter', () => {
     store.close()
   })
 
+  it('uses the configured supervisor model, prompt and only allowed global memory', () => {
+    const { tasks, store } = setup()
+    const resources = new ResourceService(new RuntimeKernel(store))
+    const employees = new EmployeeService(new RuntimeKernel(store))
+    const router = new SupervisorRouter(employees, tasks, () => ({ name: '任务总管', systemPrompt: '优先核对目标和证据，再组织员工。', modelId: 'claude-sonnet-4.6', memoryScopes: ['global'] }), () => [
+      { id: 'memory-global', scopeType: 'global', scopeId: 'global:local-owner', category: 'preference', content: '回答使用简体中文', sourceRefs: [], reason: 'scope_match' },
+      { id: 'memory-other', scopeType: 'task', scopeId: 'task-other', category: 'fact', content: '不应注入', sourceRefs: [], reason: 'outside_scope' }
+    ])
+    resources.seed()
+    employees.seedCapabilities()
+    employees.seedRequestedSpecialists()
+    const request = router.createRequest({ requestId: 'route-config', conversationId: 'conversation-config', sourceMessageId: 'message-config', text: '处理事项', history: [], directories: [] })
+    expect(request).toMatchObject({ provider: 'poe', modelId: 'claude-sonnet-4.6' })
+    expect(request.input).toContain('名称：任务总管')
+    expect(request.input).toContain('优先核对目标和证据')
+    expect(request.input).toContain('memory-global')
+    expect(request.input).not.toContain('memory-other')
+    store.close()
+  })
+
   it('creates a network-to-document draft and derives the missing directory gate from capability facts', () => {
     const { router, tasks, store } = setup()
     const result = router.applyDecision({ requestId: 'route-2', conversationId: 'conversation-2', sourceMessageId: 'message-2', text: '用户原话', history: [], directories: [] }, {

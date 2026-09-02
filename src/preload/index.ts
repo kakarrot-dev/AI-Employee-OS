@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { CONVERSATION_IPC, EMPLOYEE_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, TASK_IPC, type ConversationBridge, type ConversationStreamEvent, type EmployeeBridge, type EmployeeDraftInput, type EmployeeEvent, type MemoryBridge, type ProviderBridge, type ResourceBridge, type RuntimeBridge, type RuntimeStatus, type TaskBridge, type TaskDraftInputView, type TaskEvent } from '../shared/runtime-contract'
+import { CONVERSATION_IPC, EMPLOYEE_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, SUPERVISOR_IPC, TASK_IPC, type ConversationBridge, type ConversationStreamEvent, type EmployeeBridge, type EmployeeDraftInput, type EmployeeEvent, type MemoryBridge, type ProviderBridge, type ResourceBridge, type RuntimeBridge, type RuntimeStatus, type SupervisorBridge, type SupervisorConfigInput, type TaskBridge, type TaskDraftInputView, type TaskEvent } from '../shared/runtime-contract'
 import type { MemoryCategoryView, MemoryScopeTypeView, MemoryStatusView, MemoryViewModel } from '../shared/memory-contract'
 import type { MemorySearchResultView } from '../shared/memory-contract'
 
@@ -14,7 +14,9 @@ const runtimeBridge: RuntimeBridge = Object.freeze({
 })
 
 const providerBridge: ProviderBridge = Object.freeze({
-  getStatus: () => ipcRenderer.invoke(PROVIDER_IPC.getStatus)
+  getStatus: () => ipcRenderer.invoke(PROVIDER_IPC.getStatus),
+  configurePoe: (credential: string) => ipcRenderer.invoke(PROVIDER_IPC.configurePoe, { credential }),
+  verifyPoeModel: (modelId: 'claude-sonnet-4.6' | 'gpt-image-2' | 'seedance-2.0') => ipcRenderer.invoke(PROVIDER_IPC.verifyPoeModel, { modelId })
 })
 
 const conversationBridge: ConversationBridge = Object.freeze({
@@ -29,6 +31,11 @@ const conversationBridge: ConversationBridge = Object.freeze({
     ipcRenderer.on(CONVERSATION_IPC.event, handler)
     return () => ipcRenderer.removeListener(CONVERSATION_IPC.event, handler)
   }
+})
+
+const supervisorBridge: SupervisorBridge = Object.freeze({
+  get: () => ipcRenderer.invoke(SUPERVISOR_IPC.get),
+  update: (input: SupervisorConfigInput) => ipcRenderer.invoke(SUPERVISOR_IPC.update, { input })
 })
 
 const employeeBridge: EmployeeBridge = Object.freeze({
@@ -57,6 +64,8 @@ const employeeBridge: EmployeeBridge = Object.freeze({
 const taskBridge: TaskBridge = Object.freeze({
   list: () => ipcRenderer.invoke(TASK_IPC.list),
   chooseDirectory: () => ipcRenderer.invoke(TASK_IPC.chooseDirectory),
+  openArtifact: (taskId: string, artifactId: string) => ipcRenderer.invoke(TASK_IPC.openArtifact, { taskId, artifactId }),
+  revealArtifact: (taskId: string, artifactId: string) => ipcRenderer.invoke(TASK_IPC.revealArtifact, { taskId, artifactId }),
   createDraft: (input: TaskDraftInputView) => ipcRenderer.invoke(TASK_IPC.createDraft, { input }),
   updateDraft: (draftId: string, changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds' | 'directories'>) => ipcRenderer.invoke(TASK_IPC.updateDraft, { draftId, changes }),
   start: (draftId: string) => ipcRenderer.invoke(TASK_IPC.start, { draftId }),
@@ -79,4 +88,4 @@ const memoryBridge: MemoryBridge = Object.freeze({
   permanentlyDelete: (id: string) => ipcRenderer.invoke(MEMORY_IPC.permanentlyDelete, { id }), queue: () => ipcRenderer.invoke(MEMORY_IPC.queue), migrateEmbeddings: () => ipcRenderer.invoke(MEMORY_IPC.migrateEmbeddings)
 })
 
-contextBridge.exposeInMainWorld('aiEmployeeOS', Object.freeze({ runtime: runtimeBridge, provider: providerBridge, conversation: conversationBridge, employee: employeeBridge, task: taskBridge, resource: resourceBridge, memory: memoryBridge }))
+contextBridge.exposeInMainWorld('aiEmployeeOS', Object.freeze({ runtime: runtimeBridge, provider: providerBridge, conversation: conversationBridge, supervisor: supervisorBridge, employee: employeeBridge, task: taskBridge, resource: resourceBridge, memory: memoryBridge }))

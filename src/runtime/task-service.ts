@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { ProviderEvent, ProviderRequest } from '../provider/contract'
+import { DEFAULT_SUPERVISOR_CONFIG, type SupervisorConfigInput } from '../shared/supervisor-contract'
 import type { AgentCapabilityVersion, Approval, Artifact, Assignment, AuthorizationMode, BudgetLedgerEntry, ChangeRequest, Checkpoint, Delivery, EmployeeVersion, Evidence, Handoff, ResearchBundle, Run, RunGrant, Task, TaskDraft, TaskRevision, ToolAction } from './domain'
 import { EmployeeService } from './employee-service'
 import { RuntimeKernel } from './kernel'
@@ -52,7 +53,7 @@ export type DeliveryMaterializer = (detail: FormalTaskDetail) => { artifactIds: 
 const DEFAULT_BUDGET = { maxInputTokens: 32_000, maxOutputTokens: 4_096, maxAmountUsdMicros: 1_000_000, maxSteps: 8 }
 
 export class TaskService {
-  constructor(private readonly kernel: RuntimeKernel, private readonly employees: EmployeeService, private readonly recallMemory: AssignmentMemoryRecall = () => [], private readonly projectHandoff: AssignmentHandoffProjector = ({ output }) => ({ text: output }), private readonly materializeDelivery: DeliveryMaterializer = () => ({ artifactIds: [], evidenceIds: [], unresolvedIssues: [] })) {}
+  constructor(private readonly kernel: RuntimeKernel, private readonly employees: EmployeeService, private readonly recallMemory: AssignmentMemoryRecall = () => [], private readonly projectHandoff: AssignmentHandoffProjector = ({ output }) => ({ text: output }), private readonly materializeDelivery: DeliveryMaterializer = () => ({ artifactIds: [], evidenceIds: [], unresolvedIssues: [] }), private readonly supervisorConfiguration: () => SupervisorConfigInput = () => ({ ...DEFAULT_SUPERVISOR_CONFIG, memoryScopes: [...DEFAULT_SUPERVISOR_CONFIG.memoryScopes] })) {}
 
   createDraft(input: TaskDraftInput): FormalTaskDetail {
     this.validateDraft(input)
@@ -488,6 +489,7 @@ export class TaskService {
 
   private startManagerReview(runId: string): ProviderRequest {
     const detail = this.detailByRun(runId)
+    const supervisor = this.supervisorConfiguration()
     const requestId = randomUUID()
     const output = detail.assignments.at(-1)?.output ?? ''
     const bundleProjection = detail.researchBundles.map((bundle) => ({ id: bundle.id, contentHash: bundle.contentHash, sourceCount: bundle.items.length, claimCount: bundle.claims.length, conflicts: bundle.conflicts, informationGaps: bundle.informationGaps }))
@@ -501,7 +503,9 @@ export class TaskService {
       content: typeof action.result?.content === 'string' ? action.result.content.slice(0, 20_000) : undefined
     }))
     const checkpoint = this.saveCheckpoint(runId, detail.assignments.at(-1)?.id, 'manager_review', 'delivery', { requestId, result: undefined, text: '', completed: false })
-    return { requestId, provider: 'deepseek', modelId: 'deepseek-v4-pro', input: `作为总管，只依据验收标准与 Runtime 证据审核员工输出。未通过时选择应返工的原始 Assignment 序号。\nRuntime Tool 证据中的 succeeded、resultVerified、path、content、bytes 和 sha256 是系统事实，不是员工自述。document.create/edit 与后续 document.read 若路径和 SHA-256 一致，即可证明文档已写入并可回读；应直接审核回读正文是否满足内容验收，不得仅因员工摘要没有重复粘贴全文而返工。\n后置交付契约：审核通过后，Runtime 会把已验证文件登记为 Artifact，并把 ResearchBundle 固化为 Evidence；不要因审核时 Artifact 尚未登记而拒绝。\n目标：${detail.revision!.goal}\n验收标准：${detail.revision!.acceptanceCriteria.join('；')}\nResearchBundle 投影：${JSON.stringify(bundleProjection)}\nRuntime Tool 证据：${JSON.stringify(toolEvidence)}\n原始计划：${detail.assignments.filter((assignment) => !assignment.reworkOfAssignmentId).map((assignment) => `Assignment ${assignment.sequence}=${assignment.employeeVersionId}`).join('；')}\n员工输出：${output}`, maxOutputTokens: 512, stream: false, outputSchema: { name: 'manager_review', strict: true, schema: { type: 'object', additionalProperties: false, properties: { approved: { type: 'boolean' }, summary: { type: 'string' }, returnToAssignmentSequence: { type: 'integer', minimum: 1 } }, required: ['approved', 'summary'] } } }
+    const memories = supervisor.memoryScopes.includes('global') ? this.recallMemory({ query: [detail.revision!.goal, ...detail.revision!.acceptanceCriteria].join('\n'), allowedScopes: [{ type: 'global', id: 'global:local-owner' }], limit: 5, tokenBudget: 768 }).filter((memory) => memory.scopeType === 'global' && memory.scopeId === 'global:local-owner').slice(0, 5) : []
+    const memoryContext = memories.length ? `\n允许范围内的本地记忆：${JSON.stringify(memories.map(({ id, category, content, sourceRefs }) => ({ id, category, content, sourceRefs })))}` : ''
+    return { requestId, provider: supervisor.modelId === 'deepseek-v4-pro' ? 'deepseek' : 'poe', modelId: supervisor.modelId, input: `作为总管，只依据验收标准与 Runtime 证据审核员工输出。未通过时选择应返工的原始 Assignment 序号。\nRuntime Tool 证据中的 succeeded、resultVerified、path、content、bytes 和 sha256 是系统事实，不是员工自述。document.create/edit 与后续 document.read 若路径和 SHA-256 一致，即可证明文档已写入并可回读；应直接审核回读正文是否满足内容验收，不得仅因员工摘要没有重复粘贴全文而返工。\n后置交付契约：审核通过后，Runtime 会把已验证文件登记为 Artifact，并把 ResearchBundle 固化为 Evidence；不要因审核时 Artifact 尚未登记而拒绝。\n总管名称：${supervisor.name}\n总管 System Prompt：${supervisor.systemPrompt}${memoryContext}\n目标：${detail.revision!.goal}\n验收标准：${detail.revision!.acceptanceCriteria.join('；')}\nResearchBundle 投影：${JSON.stringify(bundleProjection)}\nRuntime Tool 证据：${JSON.stringify(toolEvidence)}\n原始计划：${detail.assignments.filter((assignment) => !assignment.reworkOfAssignmentId).map((assignment) => `Assignment ${assignment.sequence}=${assignment.employeeVersionId}`).join('；')}\n员工输出：${output}`, maxOutputTokens: 512, stream: false, outputSchema: { name: 'manager_review', strict: true, schema: { type: 'object', additionalProperties: false, properties: { approved: { type: 'boolean' }, summary: { type: 'string' }, returnToAssignmentSequence: { type: 'integer', minimum: 1 } }, required: ['approved', 'summary'] } } }
   }
 
   private saveCheckpoint(runId: string, assignmentId: string | undefined, phase: Checkpoint['phase'], nextNode: Checkpoint['nextNode'], payload: Record<string, unknown>): Checkpoint {

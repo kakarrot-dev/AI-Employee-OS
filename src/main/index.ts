@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { app, BrowserWindow, dialog, ipcMain, Menu, session } from 'electron'
-import { CONVERSATION_IPC, EMPLOYEE_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, TASK_IPC, type ConversationStreamEvent, type ConversationSummaryView, type EmployeeDraftInput, type EmployeeEvent, type ProviderStatus, type RuntimeStatus, type TaskDetailView, type TaskDraftInputView, type TaskEvent } from '../shared/runtime-contract'
+import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron'
+import { CONVERSATION_IPC, EMPLOYEE_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, SUPERVISOR_IPC, TASK_IPC, type ConversationStreamEvent, type ConversationSummaryView, type EmployeeDraftInput, type EmployeeEvent, type ProviderStatus, type RuntimeStatus, type SupervisorConfigInput, type TaskDetailView, type TaskDraftInputView, type TaskEvent } from '../shared/runtime-contract'
 import type { Conversation, Message } from '../runtime/domain'
 import type { MemoryCategoryView, MemoryScopeTypeView, MemoryStatusView, MemoryViewModel } from '../shared/memory-contract'
 import type { FormalTaskDetail } from '../runtime/task-service'
@@ -11,6 +11,7 @@ import { RuntimeSupervisor, type RuntimeSupervisorEvent } from './runtime-superv
 import { createWindowOptions, isTrustedRendererUrl } from './window-security'
 import { bundledRuntimePaths, initializeBundledModel } from './bundled-runtime'
 import { maintainDiagnostics, writeLocalDiagnostic } from './storage-policy'
+import { resolveArtifactFilePath } from './artifact-file-actions'
 
 app.enableSandbox()
 
@@ -52,7 +53,7 @@ function handleRuntimeEvent(event: RuntimeSupervisorEvent): void {
     publishRuntimeStatus({
       state: 'connected',
       checkedAt: event.health.checkedAt,
-      message: `Runtime 已连接 · Schema v${event.health.schemaVersion} · Cursor ${event.health.lastEventSequence}`
+      message: `Schema v${event.health.schemaVersion} · Cursor ${event.health.lastEventSequence}`
     })
   } else {
     publishRuntimeStatus({ state: 'disconnected', checkedAt: new Date().toISOString(), message: 'Runtime 已停止，可重新连接' })
@@ -112,12 +113,12 @@ function toTaskView(detail: FormalTaskDetail): TaskDetailView {
   }
 }
 
-function toConversationSummary(conversation: Conversation, messages: Message[]): ConversationSummaryView {
+function toConversationSummary(conversation: Conversation, messages: Message[], supervisorName = '总管'): ConversationSummaryView {
   const lastMessage = messages.at(-1)
   return {
     id: conversation.id,
     title: conversation.title,
-    preview: lastMessage ? `${lastMessage.role === 'assistant' ? '总管：' : '你：'}${lastMessage.content.replaceAll(/\s+/g, ' ').slice(0, 72)}` : '尚无消息',
+    preview: lastMessage ? `${lastMessage.role === 'assistant' ? `${supervisorName}：` : '你：'}${lastMessage.content.replaceAll(/\s+/g, ' ').slice(0, 72)}` : '尚无消息',
     updatedAt: lastMessage?.createdAt ?? conversation.createdAt,
     messageCount: messages.length
   }
@@ -159,11 +160,32 @@ function registerRuntimeIpc(): void {
     return providerStatus
   })
 
+  ipcMain.handle(PROVIDER_IPC.configurePoe, async (event, value: unknown) => {
+    assertTrustedSender(event.senderFrame?.url)
+    const credential = (value as { credential?: unknown })?.credential
+    if (typeof credential !== 'string' || credential.trim().length < 8 || credential.length > 8192) throw new Error('credential_invalid')
+    if (!providerSupervisor) throw new Error('provider_supervisor_unavailable')
+    const health = await providerSupervisor.configureCredential('poe', credential)
+    handleProviderEvent({ type: 'ready', health })
+    return providerStatus
+  })
+
+  ipcMain.handle(PROVIDER_IPC.verifyPoeModel, async (event, value: unknown) => {
+    assertTrustedSender(event.senderFrame?.url)
+    const modelId = (value as { modelId?: unknown })?.modelId
+    if (modelId !== 'claude-sonnet-4.6' && modelId !== 'gpt-image-2' && modelId !== 'seedance-2.0') throw new Error('model_not_allowed')
+    if (!providerSupervisor) throw new Error('provider_supervisor_unavailable')
+    const health = await providerSupervisor.verifyModel('poe', modelId)
+    handleProviderEvent({ type: 'ready', health })
+    return providerStatus
+  })
+
   ipcMain.handle(CONVERSATION_IPC.list, async (event) => {
     assertTrustedSender(event.senderFrame?.url)
     if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable')
     const conversations = await runtimeSupervisor.conversationList()
-    const summaries = await Promise.all(conversations.map(async (conversation) => toConversationSummary(conversation, await runtimeSupervisor!.conversationHistory(conversation.id))))
+    const supervisorName = (await runtimeSupervisor.supervisorGet()).name
+    const summaries = await Promise.all(conversations.map(async (conversation) => toConversationSummary(conversation, await runtimeSupervisor!.conversationHistory(conversation.id), supervisorName)))
     return summaries.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
   })
 
@@ -209,6 +231,9 @@ function registerRuntimeIpc(): void {
     return (await runtimeSupervisor.conversationHistory(conversationId)).map(({ id, role, content, createdAt, modelId }) => ({ id, role, content, createdAt, modelId }))
   })
 
+  ipcMain.handle(SUPERVISOR_IPC.get, (event) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.supervisorGet() })
+  ipcMain.handle(SUPERVISOR_IPC.update, (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); const input = (value as { input?: unknown })?.input; if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('invalid_supervisor_configuration'); return runtimeSupervisor.supervisorUpdate(input as SupervisorConfigInput) })
+
   ipcMain.handle(EMPLOYEE_IPC.list, (event) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.employeeList() })
   ipcMain.handle(EMPLOYEE_IPC.capabilities, (event) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.employeeCapabilities() })
   ipcMain.handle(EMPLOYEE_IPC.detail, (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.employeeDetail(employeeIdFrom(value)) })
@@ -226,6 +251,28 @@ function registerRuntimeIpc(): void {
   ipcMain.handle(EMPLOYEE_IPC.deleteDraft, (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.employeeDeleteDraft(employeeIdFrom(value)) })
   ipcMain.handle(TASK_IPC.list, async (event) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return (await runtimeSupervisor.taskList()).map(toTaskView) })
   ipcMain.handle(TASK_IPC.chooseDirectory, async (event) => { assertTrustedSender(event.senderFrame?.url); if (!mainWindow) throw new Error('window_unavailable'); const result = await dialog.showOpenDialog(mainWindow, { title: '选择任务可访问的文件夹', properties: ['openDirectory', 'createDirectory'] }); return result.canceled ? undefined : result.filePaths[0] })
+  const artifactFileFrom = async (value: unknown): Promise<string> => {
+    const { taskId, artifactId } = value as { taskId?: unknown; artifactId?: unknown }
+    if (typeof taskId !== 'string' || taskId.length < 1 || taskId.length > 128) throw new Error('invalid_task_id')
+    if (typeof artifactId !== 'string' || artifactId.length < 1 || artifactId.length > 128) throw new Error('invalid_artifact_id')
+    if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable')
+    const detail = (await runtimeSupervisor.taskList()).find((item) => item.task?.id === taskId || item.draft.id === taskId)
+    if (!detail) throw new Error('task_not_found')
+    const artifact = detail.artifacts.find((item) => item.id === artifactId)
+    if (!artifact) throw new Error('artifact_not_found')
+    return resolveArtifactFilePath({ artifactPath: artifact.relativePath, exportDirectory: join(app.getPath('userData'), 'exports'), authorizedDirectories: detail.draft.resourceScope.directories })
+  }
+  ipcMain.handle(TASK_IPC.openArtifact, async (event, value: unknown) => {
+    assertTrustedSender(event.senderFrame?.url)
+    const result = await shell.openPath(await artifactFileFrom(value))
+    if (result) throw new Error('artifact_open_failed')
+    return { opened: true }
+  })
+  ipcMain.handle(TASK_IPC.revealArtifact, async (event, value: unknown) => {
+    assertTrustedSender(event.senderFrame?.url)
+    shell.showItemInFolder(await artifactFileFrom(value))
+    return { revealed: true }
+  })
   ipcMain.handle(TASK_IPC.createDraft, async (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return toTaskView(await runtimeSupervisor.taskCreateDraft((value as { input: TaskDraftInputView }).input)) })
   ipcMain.handle(TASK_IPC.updateDraft, async (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); const draftId = (value as { draftId?: unknown }).draftId; if (typeof draftId !== 'string') throw new Error('invalid_task_draft_id'); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return toTaskView(await runtimeSupervisor.taskUpdateDraft(draftId, (value as { changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds'> }).changes)) })
   ipcMain.handle(TASK_IPC.start, async (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); const draftId = (value as { draftId?: unknown }).draftId; if (typeof draftId !== 'string') throw new Error('invalid_task_draft_id'); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return toTaskView(await runtimeSupervisor.taskStart(draftId)) })
@@ -314,7 +361,7 @@ app.whenReady().then(async () => {
       publishRuntimeStatus({ state: 'connecting', checkedAt: new Date().toISOString(), message: 'Embedding 初始化未完成，将以 BM25 模式启动' })
     }
   }
-  providerSupervisor = new ProviderSupervisor(join(__dirname, 'provider/index.js'), handleProviderEvent)
+  providerSupervisor = new ProviderSupervisor(join(__dirname, 'provider/index.js'), runtimePaths.providerKeychainHelper, handleProviderEvent)
   try {
     await providerSupervisor.start()
   } catch {

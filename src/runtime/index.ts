@@ -14,6 +14,7 @@ import { ManagedResearchService } from './managed-research-service'
 import { DeliveryExporter } from './delivery-exporter'
 import { MemoryService, type MemoryCategory, type MemoryStatus, type MemoryView } from './memory-service'
 import { SupervisorRouter } from './supervisor-router'
+import { SupervisorService } from './supervisor-service'
 
 function databasePathFromArgs(): string {
   const argument = process.argv.find((value) => value.startsWith('--database='))
@@ -47,14 +48,16 @@ const workerScript = requiredPathArgument('worker-script')
 const checkpointDirectory = requiredPathArgument('checkpoint-directory')
 const exportDirectory = requiredPathArgument('export-directory')
 const memory = new MemoryService({ pythonPath: requiredPathArgument('memory-python'), scriptPath: requiredPathArgument('memory-script'), databasePath: requiredPathArgument('memory-database'), modelCachePath: requiredPathArgument('memory-model-cache'), keychainHelperPath: requiredPathArgument('memory-keychain-helper') })
+const supervisor = new SupervisorService(kernel)
+supervisor.seed()
 const deliveryExporter = new DeliveryExporter(kernel, exportDirectory)
 const tasks = new TaskService(kernel, employees, (request) => memory.search(request), ({ assignment, revision, version, output, actions }) => {
   if (!version.capabilityVersionIds.some((id) => ['capability.managed-research.v1', 'capability.network-intelligence.v1'].includes(id))) return { text: output }
   const bundle = research.createBundle({ taskId: revision.taskId, runId: assignment.runId, assignmentId: assignment.id, employeeVersionId: version.id, question: revision.goal, githubQuery: '', feedUrl: '' }, actions)
   const handoff = { schemaVersion: 1, type: 'ResearchHandoff', researchBundleId: bundle.id, contentHash: bundle.contentHash, question: bundle.question, claims: bundle.claims, conflicts: bundle.conflicts, informationGaps: bundle.informationGaps, sources: bundle.items.map((item, index) => ({ index, sourceType: item.sourceType, title: item.title, url: item.url, publishedAt: item.publishedAt, summary: item.summary, contentHash: item.contentHash, trust: item.trust, injectionSignals: item.injectionSignals })), researcherSynthesis: output }
   return { text: JSON.stringify(handoff), researchBundleId: bundle.id }
-}, (detail) => deliveryExporter.materialize(detail))
-const supervisorRouter = new SupervisorRouter(employees, tasks)
+}, (detail) => deliveryExporter.materialize(detail), () => supervisor.get())
+const supervisorRouter = new SupervisorRouter(employees, tasks, () => supervisor.get(), (request) => memory.search(request))
 
 function enqueueMemorySafely(input: Parameters<MemoryService['enqueueAsync']>[0]): void {
   void memory.enqueueAsync(input).catch(() => { /* memory processing must not fail the primary conversation or task */ })
@@ -86,6 +89,8 @@ const pendingConversations = new Map<string, {
   history: Message[]
   directories: string[]
   text: string
+  provider: 'deepseek' | 'poe'
+  modelId: string
   routeValue?: unknown
   providerRequestId?: string
 }>()
@@ -144,6 +149,14 @@ parentPort.on('message', async (event) => {
       respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: messages })
       return
     }
+    if (command.type === 'supervisor.get') {
+      respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: supervisor.get() })
+      return
+    }
+    if (command.type === 'supervisor.update') {
+      respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: supervisor.update(command.payload.input) })
+      return
+    }
     if (command.type === 'conversation.send') {
       const existingConversation = store.get<Conversation>('Conversation', command.payload.conversationId)
       if (!existingConversation) {
@@ -156,12 +169,13 @@ parentPort.on('message', async (event) => {
       kernel.save({ entityType: 'Message', entity: userMessage, immutable: true }, 'message.created', { role: 'user' })
       const history = store.list<Message>('Message').filter((message) => message.conversationId === command.payload.conversationId && message.id !== userMessage.id)
       const routeInput = { requestId, conversationId: command.payload.conversationId, sourceMessageId: userMessage.id, text: command.payload.text, history, directories: command.payload.directories }
-      pendingConversations.set(requestId, { conversationId: routeInput.conversationId, sourceMessageId: routeInput.sourceMessageId, assistantMessageId: randomUUID(), userText: routeInput.text, history, directories: [...routeInput.directories], text: '' })
+      const supervisorRequest = supervisorRouter.createRequest(routeInput)
+      pendingConversations.set(requestId, { conversationId: routeInput.conversationId, sourceMessageId: routeInput.sourceMessageId, assistantMessageId: randomUUID(), userText: routeInput.text, history, directories: [...routeInput.directories], text: '', provider: supervisorRequest.provider, modelId: supervisorRequest.modelId })
       emit({
         schemaVersion: SIDECAR_PROTOCOL_VERSION,
         type: 'runtime.provider.execute',
         requestId,
-        request: supervisorRouter.createRequest(routeInput)
+        request: supervisorRequest
       })
       respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
       return
@@ -414,15 +428,15 @@ parentPort.on('message', async (event) => {
     if (providerEvent.type === 'structured_result') pending.routeValue = providerEvent.value
     if (providerEvent.type === 'completed') pending.providerRequestId = providerEvent.providerRequestId
     if (providerEvent.type === 'usage') {
-      const ledger: BudgetLedgerEntry = { schemaVersion: 1, id: randomUUID(), createdAt: new Date().toISOString(), runId: `conversation:${pending.conversationId}`, requestId: command.payload.providerRequestId, provider: 'deepseek', modelId: 'deepseek-v4-pro', inputTokens: providerEvent.inputTokens, outputTokens: providerEvent.outputTokens, amountUsdMicros: 0, source: 'provider_actual' }
+      const ledger: BudgetLedgerEntry = { schemaVersion: 1, id: randomUUID(), createdAt: new Date().toISOString(), runId: `conversation:${pending.conversationId}`, requestId: command.payload.providerRequestId, provider: pending.provider, modelId: pending.modelId, inputTokens: providerEvent.inputTokens, outputTokens: providerEvent.outputTokens, amountUsdMicros: 0, source: 'provider_actual' }
       kernel.save({ entityType: 'BudgetLedgerEntry', entity: ledger, immutable: true }, 'provider.usage.recorded', { inputTokens: ledger.inputTokens, outputTokens: ledger.outputTokens, source: ledger.source })
     }
     if (providerEvent.type === 'usage') emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.conversation.event', requestId: command.payload.providerRequestId, event: providerEvent })
     if (providerEvent.type === 'completed') {
       try {
         const route = supervisorRouter.applyDecision({ requestId: command.payload.providerRequestId, conversationId: pending.conversationId, sourceMessageId: pending.sourceMessageId, text: pending.userText, history: pending.history, directories: pending.directories }, pending.routeValue ?? JSON.parse(pending.text))
-        const assistantMessage: Message = { schemaVersion: 1, id: pending.assistantMessageId, createdAt: new Date().toISOString(), conversationId: pending.conversationId, role: 'assistant', content: route.response, provider: 'deepseek', modelId: 'deepseek-v4-pro', providerRequestId: pending.providerRequestId }
-        kernel.save({ entityType: 'Message', entity: assistantMessage, immutable: true }, 'message.created', { role: 'assistant', provider: 'deepseek', modelId: 'deepseek-v4-pro', routeMode: route.mode, taskDraftId: route.task?.draft.id, missingInputs: route.missingInputs })
+        const assistantMessage: Message = { schemaVersion: 1, id: pending.assistantMessageId, createdAt: new Date().toISOString(), conversationId: pending.conversationId, role: 'assistant', content: route.response, provider: pending.provider, modelId: pending.modelId, providerRequestId: pending.providerRequestId }
+        kernel.save({ entityType: 'Message', entity: assistantMessage, immutable: true }, 'message.created', { role: 'assistant', provider: pending.provider, modelId: pending.modelId, routeMode: route.mode, taskDraftId: route.task?.draft.id, missingInputs: route.missingInputs })
         if (route.startRequest) emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: route.startRequest.requestId, request: route.startRequest })
         enqueueMemorySafely({ sourceType: 'conversation', sourceRef: `conversation:${pending.conversationId}:message:${assistantMessage.id}`, scopeType: 'global', scopeId: 'global:local-owner', content: `${pending.userText}\n${assistantMessage.content}`.trim().slice(0, 50_000) })
         emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.conversation.event', requestId: command.payload.providerRequestId, event: { type: 'output_delta', requestId: command.payload.providerRequestId, delta: route.response } })

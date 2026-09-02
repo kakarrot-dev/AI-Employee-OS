@@ -25,7 +25,7 @@ function setup(): { employees: EmployeeService; tasks: TaskService; store: Runti
 }
 
 function publishEmployee(employees: EmployeeService): string {
-  const created = employees.create({ name: '正式员工', description: '文本交付', systemPrompt: '输出简洁、可验证的结果。', modelId: 'deepseek-v4-pro', capabilityVersionIds: ['capability.text-analysis.v1'], memoryScopes: ['employee'] })
+  const created = employees.create({ name: '正式员工', role: '受控文本交付', description: '负责输出结构清晰且可以验证的文本结果。', systemPrompt: '输出简洁、可验证的结果。', modelId: 'deepseek-v4-pro', capabilityVersionIds: ['capability.text-analysis.v1'], memoryScopes: ['employee'] })
   const withCase = employees.addTestCase(created.employee.id, { name: '发布测试', prompt: 'PASS', acceptanceCriteria: '包含 PASS', expectedContains: 'PASS' })
   const started = employees.startTest(created.employee.id, withCase.testCases[0].id, 'employee-test-provider')
   employees.handleProviderEvent(started.request.requestId, { type: 'output_delta', requestId: started.request.requestId, delta: 'PASS' })
@@ -35,7 +35,7 @@ function publishEmployee(employees: EmployeeService): string {
 }
 
 function publishResearchEmployee(employees: EmployeeService): string {
-  const created = employees.create({ name: '调研员', description: '受管调研', systemPrompt: '需要来源时提交 ToolAction Proposal。', modelId: 'deepseek-v4-pro', capabilityVersionIds: ['capability.managed-research.v1'], memoryScopes: ['task'] })
+  const created = employees.create({ name: '调研员', role: '受管网络调研', description: '负责在任务授权范围内检索并核验公开来源。', systemPrompt: '需要来源时提交 ToolAction Proposal。', modelId: 'deepseek-v4-pro', capabilityVersionIds: ['capability.managed-research.v1'], memoryScopes: ['task'] })
   const withCase = employees.addTestCase(created.employee.id, { name: '发布测试', prompt: 'PASS', acceptanceCriteria: '包含 PASS', expectedContains: 'PASS' })
   const started = employees.startTest(created.employee.id, withCase.testCases[0].id, 'research-test-provider')
   employees.handleProviderEvent(started.request.requestId, { type: 'output_delta', requestId: started.request.requestId, delta: 'PASS' })
@@ -133,6 +133,40 @@ describe('TaskService', () => {
     store.close()
   })
 
+  it('uses the saved supervisor model, prompt, identity, and bounded global memory for review', () => {
+    const { employees, store, kernel } = setup()
+    const employeeVersionId = publishEmployee(employees)
+    const memoryRequests: Array<{ allowedScopes: Array<{ type: string; id: string }> }> = []
+    const tasks = new TaskService(
+      kernel,
+      employees,
+      (request) => {
+        memoryRequests.push(request)
+        return [
+          { id: 'global-memory', scopeType: 'global', scopeId: 'global:local-owner', category: 'rule', content: '交付前核对完成证据。', sourceRefs: ['user:confirmed'], reason: 'scope+category+hybrid+recency+provenance' },
+          { id: 'outside-memory', scopeType: 'task', scopeId: 'other-task', category: 'knowledge', content: '其他任务内容', sourceRefs: ['task:other'], reason: 'malicious-loader-result' }
+        ]
+      },
+      undefined,
+      undefined,
+      () => ({ name: '任务总管', systemPrompt: '使用简体中文，并优先核对验收证据。', modelId: 'claude-sonnet-4.6', memoryScopes: ['global'] })
+    )
+    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'supervisor-review', sourceMessageIds: ['message'], goal: '生成结果', acceptanceCriteria: ['证据完整'], employeeVersionIds: [employeeVersionId] }).draft.id)
+    tasks.handleProviderEvent(started.request.requestId, { type: 'output_delta', requestId: started.request.requestId, delta: '结果与证据' })
+    tasks.handleProviderEvent(started.request.requestId, { type: 'completed', requestId: started.request.requestId })
+
+    const review = tasks.beginManagerReview(started.run!.id)
+
+    expect(review).toMatchObject({ provider: 'poe', modelId: 'claude-sonnet-4.6' })
+    expect(review.input).toContain('总管名称：任务总管')
+    expect(review.input).toContain('使用简体中文，并优先核对验收证据。')
+    expect(review.input).toContain('global-memory')
+    expect(review.input).not.toContain('outside-memory')
+    expect(review.input).not.toContain('其他任务内容')
+    expect(memoryRequests.at(-1)?.allowedScopes).toEqual([{ type: 'global', id: 'global:local-owner' }])
+    store.close()
+  })
+
   it('loads only the assignment memory scopes frozen into its RunGrant', () => {
     const { employees, store, kernel } = setup()
     const employeeVersionId = publishEmployee(employees)
@@ -158,7 +192,7 @@ describe('TaskService', () => {
 
   it('rejects unpublished or disabled employee versions before freezing a task', () => {
     const { employees, tasks, store } = setup()
-    const unpublished = employees.create({ name: '草稿员工', description: '', systemPrompt: 'draft', modelId: 'deepseek-v4-pro', capabilityVersionIds: [], memoryScopes: [] })
+    const unpublished = employees.create({ name: '草稿员工', role: '草稿状态验证', description: '用于验证未发布员工不能进入正式任务。', systemPrompt: '只用于验证未发布员工不能进入正式任务。', modelId: 'deepseek-v4-pro', capabilityVersionIds: ['capability.text-analysis.v1'], memoryScopes: [] })
     expect(() => tasks.createDraft({ conversationId: 'c', sourceMessageIds: ['m'], goal: '目标', acceptanceCriteria: ['通过'], employeeVersionIds: [unpublished.draft!.id] })).toThrow('employee_version_not_available')
 
     const published = publishEmployee(employees)

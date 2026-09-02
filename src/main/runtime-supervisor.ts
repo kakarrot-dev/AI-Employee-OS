@@ -7,6 +7,7 @@ import type { FormalTaskDetail, TaskDraftInput } from '../runtime/task-service'
 import type { ResourceCatalog } from '../runtime/resource-service'
 import type { MemoryCategory, MemoryHealth, MemoryQueueItem, MemoryScopeType, MemorySearchResult, MemoryStatus, MemoryView } from '../runtime/memory-service'
 import type { ProviderEvent, ProviderRequest } from '../provider/contract'
+import type { SupervisorConfigInput, SupervisorConfigView } from '../shared/supervisor-contract'
 import { SIDECAR_PROTOCOL_VERSION, type RuntimeCommand, type RuntimeOutboundEvent, type RuntimeReadyEvent, type RuntimeResponse } from '../shared/runtime-sidecar-protocol'
 
 interface PendingRequest {
@@ -93,6 +94,9 @@ export class RuntimeSupervisor {
   cancelConversation(providerRequestId: string): Promise<{ accepted: true }> {
     return this.request<{ accepted: true }>({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId: randomUUID(), type: 'conversation.cancel', payload: { providerRequestId } })
   }
+
+  supervisorGet(): Promise<SupervisorConfigView> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'supervisor.get', payload: {} }) }
+  supervisorUpdate(input: SupervisorConfigInput): Promise<SupervisorConfigView> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'supervisor.update', payload: { input } }) }
 
   employeeList(): Promise<EmployeeSummary[]> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'employee.list', payload: {} }) }
   employeeCapabilities(): Promise<AgentCapabilityVersionView[]> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'employee.capabilities', payload: {} }) }

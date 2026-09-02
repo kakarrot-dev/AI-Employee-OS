@@ -1,6 +1,7 @@
 export const RUNTIME_SCHEMA_VERSION = 1 as const
 
 export type EntityType =
+  | 'SupervisorConfiguration'
   | 'Employee'
   | 'EmployeeVersion'
   | 'AgentCapabilityVersion'
@@ -41,6 +42,16 @@ interface VersionedEntity {
   schemaVersion: typeof RUNTIME_SCHEMA_VERSION
   id: string
   createdAt: string
+}
+
+export interface SupervisorConfiguration extends VersionedEntity {
+  id: 'supervisor.local'
+  updatedAt: string
+  name: string
+  avatarDataUrl?: string
+  systemPrompt: string
+  modelId: 'deepseek-v4-pro' | 'claude-sonnet-4.6'
+  memoryScopes: Array<'global'>
 }
 
 export interface Employee extends VersionedEntity {
@@ -399,7 +410,7 @@ export interface Checkpoint extends VersionedEntity {
   payload: Record<string, unknown>
 }
 
-export type RuntimeEntity = Employee | EmployeeVersion | AgentCapabilityVersion | TestCase | SandboxTestRun | Conversation | Message | Task | TaskDraft | TaskRevision | ChangeRequest | Run | Assignment | Handoff | ToolAction | Approval | Artifact | Evidence | Delivery | RunGrant | BudgetLedgerEntry | Checkpoint | SkillVersion | ToolVersion | MCPVersion | SourceAttempt | ResearchBundle | SourceHealthCheck
+export type RuntimeEntity = SupervisorConfiguration | Employee | EmployeeVersion | AgentCapabilityVersion | TestCase | SandboxTestRun | Conversation | Message | Task | TaskDraft | TaskRevision | ChangeRequest | Run | Assignment | Handoff | ToolAction | Approval | Artifact | Evidence | Delivery | RunGrant | BudgetLedgerEntry | Checkpoint | SkillVersion | ToolVersion | MCPVersion | SourceAttempt | ResearchBundle | SourceHealthCheck
 
 export interface EntityRecord<T extends RuntimeEntity = RuntimeEntity> {
   entityType: EntityType
@@ -417,7 +428,7 @@ export interface AuditEvent<TPayload = unknown> {
   payload: TPayload
 }
 
-const entityTypes = new Set<EntityType>(['Employee', 'EmployeeVersion', 'AgentCapabilityVersion', 'TestCase', 'SandboxTestRun', 'Conversation', 'Message', 'Task', 'TaskDraft', 'TaskRevision', 'ChangeRequest', 'Run', 'Assignment', 'Handoff', 'ToolAction', 'Approval', 'Artifact', 'Evidence', 'Delivery', 'RunGrant', 'BudgetLedgerEntry', 'Checkpoint', 'SkillVersion', 'ToolVersion', 'MCPVersion', 'SourceAttempt', 'ResearchBundle', 'SourceHealthCheck'])
+const entityTypes = new Set<EntityType>(['SupervisorConfiguration', 'Employee', 'EmployeeVersion', 'AgentCapabilityVersion', 'TestCase', 'SandboxTestRun', 'Conversation', 'Message', 'Task', 'TaskDraft', 'TaskRevision', 'ChangeRequest', 'Run', 'Assignment', 'Handoff', 'ToolAction', 'Approval', 'Artifact', 'Evidence', 'Delivery', 'RunGrant', 'BudgetLedgerEntry', 'Checkpoint', 'SkillVersion', 'ToolVersion', 'MCPVersion', 'SourceAttempt', 'ResearchBundle', 'SourceHealthCheck'])
 
 export function assertEntityRecord(value: unknown): asserts value is EntityRecord {
   if (!value || typeof value !== 'object') throw new Error('invalid_entity_record')

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { ProviderEvent, ProviderRequest } from '../provider/contract'
 import type { AllowedModelId } from '../provider/models'
-import type { EmployeeDetail, EmployeeDraftInput, EmployeeSummary, EmployeeUiStatus } from '../shared/employee-contract'
+import { normalizeEmployeeDraft, validateEmployeeDraft, type EmployeeDetail, type EmployeeDraftInput, type EmployeeSummary, type EmployeeUiStatus } from '../shared/employee-contract'
 import type { AgentCapabilityVersion, Assignment, Employee, EmployeeVersion, MCPVersion, SandboxTestRun, SkillVersion, SourceHealthCheck, TestCase, ToolVersion } from './domain'
 import { RuntimeKernel } from './kernel'
 
@@ -165,7 +165,7 @@ export class EmployeeService {
   }
 
   create(input: EmployeeDraftInput): EmployeeDetail {
-    this.validateDraft(input)
+    input = this.validateDraft(input)
     const now = new Date().toISOString()
     const employeeId = randomUUID()
     const versionId = randomUUID()
@@ -189,7 +189,7 @@ export class EmployeeService {
   }
 
   saveDraft(employeeId: string, input: EmployeeDraftInput): EmployeeDetail {
-    this.validateDraft(input)
+    input = this.validateDraft(input)
     let employee = this.requireEmployee(employeeId)
     if (!employee.draftVersionId) {
       this.beginEdit(employeeId)
@@ -328,7 +328,6 @@ export class EmployeeService {
   private status(employee: Employee): EmployeeUiStatus {
     if (employee.archived) return 'archived'
     if (employee.disabled) return 'disabled'
-    if (employee.activeVersionId && employee.draftVersionId) return 'pending_changes'
     if (employee.activeVersionId) return 'active'
     if (!employee.draftVersionId) return 'draft'
     const draft = this.kernel.store.get<EmployeeVersion>('EmployeeVersion', employee.draftVersionId)
@@ -336,17 +335,13 @@ export class EmployeeService {
     return draft?.state === 'tested' ? 'pending_test' : hasTestCase ? 'pending_test' : 'draft'
   }
 
-  private validateDraft(input: EmployeeDraftInput): void {
-    if (!input || typeof input !== 'object') throw new Error('invalid_employee_draft')
-    if (typeof input.name !== 'string' || input.name.trim().length < 1 || input.name.length > 80) throw new Error('invalid_employee_name')
-    if (input.role !== undefined && (typeof input.role !== 'string' || input.role.length > 120)) throw new Error('invalid_employee_role')
-    if (typeof input.description !== 'string' || input.description.length > 2_000) throw new Error('invalid_employee_description')
-    if (input.avatarDataUrl !== undefined && (typeof input.avatarDataUrl !== 'string' || input.avatarDataUrl.length > 3_000_000 || !/^data:image\/(png|jpeg|webp);base64,/.test(input.avatarDataUrl))) throw new Error('invalid_employee_avatar')
-    if (typeof input.systemPrompt !== 'string' || input.systemPrompt.trim().length < 1 || input.systemPrompt.length > 50_000) throw new Error('invalid_system_prompt')
-    if (!['deepseek-v4-pro', 'claude-sonnet-4.6'].includes(input.modelId)) throw new Error('model_not_allowed')
-    if (!Array.isArray(input.capabilityVersionIds) || new Set(input.capabilityVersionIds).size !== input.capabilityVersionIds.length) throw new Error('invalid_capabilities')
-    for (const capabilityId of input.capabilityVersionIds) if (!this.kernel.store.get<AgentCapabilityVersion>('AgentCapabilityVersion', capabilityId)) throw new Error('capability_not_found')
-    if (!Array.isArray(input.memoryScopes) || input.memoryScopes.some((scope) => !['global', 'employee', 'task'].includes(scope))) throw new Error('invalid_memory_scopes')
+  private validateDraft(input: EmployeeDraftInput): EmployeeDraftInput {
+    const issue = validateEmployeeDraft(input)[0]
+    if (issue) throw new Error(issue.code)
+    const normalized = normalizeEmployeeDraft(input)
+    if (!Array.isArray(normalized.capabilityVersionIds)) throw new Error('invalid_capabilities')
+    for (const capabilityId of normalized.capabilityVersionIds) if (!this.kernel.store.get<AgentCapabilityVersion>('AgentCapabilityVersion', capabilityId)) throw new Error('capability_not_found')
+    return normalized
   }
 
   private assertDependenciesAvailable(version: EmployeeVersion): void {

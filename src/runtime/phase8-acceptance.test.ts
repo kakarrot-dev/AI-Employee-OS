@@ -15,7 +15,7 @@ const directories: string[] = []
 afterEach(() => { while (directories.length) rmSync(directories.pop()!, { recursive: true, force: true }) })
 
 function publish(employees: EmployeeService, input: { name: string; systemPrompt: string; capabilityVersionIds: string[] }): string {
-  const created = employees.create({ name: input.name, description: input.name, systemPrompt: input.systemPrompt, modelId: 'deepseek-v4-pro', capabilityVersionIds: input.capabilityVersionIds, memoryScopes: [] })
+  const created = employees.create({ name: input.name, role: input.name, description: `${input.name}负责完成受控任务与结果交付。`, systemPrompt: input.systemPrompt, modelId: 'deepseek-v4-pro', capabilityVersionIds: input.capabilityVersionIds, memoryScopes: [] })
   const withCase = employees.addTestCase(created.employee.id, { name: '发布门禁', prompt: '只输出 PASS', acceptanceCriteria: '包含 PASS', expectedContains: 'PASS' })
   const run = employees.startTest(created.employee.id, withCase.testCases[0].id, `${input.name}-test`)
   employees.handleProviderEvent(run.request.requestId, { type: 'output_delta', requestId: run.request.requestId, delta: 'PASS' })

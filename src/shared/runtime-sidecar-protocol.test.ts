@@ -21,5 +21,7 @@ describe('runtime sidecar protocol', () => {
     expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '4', type: 'conversation.create', payload: { conversationId: 'conversation-1' } })).toMatchObject({ type: 'conversation.create' })
     expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '5', type: 'conversation.archive', payload: { conversationId: 'conversation-1' } })).toMatchObject({ type: 'conversation.archive' })
     expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '6', type: 'conversation.send', payload: { conversationId: 'conversation-1', messageId: 'message-1', text: '写文档', directories: ['/tmp/reports'] } })).toMatchObject({ type: 'conversation.send', payload: { directories: ['/tmp/reports'] } })
+    expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '7', type: 'supervisor.get', payload: {} })).toMatchObject({ type: 'supervisor.get' })
+    expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '8', type: 'supervisor.update', payload: { input: { name: '任务总管', systemPrompt: '先核对目标和证据再组织员工。', modelId: 'deepseek-v4-pro', memoryScopes: ['global'] } } })).toMatchObject({ type: 'supervisor.update' })
   })
 })
