@@ -18,7 +18,7 @@ export interface ManagedResearchResult { actions: ToolAction[]; bundle?: Researc
 
 interface RunnerResult {
   adapterVersionId: string
-  sourceType: 'github_repository' | 'rss_atom'
+  sourceType: ResearchItem['sourceType']
   query: string
   url: string
   status: 'succeeded' | 'failed'
@@ -44,7 +44,7 @@ export class ManagedResearchService {
 
   createBundle(input: ManagedResearchInput, actions: ToolAction[]): ResearchBundle {
     this.validateContext(input)
-    if (actions.length !== 2 || actions.some((action) => action.runId !== input.runId || action.assignmentId !== input.assignmentId || !['succeeded', 'failed', 'blocked'].includes(action.state))) throw new Error('research_actions_unsettled')
+    if (actions.length < 2 || actions.some((action) => action.runId !== input.runId || action.assignmentId !== input.assignmentId || !['succeeded', 'failed', 'blocked'].includes(action.state))) throw new Error('research_actions_unsettled')
     const fingerprint = createHash('sha256').update(JSON.stringify({ runId: input.runId, assignmentId: input.assignmentId, question: input.question, actionIds: actions.map((action) => action.id).sort() })).digest('hex')
     const existing = this.kernel.store.list<ResearchBundle>('ResearchBundle').find((bundle) => bundle.id === fingerprint)
     if (existing) return existing
@@ -53,11 +53,11 @@ export class ManagedResearchService {
     const items: ResearchItem[] = []
     for (const action of actions) {
       const result = action.result as unknown as RunnerResult | undefined
-      const sourceType = action.toolVersionId.startsWith('github') ? 'github_repository' : 'rss_atom'
+      const sourceType: ResearchItem['sourceType'] = result?.sourceType ?? (action.toolVersionId.startsWith('github') ? 'github_repository' : action.toolVersionId.startsWith('rss') ? 'rss_atom' : action.toolVersionId.startsWith('agent-reach') ? 'agent_reach_web' : action.toolVersionId.startsWith('last30days') ? 'last30days' : 'opencli_social')
       const attempt: SourceAttempt = {
         schemaVersion: 1, id: randomUUID(), createdAt: new Date().toISOString(), researchBundleId: bundleId, toolActionId: action.id,
         adapterVersionId: action.toolVersionId, sourceType, query: result?.query ?? String(action.parameters.query ?? action.parameters.url ?? ''),
-        url: result?.url ?? String(action.parameters.url ?? 'https://api.github.com/search/repositories'), status: action.state === 'succeeded' && result?.status === 'succeeded' ? 'succeeded' : 'failed',
+        url: result?.url ?? String(action.parameters.url ?? ''), status: action.state === 'succeeded' && result?.status === 'succeeded' ? 'succeeded' : 'failed',
         fetchedAt: result?.fetchedAt ?? action.completedAt ?? new Date().toISOString(), httpStatus: result?.httpStatus, failureCode: action.failureCode ?? (result?.status === 'failed' ? `http_${result.httpStatus ?? 'error'}` : undefined), retryAfter: result?.retryAfter,
         contentHash: result ? createHash('sha256').update(JSON.stringify(result.items)).digest('hex') : undefined, truncated: result?.truncated ?? false
       }
@@ -84,6 +84,6 @@ export class ManagedResearchService {
     const assignment = this.kernel.store.get<Assignment>('Assignment', input.assignmentId)
     const employee = this.kernel.store.get<EmployeeVersion>('EmployeeVersion', input.employeeVersionId)
     if (!assignment || assignment.runId !== input.runId || assignment.employeeVersionId !== input.employeeVersionId || !employee) throw new Error('invalid_research_context')
-    if (!employee.capabilityVersionIds.includes('capability.managed-research.v1')) throw new Error('research_capability_not_granted')
+    if (!employee.capabilityVersionIds.some((id) => ['capability.managed-research.v1', 'capability.network-intelligence.v1'].includes(id))) throw new Error('research_capability_not_granted')
   }
 }

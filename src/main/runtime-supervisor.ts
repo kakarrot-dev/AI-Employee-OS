@@ -69,9 +69,9 @@ export class RuntimeSupervisor {
     return this.request<RuntimeHealth>({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId: randomUUID(), type: 'health', payload: {} })
   }
 
-  sendConversation(conversationId: string, messageId: string, text: string): Promise<{ accepted: true; requestId: string }> {
+  sendConversation(conversationId: string, messageId: string, text: string, directories: string[] = []): Promise<{ accepted: true; requestId: string }> {
     const requestId = randomUUID()
-    return this.request<{ accepted: true }>({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, type: 'conversation.send', payload: { conversationId, messageId, text } }, 5000).then((result) => ({ ...result, requestId }))
+    return this.request<{ accepted: true }>({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, type: 'conversation.send', payload: { conversationId, messageId, text, directories } }, 5000).then((result) => ({ ...result, requestId }))
   }
 
   conversationHistory(conversationId: string): Promise<Message[]> {
@@ -111,14 +111,14 @@ export class RuntimeSupervisor {
   employeeDeleteDraft(employeeId: string): Promise<{ accepted: true }> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'employee.delete', payload: { employeeId } }) }
   taskList(): Promise<FormalTaskDetail[]> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.list', payload: {} }) }
   taskCreateDraft(input: TaskDraftInput): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.create_draft', payload: { input } }) }
-  taskUpdateDraft(draftId: string, changes: Pick<TaskDraftInput, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds'>): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.update_draft', payload: { draftId, changes } }) }
+  taskUpdateDraft(draftId: string, changes: Pick<TaskDraftInput, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds' | 'directories'>): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.update_draft', payload: { draftId, changes } }) }
   taskStart(draftId: string): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.start', payload: { draftId } }, 5000) }
   taskRequestChange(taskId: string, sourceMessageId: string, requestedDiff: Record<string, unknown>): Promise<{ accepted: true; changeRequestId: string }> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.request_change', payload: { taskId, sourceMessageId, requestedDiff } }) as Promise<{ accepted: true; changeRequestId: string }> }
-  taskAcceptChange(changeRequestId: string, changes: Pick<TaskDraftInput, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds'>): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.accept_change', payload: { changeRequestId, changes } }, 5000) }
+  taskAcceptChange(changeRequestId: string, changes: Pick<TaskDraftInput, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds' | 'directories'>): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.accept_change', payload: { changeRequestId, changes } }, 5000) }
   taskRejectChange(changeRequestId: string): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.reject_change', payload: { changeRequestId } }, 5000) }
   resourceList(): Promise<ResourceCatalog> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'resource.list', payload: {} }) }
   resourceProbe(): Promise<ResourceCatalog> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'resource.probe', payload: {} }, 35_000) }
-  toolApprove(actionId: string): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'tool.approve', payload: { actionId } }, 20_000) }
+  toolApprove(actionId: string): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'tool.approve', payload: { actionId } }, 135_000) }
   toolReject(actionId: string): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'tool.reject', payload: { actionId } }, 5000) }
   toolResolve(actionId: string, outcome: 'succeeded' | 'failed', evidence: Record<string, unknown>): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'tool.resolve_unknown', payload: { actionId, outcome, evidence } }, 5000) }
   memoryStatus(): Promise<MemoryHealth> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'memory.status', payload: {} }, 15_000) }
@@ -243,7 +243,7 @@ export class RuntimeSupervisor {
   }
 
   private async sendProviderEvent(providerRequestId: string, event: ProviderEvent): Promise<void> {
-    await this.request<{ accepted: true }>({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId: randomUUID(), type: 'provider.event', payload: { providerRequestId, event } }, 5000)
+    await this.request<{ accepted: true }>({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId: randomUUID(), type: 'provider.event', payload: { providerRequestId, event } }, 135_000)
   }
 
   private async sendProviderFailure(providerRequestId: string, code: string): Promise<void> {

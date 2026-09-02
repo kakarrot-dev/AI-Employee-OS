@@ -18,6 +18,8 @@ describe('runtime state machines', () => {
     expect(projectTaskState({ hasDraft: false, taskState: 'pending', runState: 'created' })).toBe('pending')
     expect(projectTaskState({ hasDraft: false, taskState: 'running', runState: 'running' })).toBe('running')
     expect(projectTaskState({ hasDraft: false, taskState: 'running', runState: 'paused' })).toBe('needs_attention')
+    expect(projectTaskState({ hasDraft: false, taskState: 'failed', runState: 'failed', hasPendingApproval: true })).toBe('failed')
+    expect(projectTaskState({ hasDraft: false, taskState: 'cancelled', runState: 'paused', hasBlockedAction: true })).toBe('cancelled')
     expect(() => projectTaskState({ hasDraft: false, taskState: 'pending', runState: 'paused' })).not.toThrow()
     expect(() => projectTaskState({ hasDraft: false, taskState: 'pending', runState: 'running' })).toThrow('inconsistent_projection_state')
   })

@@ -19,6 +19,8 @@ export interface EmployeeSummary {
   status: EmployeeUiStatus
   activeVersionId?: string
   draftVersionId?: string
+  capabilityVersionIds: string[]
+  activeCapabilityVersionIds: string[]
 }
 
 export interface EmployeeView {

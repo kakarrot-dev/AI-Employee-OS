@@ -4,15 +4,16 @@ import { spawnSync } from 'node:child_process'
 import { RuntimeKernel } from './kernel'
 import { RuntimeStore } from './store'
 import { SIDECAR_PROTOCOL_VERSION, parseRuntimeCommand, type RuntimeOutboundEvent, type RuntimeResponse } from '../shared/runtime-sidecar-protocol'
-import type { BudgetLedgerEntry, Conversation, Message, Run, RunGrant } from './domain'
+import type { BudgetLedgerEntry, Conversation, Message, Run, RunGrant, ToolAction } from './domain'
 import { EmployeeService } from './employee-service'
 import { TaskService } from './task-service'
 import { ResourceService } from './resource-service'
 import { ToolGateway } from './tool-gateway'
-import { managedResearchRunner } from './managed-research-runner'
+import { toolRunner } from './tool-runner'
 import { ManagedResearchService } from './managed-research-service'
 import { DeliveryExporter } from './delivery-exporter'
 import { MemoryService, type MemoryCategory, type MemoryStatus, type MemoryView } from './memory-service'
+import { SupervisorRouter } from './supervisor-router'
 
 function databasePathFromArgs(): string {
   const argument = process.argv.find((value) => value.startsWith('--database='))
@@ -38,7 +39,8 @@ const resources = new ResourceService(kernel)
 resources.seed()
 const employees = new EmployeeService(kernel)
 employees.seedCapabilities()
-const toolGateway = new ToolGateway(kernel, resources, managedResearchRunner)
+employees.seedRequestedSpecialists()
+const toolGateway = new ToolGateway(kernel, resources, toolRunner)
 const research = new ManagedResearchService(kernel, toolGateway)
 const workerPython = requiredPathArgument('worker-python')
 const workerScript = requiredPathArgument('worker-script')
@@ -47,11 +49,12 @@ const exportDirectory = requiredPathArgument('export-directory')
 const memory = new MemoryService({ pythonPath: requiredPathArgument('memory-python'), scriptPath: requiredPathArgument('memory-script'), databasePath: requiredPathArgument('memory-database'), modelCachePath: requiredPathArgument('memory-model-cache'), keychainHelperPath: requiredPathArgument('memory-keychain-helper') })
 const deliveryExporter = new DeliveryExporter(kernel, exportDirectory)
 const tasks = new TaskService(kernel, employees, (request) => memory.search(request), ({ assignment, revision, version, output, actions }) => {
-  if (!version.capabilityVersionIds.includes('capability.managed-research.v1')) return { text: output }
+  if (!version.capabilityVersionIds.some((id) => ['capability.managed-research.v1', 'capability.network-intelligence.v1'].includes(id))) return { text: output }
   const bundle = research.createBundle({ taskId: revision.taskId, runId: assignment.runId, assignmentId: assignment.id, employeeVersionId: version.id, question: revision.goal, githubQuery: '', feedUrl: '' }, actions)
   const handoff = { schemaVersion: 1, type: 'ResearchHandoff', researchBundleId: bundle.id, contentHash: bundle.contentHash, question: bundle.question, claims: bundle.claims, conflicts: bundle.conflicts, informationGaps: bundle.informationGaps, sources: bundle.items.map((item, index) => ({ index, sourceType: item.sourceType, title: item.title, url: item.url, publishedAt: item.publishedAt, summary: item.summary, contentHash: item.contentHash, trust: item.trust, injectionSignals: item.injectionSignals })), researcherSynthesis: output }
   return { text: JSON.stringify(handoff), researchBundleId: bundle.id }
 }, (detail) => deliveryExporter.materialize(detail))
+const supervisorRouter = new SupervisorRouter(employees, tasks)
 
 function enqueueMemorySafely(input: Parameters<MemoryService['enqueueAsync']>[0]): void {
   void memory.enqueueAsync(input).catch(() => { /* memory processing must not fail the primary conversation or task */ })
@@ -75,7 +78,17 @@ function validateDeepAgentHandoff(runId: string, assignmentId: string, employeeO
   if (result.schemaVersion !== 1 || result.runId !== runId || result.assignmentId !== assignmentId || JSON.stringify(result.rootTools) !== '["task"]' || JSON.stringify(result.employeeTools) !== expectedEmployeeTools || JSON.stringify(result.allowedToolVersionIds) !== JSON.stringify(allowedToolVersionIds) || result.proposalOnly !== true || JSON.stringify(result.next) !== '["model"]') throw new Error('deep_agents_worker_contract_rejected')
   return result
 }
-const pendingConversations = new Map<string, { conversationId: string; assistantMessageId: string; text: string; providerRequestId?: string }>()
+const pendingConversations = new Map<string, {
+  conversationId: string
+  sourceMessageId: string
+  assistantMessageId: string
+  userText: string
+  history: Message[]
+  directories: string[]
+  text: string
+  routeValue?: unknown
+  providerRequestId?: string
+}>()
 
 function respond(response: RuntimeResponse): void {
   parentPort.postMessage(response)
@@ -141,12 +154,14 @@ parentPort.on('message', async (event) => {
       }
       const userMessage: Message = { schemaVersion: 1, id: command.payload.messageId, createdAt: new Date().toISOString(), conversationId: command.payload.conversationId, role: 'user', content: command.payload.text }
       kernel.save({ entityType: 'Message', entity: userMessage, immutable: true }, 'message.created', { role: 'user' })
-      pendingConversations.set(requestId, { conversationId: command.payload.conversationId, assistantMessageId: randomUUID(), text: '' })
+      const history = store.list<Message>('Message').filter((message) => message.conversationId === command.payload.conversationId && message.id !== userMessage.id)
+      const routeInput = { requestId, conversationId: command.payload.conversationId, sourceMessageId: userMessage.id, text: command.payload.text, history, directories: command.payload.directories }
+      pendingConversations.set(requestId, { conversationId: routeInput.conversationId, sourceMessageId: routeInput.sourceMessageId, assistantMessageId: randomUUID(), userText: routeInput.text, history, directories: [...routeInput.directories], text: '' })
       emit({
         schemaVersion: SIDECAR_PROTOCOL_VERSION,
         type: 'runtime.provider.execute',
         requestId,
-        request: { requestId, provider: 'deepseek', modelId: 'deepseek-v4-pro', input: command.payload.text, maxOutputTokens: 512, stream: true }
+        request: supervisorRouter.createRequest(routeInput)
       })
       respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
       return
@@ -245,9 +260,21 @@ parentPort.on('message', async (event) => {
     if (command.type === 'memory.queue.list') { respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: memory.queue() }); return }
     if (command.type === 'memory.embeddings.migrate') { respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: memory.migrateEmbeddings() }); return }
     if (command.type === 'tool.approve' || command.type === 'tool.reject' || command.type === 'tool.resolve_unknown') {
-      const action = command.type === 'tool.resolve_unknown'
-        ? toolGateway.resolveUnknown(command.payload.actionId, command.payload.outcome, command.payload.evidence)
-        : await toolGateway.decide(command.payload.actionId, command.type === 'tool.approve')
+      let action: ToolAction
+      try {
+        action = command.type === 'tool.resolve_unknown'
+          ? toolGateway.resolveUnknown(command.payload.actionId, command.payload.outcome, command.payload.evidence)
+          : await toolGateway.decide(command.payload.actionId, command.type === 'tool.approve')
+      } catch (error) {
+        const code = error instanceof Error ? error.message.split(':')[0] : 'tool_decision_failed'
+        if (command.type !== 'tool.approve' || code !== 'run_grant_expired') throw error
+        const expiredAction = store.get<ToolAction>('ToolAction', command.payload.actionId)
+        if (!expiredAction) throw new Error('tool_action_not_found')
+        const detail = tasks.failRun(expiredAction.runId, code)
+        emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId, event: { type: 'failed', taskId: detail.task!.id, runId: detail.run?.id } })
+        respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: detail })
+        return
+      }
       let resumed = tasks.resumeAfterTool(action)
       if (resumed.request) emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: resumed.request.requestId, request: resumed.request })
       else resumed = { detail: tasks.settleToolGate(action.runId) }
@@ -321,8 +348,25 @@ parentPort.on('message', async (event) => {
     if (command.type !== 'provider.event') throw new Error('unexpected_command')
 
     if (command.payload.event.type === 'tool_proposal') {
-      const proposal = tasks.toolProposalContext(command.payload.providerRequestId, command.payload.event)
-      const action = await toolGateway.propose(proposal)
+      if (!tasks.canAcceptToolProposal(command.payload.providerRequestId)) {
+        respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
+        return
+      }
+      let proposal: ReturnType<TaskService['toolProposalContext']>
+      let action: ToolAction
+      try {
+        proposal = tasks.toolProposalContext(command.payload.providerRequestId, command.payload.event)
+        action = await toolGateway.propose(proposal)
+      } catch (error) {
+        const code = error instanceof Error ? error.message.split(':')[0] : 'invalid_tool_proposal'
+        if (['invalid_tool_parameters', 'parameter_source_required', 'invalid_parameter_source', 'invalid_tool_proposal_name', 'invalid_tool_proposal_arguments', 'invalid_tool_proposal_schema', 'tool_not_available_for_assignment'].includes(code)) {
+          const detail = tasks.recordInvalidToolProposal(command.payload.providerRequestId, code)
+          emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId: command.payload.providerRequestId, event: { type: 'progress', taskId: detail.task!.id, runId: detail.run?.id } })
+          respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
+          return
+        }
+        throw error
+      }
       const detail = tasks.attachToolAction(proposal.assignmentId, action.id)
       emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId: command.payload.providerRequestId, event: { type: ['pending', 'blocked', 'result_unknown'].includes(action.state) ? 'needs_attention' : 'progress', taskId: detail.task!.id, runId: detail.run?.id } })
       respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
@@ -367,18 +411,27 @@ parentPort.on('message', async (event) => {
     if (!pending) throw new Error('unknown_provider_request')
     const providerEvent = command.payload.event
     if (providerEvent.type === 'output_delta') pending.text += providerEvent.delta
+    if (providerEvent.type === 'structured_result') pending.routeValue = providerEvent.value
     if (providerEvent.type === 'completed') pending.providerRequestId = providerEvent.providerRequestId
     if (providerEvent.type === 'usage') {
       const ledger: BudgetLedgerEntry = { schemaVersion: 1, id: randomUUID(), createdAt: new Date().toISOString(), runId: `conversation:${pending.conversationId}`, requestId: command.payload.providerRequestId, provider: 'deepseek', modelId: 'deepseek-v4-pro', inputTokens: providerEvent.inputTokens, outputTokens: providerEvent.outputTokens, amountUsdMicros: 0, source: 'provider_actual' }
       kernel.save({ entityType: 'BudgetLedgerEntry', entity: ledger, immutable: true }, 'provider.usage.recorded', { inputTokens: ledger.inputTokens, outputTokens: ledger.outputTokens, source: ledger.source })
     }
-    emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.conversation.event', requestId: command.payload.providerRequestId, event: providerEvent })
+    if (providerEvent.type === 'usage') emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.conversation.event', requestId: command.payload.providerRequestId, event: providerEvent })
     if (providerEvent.type === 'completed') {
-      const assistantMessage: Message = { schemaVersion: 1, id: pending.assistantMessageId, createdAt: new Date().toISOString(), conversationId: pending.conversationId, role: 'assistant', content: pending.text, provider: 'deepseek', modelId: 'deepseek-v4-pro', providerRequestId: pending.providerRequestId }
-      kernel.save({ entityType: 'Message', entity: assistantMessage, immutable: true }, 'message.created', { role: 'assistant', provider: 'deepseek', modelId: 'deepseek-v4-pro' })
-      const lastUser = store.list<Message>('Message').filter((message) => message.conversationId === pending.conversationId && message.role === 'user').at(-1)
-      enqueueMemorySafely({ sourceType: 'conversation', sourceRef: `conversation:${pending.conversationId}:message:${assistantMessage.id}`, scopeType: 'global', scopeId: 'global:local-owner', content: `${lastUser?.content ?? ''}\n${assistantMessage.content}`.trim().slice(0, 50_000) })
-      pendingConversations.delete(command.payload.providerRequestId)
+      try {
+        const route = supervisorRouter.applyDecision({ requestId: command.payload.providerRequestId, conversationId: pending.conversationId, sourceMessageId: pending.sourceMessageId, text: pending.userText, history: pending.history, directories: pending.directories }, pending.routeValue ?? JSON.parse(pending.text))
+        const assistantMessage: Message = { schemaVersion: 1, id: pending.assistantMessageId, createdAt: new Date().toISOString(), conversationId: pending.conversationId, role: 'assistant', content: route.response, provider: 'deepseek', modelId: 'deepseek-v4-pro', providerRequestId: pending.providerRequestId }
+        kernel.save({ entityType: 'Message', entity: assistantMessage, immutable: true }, 'message.created', { role: 'assistant', provider: 'deepseek', modelId: 'deepseek-v4-pro', routeMode: route.mode, taskDraftId: route.task?.draft.id, missingInputs: route.missingInputs })
+        if (route.startRequest) emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: route.startRequest.requestId, request: route.startRequest })
+        enqueueMemorySafely({ sourceType: 'conversation', sourceRef: `conversation:${pending.conversationId}:message:${assistantMessage.id}`, scopeType: 'global', scopeId: 'global:local-owner', content: `${pending.userText}\n${assistantMessage.content}`.trim().slice(0, 50_000) })
+        emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.conversation.event', requestId: command.payload.providerRequestId, event: { type: 'output_delta', requestId: command.payload.providerRequestId, delta: route.response } })
+        emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.conversation.event', requestId: command.payload.providerRequestId, event: providerEvent })
+      } catch (error) {
+        emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.conversation.event', requestId: command.payload.providerRequestId, event: { type: 'failed', requestId: command.payload.providerRequestId, code: error instanceof Error ? error.message.split(':')[0] : 'invalid_supervisor_route' } })
+      } finally {
+        pendingConversations.delete(command.payload.providerRequestId)
+      }
     }
     respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
   } catch (error) {

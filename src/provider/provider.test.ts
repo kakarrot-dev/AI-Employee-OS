@@ -63,6 +63,13 @@ describe('provider adapters', () => {
     expect(body.tools[0].name).toBe('propose_task')
   })
 
+  it('accepts one bounded JSON code fence from DeepSeek structured output', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'response-fenced', output: [{ type: 'message', content: [{ type: 'output_text', text: '```json\n{"mode":"create_task"}\n```' }] }] }), { status: 200 }))
+    const events = []
+    for await (const event of new DeepSeekAdapter(credentials, fetchMock).execute({ requestId: 'request-fenced', provider: 'deepseek', modelId: 'deepseek-v4-pro', input: 'route', maxOutputTokens: 32, stream: false, outputSchema: { name: 'route', schema: { type: 'object' }, strict: true } })) events.push(event)
+    expect(events).toContainEqual({ type: 'structured_result', requestId: 'request-fenced', value: { mode: 'create_task' } })
+  })
+
   it.each([
     [401, 'authentication_failed', false],
     [429, 'rate_limited', true]

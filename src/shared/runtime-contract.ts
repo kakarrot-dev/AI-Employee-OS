@@ -42,7 +42,7 @@ export const EMPLOYEE_IPC = {
   event: 'employee:event'
 } as const
 
-export const TASK_IPC = { list: 'task:list', createDraft: 'task:create-draft', updateDraft: 'task:update-draft', start: 'task:start', requestChange: 'task:request-change', acceptChange: 'task:accept-change', rejectChange: 'task:reject-change', approveTool: 'task:approve-tool', rejectTool: 'task:reject-tool', resolveTool: 'task:resolve-tool', event: 'task:event' } as const
+export const TASK_IPC = { list: 'task:list', chooseDirectory: 'task:choose-directory', createDraft: 'task:create-draft', updateDraft: 'task:update-draft', start: 'task:start', requestChange: 'task:request-change', acceptChange: 'task:accept-change', rejectChange: 'task:reject-change', approveTool: 'task:approve-tool', rejectTool: 'task:reject-tool', resolveTool: 'task:resolve-tool', event: 'task:event' } as const
 
 export const RESOURCE_IPC = { list: 'resource:list', probe: 'resource:probe' } as const
 export const MEMORY_IPC = { status: 'memory:status', downloadModel: 'memory:download-model', list: 'memory:list', search: 'memory:search', update: 'memory:update', disable: 'memory:disable', restore: 'memory:restore', resolveConflict: 'memory:resolve-conflict', permanentlyDelete: 'memory:permanently-delete', queue: 'memory:queue', migrateEmbeddings: 'memory:migrate-embeddings' } as const
@@ -132,7 +132,7 @@ export interface ConversationBridge {
   list(): Promise<ConversationSummaryView[]>
   create(): Promise<ConversationSummaryView>
   archive(conversationId: string): Promise<{ archived: true; conversationId: string }>
-  send(conversationId: string, text: string): Promise<{ accepted: true; requestId: string; messageId: string }>
+  send(conversationId: string, text: string, directories?: string[]): Promise<{ accepted: true; requestId: string; messageId: string }>
   cancel(requestId: string): Promise<{ accepted: true }>
   history(conversationId: string): Promise<ConversationMessageView[]>
   onEvent(listener: (event: ConversationStreamEvent) => void): () => void
@@ -166,11 +166,12 @@ export interface EmployeeBridge {
 
 export interface TaskBridge {
   list(): Promise<TaskDetailView[]>
+  chooseDirectory(): Promise<string | undefined>
   createDraft(input: TaskDraftInputView): Promise<TaskDetailView>
-  updateDraft(draftId: string, changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds'>): Promise<TaskDetailView>
+  updateDraft(draftId: string, changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds' | 'directories'>): Promise<TaskDetailView>
   start(draftId: string): Promise<TaskDetailView>
   requestChange(taskId: string, sourceMessageId: string, requestedDiff: Record<string, unknown>): Promise<{ accepted: true; changeRequestId: string }>
-  acceptChange(changeRequestId: string, changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds'>): Promise<TaskDetailView>
+  acceptChange(changeRequestId: string, changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds' | 'directories'>): Promise<TaskDetailView>
   rejectChange(changeRequestId: string): Promise<TaskDetailView>
   approveTool(actionId: string): Promise<TaskDetailView>
   rejectTool(actionId: string): Promise<TaskDetailView>

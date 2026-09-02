@@ -10,6 +10,7 @@ describe('runtime sidecar protocol', () => {
     expect(() => parseRuntimeCommand({ schemaVersion: 1, requestId: '1', type: 'memory.search', payload: { query: 'x', allowedScopes: [{ type: 'task', id: '' }] } })).toThrow('invalid_memory_search')
     expect(() => parseRuntimeCommand({ schemaVersion: 1, requestId: '1', type: 'memory.list', payload: { scopeType: 'organization' } })).toThrow('invalid_memory_filters')
     expect(() => parseRuntimeCommand({ schemaVersion: 1, requestId: '1', type: 'memory.update', payload: { id: 'm1', changes: { secret: 'x' } } })).toThrow('invalid_memory_update')
+    expect(() => parseRuntimeCommand({ schemaVersion: 1, requestId: '1', type: 'conversation.send', payload: { conversationId: 'c', messageId: 'm', text: '写文档', directories: ['relative'] } })).toThrow('invalid_conversation_directories')
   })
 
   it('accepts a bounded event cursor request', () => {
@@ -19,5 +20,6 @@ describe('runtime sidecar protocol', () => {
     expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '3', type: 'conversation.list', payload: {} })).toMatchObject({ type: 'conversation.list' })
     expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '4', type: 'conversation.create', payload: { conversationId: 'conversation-1' } })).toMatchObject({ type: 'conversation.create' })
     expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '5', type: 'conversation.archive', payload: { conversationId: 'conversation-1' } })).toMatchObject({ type: 'conversation.archive' })
+    expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '6', type: 'conversation.send', payload: { conversationId: 'conversation-1', messageId: 'message-1', text: '写文档', directories: ['/tmp/reports'] } })).toMatchObject({ type: 'conversation.send', payload: { directories: ['/tmp/reports'] } })
   })
 })

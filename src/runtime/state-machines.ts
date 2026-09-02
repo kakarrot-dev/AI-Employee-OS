@@ -41,10 +41,10 @@ export const transitionToolAction = (from: ToolActionState, to: ToolActionState)
 export function projectTaskState(input: { hasDraft: boolean; taskState?: TaskState; runState?: RunState; hasPendingApproval?: boolean; hasBlockedAction?: boolean; hasUnknownResult?: boolean }): UiTaskState {
   if (input.hasDraft && !input.taskState) return 'draft'
   if (!input.taskState || !input.runState) throw new Error('incomplete_projection_input')
+  if (['succeeded', 'failed', 'cancelled'].includes(input.taskState)) return input.taskState as UiTaskState
   if (input.runState === 'paused' || input.hasPendingApproval || input.hasBlockedAction || input.hasUnknownResult) return 'needs_attention'
   if (input.taskState === 'pending' && input.runState === 'created') return 'pending'
   if (input.taskState === 'running' && ['running', 'pausing'].includes(input.runState)) return 'running'
-  if (['succeeded', 'failed', 'cancelled'].includes(input.taskState)) return input.taskState as UiTaskState
   throw new Error('inconsistent_projection_state')
 }
 

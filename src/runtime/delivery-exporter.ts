@@ -1,7 +1,7 @@
 import { closeSync, existsSync, linkSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, join, relative, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
-import type { Artifact, Evidence, ResearchBundle } from './domain'
+import type { Artifact, Evidence, ResearchBundle, ToolAction } from './domain'
 import type { FormalTaskDetail } from './task-service'
 import { RuntimeKernel } from './kernel'
 
@@ -24,23 +24,32 @@ export class DeliveryExporter {
 
   materialize(detail: FormalTaskDetail): DeliveryMaterialization {
     const bundle = this.kernel.store.list<ResearchBundle>('ResearchBundle').find((value) => value.runId === detail.run?.id)
+    const timestamp = new Date().toISOString()
+    const fileArtifacts = this.kernel.store.list<ToolAction>('ToolAction').filter((action) => action.runId === detail.run?.id && action.state === 'succeeded' && ['document.create@local-document/v1', 'document.edit@local-document/v1'].includes(action.toolVersionId)).flatMap((action): Artifact[] => {
+      const path = action.result?.path
+      if (typeof path !== 'string' || !existsSync(path)) return []
+      const hash = sha256(readFileSync(path))
+      if (typeof action.result?.sha256 === 'string' && action.result.sha256 !== hash) return []
+      return [{ schemaVersion: 1, id: randomUUID(), createdAt: timestamp, runId: detail.run!.id, version: 1, mediaType: typeof action.result?.mediaType === 'string' ? action.result.mediaType : 'text/plain', relativePath: path, sha256: hash }]
+    })
+    for (const artifact of fileArtifacts) this.kernel.save({ entityType: 'Artifact', entity: artifact, immutable: true }, 'artifact.file_action_verified', { path: artifact.relativePath, sha256: artifact.sha256 })
     if (!bundle) {
-      const researchExpected = detail.assignments.some((assignment) => this.kernel.store.get<any>('EmployeeVersion', assignment.employeeVersionId)?.capabilityVersionIds?.includes('capability.managed-research.v1'))
-      return { artifactIds: [], evidenceIds: [], unresolvedIssues: researchExpected ? ['没有可导出的 ResearchBundle'] : [] }
+      const researchExpected = detail.assignments.some((assignment) => this.kernel.store.get<any>('EmployeeVersion', assignment.employeeVersionId)?.capabilityVersionIds?.some((id: string) => ['capability.managed-research.v1', 'capability.network-intelligence.v1'].includes(id)))
+      return { artifactIds: fileArtifacts.map((artifact) => artifact.id), evidenceIds: [], unresolvedIssues: researchExpected ? ['没有可导出的 ResearchBundle'] : fileArtifacts.length ? [] : ['没有经过 Runtime 验证的文档写入或编辑结果'] }
     }
+    const evidence: Evidence[] = bundle.items.map((item) => ({ schemaVersion: 1, id: randomUUID(), createdAt: timestamp, runId: detail.run!.id, version: 1, sourceType: item.sourceType, sourceRef: item.url, capturedAt: item.fetchedAt, sha256: item.contentHash }))
+    for (const item of evidence) this.kernel.save({ entityType: 'Evidence', entity: item, immutable: true }, 'evidence.committed', { sourceType: item.sourceType, sourceRef: item.sourceRef })
+    if (fileArtifacts.length) return { artifactIds: fileArtifacts.map((artifact) => artifact.id), evidenceIds: evidence.map((item) => item.id), unresolvedIssues: [...bundle.informationGaps] }
     const finalOutput = detail.assignments.at(-1)?.output?.trim() || '未生成分析报告正文。'
     const sourceLines = bundle.items.map((item, index) => `${index + 1}. [${item.title}](${item.url}) · ${item.sourceType} · ${item.contentHash}`)
     const markdown = `${finalOutput}\n\n## 来源清单\n\n${sourceLines.length ? sourceLines.join('\n') : '没有成功来源。'}\n\n## 信息缺口\n\n${bundle.informationGaps.length ? bundle.informationGaps.map((value) => `- ${value}`).join('\n') : '- 无已记录缺口'}\n`
     const sourceJson = JSON.stringify({ schemaVersion: 1, researchBundleId: bundle.id, contentHash: bundle.contentHash, question: bundle.question, queries: bundle.queries, sourceAttempts: bundle.sourceAttemptIds, sources: bundle.items, claims: bundle.claims, conflicts: bundle.conflicts, informationGaps: bundle.informationGaps }, null, 2) + '\n'
     const pair = this.writePair(safeBaseName(detail.revision!.goal), markdown, sourceJson)
-    const timestamp = new Date().toISOString()
     const artifacts: Artifact[] = [
       { schemaVersion: 1, id: randomUUID(), createdAt: timestamp, runId: detail.run!.id, version: 1, mediaType: 'text/markdown', relativePath: relative(this.root, pair.markdownPath), sha256: sha256(readFileSync(pair.markdownPath)) },
       { schemaVersion: 1, id: randomUUID(), createdAt: timestamp, runId: detail.run!.id, version: 1, mediaType: 'application/json', relativePath: relative(this.root, pair.sourcePath), sha256: sha256(readFileSync(pair.sourcePath)) }
     ]
-    const evidence: Evidence[] = bundle.items.map((item) => ({ schemaVersion: 1, id: randomUUID(), createdAt: timestamp, runId: detail.run!.id, version: 1, sourceType: item.sourceType, sourceRef: item.url, capturedAt: item.fetchedAt, sha256: item.contentHash }))
     for (const artifact of artifacts) this.kernel.save({ entityType: 'Artifact', entity: artifact, immutable: true }, 'artifact.exported', { relativePath: artifact.relativePath, sha256: artifact.sha256 })
-    for (const item of evidence) this.kernel.save({ entityType: 'Evidence', entity: item, immutable: true }, 'evidence.committed', { sourceType: item.sourceType, sourceRef: item.sourceRef })
     return { artifactIds: artifacts.map((artifact) => artifact.id), evidenceIds: evidence.map((item) => item.id), unresolvedIssues: [...bundle.informationGaps] }
   }
 

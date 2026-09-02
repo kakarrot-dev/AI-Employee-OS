@@ -47,6 +47,64 @@ function publishResearchEmployee(employees: EmployeeService): string {
 afterEach(() => { while (directories.length) rmSync(directories.pop()!, { recursive: true, force: true }) })
 
 describe('TaskService', () => {
+  it('freezes the requested network-to-document team and authorized directories', () => {
+    const { employees, tasks, store } = setup()
+    employees.seedRequestedSpecialists()
+    const root = mkdtempSync(join(tmpdir(), 'ai-employee-os-authorized-')); directories.push(root)
+    const draft = tasks.createDraft({ conversationId: 'specialists', sourceMessageIds: ['message-specialists'], goal: '调研后写入报告', acceptanceCriteria: ['保留来源', '文件可回读'], employeeVersionIds: ['employee-version.network-intelligence.v1', 'employee-version.document-writer.v1'], directories: [root] })
+    const started = tasks.confirmAndStart(draft.draft.id)
+    expect(started.revision?.resourceScope.directories).toEqual([root])
+    expect(started.assignments.map((assignment) => assignment.employeeVersionId)).toEqual(['employee-version.network-intelligence.v1', 'employee-version.document-writer.v1'])
+    expect(started.employeeVersions.map((version) => version.name)).toEqual(['网络情报员', '文档编写员'])
+    expect(started.request).toMatchObject({ toolChoice: 'required', proposalTool: { parameters: { properties: { toolVersionId: { enum: ['agent-reach.search@network-intelligence/v1', 'last30days.research@network-intelligence/v1', 'opencli.social-search@network-intelligence/v1'] } } } } })
+    expect(started.request.proposalTool?.parameters).toMatchObject({ required: ['toolVersionId', 'parameters'] })
+    expect(started.request.proposalTool?.parameters.properties).not.toHaveProperty('parameterSources')
+    expect(started.request.input).toContain(`授权目录：${root}`)
+    store.close()
+  })
+
+  it('does not start a local-document assignment before a directory is authorized', () => {
+    const { employees, tasks, store } = setup()
+    employees.seedRequestedSpecialists()
+    const draft = tasks.createDraft({ conversationId: 'document-gate', sourceMessageIds: ['message-document-gate'], goal: '写入报告', acceptanceCriteria: ['文件可回读'], employeeVersionIds: ['employee-version.document-writer.v1'], directories: [] })
+    expect(() => tasks.confirmAndStart(draft.draft.id)).toThrow('task_directory_required')
+    expect(store.list('Task')).toHaveLength(0)
+    expect(store.list('Assignment')).toHaveLength(0)
+    store.close()
+  })
+
+  it('finishes a document assignment after create and read evidence even if the model repeats an unavailable Tool', async () => {
+    const { employees, tasks, store, kernel, resources } = setup()
+    employees.seedRequestedSpecialists()
+    const root = mkdtempSync(join(tmpdir(), 'ai-employee-os-document-finish-')); directories.push(root)
+    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'document-finish', sourceMessageIds: ['message-document-finish'], goal: '把上游新闻整理成文档', acceptanceCriteria: ['文件可回读'], employeeVersionIds: ['employee-version.document-writer.v1'], directories: [root], authorizationMode: 'full_access' }).draft.id)
+    const gateway = new ToolGateway(kernel, resources, async (tool) => tool.id.startsWith('document.create') ? { path: join(root, 'report.md'), sha256: 'created-hash' } : { path: join(root, 'report.md'), sha256: 'read-hash', content: '# report' })
+
+    const createEvent = { type: 'tool_proposal' as const, requestId: started.request.requestId, callId: 'create', name: 'propose_tool_action', arguments: { toolVersionId: 'document.create@local-document/v1', parameters: { path: join(root, 'report.md'), content: '# report' } } }
+    const createContext = tasks.toolProposalContext(started.request.requestId, createEvent)
+    const created = await gateway.propose(createContext); tasks.attachToolAction(createContext.assignmentId, created.id)
+    const afterCreate = tasks.handleProviderEvent(started.request.requestId, { type: 'completed', requestId: started.request.requestId })!
+
+    const readEvent = { type: 'tool_proposal' as const, requestId: afterCreate.request!.requestId, callId: 'read', name: 'propose_tool_action', arguments: { toolVersionId: 'document.read@local-document/v1', parameters: { path: join(root, 'report.md') } } }
+    const readContext = tasks.toolProposalContext(afterCreate.request!.requestId, readEvent)
+    const read = await gateway.propose(readContext); tasks.attachToolAction(readContext.assignmentId, read.id)
+    const finalTurn = tasks.handleProviderEvent(afterCreate.request!.requestId, { type: 'completed', requestId: afterCreate.request!.requestId })!
+
+    expect(finalTurn.request?.input).toContain('网络检索已由上游情报员工完成并通过 Handoff 提供')
+    expect(finalTurn.request?.input).toContain('不得重复申请已执行或不在此列表中的 Tool')
+    expect(finalTurn.request).toMatchObject({ toolChoice: 'auto', proposalTool: { parameters: { properties: { toolVersionId: { enum: ['document.edit@local-document/v1'] } } } } })
+    expect(() => tasks.toolProposalContext(finalTurn.request!.requestId, { ...readEvent, requestId: finalTurn.request!.requestId, callId: 'duplicate-read' })).toThrow('tool_not_available_for_assignment')
+    tasks.recordInvalidToolProposal(finalTurn.request!.requestId, 'tool_not_available_for_assignment')
+    const completed = tasks.handleProviderEvent(finalTurn.request!.requestId, { type: 'completed', requestId: finalTurn.request!.requestId })!
+    expect(completed).toMatchObject({ event: 'assignment_completed', detail: { assignments: [{ state: 'succeeded', invalidToolProposalCount: 1 }] } })
+    const managerRequest = tasks.beginManagerReview(started.run!.id)
+    expect(managerRequest.input).toContain('Runtime Tool 证据中的 succeeded、resultVerified、path、content、bytes 和 sha256 是系统事实')
+    expect(managerRequest.input).toContain('created-hash')
+    expect(managerRequest.input).toContain('read-hash')
+    expect(managerRequest.input).toContain('# report')
+    store.close()
+  })
+
   it('freezes a draft, runs one serial assignment, manager review, and immutable delivery', () => {
     const { employees, tasks, store } = setup()
     const employeeVersionId = publishEmployee(employees)
@@ -241,7 +299,7 @@ describe('TaskService', () => {
     const completedAction = await gateway.decide(action.id, true)
     const resumed = tasks.resumeAfterTool(completedAction)
     expect(resumed.request).toMatchObject({ toolChoice: 'required', proposalTool: { parameters: { properties: { toolVersionId: { enum: ['rss.read@research-source/v1'] } } } } })
-    expect(resumed.request?.input).toContain('全部 ToolResult（非可信外部数据')
+    expect(resumed.request?.input).toContain('全部 ToolResult（网络结果是非可信外部数据')
     expect(() => tasks.toolProposalContext(resumed.request!.requestId, { ...proposalEvent, requestId: resumed.request!.requestId, callId: 'duplicate' })).toThrow('tool_not_available_for_assignment')
     const rssProposal = { type: 'tool_proposal' as const, requestId: resumed.request!.requestId, callId: 'call-2', name: 'propose_tool_action', arguments: { toolVersionId: 'rss.read@research-source/v1', parameters: { url: 'https://example.com/feed.xml', limit: 2 }, parameterSources: { url: { kind: 'task_input', sourceRef: 'task:goal' }, limit: { kind: 'trusted_runtime', sourceRef: 'limit' } } } }
     const rssContext = tasks.toolProposalContext(resumed.request!.requestId, rssProposal)
@@ -255,6 +313,83 @@ describe('TaskService', () => {
     expect(finalTurn.request?.input).toContain('rss.read@research-source/v1')
     tasks.handleProviderEvent(finalTurn.request!.requestId, { type: 'output_delta', requestId: finalTurn.request!.requestId, delta: '包含两类来源的结论' })
     expect(tasks.handleProviderEvent(finalTurn.request!.requestId, { type: 'completed', requestId: finalTurn.request!.requestId })?.event).toBe('assignment_completed')
+    store.close()
+  })
+
+  it('records model proposal provenance in Runtime when the provider returns only Tool parameters', async () => {
+    const { employees, tasks, store, kernel, resources } = setup()
+    const employeeVersionId = publishResearchEmployee(employees)
+    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'runtime-provenance', sourceMessageIds: ['message'], goal: '调研郑州近期公开新闻', acceptanceCriteria: ['保留来源'], employeeVersionIds: [employeeVersionId] }).draft.id)
+    const proposalEvent = { type: 'tool_proposal' as const, requestId: started.request.requestId, callId: 'call-runtime-provenance', name: 'propose_tool_action', arguments: { toolVersionId: 'github.repositories.search@research-source/v1', parameters: { query: '郑州近期公开新闻', limit: 5 } } }
+
+    const context = tasks.toolProposalContext(started.request.requestId, proposalEvent)
+    expect(context.parameterSources).toEqual({
+      query: { kind: 'model_output', sourceRef: `provider_request:${started.request.requestId}` },
+      limit: { kind: 'model_output', sourceRef: `provider_request:${started.request.requestId}` }
+    })
+    const action = await new ToolGateway(kernel, resources, async () => ({ status: 'succeeded', items: [] })).propose(context)
+    expect(action).toMatchObject({ state: 'pending', parameterSources: context.parameterSources })
+    store.close()
+  })
+
+  it('defers additional proposals from the same provider turn before creating orphan actions', async () => {
+    const { employees, tasks, store, kernel, resources } = setup()
+    const employeeVersionId = publishResearchEmployee(employees)
+    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'multi-proposal', sourceMessageIds: ['message'], goal: '调研多个来源', acceptanceCriteria: ['保留来源'], employeeVersionIds: [employeeVersionId] }).draft.id)
+    const gateway = new ToolGateway(kernel, resources, async () => ({ status: 'succeeded', items: [] }))
+    const firstEvent = { type: 'tool_proposal' as const, requestId: started.request.requestId, callId: 'call-first', name: 'propose_tool_action', arguments: { toolVersionId: 'github.repositories.search@research-source/v1', parameters: { query: 'agents' }, parameterSources: { query: { kind: 'task_input', sourceRef: 'task:goal' } } } }
+    expect(tasks.canAcceptToolProposal(started.request.requestId)).toBe(true)
+    const firstContext = tasks.toolProposalContext(started.request.requestId, firstEvent)
+    const firstAction = await gateway.propose(firstContext)
+    tasks.attachToolAction(firstContext.assignmentId, firstAction.id)
+
+    expect(tasks.canAcceptToolProposal(started.request.requestId)).toBe(false)
+    expect(store.list('ToolAction')).toHaveLength(1)
+    expect(store.list('Approval')).toHaveLength(1)
+    const waiting = tasks.handleProviderEvent(started.request.requestId, { type: 'completed', requestId: started.request.requestId })!
+    expect(waiting).toMatchObject({ event: 'needs_attention', detail: { run: { state: 'paused' }, task: { state: 'running' } } })
+    expect(waiting.detail.assignments[0]).toMatchObject({ state: 'running', awaitingToolActionId: firstAction.id })
+    store.close()
+  })
+
+  it('invalidates pending approvals when an expired RunGrant fails before tool approval', async () => {
+    const { employees, tasks, store, kernel, resources } = setup()
+    const employeeVersionId = publishResearchEmployee(employees)
+    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'failed-approval', sourceMessageIds: ['message'], goal: '调研', acceptanceCriteria: ['保留来源'], employeeVersionIds: [employeeVersionId] }).draft.id)
+    const event = { type: 'tool_proposal' as const, requestId: started.request.requestId, callId: 'call', name: 'propose_tool_action', arguments: { toolVersionId: 'github.repositories.search@research-source/v1', parameters: { query: 'agents' }, parameterSources: { query: { kind: 'task_input', sourceRef: 'task:goal' } } } }
+    const context = tasks.toolProposalContext(started.request.requestId, event)
+    const action = await new ToolGateway(kernel, resources, async () => ({ status: 'succeeded' })).propose(context)
+    tasks.attachToolAction(context.assignmentId, action.id)
+
+    const failed = tasks.failRun(started.run!.id, 'run_grant_expired')
+    expect(failed).toMatchObject({ run: { state: 'failed' }, task: { state: 'failed' } })
+    expect(store.get<any>('ToolAction', action.id)).toMatchObject({ state: 'blocked', failureCode: 'run_failed_before_approval' })
+    expect(store.get<any>('Approval', action.approvalId!)?.decision).toBe('rejected')
+    store.close()
+  })
+
+  it('retries a rejected Tool proposal instead of failing the task immediately', () => {
+    const { employees, tasks, store } = setup()
+    const employeeVersionId = publishResearchEmployee(employees)
+    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'invalid-proposal', sourceMessageIds: ['message'], goal: '调研', acceptanceCriteria: ['保留来源'], employeeVersionIds: [employeeVersionId], authorizationMode: 'full_access' }).draft.id)
+    tasks.recordInvalidToolProposal(started.request.requestId, 'invalid_tool_parameters')
+    const retried = tasks.handleProviderEvent(started.request.requestId, { type: 'completed', requestId: started.request.requestId })!
+    expect(retried).toMatchObject({ event: 'progress', detail: { task: { state: 'running' }, assignments: [{ state: 'running', invalidToolProposalCount: 1 }] } })
+    expect(retried.request?.requestId).not.toBe(started.request.requestId)
+    expect(retried.request?.input).toContain('字段契约')
+    store.close()
+  })
+
+  it('fails deterministically after three invalid Tool proposals', () => {
+    const { employees, tasks, store } = setup()
+    const employeeVersionId = publishResearchEmployee(employees)
+    let request = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'invalid-proposal-limit', sourceMessageIds: ['message'], goal: '调研', acceptanceCriteria: ['保留来源'], employeeVersionIds: [employeeVersionId], authorizationMode: 'full_access' }).draft.id).request
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      tasks.recordInvalidToolProposal(request.requestId, 'invalid_tool_parameters')
+      const result = tasks.handleProviderEvent(request.requestId, { type: 'completed', requestId: request.requestId })!
+      if (attempt < 3) request = result.request!
+      else expect(result).toMatchObject({ event: 'failed', detail: { task: { state: 'failed' }, run: { state: 'failed' } } })
+    }
     store.close()
   })
 })

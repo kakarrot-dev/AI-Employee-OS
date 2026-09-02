@@ -9,6 +9,7 @@ import { managedResearchRunner } from './managed-research-runner'
 import { ResourceService } from './resource-service'
 import { RuntimeStore } from './store'
 import { ToolGateway, type ToolRunner } from './tool-gateway'
+import { externalIntelligenceRunner } from './external-intelligence-runner'
 
 const directories: string[] = []
 
@@ -37,6 +38,20 @@ describe('ToolGateway', () => {
     expect(first).toMatchObject({ state: 'pending', approvalId: expect.any(String) }); expect(duplicate.id).toBe(first.id); expect(runner).not.toHaveBeenCalled()
     const completed = await gateway.decide(first.id, true)
     expect(completed).toMatchObject({ state: 'succeeded', resultVerified: true }); expect(runner).toHaveBeenCalledTimes(1); expect(store.list('Approval')).toHaveLength(1)
+    store.close()
+  })
+
+  it('does not approve an action after its run context has already failed', async () => {
+    const runner = vi.fn<ToolRunner>().mockResolvedValue({ ok: true })
+    const { gateway, kernel, store } = setup('approval_required', runner)
+    const action = await gateway.propose({ runId: 'run-1', assignmentId: 'assignment-1', toolVersionId: 'github.repositories.search@research-source/v1', parameters: { query: 'agents' }, parameterSources: { query: { kind: 'task_input', sourceRef: 'task:task-1' } } })
+    const run = store.get<Run>('Run', 'run-1')!
+    kernel.save({ entityType: 'Run', entity: { ...run, state: 'failed' }, immutable: false }, 'run.failed', { code: 'upstream_failed' })
+
+    await expect(gateway.decide(action.id, true)).rejects.toThrow('invalid_tool_action_context')
+    expect(store.get<any>('Approval', action.approvalId!)?.decision).toBe('pending')
+    expect(store.get<any>('ToolAction', action.id)?.state).toBe('pending')
+    expect(runner).not.toHaveBeenCalled()
     store.close()
   })
 
@@ -96,8 +111,17 @@ describe('ToolGateway', () => {
     expect(new Set(result.bundle?.items.map((value) => value.sourceType))).toEqual(new Set(['github_repository', 'rss_atom']))
     expect(result.bundle?.items.length).toBeGreaterThanOrEqual(2)
     const health = await resources.probe()
-    expect(health).toHaveLength(2)
+    expect(health.filter((check) => check.adapterVersionId.includes('@research-source/'))).toHaveLength(2)
+    expect(health.filter((check) => check.adapterVersionId.includes('@network-intelligence/'))).toHaveLength(3)
     expect(health.every((check) => check.status === 'available')).toBe(true)
     store.close()
   }, 30_000)
+
+  it.skipIf(process.env.LIVE_EXTERNAL_INTELLIGENCE !== '1')('runs the installed Agent-Reach Exa path through the fixed read-only adapter', async () => {
+    const { resources, store } = setup('full_access', externalIntelligenceRunner, ['agent-reach.search@network-intelligence/v1'])
+    const result = await externalIntelligenceRunner(resources.tool('agent-reach.search@network-intelligence/v1'), { query: 'Agent-Reach GitHub', limit: 2 }, { actionId: 'live-agent-reach', signal: AbortSignal.timeout(30_000), grantedDirectories: [] })
+    expect(result.status).toBe('succeeded')
+    expect(result.items).toEqual(expect.arrayContaining([expect.objectContaining({ sourceType: 'agent_reach_web', url: expect.stringMatching(/^https:\/\//), trust: 'untrusted_external_content' })]))
+    store.close()
+  }, 35_000)
 })

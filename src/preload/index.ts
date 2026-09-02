@@ -21,7 +21,7 @@ const conversationBridge: ConversationBridge = Object.freeze({
   list: () => ipcRenderer.invoke(CONVERSATION_IPC.list),
   create: () => ipcRenderer.invoke(CONVERSATION_IPC.create),
   archive: (conversationId: string) => ipcRenderer.invoke(CONVERSATION_IPC.archive, { conversationId }),
-  send: (conversationId: string, text: string) => ipcRenderer.invoke(CONVERSATION_IPC.send, { conversationId, text }),
+  send: (conversationId: string, text: string, directories: string[] = []) => ipcRenderer.invoke(CONVERSATION_IPC.send, { conversationId, text, directories }),
   cancel: (requestId: string) => ipcRenderer.invoke(CONVERSATION_IPC.cancel, { requestId }),
   history: (conversationId: string) => ipcRenderer.invoke(CONVERSATION_IPC.history, { conversationId }),
   onEvent: (listener: (event: ConversationStreamEvent) => void) => {
@@ -56,11 +56,12 @@ const employeeBridge: EmployeeBridge = Object.freeze({
 
 const taskBridge: TaskBridge = Object.freeze({
   list: () => ipcRenderer.invoke(TASK_IPC.list),
+  chooseDirectory: () => ipcRenderer.invoke(TASK_IPC.chooseDirectory),
   createDraft: (input: TaskDraftInputView) => ipcRenderer.invoke(TASK_IPC.createDraft, { input }),
-  updateDraft: (draftId: string, changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds'>) => ipcRenderer.invoke(TASK_IPC.updateDraft, { draftId, changes }),
+  updateDraft: (draftId: string, changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds' | 'directories'>) => ipcRenderer.invoke(TASK_IPC.updateDraft, { draftId, changes }),
   start: (draftId: string) => ipcRenderer.invoke(TASK_IPC.start, { draftId }),
   requestChange: (taskId: string, sourceMessageId: string, requestedDiff: Record<string, unknown>) => ipcRenderer.invoke(TASK_IPC.requestChange, { taskId, sourceMessageId, requestedDiff }),
-  acceptChange: (changeRequestId: string, changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds'>) => ipcRenderer.invoke(TASK_IPC.acceptChange, { changeRequestId, changes }),
+  acceptChange: (changeRequestId: string, changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds' | 'directories'>) => ipcRenderer.invoke(TASK_IPC.acceptChange, { changeRequestId, changes }),
   rejectChange: (changeRequestId: string) => ipcRenderer.invoke(TASK_IPC.rejectChange, { changeRequestId }),
   approveTool: (actionId: string) => ipcRenderer.invoke(TASK_IPC.approveTool, { actionId }),
   rejectTool: (actionId: string) => ipcRenderer.invoke(TASK_IPC.rejectTool, { actionId }),

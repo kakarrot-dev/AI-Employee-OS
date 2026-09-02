@@ -4,6 +4,12 @@ import { requireModel } from './models'
 
 type Fetch = typeof fetch
 
+function parseStructuredText(text: string): unknown {
+  const trimmed = text.trim()
+  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(trimmed)
+  return JSON.parse(fenced ? fenced[1] : trimmed)
+}
+
 export class DeepSeekAdapter {
   constructor(private readonly credentials: CredentialReader, private readonly fetchImpl: Fetch = fetch) {}
 
@@ -99,7 +105,7 @@ export class DeepSeekAdapter {
       if (item.type === 'message') {
         for (const content of item.content ?? []) {
           if (content.type === 'output_text' && typeof content.text === 'string') {
-            if (request.outputSchema) yield { type: 'structured_result', requestId: request.requestId, value: JSON.parse(content.text) }
+            if (request.outputSchema) yield { type: 'structured_result', requestId: request.requestId, value: parseStructuredText(content.text) }
             else yield { type: 'output_delta', requestId: request.requestId, delta: content.text }
           }
         }

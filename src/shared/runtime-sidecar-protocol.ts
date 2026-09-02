@@ -17,7 +17,7 @@ export type RuntimeCommand =
   | { schemaVersion: 1; requestId: string; type: 'conversation.list'; payload: Record<string, never> }
   | { schemaVersion: 1; requestId: string; type: 'conversation.create'; payload: { conversationId: string } }
   | { schemaVersion: 1; requestId: string; type: 'conversation.archive'; payload: { conversationId: string } }
-  | { schemaVersion: 1; requestId: string; type: 'conversation.send'; payload: { conversationId: string; messageId: string; text: string } }
+  | { schemaVersion: 1; requestId: string; type: 'conversation.send'; payload: { conversationId: string; messageId: string; text: string; directories: string[] } }
   | { schemaVersion: 1; requestId: string; type: 'conversation.history'; payload: { conversationId: string } }
   | { schemaVersion: 1; requestId: string; type: 'conversation.cancel'; payload: { providerRequestId: string } }
   | { schemaVersion: 1; requestId: string; type: 'employee.list'; payload: Record<string, never> }
@@ -37,10 +37,10 @@ export type RuntimeCommand =
   | { schemaVersion: 1; requestId: string; type: 'employee.delete'; payload: { employeeId: string } }
   | { schemaVersion: 1; requestId: string; type: 'task.list'; payload: Record<string, never> }
   | { schemaVersion: 1; requestId: string; type: 'task.create_draft'; payload: { input: TaskDraftInput } }
-  | { schemaVersion: 1; requestId: string; type: 'task.update_draft'; payload: { draftId: string; changes: Pick<TaskDraftInput, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds'> } }
+  | { schemaVersion: 1; requestId: string; type: 'task.update_draft'; payload: { draftId: string; changes: Pick<TaskDraftInput, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds' | 'directories'> } }
   | { schemaVersion: 1; requestId: string; type: 'task.start'; payload: { draftId: string } }
   | { schemaVersion: 1; requestId: string; type: 'task.request_change'; payload: { taskId: string; sourceMessageId: string; requestedDiff: Record<string, unknown> } }
-  | { schemaVersion: 1; requestId: string; type: 'task.accept_change'; payload: { changeRequestId: string; changes: Pick<TaskDraftInput, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds'> } }
+  | { schemaVersion: 1; requestId: string; type: 'task.accept_change'; payload: { changeRequestId: string; changes: Pick<TaskDraftInput, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds' | 'directories'> } }
   | { schemaVersion: 1; requestId: string; type: 'task.reject_change'; payload: { changeRequestId: string } }
   | { schemaVersion: 1; requestId: string; type: 'resource.list'; payload: Record<string, never> }
   | { schemaVersion: 1; requestId: string; type: 'resource.probe'; payload: Record<string, never> }
@@ -91,8 +91,9 @@ export function parseRuntimeCommand(value: unknown): RuntimeCommand {
   } else if (command.type === 'conversation.create' || command.type === 'conversation.archive') {
     if (typeof (command.payload as { conversationId?: unknown }).conversationId !== 'string') throw new Error('invalid_conversation_id')
   } else if (command.type === 'conversation.send') {
-    const payload = command.payload as { conversationId?: unknown; messageId?: unknown; text?: unknown }
+    const payload = command.payload as { conversationId?: unknown; messageId?: unknown; text?: unknown; directories?: unknown }
     if (typeof payload.conversationId !== 'string' || typeof payload.messageId !== 'string' || typeof payload.text !== 'string' || payload.text.length < 1 || payload.text.length > 100_000) throw new Error('invalid_conversation_message')
+    if (!Array.isArray(payload.directories) || payload.directories.length > 16 || new Set(payload.directories).size !== payload.directories.length || payload.directories.some((directory) => typeof directory !== 'string' || !directory.startsWith('/') || directory.length > 4_096)) throw new Error('invalid_conversation_directories')
   } else if (command.type === 'conversation.history') {
     if (typeof (command.payload as { conversationId?: unknown }).conversationId !== 'string') throw new Error('invalid_conversation_id')
   } else if (command.type === 'conversation.cancel') {

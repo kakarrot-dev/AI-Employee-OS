@@ -62,6 +62,12 @@ describe('macOS prototype visual contract', () => {
     expect(styles).toMatch(/\.modal-overlay \{[\s\S]*?--layout-window-controls-safe-top[\s\S]*?--layout-window-controls-safe-left[\s\S]*?\}/)
   })
 
+  it('lets the application shell fill a vertically resized window', () => {
+    const styles = source('prototypes/macos-client-v2/src/styles.css')
+    expect(styles).toMatch(/\.prototype \{[\s\S]*?height: 100%;[\s\S]*?\}/)
+    expect(styles).not.toMatch(/\.prototype \{[\s\S]*?height: min\(100%, var\(--layout-shell-max-height\)\);[\s\S]*?\}/)
+  })
+
   it('does not render passive reminder copy below primary controls', () => {
     const client = source('src/renderer/src/App.tsx')
     const team = source('src/renderer/src/TeamModule.tsx')

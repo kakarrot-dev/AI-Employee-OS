@@ -35,6 +35,18 @@ const draft = {
 }
 
 describe('EmployeeService', () => {
+  it('installs the two requested specialist employees once with disjoint capabilities', () => {
+    const { service, store } = setup()
+    service.seedRequestedSpecialists(); service.seedRequestedSpecialists()
+    const installed = service.list().filter((employee) => employee.id.startsWith('employee.'))
+    expect(installed).toHaveLength(2)
+    expect(installed.find((employee) => employee.id === 'employee.network-intelligence')).toMatchObject({ name: '网络情报员', status: 'active', capabilityVersionIds: ['capability.network-intelligence.v1'], activeCapabilityVersionIds: ['capability.network-intelligence.v1'] })
+    expect(installed.find((employee) => employee.id === 'employee.document-writer')).toMatchObject({ name: '文档编写员', status: 'active', capabilityVersionIds: ['capability.local-document.v1'], activeCapabilityVersionIds: ['capability.local-document.v1'] })
+    expect(service.detail('employee.network-intelligence').active?.systemPrompt).toContain('不得读取、创建或编辑本机文件')
+    expect(service.detail('employee.document-writer').active?.systemPrompt).toContain('不得进行网络搜索')
+    store.close()
+  })
+
   it('persists the prototype identity fields in draft versions', () => {
     const { service, store } = setup()
     const avatarDataUrl = 'data:image/png;base64,iVBORw0KGgo='
@@ -67,6 +79,7 @@ describe('EmployeeService', () => {
     const editing = service.beginEdit(created.employee.id)
     expect(editing.draft?.version).toBe(2)
     expect(editing.active?.id).toBe(created.draft?.id)
+    expect(service.list().find((employee) => employee.id === created.employee.id)).toMatchObject({ status: 'pending_changes', activeVersionId: created.draft?.id, activeCapabilityVersionIds: ['capability.text-analysis.v1'] })
     expect(() => store.deleteMutable('EmployeeVersion', created.draft!.id, { schemaVersion: 1, eventId: 'x', occurredAt: new Date().toISOString(), eventType: 'tamper', aggregateType: 'EmployeeVersion', aggregateId: created.draft!.id, payload: {} })).toThrow('immutable_entity_cannot_change')
 
     service.saveDraft(created.employee.id, { ...draft, name: '验收员工 v2', memoryScopes: [...draft.memoryScopes] })

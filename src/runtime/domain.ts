@@ -33,6 +33,7 @@ export type EntityType =
 export type TaskState = 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 export type RunState = 'created' | 'running' | 'pausing' | 'paused' | 'succeeded' | 'failed' | 'cancelled'
 export type ToolActionState = 'pending' | 'running' | 'succeeded' | 'failed' | 'blocked' | 'result_unknown' | 'cancelled'
+export type ResearchSourceType = 'github_repository' | 'rss_atom' | 'agent_reach_web' | 'last30days' | 'opencli_social'
 export type UiTaskState = 'draft' | 'pending' | 'running' | 'needs_attention' | 'succeeded' | 'failed' | 'cancelled'
 export type AuthorizationMode = 'approval_required' | 'full_access'
 
@@ -203,6 +204,7 @@ export interface Assignment extends VersionedEntity {
   toolActionIds?: string[]
   awaitingToolActionId?: string
   reworkOfAssignmentId?: string
+  invalidToolProposalCount?: number
 }
 
 export interface Handoff extends VersionedEntity {
@@ -224,7 +226,7 @@ export interface ToolAction extends VersionedEntity {
   idempotencyKey: string
   state: ToolActionState
   parameters: Record<string, unknown>
-  parameterSources: Record<string, { kind: 'task_input' | 'trusted_runtime' | 'untrusted_external_content'; sourceRef: string }>
+  parameterSources: Record<string, { kind: 'task_input' | 'trusted_runtime' | 'model_output' | 'untrusted_external_content'; sourceRef: string }>
   risk: 'low' | 'medium' | 'high'
   sideEffect: 'none' | 'external_read' | 'external_write'
   timeoutMs: number
@@ -288,7 +290,7 @@ export interface SourceAttempt extends VersionedEntity {
   researchBundleId: string
   toolActionId: string
   adapterVersionId: string
-  sourceType: 'github_repository' | 'rss_atom'
+  sourceType: ResearchSourceType
   query: string
   url: string
   status: 'succeeded' | 'failed'
@@ -302,7 +304,7 @@ export interface SourceAttempt extends VersionedEntity {
 
 export interface ResearchItem {
   sourceAttemptId: string
-  sourceType: 'github_repository' | 'rss_atom'
+  sourceType: ResearchSourceType
   url: string
   title: string
   author?: string

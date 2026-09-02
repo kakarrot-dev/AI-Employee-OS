@@ -1,10 +1,11 @@
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { app, BrowserWindow, ipcMain, Menu, session } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, session } from 'electron'
 import { CONVERSATION_IPC, EMPLOYEE_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, TASK_IPC, type ConversationStreamEvent, type ConversationSummaryView, type EmployeeDraftInput, type EmployeeEvent, type ProviderStatus, type RuntimeStatus, type TaskDetailView, type TaskDraftInputView, type TaskEvent } from '../shared/runtime-contract'
 import type { Conversation, Message } from '../runtime/domain'
 import type { MemoryCategoryView, MemoryScopeTypeView, MemoryStatusView, MemoryViewModel } from '../shared/memory-contract'
 import type { FormalTaskDetail } from '../runtime/task-service'
+import { projectTaskState } from '../runtime/state-machines'
 import { ProviderSupervisor, type ProviderSupervisorEvent } from './provider-supervisor'
 import { RuntimeSupervisor, type RuntimeSupervisorEvent } from './runtime-supervisor'
 import { createWindowOptions, isTrustedRendererUrl } from './window-security'
@@ -72,26 +73,41 @@ function handleProviderEvent(event: ProviderSupervisorEvent): void {
 }
 
 function toTaskView(detail: FormalTaskDetail): TaskDetailView {
-  const needsToolAttention = detail.toolActions.some((action) => action.state === 'pending' || action.state === 'blocked' || action.state === 'result_unknown')
-  const state: TaskDetailView['state'] = detail.run?.state === 'paused' || detail.run?.state === 'pausing' || needsToolAttention ? 'needs_attention' : detail.task?.state ?? 'draft'
+  const state = projectTaskState({
+    hasDraft: true,
+    taskState: detail.task?.state,
+    runState: detail.run?.state,
+    hasPendingApproval: detail.toolActions.some((action) => action.state === 'pending'),
+    hasBlockedAction: detail.toolActions.some((action) => action.state === 'blocked'),
+    hasUnknownResult: detail.toolActions.some((action) => action.state === 'result_unknown')
+  })
+  const versions = new Map(detail.employeeVersions.map((version) => [version.id, version]))
+  const review = [...detail.checkpoints].reverse().find((checkpoint) => checkpoint.phase === 'manager_review')
+  const reviewResult = review?.payload.result && typeof review.payload.result === 'object' && !Array.isArray(review.payload.result) ? review.payload.result as { summary?: unknown } : undefined
+  const finalOutput = [...detail.assignments].reverse().find((assignment) => assignment.state === 'succeeded' && assignment.output?.trim())?.output?.trim()
+  const deliverySummary = typeof reviewResult?.summary === 'string' && reviewResult.summary.trim() ? reviewResult.summary.trim() : undefined
   return {
     id: detail.task?.id ?? detail.draft.id,
     conversationId: detail.draft.conversationId,
+    createdAt: detail.task?.createdAt ?? detail.draft.createdAt,
+    sourceMessageIds: [...detail.draft.sourceMessageIds],
     taskId: detail.task?.id,
     draftId: detail.draft.id,
     state,
     goal: detail.draft.goal,
     acceptanceCriteria: detail.draft.acceptanceCriteria,
     employeeVersionIds: detail.draft.employeeVersionIds,
+    directories: detail.draft.resourceScope.directories,
+    requiresDirectories: detail.draft.capabilityVersionIds.includes('capability.local-document.v1'),
     draftRevision: detail.draft.revision,
     frozenRevision: detail.revision?.revision,
     runId: detail.run?.id,
-    assignments: detail.assignments.map(({ id, sequence, employeeVersionId, state, output }) => ({ id, sequence, employeeVersionId, state, output })),
-    timeline: detail.checkpoints.map(({ phase, nextNode, createdAt, payload }) => ({ phase, nextNode, createdAt, ...(phase === 'memory_loaded' ? { memoryRefs: (payload.recallReasons as Array<{ id: string; reason: string }> | undefined) ?? [] } : {}) })),
-    delivery: detail.delivery ? { id: detail.delivery.id, acceptanceResults: detail.delivery.acceptanceResults.map(({ criterion, passed }) => ({ criterion, passed })), artifacts: detail.artifacts.map(({ id, mediaType, relativePath, sha256 }) => ({ id, mediaType, relativePath, sha256 })), evidenceCount: detail.evidence.length, unresolvedIssues: detail.delivery.unresolvedIssues } : undefined,
+    assignments: detail.assignments.map(({ id, sequence, employeeVersionId, state: assignmentState, output, createdAt, completedAt, reworkOfAssignmentId }) => { const version = versions.get(employeeVersionId); return { id, sequence, employeeVersionId, employeeName: version?.name, employeeRole: version?.role, avatarDataUrl: version?.avatarDataUrl, createdAt, completedAt, reworkOfAssignmentId, state: assignmentState, output } }),
+    timeline: detail.checkpoints.map(({ phase, assignmentId, nextNode, createdAt, payload }) => ({ phase, assignmentId, nextNode, createdAt, ...(phase === 'memory_loaded' ? { memoryRefs: (payload.recallReasons as Array<{ id: string; reason: string }> | undefined) ?? [] } : {}) })),
+    delivery: detail.delivery ? { id: detail.delivery.id, summary: deliverySummary, result: finalOutput, createdAt: detail.delivery.createdAt, acceptanceResults: detail.delivery.acceptanceResults.map(({ criterion, passed }) => ({ criterion, passed })), artifacts: detail.artifacts.map(({ id, mediaType, relativePath, sha256 }) => ({ id, mediaType, relativePath, sha256 })), evidenceCount: detail.evidence.length, unresolvedIssues: detail.delivery.unresolvedIssues } : undefined,
     researchBundles: detail.researchBundles.map(({ id, contentHash, items, claims, conflicts, informationGaps }) => ({ id, contentHash, sourceCount: items.length, claimCount: claims.length, conflicts, informationGaps })),
     pendingChange: detail.changeRequests.find((change) => change.decision === 'pending') ? (() => { const change = detail.changeRequests.find((item) => item.decision === 'pending')!; return { id: change.id, sourceMessageId: change.sourceMessageId, requestedDiff: change.requestedDiff } })() : undefined,
-    toolActions: detail.toolActions.map(({ id, toolVersionId, state: actionState, parameters, risk, approvalId, failureCode }) => ({ id, toolVersionId, state: actionState, parameters, risk, approvalId, failureCode })),
+    toolActions: detail.toolActions.map(({ id, assignmentId, createdAt, completedAt, toolVersionId, state: actionState, parameters, risk, approvalId, failureCode }) => ({ id, assignmentId, createdAt, completedAt, toolVersionId, state: actionState, parameters, risk, approvalId, failureCode })),
     approvals: detail.approvals.map(({ id, toolActionId, decision }) => ({ id, toolActionId, decision }))
   }
 }
@@ -168,11 +184,12 @@ function registerRuntimeIpc(): void {
   ipcMain.handle(CONVERSATION_IPC.send, async (event, value: unknown) => {
     assertTrustedSender(event.senderFrame?.url)
     if (!value || typeof value !== 'object') throw new Error('invalid_conversation_request')
-    const { conversationId, text } = value as { conversationId?: unknown; text?: unknown }
+    const { conversationId, text, directories = [] } = value as { conversationId?: unknown; text?: unknown; directories?: unknown }
     if (typeof conversationId !== 'string' || conversationId.length > 128 || typeof text !== 'string' || text.length < 1 || text.length > 100_000) throw new Error('invalid_conversation_request')
+    if (!Array.isArray(directories) || directories.length > 16 || new Set(directories).size !== directories.length || directories.some((directory) => typeof directory !== 'string' || !directory.startsWith('/') || directory.length > 4_096)) throw new Error('invalid_conversation_directories')
     if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable')
     const messageId = randomUUID()
-    const result = await runtimeSupervisor.sendConversation(conversationId, messageId, text)
+    const result = await runtimeSupervisor.sendConversation(conversationId, messageId, text, directories)
     return { ...result, messageId }
   })
 
@@ -208,6 +225,7 @@ function registerRuntimeIpc(): void {
   ipcMain.handle(EMPLOYEE_IPC.restore, (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.employeeRestore(employeeIdFrom(value)) })
   ipcMain.handle(EMPLOYEE_IPC.deleteDraft, (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.employeeDeleteDraft(employeeIdFrom(value)) })
   ipcMain.handle(TASK_IPC.list, async (event) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return (await runtimeSupervisor.taskList()).map(toTaskView) })
+  ipcMain.handle(TASK_IPC.chooseDirectory, async (event) => { assertTrustedSender(event.senderFrame?.url); if (!mainWindow) throw new Error('window_unavailable'); const result = await dialog.showOpenDialog(mainWindow, { title: '选择任务可访问的文件夹', properties: ['openDirectory', 'createDirectory'] }); return result.canceled ? undefined : result.filePaths[0] })
   ipcMain.handle(TASK_IPC.createDraft, async (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return toTaskView(await runtimeSupervisor.taskCreateDraft((value as { input: TaskDraftInputView }).input)) })
   ipcMain.handle(TASK_IPC.updateDraft, async (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); const draftId = (value as { draftId?: unknown }).draftId; if (typeof draftId !== 'string') throw new Error('invalid_task_draft_id'); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return toTaskView(await runtimeSupervisor.taskUpdateDraft(draftId, (value as { changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds'> }).changes)) })
   ipcMain.handle(TASK_IPC.start, async (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); const draftId = (value as { draftId?: unknown }).draftId; if (typeof draftId !== 'string') throw new Error('invalid_task_draft_id'); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return toTaskView(await runtimeSupervisor.taskStart(draftId)) })
