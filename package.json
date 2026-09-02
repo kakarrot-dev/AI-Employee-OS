@@ -12,6 +12,10 @@
   },
   "scripts": {
     "dev": "electron-vite dev",
+    "prototype:dev": "vite prototypes/macos-client-v2",
+    "prototype:check:typography": "node prototypes/macos-client-v2/scripts/check-typography-contract.mjs",
+    "prototype:check:layout": "node prototypes/macos-client-v2/scripts/check-layout-contract.mjs",
+    "prototype:build": "npm run prototype:check:typography && npm run prototype:check:layout && vite build prototypes/macos-client-v2",
     "build": "npm run build:native-memory && npm run typecheck && electron-vite build",
     "build:runtime": "node scripts/assemble_bundled_runtime.mjs",
     "build:release-metadata": "node scripts/generate_release_metadata.mjs",
@@ -24,7 +28,9 @@
   },
   "dependencies": {
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",
@@ -36,7 +42,9 @@
     "@vitejs/plugin-react": "5.2.0",
     "electron": "44.0.0",
     "electron-vite": "5.0.0",
+    "iconoir-react": "7.12.1",
     "jsdom": "30.0.1",
+    "react-aria-components": "1.20.0",
     "typescript": "7.0.2",
     "vite": "7.3.6",
     "vitest": "4.1.11"

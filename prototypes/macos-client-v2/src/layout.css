@@ -1,0 +1,83 @@
+:root {
+  /* Window and centered application surface. */
+  --layout-window-default-width: 1280px;
+  --layout-window-default-height: 820px;
+  --layout-window-min-width: 960px;
+  --layout-window-min-height: 640px;
+  --layout-shell-max-width: 1600px;
+  --layout-shell-max-height: 1000px;
+
+  /* Persistent three-column shell. */
+  --layout-toolbar-height: 40px;
+  --layout-rail-width: 52px;
+  --layout-context-width: 264px;
+  --layout-workspace-min-width: 744px;
+
+  /* Page containers. */
+  --layout-workspace-content-max-width: 1080px;
+  --layout-message-content-max-width: 720px;
+  --layout-detail-content-max-width: 820px;
+  --layout-reading-content-max-width: 560px;
+  --layout-page-inline-gutter: 22px;
+  --layout-detail-inline-gutter: 24px;
+  --layout-pane-header-height: 52px;
+  --layout-topic-bar-height: 39px;
+
+  /* Reusable component dimensions. */
+  --layout-icon-button-size: 30px;
+  --layout-window-controls-safe-left: 76px;
+  --layout-window-controls-safe-top: 44px;
+  --layout-rail-button-size: 36px;
+  --layout-avatar-small-size: 28px;
+  --layout-avatar-medium-size: 36px;
+  --layout-avatar-large-size: 64px;
+  --layout-search-height: 32px;
+  --layout-list-row-min-height: 56px;
+  --layout-summary-row-min-height: 50px;
+  --layout-message-attachment-card-width: 200px;
+  --layout-attachment-carousel-control-size: 24px;
+  --layout-message-collapse-lines: 6;
+  --layout-selection-row-min-height: 54px;
+  --layout-choice-row-min-height: 56px;
+  --layout-test-row-min-height: 58px;
+  --layout-timeline-row-min-height: 39px;
+  --layout-timeline-node-size: 19px;
+  --layout-timeline-inline-padding: 12px;
+  --layout-navigation-row-height: 38px;
+  --layout-button-min-height: 32px;
+  --layout-form-control-height: 36px;
+  --layout-setting-row-min-height: 50px;
+  --layout-status-dot-size: 7px;
+  --layout-badge-size: 16px;
+
+  /* Composer. */
+  --layout-composer-min-height: 100px;
+  --layout-composer-textarea-min-height: 44px;
+  --layout-composer-textarea-max-height: 104px;
+  --layout-composer-control-size: 32px;
+  --layout-composer-attachment-size: 88px;
+  --layout-composer-scroll-fade-height: 24px;
+
+  /* Reusable modal shell. */
+  --layout-modal-overlay-gutter: 40px;
+  --layout-modal-small-width: 400px;
+  --layout-modal-small-height: 260px;
+  --layout-modal-medium-width: 640px;
+  --layout-modal-medium-height: 580px;
+  --layout-modal-large-width: 900px;
+  --layout-modal-large-height: 680px;
+  --layout-modal-navigation-width: 180px;
+  --layout-modal-header-height: 64px;
+  --layout-modal-navigation-row-height: 34px;
+}
+
+@media (max-width: 1199px) {
+  :root {
+    --layout-rail-width: 48px;
+    --layout-context-width: 226px;
+    --layout-workspace-min-width: 686px;
+    --layout-page-inline-gutter: 18px;
+    --layout-detail-inline-gutter: 18px;
+    --layout-modal-overlay-gutter: 20px;
+  }
+}

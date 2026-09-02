@@ -57,7 +57,9 @@ export interface EmployeeVersion extends VersionedEntity {
   version: number
   state: EmployeeVersionState
   name: string
+  role?: string
   description: string
+  avatarDataUrl?: string
   systemPrompt: string
   modelId: 'deepseek-v4-pro' | 'claude-sonnet-4.6'
   capabilityVersionIds: string[]

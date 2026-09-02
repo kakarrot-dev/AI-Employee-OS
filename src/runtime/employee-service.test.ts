@@ -26,6 +26,7 @@ afterEach(() => {
 
 const draft = {
   name: '验收员工',
+  role: '文本验收',
   description: '只做文本验收',
   systemPrompt: '你是一个严格遵循验收标准的员工。',
   modelId: 'deepseek-v4-pro' as const,
@@ -34,6 +35,17 @@ const draft = {
 }
 
 describe('EmployeeService', () => {
+  it('persists the prototype identity fields in draft versions', () => {
+    const { service, store } = setup()
+    const avatarDataUrl = 'data:image/png;base64,iVBORw0KGgo='
+    const created = service.create({ ...draft, avatarDataUrl, memoryScopes: [...draft.memoryScopes] })
+    expect(created.draft).toMatchObject({ role: '文本验收', avatarDataUrl })
+    expect(service.list()[0]).toMatchObject({ role: '文本验收', avatarDataUrl })
+    const saved = service.saveDraft(created.employee.id, { ...draft, role: '报告验收', avatarDataUrl, memoryScopes: [...draft.memoryScopes] })
+    expect(saved.draft).toMatchObject({ role: '报告验收', avatarDataUrl })
+    store.close()
+  })
+
   it('requires a confirmed Sandbox test before publishing and preserves old versions', () => {
     const { service, store } = setup()
     const created = service.create({ ...draft, memoryScopes: [...draft.memoryScopes] })

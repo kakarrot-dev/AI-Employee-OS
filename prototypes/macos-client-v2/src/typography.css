@@ -1,0 +1,56 @@
+:root {
+  /* Primitive scale: product text may only use these sizes. */
+  --type-size-badge: 8px;
+  --type-size-meta: 10px;
+  --type-size-secondary: 11px;
+  --type-size-body: 12px;
+  --type-size-heading: 14px;
+  --type-size-title: 18px;
+  --type-size-avatar-large: 20px;
+  --type-size-metric: 21px;
+
+  --type-weight-regular: 400;
+  --type-weight-medium: 500;
+  --type-weight-semibold: 600;
+  --type-weight-bold: 700;
+
+  --type-leading-control: 1;
+  --type-leading-compact: 1.35;
+  --type-leading-body: 1.5;
+  --type-leading-reading: 1.55;
+
+  --type-tracking-default: 0;
+  --type-tracking-tight: -0.03em;
+
+  /* Layout roles. */
+  --type-pane-title-size: var(--type-size-title);
+  --type-workspace-title-size: var(--type-size-heading);
+  --type-page-title-size: var(--type-size-title);
+  --type-section-title-size: var(--type-size-body);
+  --type-modal-title-size: var(--type-size-title);
+  --type-dialog-title-size: var(--type-size-heading);
+
+  /* Reusable component roles. */
+  --type-navigation-size: var(--type-size-body);
+  --type-list-title-size: var(--type-size-body);
+  --type-list-summary-size: var(--type-size-secondary);
+  --type-body-size: var(--type-size-body);
+  --type-secondary-size: var(--type-size-secondary);
+  --type-control-size: var(--type-size-secondary);
+  --type-input-size: var(--type-size-body);
+  --type-label-size: var(--type-size-secondary);
+  --type-status-size: var(--type-size-secondary);
+  --type-meta-size: var(--type-size-meta);
+  --type-badge-size: var(--type-size-badge);
+  --type-card-title-size: var(--type-size-heading);
+  --type-card-body-size: var(--type-size-body);
+  --type-markdown-h1-size: var(--type-size-title);
+  --type-markdown-h2-size: var(--type-size-heading);
+  --type-markdown-h3-size: var(--type-size-heading);
+  --type-markdown-h4-size: var(--type-size-body);
+  --type-markdown-code-size: var(--type-size-secondary);
+  --type-metric-size: var(--type-size-metric);
+  --type-avatar-small-size: var(--type-size-meta);
+  --type-avatar-medium-size: var(--type-size-body);
+  --type-avatar-large-size: var(--type-size-avatar-large);
+}

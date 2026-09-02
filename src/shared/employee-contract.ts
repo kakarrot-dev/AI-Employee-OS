@@ -2,7 +2,9 @@ export type EmployeeUiStatus = 'draft' | 'pending_test' | 'active' | 'disabled' 
 
 export interface EmployeeDraftInput {
   name: string
+  role?: string
   description: string
+  avatarDataUrl?: string
   systemPrompt: string
   modelId: 'deepseek-v4-pro' | 'claude-sonnet-4.6'
   capabilityVersionIds: string[]
@@ -12,6 +14,8 @@ export interface EmployeeDraftInput {
 export interface EmployeeSummary {
   id: string
   name: string
+  role?: string
+  avatarDataUrl?: string
   status: EmployeeUiStatus
   activeVersionId?: string
   draftVersionId?: string

@@ -106,6 +106,26 @@ parentPort.on('message', async (event) => {
       respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: store.eventsAfter(command.payload.sequence, command.payload.limit) })
       return
     }
+    if (command.type === 'conversation.list') {
+      const conversations = store.list<Conversation>('Conversation').filter((conversation) => !conversation.archived)
+      respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: conversations })
+      return
+    }
+    if (command.type === 'conversation.create') {
+      const existing = store.get<Conversation>('Conversation', command.payload.conversationId)
+      if (existing) throw new Error('conversation_already_exists')
+      const conversation: Conversation = { schemaVersion: 1, id: command.payload.conversationId, createdAt: new Date().toISOString(), title: '新会话', archived: false }
+      kernel.save({ entityType: 'Conversation', entity: conversation, immutable: false }, 'conversation.created', {})
+      respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: conversation })
+      return
+    }
+    if (command.type === 'conversation.archive') {
+      const conversation = store.get<Conversation>('Conversation', command.payload.conversationId)
+      if (!conversation) throw new Error('conversation_not_found')
+      kernel.save({ entityType: 'Conversation', entity: { ...conversation, archived: true }, immutable: false }, 'conversation.archived', {})
+      respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { archived: true, conversationId: conversation.id } })
+      return
+    }
     if (command.type === 'conversation.history') {
       const messages = store.list<Message>('Message').filter((message) => message.conversationId === command.payload.conversationId)
       respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: messages })
@@ -116,6 +136,8 @@ parentPort.on('message', async (event) => {
       if (!existingConversation) {
         const conversation: Conversation = { schemaVersion: 1, id: command.payload.conversationId, createdAt: new Date().toISOString(), title: command.payload.text.slice(0, 36), archived: false }
         kernel.save({ entityType: 'Conversation', entity: conversation, immutable: false }, 'conversation.created', {})
+      } else if (existingConversation.title === '新会话') {
+        kernel.save({ entityType: 'Conversation', entity: { ...existingConversation, title: command.payload.text.slice(0, 36) }, immutable: false }, 'conversation.titled', {})
       }
       const userMessage: Message = { schemaVersion: 1, id: command.payload.messageId, createdAt: new Date().toISOString(), conversationId: command.payload.conversationId, role: 'user', content: command.payload.text }
       kernel.save({ entityType: 'Message', entity: userMessage, immutable: true }, 'message.created', { role: 'user' })

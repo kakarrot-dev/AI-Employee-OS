@@ -60,13 +60,19 @@ export class EmployeeService {
   }
 
   list(): EmployeeSummary[] {
-    return this.kernel.store.list<Employee>('Employee').map((employee) => ({
-      id: employee.id,
-      name: employee.name,
-      status: this.status(employee),
-      activeVersionId: employee.activeVersionId,
-      draftVersionId: employee.draftVersionId
-    }))
+    return this.kernel.store.list<Employee>('Employee').map((employee) => {
+      const currentVersionId = employee.draftVersionId ?? employee.activeVersionId
+      const currentVersion = currentVersionId ? this.kernel.store.get<EmployeeVersion>('EmployeeVersion', currentVersionId) : undefined
+      return {
+        id: employee.id,
+        name: employee.name,
+        role: currentVersion?.role,
+        avatarDataUrl: currentVersion?.avatarDataUrl,
+        status: this.status(employee),
+        activeVersionId: employee.activeVersionId,
+        draftVersionId: employee.draftVersionId
+      }
+    })
   }
 
   detail(employeeId: string): EmployeeDetail {
@@ -260,7 +266,9 @@ export class EmployeeService {
   private validateDraft(input: EmployeeDraftInput): void {
     if (!input || typeof input !== 'object') throw new Error('invalid_employee_draft')
     if (typeof input.name !== 'string' || input.name.trim().length < 1 || input.name.length > 80) throw new Error('invalid_employee_name')
+    if (input.role !== undefined && (typeof input.role !== 'string' || input.role.length > 120)) throw new Error('invalid_employee_role')
     if (typeof input.description !== 'string' || input.description.length > 2_000) throw new Error('invalid_employee_description')
+    if (input.avatarDataUrl !== undefined && (typeof input.avatarDataUrl !== 'string' || input.avatarDataUrl.length > 3_000_000 || !/^data:image\/(png|jpeg|webp);base64,/.test(input.avatarDataUrl))) throw new Error('invalid_employee_avatar')
     if (typeof input.systemPrompt !== 'string' || input.systemPrompt.trim().length < 1 || input.systemPrompt.length > 50_000) throw new Error('invalid_system_prompt')
     if (!['deepseek-v4-pro', 'claude-sonnet-4.6'].includes(input.modelId)) throw new Error('model_not_allowed')
     if (!Array.isArray(input.capabilityVersionIds) || new Set(input.capabilityVersionIds).size !== input.capabilityVersionIds.length) throw new Error('invalid_capabilities')

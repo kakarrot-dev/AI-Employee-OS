@@ -63,7 +63,7 @@ button { font: inherit; }
 .nav-item--active { color: var(--accent); background: var(--surface-strong); box-shadow: 0 1px 3px rgba(36,46,40,.06); }
 .nav-item:active { transform: translateY(1px); }
 
-.context-pane { grid-row: 2; display: flex; min-width: 0; flex-direction: column; border-right: 1px solid var(--line); background: var(--surface); }
+.legacy-context-pane { grid-row: 2; display: flex; min-width: 0; flex-direction: column; border-right: 1px solid var(--line); background: var(--surface); }
 .context-header { display: flex; align-items: center; justify-content: space-between; height: 58px; padding: 0 18px; border-bottom: 1px solid var(--line); }
 .context-header p { margin: 0; font-size: 13px; font-weight: 680; }
 .context-header span { display: grid; place-items: center; min-width: 22px; height: 22px; border-radius: 999px; color: var(--muted); background: var(--chrome); font-size: 11px; }
@@ -111,13 +111,15 @@ button { font: inherit; }
 .message > span, .message small { color: var(--faint); font-size: 10px; }
 .message p { margin: 5px 0 0; white-space: pre-wrap; font-size: 13px; line-height: 1.6; }
 .message small { display: block; margin-top: 7px; }
-.composer { padding: 14px; border-top: 1px solid var(--line); background: var(--surface); }
-.composer > label { display: block; margin-bottom: 7px; color: var(--muted); font-size: 11px; }
-.composer > div { display: flex; align-items: flex-end; gap: 8px; }
-.composer textarea { flex: 1; min-height: 62px; max-height: 130px; resize: vertical; padding: 10px 11px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); background: var(--surface-strong); line-height: 1.5; }
-.composer button { min-width: 62px; height: 38px; border: 0; border-radius: 10px; color: #fff; background: var(--accent); font-weight: 650; cursor: pointer; }
-.composer button:disabled { color: #d5ddd8; background: #77807a; cursor: default; }
-.composer .cancel-button { color: var(--danger); background: color-mix(in srgb, var(--danger) 11%, var(--surface)); border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line)); }
+/* Kept only for the retired Phase 1 shell. The production composer owns the
+   prototype `.composer` contract and must not inherit these rules. */
+.legacy-composer { padding: 14px; border-top: 1px solid var(--line); background: var(--surface); }
+.legacy-composer > label { display: block; margin-bottom: 7px; color: var(--muted); font-size: 11px; }
+.legacy-composer > div { display: flex; align-items: flex-end; gap: 8px; }
+.legacy-composer textarea { flex: 1; min-height: 62px; max-height: 130px; resize: vertical; padding: 10px 11px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); background: var(--surface-strong); line-height: 1.5; }
+.legacy-composer button { min-width: 62px; height: 38px; border: 0; border-radius: 10px; color: #fff; background: var(--accent); font-weight: 650; cursor: pointer; }
+.legacy-composer button:disabled { color: #d5ddd8; background: #77807a; cursor: default; }
+.legacy-composer .cancel-button { color: var(--danger); background: color-mix(in srgb, var(--danger) 11%, var(--surface)); border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line)); }
 .composer-error { margin: 8px 0 0; color: var(--danger); font-size: 11px; }
 
 .team-module { min-height: 100%; padding: 22px; }
@@ -193,8 +195,8 @@ button { font: inherit; }
 .assignment-row small, .timeline-row small { overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .confirm-task { width: 100%; margin-top: 10px; padding: 9px; border: 0; border-radius: 9px; color: #fff; background: var(--accent); font-weight: 700; cursor: pointer; }
 .confirm-task:disabled { opacity: .55; cursor: default; }
-.delivery-card { margin-top: 8px; padding: 10px; border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line)); border-radius: 9px; background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
-.delivery-card p { margin: 6px 0 0; }
+.legacy-delivery-card { margin-top: 8px; padding: 10px; border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line)); border-radius: 9px; background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+.legacy-delivery-card p { margin: 6px 0 0; }
 .confirm-task.secondary { color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); background: var(--surface); }
 .change-card { margin-top: 8px; padding: 10px; border: 1px solid color-mix(in srgb, #bf7b21 32%, var(--line)); border-radius: 9px; background: color-mix(in srgb, #bf7b21 7%, var(--surface)); }
 .change-card p, .change-card small { color: var(--muted); }

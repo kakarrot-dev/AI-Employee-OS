@@ -14,6 +14,9 @@ export const PROVIDER_IPC = {
 } as const
 
 export const CONVERSATION_IPC = {
+  list: 'conversation:list',
+  create: 'conversation:create',
+  archive: 'conversation:archive',
   send: 'conversation:send',
   cancel: 'conversation:cancel',
   history: 'conversation:history',
@@ -111,6 +114,14 @@ export interface ConversationMessageView {
   modelId?: string
 }
 
+export interface ConversationSummaryView {
+  id: string
+  title: string
+  preview: string
+  updatedAt: string
+  messageCount: number
+}
+
 export type ConversationStreamEvent =
   | { type: 'output_delta'; requestId: string; delta: string }
   | { type: 'usage'; requestId: string; inputTokens: number; outputTokens: number; totalTokens: number; source: 'provider_actual' }
@@ -118,6 +129,9 @@ export type ConversationStreamEvent =
   | { type: 'failed'; requestId: string; code: string }
 
 export interface ConversationBridge {
+  list(): Promise<ConversationSummaryView[]>
+  create(): Promise<ConversationSummaryView>
+  archive(conversationId: string): Promise<{ archived: true; conversationId: string }>
   send(conversationId: string, text: string): Promise<{ accepted: true; requestId: string; messageId: string }>
   cancel(requestId: string): Promise<{ accepted: true }>
   history(conversationId: string): Promise<ConversationMessageView[]>

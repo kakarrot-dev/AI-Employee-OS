@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { utilityProcess, type UtilityProcess } from 'electron'
 import type { RuntimeHealth } from '../runtime/kernel'
-import type { Message } from '../runtime/domain'
+import type { Conversation, Message } from '../runtime/domain'
 import type { AgentCapabilityVersionView, EmployeeDetail, EmployeeDraftInput, EmployeeSummary } from '../shared/employee-contract'
 import type { FormalTaskDetail, TaskDraftInput } from '../runtime/task-service'
 import type { ResourceCatalog } from '../runtime/resource-service'
@@ -76,6 +76,18 @@ export class RuntimeSupervisor {
 
   conversationHistory(conversationId: string): Promise<Message[]> {
     return this.request<Message[]>({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId: randomUUID(), type: 'conversation.history', payload: { conversationId } })
+  }
+
+  conversationList(): Promise<Conversation[]> {
+    return this.request<Conversation[]>({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId: randomUUID(), type: 'conversation.list', payload: {} })
+  }
+
+  conversationCreate(conversationId: string): Promise<Conversation> {
+    return this.request<Conversation>({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId: randomUUID(), type: 'conversation.create', payload: { conversationId } })
+  }
+
+  conversationArchive(conversationId: string): Promise<{ archived: true; conversationId: string }> {
+    return this.request<{ archived: true; conversationId: string }>({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId: randomUUID(), type: 'conversation.archive', payload: { conversationId } })
   }
 
   cancelConversation(providerRequestId: string): Promise<{ accepted: true }> {

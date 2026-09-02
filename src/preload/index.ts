@@ -18,6 +18,9 @@ const providerBridge: ProviderBridge = Object.freeze({
 })
 
 const conversationBridge: ConversationBridge = Object.freeze({
+  list: () => ipcRenderer.invoke(CONVERSATION_IPC.list),
+  create: () => ipcRenderer.invoke(CONVERSATION_IPC.create),
+  archive: (conversationId: string) => ipcRenderer.invoke(CONVERSATION_IPC.archive, { conversationId }),
   send: (conversationId: string, text: string) => ipcRenderer.invoke(CONVERSATION_IPC.send, { conversationId, text }),
   cancel: (requestId: string) => ipcRenderer.invoke(CONVERSATION_IPC.cancel, { requestId }),
   history: (conversationId: string) => ipcRenderer.invoke(CONVERSATION_IPC.history, { conversationId }),

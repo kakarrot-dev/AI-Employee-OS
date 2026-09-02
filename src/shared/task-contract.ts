@@ -8,6 +8,7 @@ export interface TaskDraftInputView {
 
 export interface TaskDetailView {
   id: string
+  conversationId: string
   taskId?: string
   draftId: string
   state: 'draft' | 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'needs_attention'

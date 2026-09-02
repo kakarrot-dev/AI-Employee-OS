@@ -16,5 +16,8 @@ describe('runtime sidecar protocol', () => {
     expect(parseRuntimeCommand({ schemaVersion: 1, requestId: 'shutdown', type: 'shutdown.prepare', payload: {} })).toMatchObject({ type: 'shutdown.prepare' })
     expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '1', type: 'events.after', payload: { sequence: 0, limit: 100 } })).toMatchObject({ type: 'events.after' })
     expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '2', type: 'memory.search', payload: { query: '发布', allowedScopes: [{ type: 'employee', id: 'employee-1' }], categories: ['rule'], limit: 5, tokenBudget: 768 } })).toMatchObject({ type: 'memory.search' })
+    expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '3', type: 'conversation.list', payload: {} })).toMatchObject({ type: 'conversation.list' })
+    expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '4', type: 'conversation.create', payload: { conversationId: 'conversation-1' } })).toMatchObject({ type: 'conversation.create' })
+    expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '5', type: 'conversation.archive', payload: { conversationId: 'conversation-1' } })).toMatchObject({ type: 'conversation.archive' })
   })
 })

@@ -1,7 +1,8 @@
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { app, BrowserWindow, ipcMain, Menu, session } from 'electron'
-import { CONVERSATION_IPC, EMPLOYEE_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, TASK_IPC, type ConversationStreamEvent, type EmployeeDraftInput, type EmployeeEvent, type ProviderStatus, type RuntimeStatus, type TaskDetailView, type TaskDraftInputView, type TaskEvent } from '../shared/runtime-contract'
+import { CONVERSATION_IPC, EMPLOYEE_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, TASK_IPC, type ConversationStreamEvent, type ConversationSummaryView, type EmployeeDraftInput, type EmployeeEvent, type ProviderStatus, type RuntimeStatus, type TaskDetailView, type TaskDraftInputView, type TaskEvent } from '../shared/runtime-contract'
+import type { Conversation, Message } from '../runtime/domain'
 import type { MemoryCategoryView, MemoryScopeTypeView, MemoryStatusView, MemoryViewModel } from '../shared/memory-contract'
 import type { FormalTaskDetail } from '../runtime/task-service'
 import { ProviderSupervisor, type ProviderSupervisorEvent } from './provider-supervisor'
@@ -75,6 +76,7 @@ function toTaskView(detail: FormalTaskDetail): TaskDetailView {
   const state: TaskDetailView['state'] = detail.run?.state === 'paused' || detail.run?.state === 'pausing' || needsToolAttention ? 'needs_attention' : detail.task?.state ?? 'draft'
   return {
     id: detail.task?.id ?? detail.draft.id,
+    conversationId: detail.draft.conversationId,
     taskId: detail.task?.id,
     draftId: detail.draft.id,
     state,
@@ -91,6 +93,17 @@ function toTaskView(detail: FormalTaskDetail): TaskDetailView {
     pendingChange: detail.changeRequests.find((change) => change.decision === 'pending') ? (() => { const change = detail.changeRequests.find((item) => item.decision === 'pending')!; return { id: change.id, sourceMessageId: change.sourceMessageId, requestedDiff: change.requestedDiff } })() : undefined,
     toolActions: detail.toolActions.map(({ id, toolVersionId, state: actionState, parameters, risk, approvalId, failureCode }) => ({ id, toolVersionId, state: actionState, parameters, risk, approvalId, failureCode })),
     approvals: detail.approvals.map(({ id, toolActionId, decision }) => ({ id, toolActionId, decision }))
+  }
+}
+
+function toConversationSummary(conversation: Conversation, messages: Message[]): ConversationSummaryView {
+  const lastMessage = messages.at(-1)
+  return {
+    id: conversation.id,
+    title: conversation.title,
+    preview: lastMessage ? `${lastMessage.role === 'assistant' ? '总管：' : '你：'}${lastMessage.content.replaceAll(/\s+/g, ' ').slice(0, 72)}` : '尚无消息',
+    updatedAt: lastMessage?.createdAt ?? conversation.createdAt,
+    messageCount: messages.length
   }
 }
 
@@ -128,6 +141,28 @@ function registerRuntimeIpc(): void {
       }
     }
     return providerStatus
+  })
+
+  ipcMain.handle(CONVERSATION_IPC.list, async (event) => {
+    assertTrustedSender(event.senderFrame?.url)
+    if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable')
+    const conversations = await runtimeSupervisor.conversationList()
+    const summaries = await Promise.all(conversations.map(async (conversation) => toConversationSummary(conversation, await runtimeSupervisor!.conversationHistory(conversation.id))))
+    return summaries.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+  })
+
+  ipcMain.handle(CONVERSATION_IPC.create, async (event) => {
+    assertTrustedSender(event.senderFrame?.url)
+    if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable')
+    return toConversationSummary(await runtimeSupervisor.conversationCreate(randomUUID()), [])
+  })
+
+  ipcMain.handle(CONVERSATION_IPC.archive, async (event, value: unknown) => {
+    assertTrustedSender(event.senderFrame?.url)
+    const conversationId = (value as { conversationId?: unknown })?.conversationId
+    if (typeof conversationId !== 'string' || conversationId.length < 1 || conversationId.length > 128) throw new Error('invalid_conversation_id')
+    if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable')
+    return runtimeSupervisor.conversationArchive(conversationId)
   })
 
   ipcMain.handle(CONVERSATION_IPC.send, async (event, value: unknown) => {

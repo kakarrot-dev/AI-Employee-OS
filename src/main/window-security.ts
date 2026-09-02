@@ -1,11 +1,12 @@
 import type { BrowserWindowConstructorOptions } from 'electron'
+import { CLIENT_WINDOW_LAYOUT } from '../shared/layout-contract'
 
 export function createWindowOptions(preloadPath: string): BrowserWindowConstructorOptions {
   return {
-    width: 1320,
-    height: 860,
-    minWidth: 980,
-    minHeight: 680,
+    width: CLIENT_WINDOW_LAYOUT.defaultWidth,
+    height: CLIENT_WINDOW_LAYOUT.defaultHeight,
+    minWidth: CLIENT_WINDOW_LAYOUT.minWidth,
+    minHeight: CLIENT_WINDOW_LAYOUT.minHeight,
     show: false,
     title: 'AI Employee OS',
     titleBarStyle: 'hiddenInset',
