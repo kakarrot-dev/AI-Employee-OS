@@ -71,7 +71,7 @@ button {
 
 .prototype {
   width: min(100%, var(--layout-shell-max-width));
-  height: min(100%, var(--layout-shell-max-height));
+  height: 100%;
   display: grid;
   grid-template-columns: var(--layout-rail-width) var(--layout-context-width) minmax(var(--layout-workspace-min-width), 1fr);
   grid-template-rows: var(--layout-toolbar-height) minmax(0, 1fr);
@@ -2037,6 +2037,7 @@ button {
   font-size: var(--type-meta-size);
 }
 
+.summary-list,
 .capability-summary,
 .delivery-list,
 .memory-rows {
@@ -2046,6 +2047,7 @@ button {
   overflow: hidden;
 }
 
+.summary-list__item,
 .capability-summary > div,
 .delivery-list > button,
 .memory-rows > button {
@@ -2061,20 +2063,34 @@ button {
   text-align: left;
 }
 
+.summary-list__item:last-child,
 .capability-summary > div:last-child,
 .delivery-list > button:last-child,
 .memory-rows > button:last-child { border-bottom: 0; }
+button.summary-list__item:hover,
 .delivery-list > button:hover,
 .memory-rows > button:hover { background: var(--surface-hover); }
+.summary-list__body,
 .capability-summary > div > span,
 .delivery-list > button > span:nth-child(2),
 .memory-rows > button > span:first-child { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.summary-list__body strong,
 .capability-summary strong,
 .delivery-list strong,
 .memory-rows strong { font-size: var(--type-body-size); }
+.summary-list__body small,
 .capability-summary small,
 .delivery-list small,
 .memory-rows small { color: var(--text-tertiary); font-size: var(--type-secondary-size); }
+.summary-list__leading,
+.summary-list__trailing { display: flex; align-items: center; flex: 0 0 auto; }
+.summary-list__trailing { gap: 11px; color: var(--text-secondary); font-size: var(--type-status-size); }
+.summary-list__empty {
+  margin: 0;
+  padding: 18px 13px;
+  color: var(--text-tertiary);
+  font-size: var(--type-secondary-size);
+}
 .delivery-list > button > span:nth-child(3) { color: var(--text-secondary); font-size: var(--type-status-size); }
 
 .delivery-list__icon {
@@ -2535,22 +2551,16 @@ input[type="checkbox"]:focus-visible { box-shadow: 0 0 0 2px var(--focus); }
 .modal-content {
   min-width: 0;
   min-height: 0;
-  display: block;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
 .modal-content__main {
   min-width: 0;
-  overflow-y: auto;
-}
-
-.modal-content--with-footer {
-  display: flex;
-  flex-direction: column;
-}
-
-.modal-content--with-footer .modal-content__main {
+  min-height: 0;
   flex: 1;
+  overflow-y: auto;
 }
 
 .create-agent-navigation > button > span { flex: 1; }

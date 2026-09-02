@@ -86,6 +86,19 @@ const missingUsages = requiredUsages.filter((usage) => !styles.includes(usage))
 if (missingTokens.length) errors.push(`缺少尺寸 Token: ${missingTokens.join(', ')}`)
 if (missingUsages.length) errors.push(`关键布局未使用尺寸契约:\n${missingUsages.join('\n')}`)
 
+const modalContentRule = styles.match(/\.modal-content\s*\{([^}]*)\}/s)?.[1] ?? ''
+const modalMainRule = styles.match(/\.modal-content__main\s*\{([^}]*)\}/s)?.[1] ?? ''
+const prototypeRule = styles.match(/\.prototype\s*\{([^}]*)\}/s)?.[1] ?? ''
+if (!/height:\s*100%/.test(prototypeRule) || /height:\s*min\(100%,\s*var\(--layout-shell-max-height\)\)/.test(prototypeRule)) {
+  errors.push('应用主壳层必须跟随窗口完整高度，不得再受固定最大高度截断')
+}
+if (!/display:\s*flex/.test(modalContentRule) || !/flex-direction:\s*column/.test(modalContentRule)) {
+  errors.push('弹窗内容区必须使用纵向 Flex 布局，为共享滚动区域提供受限高度')
+}
+if (!/min-height:\s*0/.test(modalMainRule) || !/flex:\s*1/.test(modalMainRule) || !/overflow-y:\s*auto/.test(modalMainRule)) {
+  errors.push('弹窗主内容必须以 min-height: 0、flex: 1 和 overflow-y: auto 形成独立滚动区域')
+}
+
 for (const [cssToken, tsProperty] of [
   ['--layout-window-default-width', 'defaultWidth'],
   ['--layout-window-default-height', 'defaultHeight'],

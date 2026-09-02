@@ -219,6 +219,35 @@ button { font: inherit; }
 .task-assignment > div { display: flex; justify-content: space-between; }
 .task-assignment > small { color: var(--muted); }
 .task-assignment p { margin-bottom: 0; white-space: pre-wrap; }
+
+.task-work-timeline { display: contents; }
+
+.team-joined-event,
+.manager-progress-event {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 34px;
+  margin: 2px 0 22px 34px;
+  color: var(--text-secondary);
+  font-size: var(--type-secondary-size);
+}
+
+.team-joined-event > svg,
+.manager-progress-event > svg { flex: 0 0 auto; color: var(--text-tertiary); }
+.team-joined-event .matter-team-avatars { min-width: 0; }
+.team-joined-event > span:last-of-type { white-space: nowrap; }
+.team-joined-event time,
+.manager-progress-event time { margin-left: auto; color: var(--text-tertiary); font-size: var(--type-meta-size); }
+.manager-progress-event strong { margin-right: 6px; color: var(--text-primary); }
+
+.employee-progress-message { display: grid; gap: 8px; }
+.employee-progress-message > .status-light { color: var(--text-secondary); font-size: var(--type-meta-size); }
+.employee-progress-message .markdown-message { min-width: 0; }
+
+.delivery-card__summary { color: var(--text-secondary); }
+.delivery-card__result { display: grid; gap: 7px; margin: 12px 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-raised); }
+.delivery-card__result > strong { font-size: var(--type-secondary-size); }
 .tool-action-card { margin-bottom: 9px; padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-strong); }
 .tool-action-card > div { display: flex; justify-content: space-between; gap: 8px; }
 .tool-action-card pre { overflow: auto; max-height: 120px; padding: 8px; border-radius: 7px; background: var(--canvas); font-size: 10px; white-space: pre-wrap; }

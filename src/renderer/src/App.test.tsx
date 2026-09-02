@@ -1,8 +1,34 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { App } from './App'
+import { App, buildFriendlyTimeline, selectActiveTask } from './App'
 
 describe('App shell', () => {
+  it('shows the latest terminal matter when no matter is still active', () => {
+    const completedTasks = [{ id: 'latest-success', state: 'succeeded' }, { id: 'older-failure', state: 'failed' }] as unknown as Parameters<typeof selectActiveTask>[0]
+    expect(selectActiveTask(completedTasks)?.id).toBe('latest-success')
+    const withActiveTask = [{ id: 'latest-success', state: 'succeeded' }, { id: 'active', state: 'running' }] as unknown as Parameters<typeof selectActiveTask>[0]
+    expect(selectActiveTask(withActiveTask)?.id).toBe('active')
+  })
+
+  it('turns repeated Runtime checkpoints into concise Chinese progress', () => {
+    const task = {
+      id: 'task-friendly-timeline', conversationId: 'conversation-1', draftId: 'draft-1', state: 'succeeded', goal: '整理新闻文档', acceptanceCriteria: ['来源可追溯'], employeeVersionIds: ['employee-v1'], directories: [], draftRevision: 1,
+      assignments: [{ id: 'assignment-1', sequence: 1, employeeVersionId: 'employee-v1', employeeName: '文档编写员', employeeRole: '本机文档写入', state: 'succeeded' }],
+      timeline: [
+        { phase: 'created', nextNode: 'employee', createdAt: '2026-09-02T04:47:00Z' },
+        { phase: 'memory_loaded', nextNode: 'employee', createdAt: '2026-09-02T04:47:10Z' },
+        { phase: 'memory_loaded', nextNode: 'employee', createdAt: '2026-09-02T04:47:20Z' },
+        { phase: 'employee_completed', assignmentId: 'assignment-1', nextNode: 'manager', createdAt: '2026-09-02T04:48:00Z' }
+      ],
+      delivery: { id: 'delivery-1', createdAt: '2026-09-02T04:49:00Z', acceptanceResults: [{ criterion: '来源可追溯', passed: true }], artifacts: [], evidenceCount: 5, unresolvedIssues: [] },
+      researchBundles: [], toolActions: [], approvals: []
+    } as unknown as Parameters<typeof buildFriendlyTimeline>[0]
+
+    const timeline = buildFriendlyTimeline(task)
+    expect(timeline.map((item) => item.title)).toEqual(['任务已创建', '工作资料已准备', '文档编写员已完成', '交付结果已保存'])
+    expect(timeline.map((item) => `${item.title}${item.description}`).join('')).not.toMatch(/created|memory_loaded|employee_completed|下一步|employee/)
+  })
+
   beforeEach(() => {
     document.documentElement.removeAttribute('data-theme')
     window.localStorage?.clear()
@@ -44,6 +70,7 @@ describe('App shell', () => {
       },
       task: {
         list: vi.fn().mockResolvedValue([]),
+        chooseDirectory: vi.fn().mockResolvedValue(undefined),
         createDraft: vi.fn(),
         updateDraft: vi.fn(),
         start: vi.fn(),
@@ -104,7 +131,7 @@ describe('App shell', () => {
     expect(await screen.findByRole('heading', { name: '与总管的对话', level: 1 })).toBeInTheDocument()
     expect(screen.queryByText('总管会判断是直接回答、归入已有事项，还是创建新事项。')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '受控访问' }))
-    expect(await screen.findByRole('dialog', { name: '受控访问说明' })).toHaveTextContent('最小授权')
+    expect(await screen.findByRole('dialog', { name: '受控访问说明' })).toHaveTextContent('尚未授权目录')
     fireEvent.click(screen.getByRole('button', { name: '语音输入' }))
     expect(await screen.findByRole('dialog', { name: '语音输入说明' })).toHaveTextContent('暂未开放')
   })
@@ -155,7 +182,7 @@ describe('App shell', () => {
   it('projects the same employee identity contract into the directory and detail page', async () => {
     const avatarDataUrl = 'data:image/png;base64,iVBORw0KGgo='
     const version = { schemaVersion: 1 as const, id: 'employee-v1', createdAt: '2026-08-31T00:00:00Z', employeeId: 'employee-1', version: 1, state: 'draft' as const, name: '网络调研员', role: '多源网络调研', description: '形成可追溯的 ResearchBundle。', avatarDataUrl, systemPrompt: '只依据来源工作。', modelId: 'deepseek-v4-pro' as const, capabilityVersionIds: [], memoryScopes: ['employee' as const], testRunIds: [] }
-    vi.mocked(window.aiEmployeeOS.employee.list).mockResolvedValue([{ id: 'employee-1', name: version.name, role: version.role, avatarDataUrl, status: 'draft', draftVersionId: version.id }])
+    vi.mocked(window.aiEmployeeOS.employee.list).mockResolvedValue([{ id: 'employee-1', name: version.name, role: version.role, avatarDataUrl, status: 'draft', draftVersionId: version.id, capabilityVersionIds: [], activeCapabilityVersionIds: [] }])
     const detail = { employee: { schemaVersion: 1 as const, id: 'employee-1', createdAt: version.createdAt, name: version.name, draftVersionId: version.id, disabled: false, archived: false }, status: 'draft' as const, draft: version, versions: [version], testCases: [], testRuns: [], formalReferences: [] }
     vi.mocked(window.aiEmployeeOS.employee.detail).mockResolvedValue(detail)
     vi.mocked(window.aiEmployeeOS.employee.beginEdit).mockResolvedValue(detail)
@@ -204,13 +231,13 @@ describe('App shell', () => {
 
   it('renders real matter approval and delivery states and sends the decision through Runtime', async () => {
     const task = {
-      id: 'task-view-1', conversationId: 'local-supervisor', taskId: 'task-1', draftId: 'draft-1', state: 'needs_attention' as const,
-      goal: '生成市场研究报告', acceptanceCriteria: ['关键结论可追溯'], employeeVersionIds: ['employee-v1'], draftRevision: 1, frozenRevision: 1, runId: 'run-1',
-      assignments: [{ id: 'assignment-1', sequence: 1, employeeVersionId: 'employee-v1', state: 'succeeded' as const, output: 'done' }],
+      id: 'task-view-1', conversationId: 'local-supervisor', createdAt: '2026-08-31T07:59:01Z', sourceMessageIds: ['message-1'], taskId: 'task-1', draftId: 'draft-1', state: 'needs_attention' as const,
+      goal: '生成市场研究报告', acceptanceCriteria: ['关键结论可追溯'], employeeVersionIds: ['employee-v1'], directories: [], draftRevision: 1, frozenRevision: 1, runId: 'run-1',
+      assignments: [{ id: 'assignment-1', sequence: 1, employeeVersionId: 'employee-v1', employeeName: '网络情报员', employeeRole: '公开信息调研', createdAt: '2026-08-31T07:59:02Z', completedAt: '2026-08-31T08:00:00Z', state: 'succeeded' as const, output: '已完成调研并提交报告。' }],
       timeline: [{ phase: 'research', nextNode: 'approval', createdAt: '2026-08-31T08:00:00Z' }],
-      delivery: { id: 'delivery-1', acceptanceResults: [{ criterion: '关键结论可追溯', passed: true }], artifacts: [{ id: 'artifact-1', mediaType: 'text/markdown', relativePath: 'report.md', sha256: '1234567890abcdef' }], evidenceCount: 4, unresolvedIssues: [] },
+      delivery: { id: 'delivery-1', summary: '验收通过', result: '已完成调研并提交报告。', createdAt: '2026-08-31T08:00:01Z', acceptanceResults: [{ criterion: '关键结论可追溯', passed: true }], artifacts: [{ id: 'artifact-1', mediaType: 'text/markdown', relativePath: 'report.md', sha256: '1234567890abcdef' }], evidenceCount: 4, unresolvedIssues: [] },
       researchBundles: [], pendingChange: undefined,
-      toolActions: [{ id: 'action-1', toolVersionId: 'github.search@v1', state: 'pending' as const, parameters: {}, risk: 'low' as const, approvalId: 'approval-1' }],
+      toolActions: [{ id: 'action-1', assignmentId: 'assignment-1', toolVersionId: 'github.search@v1', state: 'pending' as const, parameters: {}, risk: 'low' as const, approvalId: 'approval-1' }],
       approvals: [{ id: 'approval-1', toolActionId: 'action-1', decision: 'pending' as const }]
     }
     vi.mocked(window.aiEmployeeOS.conversation.history).mockResolvedValue([{ id: 'message-1', role: 'user', content: '请生成报告', createdAt: '2026-08-31T07:59:00Z' }])
@@ -221,10 +248,86 @@ describe('App shell', () => {
     expect(await screen.findByRole('tab', { name: /事项/ })).toBeInTheDocument()
     expect(screen.getAllByRole('heading', { name: '生成市场研究报告', level: 3 })).toHaveLength(1)
     expect(document.querySelector('.runtime-matter-card')).not.toBeInTheDocument()
-    expect(screen.getByText('已归入事项：生成市场研究报告')).toBeInTheDocument()
+    expect(screen.getByText('总管已识别为事项：生成市场研究报告')).toBeInTheDocument()
+    expect(screen.getByText('加入工作')).toBeInTheDocument()
+    expect(screen.getAllByText('网络情报员').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('已完成调研并提交报告。').length).toBeGreaterThan(0)
+    expect(screen.getByText('最终结果')).toBeInTheDocument()
+    expect(screen.getByText('总管验收：验收通过')).toBeInTheDocument()
     expect(screen.getByText('1 / 1 项验收通过，4 条证据已固化。')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '批准' }))
     await waitFor(() => expect(window.aiEmployeeOS.task.approveTool).toHaveBeenCalledWith('action-1'))
+  })
+
+  it('shows joined employees and their live progress replies in the conversation timeline', async () => {
+    const task = {
+      id: 'task-live', conversationId: 'local-supervisor', createdAt: '2026-09-02T01:00:01Z', sourceMessageIds: ['message-live'], taskId: 'task-live', draftId: 'draft-live', state: 'running' as const,
+      goal: '调研学校新闻并整理文档', acceptanceCriteria: ['来源可追溯'], employeeVersionIds: ['employee-network', 'employee-writer'], directories: ['/tmp/reports'], draftRevision: 1, frozenRevision: 1, runId: 'run-live',
+      assignments: [
+        { id: 'assignment-network', sequence: 1, employeeVersionId: 'employee-network', employeeName: '网络情报员', employeeRole: '多源公开信息调研', createdAt: '2026-09-02T01:00:02Z', completedAt: '2026-09-02T01:05:00Z', state: 'succeeded' as const, output: '已完成多源检索，并将来源交接给文档编写员。' },
+        { id: 'assignment-writer', sequence: 2, employeeVersionId: 'employee-writer', employeeName: '文档编写员', employeeRole: '本机文档写入', createdAt: '2026-09-02T01:00:02Z', state: 'running' as const, output: '正在整理 Markdown 结构和来源索引。' }
+      ],
+      timeline: [{ phase: 'created', nextNode: 'employee', createdAt: '2026-09-02T01:00:02Z' }, { phase: 'employee_completed', assignmentId: 'assignment-network', nextNode: 'employee', createdAt: '2026-09-02T01:05:00Z' }],
+      researchBundles: [], toolActions: [], approvals: []
+    }
+    vi.mocked(window.aiEmployeeOS.conversation.history).mockResolvedValue([{ id: 'message-live', role: 'user', content: '调研学校新闻并整理文档', createdAt: '2026-09-02T01:00:00Z' }])
+    vi.mocked(window.aiEmployeeOS.task.list).mockResolvedValue([task])
+
+    render(<App />)
+    const workTimeline = await screen.findByLabelText('员工工作时间线')
+    expect(workTimeline).toHaveTextContent('网络情报员、文档编写员加入工作')
+    expect(workTimeline).toHaveTextContent('已完成多源检索，并将来源交接给文档编写员。')
+    expect(workTimeline).toHaveTextContent('正在整理 Markdown 结构和来源索引。')
+    expect(workTimeline).toHaveTextContent('本机文档写入 · 正在执行')
+  })
+
+  it('starts a routed document matter automatically after its directory is attached', async () => {
+    const draftTask = {
+      id: 'draft-routed', conversationId: 'local-supervisor', draftId: 'draft-routed', state: 'draft' as const,
+      goal: '调研学校最新新闻并整理成文档', acceptanceCriteria: ['来源可追溯', '文件可回读'], employeeVersionIds: ['employee-version.network-intelligence.v1', 'employee-version.document-writer.v1'], directories: [], requiresDirectories: true, draftRevision: 1,
+      assignments: [], timeline: [], researchBundles: [], toolActions: [], approvals: []
+    }
+    vi.mocked(window.aiEmployeeOS.runtime.getStatus).mockResolvedValue({ state: 'connected', checkedAt: '2026-09-02T00:00:00Z', message: 'Runtime 已连接' })
+    vi.mocked(window.aiEmployeeOS.conversation.history).mockResolvedValue([{ id: 'message-route', role: 'user', content: '调研后整理成文档', createdAt: '2026-09-02T00:00:00Z' }])
+    vi.mocked(window.aiEmployeeOS.task.list).mockResolvedValue([draftTask])
+    vi.mocked(window.aiEmployeeOS.task.chooseDirectory).mockResolvedValue('/tmp/reports')
+    vi.mocked(window.aiEmployeeOS.task.updateDraft).mockResolvedValue({ ...draftTask, directories: ['/tmp/reports'], draftRevision: 2 })
+    vi.mocked(window.aiEmployeeOS.task.start).mockResolvedValue({ ...draftTask, taskId: 'task-routed', state: 'running', directories: ['/tmp/reports'], draftRevision: 2, frozenRevision: 1, runId: 'run-routed' })
+
+    render(<App />)
+    expect(await screen.findByText('事项已生成；选择授权文件夹后将自动开始执行。')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '确认并开始' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '选择文件夹' }))
+    const access = await screen.findByRole('dialog', { name: '受控访问说明' })
+    fireEvent.click(within(access).getByRole('button', { name: '选择文件夹' }))
+    await waitFor(() => expect(window.aiEmployeeOS.task.updateDraft).toHaveBeenCalledWith('draft-routed', expect.objectContaining({ directories: ['/tmp/reports'] })))
+    await waitFor(() => expect(window.aiEmployeeOS.task.start).toHaveBeenCalledWith('draft-routed'))
+    expect(screen.queryByRole('button', { name: '确认并开始' })).not.toBeInTheDocument()
+  })
+
+  it('does not offer stale Tool approval after a matter has failed', async () => {
+    const failedTask = {
+      id: 'task-failed', conversationId: 'local-supervisor', taskId: 'task-failed', draftId: 'draft-failed', state: 'failed' as const,
+      goal: '调研并生成文档', acceptanceCriteria: ['来源可追溯'], employeeVersionIds: ['employee-version.network-intelligence.v1'], directories: ['/tmp/reports'], draftRevision: 1, frozenRevision: 1, runId: 'run-failed',
+      assignments: [{ id: 'assignment-failed', sequence: 1, employeeVersionId: 'employee-version.network-intelligence.v1', state: 'failed' as const }], timeline: [], researchBundles: [],
+      toolActions: [{ id: 'action-stale', toolVersionId: 'agent-reach.search@network-intelligence/v1', state: 'pending' as const, parameters: { query: 'x' }, risk: 'low' as const, approvalId: 'approval-stale' }],
+      approvals: [{ id: 'approval-stale', toolActionId: 'action-stale', decision: 'pending' as const }]
+    }
+    vi.mocked(window.aiEmployeeOS.conversation.history).mockResolvedValue([{ id: 'message-failed', role: 'user', content: '调研并生成文档', createdAt: '2026-09-02T00:00:00Z' }])
+    vi.mocked(window.aiEmployeeOS.task.list).mockResolvedValue([failedTask])
+    vi.mocked(window.aiEmployeeOS.employee.list).mockResolvedValue([
+      { id: 'employee-network', name: '网络情报员', status: 'active', activeVersionId: 'employee-version.network-intelligence.v1', capabilityVersionIds: ['capability.network-intelligence.v1'], activeCapabilityVersionIds: ['capability.network-intelligence.v1'] },
+      { id: 'employee-writer', name: '文档编写员', status: 'pending_changes', activeVersionId: 'employee-version.document-writer.v1', draftVersionId: 'employee-version.document-writer.v2', capabilityVersionIds: [], activeCapabilityVersionIds: ['capability.local-document.v1'] }
+    ])
+    const recreated = { ...failedTask, id: 'draft-recreated', draftId: 'draft-recreated', taskId: undefined, state: 'draft' as const, frozenRevision: undefined, runId: undefined, assignments: [], toolActions: [], approvals: [], requiresDirectories: true }
+    vi.mocked(window.aiEmployeeOS.task.createDraft).mockResolvedValue(recreated)
+    vi.mocked(window.aiEmployeeOS.task.start).mockResolvedValue({ ...recreated, taskId: 'task-recreated', state: 'running', frozenRevision: 1, runId: 'run-recreated' })
+    render(<App />)
+    expect(await screen.findByText('本次执行已失败，原有 Tool 审批已失效，不会继续调用外部工具。')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '批准' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '重新创建事项草稿' }))
+    await waitFor(() => expect(window.aiEmployeeOS.task.createDraft).toHaveBeenCalledWith(expect.objectContaining({ directories: ['/tmp/reports'], authorizationMode: 'full_access', employeeVersionIds: ['employee-version.network-intelligence.v1', 'employee-version.document-writer.v1'] })))
+    expect(window.aiEmployeeOS.task.start).toHaveBeenCalledWith('draft-recreated')
   })
 
   it('uses the prototype Skills and Tools directory backed by the Runtime catalog', async () => {

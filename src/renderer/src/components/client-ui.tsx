@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ComponentType, type ReactNode } from 'react'
+import { Children, useEffect, useRef, type ComponentType, type ReactNode } from 'react'
 import { Search, Xmark } from 'iconoir-react'
 import { Button, Input, TextField, Tooltip, TooltipTrigger } from 'react-aria-components'
 
@@ -33,6 +33,16 @@ export function SearchBox({ label, placeholder, value, onChange }: { label: stri
 
 export function ListRow({ title, subtitle, meta, selected = false, avatar, marker, onClick }: { title: string; subtitle: string; meta?: string; selected?: boolean; avatar?: ReactNode; marker?: ReactNode; onClick: () => void }): React.JSX.Element {
   return <Button className={`list-row${selected ? ' is-selected' : ''}`} onPress={onClick}>{avatar}<span className="list-row__body"><span className="list-row__title">{title}</span><span className="list-row__subtitle">{subtitle}</span></span><span className="list-row__meta">{meta}{marker}</span></Button>
+}
+
+export function SummaryList({ children, emptyMessage }: { children: ReactNode; emptyMessage: string }): React.JSX.Element {
+  const items = Children.toArray(children)
+  return <div className="summary-list">{items.length ? items : <p className="summary-list__empty">{emptyMessage}</p>}</div>
+}
+
+export function SummaryListItem({ title, subtitle, leading, trailing, onClick }: { title: ReactNode; subtitle?: ReactNode; leading?: ReactNode; trailing?: ReactNode; onClick?: () => void }): React.JSX.Element {
+  const content = <>{leading !== undefined && leading !== null && <span className="summary-list__leading">{leading}</span>}<span className="summary-list__body"><strong>{title}</strong>{subtitle !== undefined && subtitle !== null && <small>{subtitle}</small>}</span>{trailing !== undefined && trailing !== null && <span className="summary-list__trailing">{trailing}</span>}</>
+  return onClick ? <button type="button" className="summary-list__item summary-list__item--interactive" onClick={onClick}>{content}</button> : <div className="summary-list__item">{content}</div>
 }
 
 export function Toolbar({ title, support, trailing }: { title: string; support?: ReactNode; trailing?: ReactNode }): React.JSX.Element {

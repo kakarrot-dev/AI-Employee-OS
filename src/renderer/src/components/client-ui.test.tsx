@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { ChatBubble } from 'iconoir-react'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { AppShell, ClientModal, ContextPane, ListRow, Rail, Toolbar } from './client-ui'
+import { AppShell, ClientModal, ContextPane, ListRow, Rail, SummaryList, SummaryListItem, Toolbar } from './client-ui'
 
 describe('client UI contracts', () => {
   it('keeps the toolbar, primary rail, context pane and workspace as stable landmarks', () => {
@@ -31,6 +31,18 @@ describe('client UI contracts', () => {
   it('represents selection through the shared list-row contract', () => {
     render(<ListRow title="总管" subtitle="在线" selected onClick={() => undefined} />)
     expect(screen.getByRole('button', { name: /总管在线/ })).toHaveClass('list-row', 'is-selected')
+  })
+
+  it('reuses one summary-list contract for rows and contained empty states', () => {
+    const onClick = vi.fn()
+    const { rerender } = render(<SummaryList emptyMessage="暂无记录"><SummaryListItem title="市场报告" subtitle="2 个交付物" trailing="已交付" onClick={onClick} /></SummaryList>)
+    fireEvent.click(screen.getByRole('button', { name: /市场报告2 个交付物已交付/ }))
+    expect(onClick).toHaveBeenCalledOnce()
+    expect(screen.getByText('市场报告').closest('.summary-list')).toBeInTheDocument()
+
+    rerender(<SummaryList emptyMessage="暂无记录">{[]}</SummaryList>)
+    expect(screen.getByText('暂无记录')).toHaveClass('summary-list__empty')
+    expect(screen.getByText('暂无记录').parentElement).toHaveClass('summary-list')
   })
 
   it('reuses the modal animation, keyboard dismissal and focus-return contract', () => {

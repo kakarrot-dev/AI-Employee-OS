@@ -86,12 +86,151 @@ function taskStateLabel(state: TaskDetailView['state']): string {
   return ({ draft: '待确认', pending: '等待开始', running: '进行中', succeeded: '已完成', failed: '执行失败', cancelled: '已取消', needs_attention: '需要你处理' })[state]
 }
 
+type FriendlyMilestoneState = 'done' | 'active' | 'attention' | 'danger'
+
+export interface FriendlyMilestone {
+  key: string
+  title: string
+  description: string
+  createdAt: string
+  state: FriendlyMilestoneState
+}
+
+function assignmentName(task: TaskDetailView, assignmentId?: string): string {
+  const assignment = task.assignments.find((item) => item.id === assignmentId)
+  return assignment?.employeeName ?? (assignment ? `员工 ${assignment.sequence}` : '员工')
+}
+
+function terminalMilestone(task: TaskDetailView): Omit<FriendlyMilestone, 'state'> | undefined {
+  const createdAt = task.delivery?.createdAt ?? task.timeline.at(-1)?.createdAt ?? task.createdAt ?? new Date(0).toISOString()
+  if (task.state === 'succeeded') return { key: 'delivery-committed', title: '交付结果已保存', description: '任务结果、交付文件和验收记录均已保存。', createdAt }
+  if (task.state === 'failed') return { key: 'task-failed', title: '本次执行未完成', description: '执行遇到问题，未能完成全部要求。', createdAt }
+  if (task.state === 'cancelled') return { key: 'task-cancelled', title: '任务已取消', description: '本次任务已停止，不会继续执行。', createdAt }
+  if (task.state === 'needs_attention') return { key: 'task-attention', title: '等待你处理', description: '需要你确认操作或补充信息后才能继续。', createdAt }
+  if (task.state === 'pending') return { key: 'task-pending', title: '等待开始', description: '任务已准备好，正在等待员工开始处理。', createdAt }
+  if (task.state === 'running' && task.timeline.length === 0) return { key: 'task-running', title: '员工正在处理', description: '员工正在按完成要求推进任务。', createdAt }
+  return undefined
+}
+
+export function buildFriendlyTimeline(task: TaskDetailView): FriendlyMilestone[] {
+  const milestones: Array<Omit<FriendlyMilestone, 'state'>> = []
+  const addOrUpdate = (milestone: Omit<FriendlyMilestone, 'state'>): void => {
+    const existing = milestones.find((item) => item.key === milestone.key)
+    if (existing) {
+      existing.createdAt = milestone.createdAt
+      existing.description = milestone.description
+      return
+    }
+    milestones.push(milestone)
+  }
+
+  task.timeline.forEach((item, index) => {
+    const assignment = task.assignments.find((candidate) => candidate.id === item.assignmentId)
+    const employee = assignmentName(task, item.assignmentId)
+    const copies: Record<string, Omit<FriendlyMilestone, 'state'>> = {
+      created: { key: 'created', title: '任务已创建', description: '已确认任务目标和完成要求。', createdAt: item.createdAt },
+      memory_loaded: { key: 'prepared', title: '工作资料已准备', description: '已准备本次工作需要的上下文和资料。', createdAt: item.createdAt },
+      tool_waiting: { key: 'tool-waiting', title: '等待操作确认', description: '有一项操作需要确认后才能继续。', createdAt: item.createdAt },
+      employee_completed: { key: `employee-completed-${item.assignmentId ?? index}`, title: `${employee}已完成`, description: assignment?.employeeRole ? `${assignment.employeeRole}的工作已完成，结果已交给下一阶段。` : '负责的工作已完成，结果已交给下一阶段。', createdAt: item.createdAt },
+      deep_agents_safe_pause: { key: 'progress-saved', title: '执行进度已保存', description: '当前进度已安全保存，可以继续执行。', createdAt: item.createdAt },
+      manager_review: { key: 'manager-review', title: '结果已检查', description: '总管已按完成要求检查员工提交的结果。', createdAt: item.createdAt },
+      manager_rework: { key: 'manager-rework', title: '结果已补充完善', description: '员工已根据检查意见补充处理。', createdAt: item.createdAt },
+      delivery_committed: { key: 'delivery-committed', title: '交付结果已保存', description: '任务结果、交付文件和验收记录均已保存。', createdAt: item.createdAt },
+      shutdown_requested: { key: 'shutdown-requested', title: '正在保存进度', description: '系统正在保存当前进度并安全停止。', createdAt: item.createdAt },
+      safe_paused: { key: 'safe-paused', title: '任务已暂停', description: '当前进度已保存，之后可以继续执行。', createdAt: item.createdAt }
+    }
+    const copy = copies[item.phase]
+    if (copy && !(item.phase === 'deep_agents_safe_pause' && task.state === 'succeeded')) addOrUpdate(copy)
+  })
+
+  const terminal = terminalMilestone(task)
+  if (terminal) addOrUpdate(terminal)
+
+  return milestones.map((item, index) => ({
+    ...item,
+    state: index < milestones.length - 1 || task.state === 'succeeded' || task.state === 'cancelled'
+      ? 'done'
+      : task.state === 'failed' ? 'danger'
+        : task.state === 'needs_attention' ? 'attention'
+          : 'active'
+  }))
+}
+
+function taskSummary(task: TaskDetailView): { title: string; description: string } {
+  const artifacts = task.delivery?.artifacts.length ?? 0
+  const evidence = task.delivery?.evidenceCount ?? 0
+  if (task.state === 'succeeded') return { title: '所有完成要求均已通过', description: task.delivery ? `员工已完成处理，${artifacts} 个交付文件和 ${evidence} 条来源证据已保存。` : '员工已完成处理，任务结果已经保存。' }
+  if (task.state === 'failed') return { title: '本次执行没有完成', description: '执行过程中遇到问题，请查看未解决事项后重新处理。' }
+  if (task.state === 'needs_attention') return { title: '需要你处理后才能继续', description: '请确认待处理操作或补充所需信息，员工随后会继续执行。' }
+  if (task.state === 'cancelled') return { title: '本次任务已取消', description: '任务已经停止，当前记录会继续保留。' }
+  if (task.state === 'draft') return { title: '任务内容等待确认', description: '确认目标和完成要求后，员工才会开始执行。' }
+  if (task.state === 'pending') return { title: '任务即将开始', description: '目标和完成要求已确认，正在等待员工开始处理。' }
+  return { title: '员工正在处理', description: '任务正在按完成要求推进，最新进度会显示在下方。' }
+}
+
+function artifactTypeLabel(mediaType: string): string {
+  if (mediaType.includes('markdown')) return 'Markdown 文档'
+  if (mediaType.includes('plain')) return '文本文件'
+  if (mediaType.includes('csv') || mediaType.includes('spreadsheet')) return '表格文件'
+  if (mediaType.includes('pdf')) return 'PDF 文档'
+  if (mediaType.includes('json')) return '数据文件'
+  return '交付文件'
+}
+
+function assignmentStateLabel(state: TaskDetailView['assignments'][number]['state']): string {
+  return ({ pending: '待开始', running: '处理中', succeeded: '已完成', failed: '未完成', cancelled: '已取消' })[state]
+}
+
+export function selectActiveTask(tasks: TaskDetailView[]): TaskDetailView | undefined {
+  return tasks.find((task) => !['succeeded', 'failed', 'cancelled'].includes(task.state)) ?? tasks[0]
+}
+
 function MessageBlock({ message }: { message: ConversationMessageView }): React.JSX.Element {
   const isUser = message.role === 'user'
   return <ChatMessage source={isUser ? 'user' : 'agent'} name={isUser ? '你' : '总管'} initials={isUser ? '你' : '总'} color={isUser ? '#d7b36a' : '#b8c982'} time={messageTime(message.createdAt)}><MarkdownMessage>{message.content}</MarkdownMessage></ChatMessage>
 }
 
+const employeeColors = ['#9ebd79', '#d7b36a', '#85a9c7', '#bc91b1']
+
+function TeamJoinedEvent({ task }: { task: TaskDetailView }): React.JSX.Element | null {
+  if (!task.assignments.length) return null
+  const originalAssignments = task.assignments.filter((assignment) => !assignment.reworkOfAssignmentId)
+  const team = originalAssignments.map((assignment, index) => ({ id: assignment.id, name: assignment.employeeName ?? `员工 ${assignment.sequence}`, initials: (assignment.employeeName ?? String(assignment.sequence)).trim().slice(0, 1), color: employeeColors[index % employeeColors.length] }))
+  return <div className="team-joined-event" role="status"><Group aria-hidden width={17} height={17} /><MatterTeamAvatars team={team} /><span>加入工作</span><time>{messageTime(originalAssignments[0]?.createdAt ?? task.createdAt ?? new Date().toISOString())}</time></div>
+}
+
+function EmployeeProgressMessage({ task, assignment }: { task: TaskDetailView; assignment: TaskDetailView['assignments'][number] }): React.JSX.Element | null {
+  if (assignment.state === 'pending') return null
+  const name = assignment.employeeName ?? `员工 ${assignment.sequence}`
+  const waitingAction = task.toolActions.find((action) => action.assignmentId === assignment.id && ['pending', 'blocked', 'result_unknown'].includes(action.state))
+  const status = assignment.state === 'running'
+    ? waitingAction ? '等待授权' : assignment.reworkOfAssignmentId ? '正在返工' : '正在执行'
+    : assignment.state === 'succeeded' ? assignment.reworkOfAssignmentId ? '返工完成' : '阶段完成'
+      : assignment.state === 'failed' ? '执行失败' : '已取消'
+  const statusState = assignment.state === 'succeeded' ? 'success' : assignment.state === 'failed' ? 'danger' : assignment.state === 'cancelled' ? 'muted' : waitingAction ? 'waiting' : 'active'
+  const content = assignment.output?.trim() || (waitingAction
+    ? `我已提交 ${waitingAction.toolVersionId} 的调用申请，等待你确认后继续。`
+    : assignment.state === 'running' ? `我已接手“${task.goal}”，正在执行当前阶段。`
+      : assignment.state === 'failed' ? '当前阶段未能完成，详细失败原因已交给总管处理。'
+        : '当前阶段已取消。')
+  return <ChatMessage source="agent" name={name} initials={name.trim().slice(0, 1)} color={employeeColors[(assignment.sequence - 1) % employeeColors.length]} time={messageTime(assignment.completedAt ?? assignment.createdAt ?? task.createdAt ?? new Date().toISOString())}><div className="employee-progress-message"><StatusLight state={statusState} label={`${assignment.employeeRole ? `${assignment.employeeRole} · ` : ''}${status}`} breathing={assignment.state === 'running' && !waitingAction} /><MarkdownMessage>{content}</MarkdownMessage></div></ChatMessage>
+}
+
+function ManagerProgressEvent({ task }: { task: TaskDetailView }): React.JSX.Element | null {
+  if (task.delivery) return null
+  const checkpoint = [...task.timeline].reverse().find((item) => item.phase === 'manager_rework' || item.phase === 'manager_review')
+  if (!checkpoint) return null
+  const reworking = checkpoint.phase === 'manager_rework'
+  return <div className="manager-progress-event" role="status"><Sparks aria-hidden width={16} height={16} /><span><strong>总管</strong>{reworking ? '已完成阶段验收，正在安排员工补充处理。' : '正在根据验收标准审核员工结果。'}</span><time>{messageTime(checkpoint.createdAt)}</time></div>
+}
+
+function TaskWorkTimeline({ task }: { task: TaskDetailView }): React.JSX.Element | null {
+  if (!task.assignments.length) return null
+  return <div className="task-work-timeline" aria-label="员工工作时间线"><TeamJoinedEvent task={task} />{task.assignments.map((assignment) => <EmployeeProgressMessage key={assignment.id} task={task} assignment={assignment} />)}<ManagerProgressEvent task={task} /></div>
+}
+
 function ToolApprovalCard({ task, onDecision, onOpen }: { task: TaskDetailView; onDecision: (actionId: string, decision: 'approve' | 'reject') => void; onOpen: () => void }): React.JSX.Element | null {
+  if (task.state === 'failed' || task.state === 'cancelled') return null
   const approval = task.approvals.find((item) => item.decision === 'pending') ?? task.approvals.at(-1)
   if (!approval) return null
   const action = task.toolActions.find((item) => item.id === approval.toolActionId)
@@ -106,16 +245,45 @@ function DeliveryCard({ task, onOpen }: { task: TaskDetailView; onOpen: () => vo
   const delivery = task.delivery
   if (!delivery) return null
   const passed = delivery.acceptanceResults.filter((item) => item.passed).length
-  return <article className="delivery-card"><div className="delivery-card__icon"><Check aria-hidden width={22} height={22} /></div><div className="delivery-card__body"><div className="card-heading"><StatusLight state={passed === delivery.acceptanceResults.length ? 'success' : 'waiting'} label={passed === delivery.acceptanceResults.length ? '已交付' : '部分通过'} /><span>{messageTime(task.timeline.at(-1)?.createdAt ?? new Date().toISOString())}</span></div><h3>{task.goal}</h3><p>{delivery.acceptanceResults.length ? `${passed} / ${delivery.acceptanceResults.length} 项验收通过，${delivery.evidenceCount} 条证据已固化。` : '交付结果已由 Runtime 固化。'}</p><MessageAttachmentGroup source="agent" embedded attachments={delivery.artifacts.map((artifact) => ({ id: artifact.id, name: artifact.relativePath, detail: `${artifact.mediaType} · SHA-256 已记录` }))} onOpen={onOpen} onReveal={onOpen} /><button type="button" className="text-action" onClick={onOpen}>查看来源、证据与完整验收记录 <NavArrowRight aria-hidden width={14} height={14} /></button></div></article>
+  return <article className="delivery-card"><div className="delivery-card__icon"><Check aria-hidden width={22} height={22} /></div><div className="delivery-card__body"><div className="card-heading"><StatusLight state={passed === delivery.acceptanceResults.length ? 'success' : 'waiting'} label={passed === delivery.acceptanceResults.length ? '已交付' : '部分通过'} /><span>{messageTime(delivery.createdAt ?? task.timeline.at(-1)?.createdAt ?? new Date().toISOString())}</span></div><h3>{task.goal}</h3>{delivery.summary && <p className="delivery-card__summary">总管验收：{delivery.summary}</p>}{delivery.result && <div className="delivery-card__result"><strong>最终结果</strong><MarkdownMessage>{delivery.result}</MarkdownMessage></div>}<p>{delivery.acceptanceResults.length ? `${passed} / ${delivery.acceptanceResults.length} 项验收通过，${delivery.evidenceCount} 条证据已固化。` : '交付结果已由 Runtime 固化。'}</p><MessageAttachmentGroup source="agent" embedded attachments={delivery.artifacts.map((artifact) => ({ id: artifact.id, name: artifact.relativePath, detail: `${artifact.mediaType} · SHA-256 已记录` }))} onOpen={onOpen} onReveal={onOpen} /><button type="button" className="text-action" onClick={onOpen}>查看来源、证据与完整验收记录 <NavArrowRight aria-hidden width={14} height={14} /></button></div></article>
 }
 
 function MatterDetailModal({ task, onClose }: { task?: TaskDetailView; onClose: () => void }): React.JSX.Element {
-  return <ClientModal open={Boolean(task)} title={task?.goal ?? '事项详情'} eyebrow={task ? <StatusLight state={task.state === 'succeeded' ? 'success' : task.state === 'failed' || task.state === 'needs_attention' ? 'danger' : task.state === 'running' ? 'active' : 'waiting'} label={taskStateLabel(task.state)} breathing={task.state === 'running'} /> : undefined} size="medium" onClose={onClose}><div className="matter-detail-content">{task && <>
-    <section><h3>目标与验收</h3><p>{task.goal}</p><ul>{task.acceptanceCriteria.map((item) => <li key={item}>{item}</li>)}</ul></section>
-    <section><h3>执行时间线</h3><div className="timeline">{task.timeline.length ? task.timeline.map((item, index) => <div className={`timeline-item timeline-item--${index === task.timeline.length - 1 && task.state === 'running' ? 'active' : 'done'}`} key={`${item.phase}:${index}`}><span>{index < task.timeline.length - 1 || task.state !== 'running' ? <Check aria-hidden width={14} height={14} /> : null}</span><div><strong>{item.phase}</strong><small>{messageTime(item.createdAt)} · {item.nextNode ? `下一步：${item.nextNode}` : '当前记录'}</small></div></div>) : <p className="empty-state">尚未产生执行节点。</p>}</div></section>
-    <section><h3>当前临时团队</h3><div className="participant-list">{task.assignments.length ? task.assignments.map((item) => <span key={item.id}><Avatar label={item.employeeVersionId} initials={String(item.sequence)} color="#b8c982" size="small" />{item.employeeVersionId}</span>) : <p className="empty-state">事项尚未冻结执行团队。</p>}</div></section>
-    {task.delivery && <section><div className="content-section-title"><h3>验收与证据</h3><span>{task.delivery.evidenceCount} 条证据</span></div><div className="detail-data-list">{task.delivery.acceptanceResults.map((item) => <div className="detail-data-row" key={item.criterion}><span><strong>{item.criterion}</strong><small>Runtime 验收记录</small></span><StatusLight state={item.passed ? 'success' : 'danger'} label={item.passed ? '通过' : '未通过'} /></div>)}{task.delivery.artifacts.map((item) => <div className="detail-data-row" key={item.id}><span><strong>{item.relativePath}</strong><small>{item.mediaType}</small></span><em>{item.sha256.slice(0, 10)}…</em></div>)}</div>{task.delivery.unresolvedIssues.length > 0 && <div className="boundary-note">未解决问题：{task.delivery.unresolvedIssues.join('；')}</div>}</section>}
-  </>}</div></ClientModal>
+  if (!task) return <ClientModal open={false} title="事项详情" size="medium" onClose={onClose}><div /></ClientModal>
+  const summary = taskSummary(task)
+  const milestones = buildFriendlyTimeline(task)
+  const acceptanceResults = task.delivery?.acceptanceResults ?? task.acceptanceCriteria.map((criterion) => ({ criterion, passed: task.state === 'succeeded' }))
+  const passedCount = acceptanceResults.filter((item) => item.passed).length
+  const summaryTone = task.state === 'succeeded' ? 'success' : task.state === 'failed' || task.state === 'needs_attention' ? 'danger' : task.state === 'running' ? 'active' : 'waiting'
+  return <ClientModal open title={task.goal} eyebrow={<StatusLight state={summaryTone} label={taskStateLabel(task.state)} breathing={task.state === 'running'} />} size="medium" onClose={onClose}><div className="matter-detail-content matter-detail-content--friendly">
+    <section className={`matter-summary matter-summary--${summaryTone}`}>
+      <span className="matter-summary__icon">{task.state === 'succeeded' ? <ShieldCheck aria-hidden width={22} height={22} /> : <InfoCircle aria-hidden width={22} height={22} />}</span>
+      <div className="matter-summary__copy"><h3>{summary.title}</h3><p>{summary.description}</p></div>
+      {task.delivery && <div className="matter-summary__metrics" aria-label="交付概况"><span><strong>{passedCount}/{acceptanceResults.length}</strong><small>完成要求</small></span><span><strong>{task.delivery.evidenceCount}</strong><small>来源证据</small></span><span><strong>{task.delivery.artifacts.length}</strong><small>交付文件</small></span></div>}
+    </section>
+
+    <section>
+      <div className="matter-section-heading"><div><h3>完成要求</h3><p>任务完成时需要满足以下要求</p></div><span>{passedCount}/{acceptanceResults.length} 已通过</span></div>
+      <div className="matter-check-list">{acceptanceResults.map((item) => <div className={`matter-check-item${item.passed ? ' is-passed' : ''}`} key={item.criterion}><span className="matter-check-item__icon">{item.passed ? <Check aria-hidden width={15} height={15} /> : <InfoCircle aria-hidden width={15} height={15} />}</span><strong>{item.criterion}</strong><small>{item.passed ? '已通过' : task.delivery ? '未通过' : '待完成'}</small></div>)}</div>
+    </section>
+
+    <section>
+      <div className="matter-section-heading"><div><h3>执行进度</h3><p>仅展示用户需要了解的关键阶段</p></div><span>{milestones.length} 个阶段</span></div>
+      {milestones.length ? <div className="matter-progress-list">{milestones.map((item) => <div className={`matter-progress-item matter-progress-item--${item.state}`} key={item.key}><span className="matter-progress-item__marker">{item.state === 'done' ? <Check aria-hidden width={14} height={14} /> : null}</span><div><div className="matter-progress-item__title"><strong>{item.title}</strong><time>{messageTime(item.createdAt)}</time></div><p>{item.description}</p></div></div>)}</div> : <p className="empty-state">任务尚未开始，开始后会在这里显示进度。</p>}
+    </section>
+
+    <section>
+      <div className="matter-section-heading"><div><h3>参与员工</h3><p>负责完成本次任务的临时团队</p></div><span>{task.assignments.length} 位</span></div>
+      {task.assignments.length ? <div className="matter-team-list">{task.assignments.map((item) => { const name = item.employeeName ?? `员工 ${item.sequence}`; return <div className={`matter-team-member matter-team-member--${item.state}`} key={item.id}><Avatar label={name} initials={name.slice(0, 1)} color={employeeColors[(item.sequence - 1) % employeeColors.length]} size="small" /><span><strong>{name}</strong><small>{item.employeeRole ?? '任务协作'}</small></span><em>{assignmentStateLabel(item.state)}</em></div> })}</div> : <p className="empty-state">任务确认后会自动安排合适的员工。</p>}
+    </section>
+
+    {task.delivery && <section>
+      <div className="matter-section-heading"><div><h3>交付文件与证据</h3><p>任务结果、交付文件和来源证据已保存，可在下方查看</p></div><span>{task.delivery.artifacts.length} 个文件</span></div>
+      {task.delivery.artifacts.length > 0 && <div className="matter-artifact-list">{task.delivery.artifacts.map((item) => <div className="matter-artifact-item" key={item.id}><span className="matter-artifact-item__icon"><Page aria-hidden width={17} height={17} /></span><span><strong>{item.relativePath}</strong><small>{artifactTypeLabel(item.mediaType)}，文件完整性校验已记录</small></span><em>已保存</em></div>)}</div>}
+      <p className="matter-evidence-note"><ShieldCheck aria-hidden width={16} height={16} />已保存 {task.delivery.evidenceCount} 条来源证据，可用于核对结果。</p>
+      {task.delivery.unresolvedIssues.length > 0 && <div className="boundary-note">仍需注意：{task.delivery.unresolvedIssues.join('；')}</div>}
+    </section>}
+  </div></ClientModal>
 }
 
 function MatterEvent({ task, onOpen }: { task: TaskDetailView; onOpen: () => void }): React.JSX.Element {
@@ -142,7 +310,7 @@ function MatterIndex({ tasks, onSelect }: { tasks: TaskDetailView[]; onSelect: (
         {groups.map((group) => {
           const items = tasks.filter(group.matches)
           if (!items.length) return null
-          return <section className="matter-index-section" key={group.id}><div className="matter-index-section__heading"><h3>{group.title}</h3><span>{group.description}</span></div><div className="matter-index-list">{items.map((task) => <button type="button" className="matter-index-card" key={task.id} onClick={() => onSelect(task)}><div className="card-heading"><span className={`task-state task-state--${task.state}`}>{taskStateLabel(task.state)}</span><span>{messageTime(task.timeline.at(-1)?.createdAt ?? new Date().toISOString())}</span></div><div className="matter-index-card__body"><span><strong>{task.goal}</strong><small>{task.acceptanceCriteria.join('；')}</small></span><NavArrowRight aria-hidden width={17} height={17} /></div><div className="matter-index-card__footer"><MatterTeamAvatars team={task.assignments.map((assignment) => ({ id: assignment.id, name: assignment.employeeVersionId, initials: String(assignment.sequence), color: '#b8c982' }))} /><span>{task.timeline.length} 个进度节点</span><span>{task.delivery ? `${task.delivery.artifacts.length} 个交付文件` : '尚未交付'}</span></div></button>)}</div></section>
+          return <section className="matter-index-section" key={group.id}><div className="matter-index-section__heading"><h3>{group.title}</h3><span>{group.description}</span></div><div className="matter-index-list">{items.map((task) => <button type="button" className="matter-index-card" key={task.id} onClick={() => onSelect(task)}><div className="card-heading"><span className={`task-state task-state--${task.state}`}>{taskStateLabel(task.state)}</span><span>{messageTime(task.timeline.at(-1)?.createdAt ?? new Date().toISOString())}</span></div><div className="matter-index-card__body"><span><strong>{task.goal}</strong><small>{task.acceptanceCriteria.join('；')}</small></span><NavArrowRight aria-hidden width={17} height={17} /></div><div className="matter-index-card__footer"><MatterTeamAvatars team={task.assignments.filter((assignment) => !assignment.reworkOfAssignmentId).map((assignment, index) => ({ id: assignment.id, name: assignment.employeeName ?? `员工 ${assignment.sequence}`, initials: (assignment.employeeName ?? String(assignment.sequence)).slice(0, 1), color: employeeColors[index % employeeColors.length] }))} /><span>{task.timeline.length} 个进度节点</span><span>{task.delivery ? `${task.delivery.artifacts.length} 个交付文件` : '尚未交付'}</span></div></button>)}</div></section>
         })}
         {tasks.length === 0 && <div className="runtime-empty-state runtime-empty-state--compact"><Page width={24} height={24} /><h2>当前会话还没有事项</h2><p>继续与总管对话。需要持续执行、审批或可验收交付物时，会在这里形成事项。</p></div>}
       </div>
@@ -163,16 +331,24 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, onDataChange
   const [selectedMatter, setSelectedMatter] = useState<TaskDetailView>()
   const [composerPanel, setComposerPanel] = useState<ComposerPanel>(null)
   const [draftAttachments, setDraftAttachments] = useState<File[]>([])
+  const [authorizedDirectories, setAuthorizedDirectories] = useState<string[]>([])
 
   useEffect(() => {
     let mounted = true
+    const receiveTasks = (items: TaskDetailView[]): void => {
+      if (!mounted) return
+      setTasks(items)
+      const previouslyAuthorized = items.find((item) => item.conversationId === conversationId && item.directories.length > 0)?.directories
+      if (previouslyAuthorized) setAuthorizedDirectories(previouslyAuthorized)
+    }
     setMessages([])
     setActiveView('conversation')
     setSelectedMatter(undefined)
     setComposerPanel(null)
     setDraftAttachments([])
+    setAuthorizedDirectories([])
     window.aiEmployeeOS.conversation.history(conversationId).then((history) => { if (mounted) setMessages(history) }).catch(() => { if (mounted) setError('历史对话读取失败') })
-    window.aiEmployeeOS.task.list().then((items) => { if (mounted) setTasks(items) }).catch(() => { if (mounted) setError('任务投影读取失败') })
+    window.aiEmployeeOS.task.list().then(receiveTasks).catch(() => { if (mounted) setError('任务投影读取失败') })
     const unsubscribe = window.aiEmployeeOS.conversation.onEvent((event) => {
       if (event.type === 'output_delta') {
         setMessages((current) => {
@@ -185,6 +361,8 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, onDataChange
         setSending(false)
         setActiveRequestId(undefined)
         setCancelling(false)
+        window.aiEmployeeOS.task.list().then(receiveTasks).catch(() => { if (mounted) setError('事项草稿读取失败') })
+        onDataChanged()
       } else if (event.type === 'failed') {
         setSending(false)
         setActiveRequestId(undefined)
@@ -192,12 +370,14 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, onDataChange
         setError(`模型请求失败：${event.code}`)
       }
     })
-    const unsubscribeTask = window.aiEmployeeOS.task.onEvent(() => { window.aiEmployeeOS.task.list().then((items) => { if (mounted) setTasks(items) }) })
+    const unsubscribeTask = window.aiEmployeeOS.task.onEvent(() => { window.aiEmployeeOS.task.list().then(receiveTasks) })
     return () => { mounted = false; unsubscribe(); unsubscribeTask() }
   }, [conversationId])
 
   const conversationTasks = tasks.filter((task) => task.conversationId === conversationId)
-  const activeTask = conversationTasks.find((task) => !['succeeded', 'cancelled'].includes(task.state)) ?? conversationTasks[0]
+  const activeTask = selectActiveTask(conversationTasks)
+  const latestUserMessage = [...messages].reverse().find((message) => message.role === 'user')
+  const activeRouteMode = activeTask && latestUserMessage && activeTask.sourceMessageIds?.length ? activeTask.sourceMessageIds.includes(latestUserMessage.id) ? 'created' : 'linked' : 'created'
 
   const submit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
@@ -210,7 +390,7 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, onDataChange
     const optimisticId = `local:${Date.now()}`
     setMessages((current) => [...current, { id: optimisticId, role: 'user', content: text, createdAt: new Date().toISOString() }])
     try {
-      const result = await window.aiEmployeeOS.conversation.send(conversationId, text)
+      const result = await window.aiEmployeeOS.conversation.send(conversationId, text, authorizedDirectories)
       setMessages((current) => current.map((message) => message.id === optimisticId ? { ...message, id: result.messageId } : message))
       setActiveRequestId(result.requestId)
       onDataChanged()
@@ -236,17 +416,16 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, onDataChange
     if (!source) return
     setTaskBusy(true); setError(undefined)
     try {
-      const employee = (await window.aiEmployeeOS.employee.list()).find((item) => item.status === 'active' && item.activeVersionId)
-      if (!employee?.activeVersionId) throw new Error('没有可工作的已发布员工，请先在团队中创建并测试员工')
-      const created = await window.aiEmployeeOS.task.createDraft({ conversationId, sourceMessageIds: [source.id], goal: source.content, acceptanceCriteria: ['完成目标并给出可验证的最终结果'], employeeVersionIds: [employee.activeVersionId] })
-      setTasks((current) => [created, ...current]); onDataChanged()
+      const activeEmployees = (await window.aiEmployeeOS.employee.list()).filter((item) => ['active', 'pending_changes'].includes(item.status) && item.activeVersionId)
+      if (!activeEmployees.length) throw new Error('没有可工作的已发布员工，请先在团队中创建并测试员工')
+      const network = activeEmployees.find((item) => item.activeCapabilityVersionIds.includes('capability.network-intelligence.v1'))
+      const writer = activeEmployees.find((item) => item.activeCapabilityVersionIds.includes('capability.local-document.v1'))
+      const employeeVersionIds = [network?.activeVersionId, writer?.activeVersionId].filter((id): id is string => Boolean(id))
+      if (!employeeVersionIds.length) employeeVersionIds.push(activeEmployees[0].activeVersionId!)
+      const created = await window.aiEmployeeOS.task.createDraft({ conversationId, sourceMessageIds: [source.id], goal: source.content, acceptanceCriteria: ['网络结论保留来源与信息缺口', '目标文档已在授权目录内写入或编辑并可回读验证'], employeeVersionIds, directories: authorizedDirectories, authorizationMode: 'full_access' })
+      const value = created.requiresDirectories && created.directories.length === 0 ? created : await window.aiEmployeeOS.task.start(created.draftId)
+      setTasks((current) => [value, ...current]); onDataChanged()
     } catch (reason) { setError(reason instanceof Error ? reason.message : '任务草稿创建失败') } finally { setTaskBusy(false) }
-  }
-
-  const startTask = async (): Promise<void> => {
-    if (!activeTask || activeTask.state !== 'draft') return
-    setTaskBusy(true); setError(undefined)
-    try { const started = await window.aiEmployeeOS.task.start(activeTask.draftId); setTasks((current) => current.map((item) => item.draftId === started.draftId ? started : item)) } catch (reason) { setError(reason instanceof Error ? reason.message : '任务启动失败') } finally { setTaskBusy(false) }
   }
 
   const requestTaskChange = async (): Promise<void> => {
@@ -260,7 +439,7 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, onDataChange
     if (!activeTask?.pendingChange) return
     setTaskBusy(true); setError(undefined)
     try {
-      const value = accepted ? await window.aiEmployeeOS.task.acceptChange(activeTask.pendingChange.id, { goal: String(activeTask.pendingChange.requestedDiff.goal ?? activeTask.goal), acceptanceCriteria: activeTask.acceptanceCriteria, employeeVersionIds: activeTask.employeeVersionIds }) : await window.aiEmployeeOS.task.rejectChange(activeTask.pendingChange.id)
+      const value = accepted ? await window.aiEmployeeOS.task.acceptChange(activeTask.pendingChange.id, { goal: String(activeTask.pendingChange.requestedDiff.goal ?? activeTask.goal), acceptanceCriteria: activeTask.acceptanceCriteria, employeeVersionIds: activeTask.employeeVersionIds, directories: activeTask.directories }) : await window.aiEmployeeOS.task.rejectChange(activeTask.pendingChange.id)
       setTasks((current) => current.map((item) => item.id === value.id ? value : item))
     } catch (reason) { setError(reason instanceof Error ? reason.message : '变更决策失败') } finally { setTaskBusy(false) }
   }
@@ -271,6 +450,33 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, onDataChange
       const value = decision === 'approve' ? await window.aiEmployeeOS.task.approveTool(actionId) : await window.aiEmployeeOS.task.rejectTool(actionId)
       setTasks((current) => current.map((item) => item.id === value.id ? value : item))
     } catch (reason) { setError(reason instanceof Error ? reason.message : '审批决定未进入 Runtime') } finally { setTaskBusy(false) }
+  }
+
+  const chooseDirectory = async (): Promise<void> => {
+    const directory = await window.aiEmployeeOS.task.chooseDirectory()
+    if (!directory) return
+    const next = authorizedDirectories.includes(directory) ? authorizedDirectories : [...authorizedDirectories, directory]
+    setAuthorizedDirectories(next)
+    if (activeTask?.state === 'draft') {
+      setTaskBusy(true); setError(undefined)
+      try {
+        const updated = await window.aiEmployeeOS.task.updateDraft(activeTask.draftId, { goal: activeTask.goal, acceptanceCriteria: activeTask.acceptanceCriteria, employeeVersionIds: activeTask.employeeVersionIds, directories: next })
+        const started = await window.aiEmployeeOS.task.start(updated.draftId)
+        setTasks((current) => current.map((item) => item.draftId === started.draftId ? started : item))
+        setComposerPanel(null)
+      } catch { setError('目录已授权，但事项未能自动启动') } finally { setTaskBusy(false) }
+    }
+  }
+
+  const removeDirectory = async (directory: string): Promise<void> => {
+    const next = authorizedDirectories.filter((item) => item !== directory)
+    setAuthorizedDirectories(next)
+    if (activeTask?.state !== 'draft') return
+    setTaskBusy(true); setError(undefined)
+    try {
+      const updated = await window.aiEmployeeOS.task.updateDraft(activeTask.draftId, { goal: activeTask.goal, acceptanceCriteria: activeTask.acceptanceCriteria, employeeVersionIds: activeTask.employeeVersionIds, directories: next })
+      setTasks((current) => current.map((item) => item.draftId === updated.draftId ? updated : item))
+    } catch { setError('未能从事项草稿移除目录授权') } finally { setTaskBusy(false) }
   }
 
   return (
@@ -290,9 +496,10 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, onDataChange
           )}
 
           {activeTask ? (
-            <><MatterRouteNote title={activeTask.goal} mode={activeTask.state === 'draft' ? 'created' : 'linked'} busy={taskBusy} onOpenMatter={() => setSelectedMatter(activeTask)} onCreateMatter={() => void createTaskDraft()} onRequestChange={activeTask.state === 'running' && !activeTask.pendingChange ? () => void requestTaskChange() : undefined} /><MatterEvent task={activeTask} onOpen={() => setSelectedMatter(activeTask)} />
+            <><MatterRouteNote title={activeTask.goal} mode={activeRouteMode} busy={taskBusy} onOpenMatter={() => setSelectedMatter(activeTask)} onCreateMatter={() => void createTaskDraft()} onRequestChange={activeTask.state === 'running' && !activeTask.pendingChange ? () => void requestTaskChange() : undefined} /><MatterEvent task={activeTask} onOpen={() => setSelectedMatter(activeTask)} /><TaskWorkTimeline task={activeTask} />
               {activeTask.pendingChange && <div className="change-card"><strong>待处理变更</strong><p>{String(activeTask.pendingChange.requestedDiff.goal ?? '需求已变化')}</p>{activeTask.state === 'needs_attention' ? <div><button type="button" onClick={() => void decideTaskChange(false)} disabled={taskBusy}>保持原事项</button><button type="button" onClick={() => void decideTaskChange(true)} disabled={taskBusy}>接受并启动新 Revision</button></div> : <small>将在当前节点完成并提交 Checkpoint 后暂停</small>}</div>}
-              {activeTask.state === 'draft' && <section className="runtime-route-note"><Page aria-hidden width={16} height={16} /><span>事项草稿已生成，确认后将冻结执行团队与验收标准。</span><button type="button" onClick={() => void startTask()} disabled={taskBusy}>{taskBusy ? '正在冻结' : '确认并开始'}</button></section>}
+              {activeTask.state === 'failed' && <section className="runtime-route-note"><Page aria-hidden width={16} height={16} /><span>本次执行已失败，原有 Tool 审批已失效，不会继续调用外部工具。</span><button type="button" onClick={() => void createTaskDraft()} disabled={taskBusy}>{taskBusy ? '正在创建' : '重新创建事项草稿'}</button></section>}
+              {activeTask.state === 'draft' && <section className="runtime-route-note"><Page aria-hidden width={16} height={16} /><span>{activeTask.requiresDirectories && activeTask.directories.length === 0 ? '事项已生成；选择授权文件夹后将自动开始执行。' : '事项已生成，Runtime 正在自动启动员工。'}</span>{activeTask.requiresDirectories && activeTask.directories.length === 0 && <button type="button" onClick={() => setComposerPanel('access')} disabled={taskBusy}>选择文件夹</button>}</section>}
               <ToolApprovalCard task={activeTask} onDecision={(actionId, decision) => void decideTool(actionId, decision)} onOpen={() => setSelectedMatter(activeTask)} /><DeliveryCard task={activeTask} onOpen={() => setSelectedMatter(activeTask)} />{activeTask.toolActions.some((item) => item.state === 'result_unknown') && <div className="boundary-note">存在结果未知的 Tool Action。需要在 Runtime 记录真实外部结果后才能继续，客户端不会猜测成功或失败。</div>}</>
           ) : null}
         </div>
@@ -310,7 +517,7 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, onDataChange
               <button type="submit" aria-label="发送" className="composer__send" disabled={(!draft.trim() && !draftAttachments.length) || sending || runtimeStatus.state !== 'connected'}><ArrowUp aria-hidden width={19} height={19} /></button>
             </div>
           </div>
-          {composerPanel && <div className={`composer-popover composer-popover--${composerPanel}`} id={`composer-${composerPanel}-panel`} role="dialog" aria-label={composerPanel === 'access' ? '受控访问说明' : composerPanel === 'model' ? '当前会话模型' : '语音输入说明'}>{composerPanel === 'access' ? <><strong>受控访问</strong><p>Tool、MCP 与目录权限取员工能力和当前任务 RunGrant 的交集；有副作用的动作仍需单次审批。</p><StatusLight state="success" label="最小授权" /></> : composerPanel === 'model' ? <><strong>当前会话模型</strong><div className="composer-popover__options">{providerStatus.models.filter((model) => model.modality === 'text').map((model) => <button type="button" key={`${model.provider}:${model.modelId}`} className={model.modelId === 'deepseek-v4-pro' ? 'is-active' : ''} onClick={() => setComposerPanel(null)}><span><b>{model.modelId}</b><small>{model.provider} · {model.verification === 'verified' ? '已验证' : '未验证'}</small></span>{model.modelId === 'deepseek-v4-pro' && <Check aria-hidden width={16} height={16} />}</button>)}</div><p>模型由当前 Runtime 会话固定；此处展示真实可用状态，不会静默切换。</p></> : <><strong>语音输入</strong><p>客户端尚未接入 macOS 麦克风权限与转写 Bridge，因此不会请求权限或伪造录音。入口交互已保留。</p><StatusLight state="muted" label="暂未开放" /></>}</div>}
+          {composerPanel && <div className={`composer-popover composer-popover--${composerPanel}`} id={`composer-${composerPanel}-panel`} role="dialog" aria-label={composerPanel === 'access' ? '受控访问说明' : composerPanel === 'model' ? '当前会话模型' : '语音输入说明'}>{composerPanel === 'access' ? <><strong>受控访问</strong><p>文档员工只能访问这里明确选择的文件夹；冻结授权范围内自动执行，越界、敏感参数和未声明 Tool 仍会被 Runtime 阻止。</p><button type="button" className="button button--quiet" onClick={() => void chooseDirectory()}>选择文件夹</button>{authorizedDirectories.length ? <div className="composer-popover__options">{authorizedDirectories.map((directory) => <button type="button" key={directory} onClick={() => void removeDirectory(directory)}><span><b>{directory.split('/').at(-1)}</b><small>{directory}</small></span><Xmark aria-hidden width={16} height={16} /></button>)}</div> : <StatusLight state="muted" label="尚未授权目录" />}</> : composerPanel === 'model' ? <><strong>当前会话模型</strong><div className="composer-popover__options">{providerStatus.models.filter((model) => model.modality === 'text').map((model) => <button type="button" key={`${model.provider}:${model.modelId}`} className={model.modelId === 'deepseek-v4-pro' ? 'is-active' : ''} onClick={() => setComposerPanel(null)}><span><b>{model.modelId}</b><small>{model.provider} · {model.verification === 'verified' ? '已验证' : '未验证'}</small></span>{model.modelId === 'deepseek-v4-pro' && <Check aria-hidden width={16} height={16} />}</button>)}</div><p>模型由当前 Runtime 会话固定；此处展示真实可用状态，不会静默切换。</p></> : <><strong>语音输入</strong><p>客户端尚未接入 macOS 麦克风权限与转写 Bridge，因此不会请求权限或伪造录音。入口交互已保留。</p><StatusLight state="muted" label="暂未开放" /></>}</div>}
         </div>
         {error && <small className="composer-error" role="alert">{error}</small>}
       </form>
