@@ -34,7 +34,7 @@
 
 | 页面/组件 | 原型状态 | Runtime 映射 | 验收 |
 | --- | --- | --- | --- |
-| 员工目录 | 搜索、选中、状态灯、空态 | `EmployeeSummary` | draft / pending_test / active / disabled / archived / pending_changes 全覆盖 |
+| 员工目录 | 搜索、选中、状态灯、空态 | `EmployeeSummary` | draft / pending_test / active / disabled / archived 全覆盖；活动版本存在时保持 active，草稿进度不混入可工作状态 |
 | 员工详情 | 资料、能力摘要、最近交付 | `EmployeeDetail` + Task assignments | 不复制版本事实，不隐藏正式引用 |
 | 创建 Agent | 头像 / 名称 / 职责 / 说明 / Prompt / 模型与能力 | `EmployeeBridge.create/saveDraft` | 三步字段门禁；创建时持久化头像与职责，创建后进入可编辑草稿 |
 | Agent 设置 | 基础 / Prompt / 模型能力 / 记忆 / 测试发布 | Employee lifecycle APIs | 测试确认后才能发布；依赖不可用时阻止发布 |
@@ -55,7 +55,7 @@
 | --- | --- | --- |
 | 个人资料 | 头像、名称、角色、说明 | 本地客户端资料，可编辑并持久化 |
 | 通用 | 主题、启动与通知 | 主题真实生效；未开放的 OS 权限明确禁用 |
-| 总管 | 定义与职责边界 | Runtime 固定注入；无可写接口时只读 |
+| 总管 | 头像、名称、System Prompt、模型、全局记忆 | `SupervisorBridge` + Runtime 单例配置；平台安全与权限注入保持只读 |
 | 模型服务 | Provider、模型、Credential、验证 | `ProviderStatus`，不可回显密钥 |
 | 资源与权限 | 默认授权、资源健康、MCP | `ResourceCatalogView` 与 Runtime 策略 |
 | 记忆与存储 | 健康、队列、检索、编辑、禁用、恢复、删除 | `MemoryBridge` |
