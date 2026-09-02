@@ -26,12 +26,13 @@
 16. [Phase 7：最小本地记忆与召回实施验收](docs/audits/phase-7/local-memory-implementation.md)
 17. [Phase 8：主验收场景实施验收](docs/audits/phase-8/main-acceptance-scenario.md)
 18. [Phase 9：本地无签名打包与生命周期验收](docs/audits/phase-9/local-unsigned-packaging.md)
+19. [Phase 10：网络情报员与文档编写员实施验收](docs/audits/phase-10/specialist-employees-and-local-tools.md)
 
 发生冲突时，以产品规格为产品边界，以系统架构方案为技术边界；实施路线图不得扩大前两者定义的 MVP。
 
 ## 当前阶段
 
-产品规格 v0.1 已冻结，Phase 0–9 的本地运行边界已完成。当前已有 Electron 六模块客户端、独立 Local Control Runtime、版本化本地数据库、Provider Service、可恢复的总管流式对话、Agent 员工治理、Deep Agents 正式任务闭环、ToolAction 与受管 ResearchBundle，以及 AES-256-GCM 加密的本地记忆、异步待授权队列、固定 512 维中文 Embedding 和 RunGrant 约束召回，并已生成包含独立 Python、Worker、Keychain Helper 与固定模型的本地 arm64 `.app`。DeepSeek `deepseek-v4-pro` 已完成真实能力探测、全链路对话、Usage 落账、取消、员工测试和正式任务交付；Poe 只允许 `claude-sonnet-4.6`、`gpt-image-2`、`seedance-2.0`，缺少 Poe Credential 时保持未验证。MemoryCore 不集成，Agent Reach 不作为运行时依赖；云端记忆提取未经单独授权不会执行。Apple 签名/Profile、发布级 XPC/Keychain Access Group、公证与升级矩阵按用户边界保持延期，本地 ad-hoc 产物不得公开分发。
+产品规格 v0.1 已冻结，Phase 0–10 的本地运行边界已完成。当前已有 Electron 六模块客户端、独立 Local Control Runtime、版本化本地数据库、Provider Service、可恢复的总管流式对话、Agent 员工治理、Deep Agents 正式任务闭环、ToolAction 与受管 ResearchBundle，以及 AES-256-GCM 加密的本地记忆、异步待授权队列、固定 512 维中文 Embedding 和 RunGrant 约束召回，并已生成包含独立 Python、Worker、Keychain Helper 与固定模型的本地 arm64 `.app`。DeepSeek `deepseek-v4-pro` 已完成真实能力探测、全链路对话、Usage 落账、取消、员工测试和正式任务交付；Poe 只允许 `claude-sonnet-4.6`、`gpt-image-2`、`seedance-2.0`，缺少 Poe Credential 时保持未验证。MemoryCore 不集成。核心受管调研不依赖 Agent Reach；用户于 Phase 10 显式安装的“网络情报员”本机扩展可通过固定只读 Tool 调用 Agent-Reach、Last 30 Days 与 OpenCLI，但这些外部依赖不打包、不获得任意 Shell，也不代表所有登录态平台已可用。云端记忆提取未经单独授权不会执行。Apple 签名/Profile、发布级 XPC/Keychain Access Group、公证与升级矩阵按用户边界保持延期，本地 ad-hoc 产物不得公开分发。
 
 ## 本地构建
 

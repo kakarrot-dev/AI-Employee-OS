@@ -116,7 +116,7 @@ Phase 0 确定性 Spike 已验证短期 Grant、任意目标拒绝、错误规�
 - Local/File Runner 不获得 `network.client`；Provider、MCP 和 Research Runner 按独立签名目标授予网络权限，不能共享通用网络 Runner。
 - CLI/HTTP/浏览器后端必须随客户端受管打包或由已审计 MCP 提供，不能依赖 Agent 直接执行 Shell、用户全局安装目录或运行时自更新。
 - 网络出站动作校验目标域、协议、参数来源、长度、编码和敏感信息模式；外部内容生成的参数默认按非可信处理。
-- Phase 0 首批 Research Runner 固定为 `github.repositories.search@research-source/v1` 与 `rss.read@research-source/v1`。前者固定 GitHub REST Origin/Path/Method，后者只读取用户授权的公网 HTTPS Feed；两者不运行 Agent Reach 或任何上游 CLI。失败形成 SourceAttempt，外部结果始终标记为非可信数据。详见 [Agent Reach 与受管网络调研审计](audits/phase-0/agent-reach-managed-research-audit.md)。
+- Phase 0 首批 Research Runner 固定为 `github.repositories.search@research-source/v1` 与 `rss.read@research-source/v1`。前者固定 GitHub REST Origin/Path/Method，后者只读取用户授权的公网 HTTPS Feed；两者不运行 Agent Reach 或任何上游 CLI。Phase 10 在用户明确要求后新增本机扩展 Runner，只向“网络情报员”暴露 Agent-Reach、Last 30 Days、OpenCLI 三个固定只读 Tool，不开放任意 Shell、不静默读取 Cookie，失败仍形成 SourceAttempt，外部结果始终标记为非可信数据。详见 [网络情报员与文档编写员实施验收](audits/phase-10/specialist-employees-and-local-tools.md)。
 - 结果通过结构化协议返回 Runtime；Runner 不能直接写产品数据库。
 
 Phase 6 已实现 Proposal → Runtime 校验 → Approval/Full Access → Runner → Verified ToolResult → 模型续跑，并用产品自有 GitHub REST 与 RSS/Atom Adapter 形成真实 ResearchBundle。数据源健康、Credential 状态和不可用性动态传播到能力与员工门禁；实现与验证证据见 [Phase 6 实施验收](audits/phase-6/tool-gateway-and-managed-research-implementation.md)。
