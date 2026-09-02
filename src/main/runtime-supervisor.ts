@@ -8,6 +8,7 @@ import type { ResourceCatalog } from '../runtime/resource-service'
 import type { MemoryCategory, MemoryHealth, MemoryQueueItem, MemoryScopeType, MemorySearchResult, MemoryStatus, MemoryView } from '../runtime/memory-service'
 import type { ProviderEvent, ProviderRequest } from '../provider/contract'
 import type { SupervisorConfigInput, SupervisorConfigView } from '../shared/supervisor-contract'
+import type { UsageSummaryView } from '../shared/usage-contract'
 import { SIDECAR_PROTOCOL_VERSION, type RuntimeCommand, type RuntimeOutboundEvent, type RuntimeReadyEvent, type RuntimeResponse } from '../shared/runtime-sidecar-protocol'
 
 interface PendingRequest {
@@ -122,6 +123,7 @@ export class RuntimeSupervisor {
   taskRejectChange(changeRequestId: string): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.reject_change', payload: { changeRequestId } }, 5000) }
   resourceList(): Promise<ResourceCatalog> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'resource.list', payload: {} }) }
   resourceProbe(): Promise<ResourceCatalog> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'resource.probe', payload: {} }, 35_000) }
+  usageSummary(): Promise<UsageSummaryView> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'usage.summary', payload: {} }) }
   toolApprove(actionId: string): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'tool.approve', payload: { actionId } }, 135_000) }
   toolReject(actionId: string): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'tool.reject', payload: { actionId } }, 5000) }
   toolResolve(actionId: string, outcome: 'succeeded' | 'failed', evidence: Record<string, unknown>): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'tool.resolve_unknown', payload: { actionId, outcome, evidence } }, 5000) }
@@ -135,6 +137,8 @@ export class RuntimeSupervisor {
   memoryResolveConflict(chosenId: string): Promise<MemoryView> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'memory.resolve_conflict', payload: { chosenId } }, 15_000) }
   memoryDelete(id: string): Promise<{ deleted: true; memoryId: string; externalBackupsExcluded: true }> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'memory.delete', payload: { id } }, 35_000) }
   memoryQueue(): Promise<MemoryQueueItem[]> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'memory.queue.list', payload: {} }, 15_000) }
+  memoryAcceptQueueItem(id: string): Promise<MemoryView> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'memory.queue.accept', payload: { id } }, 35_000) }
+  memoryDismissQueueItem(id: string): Promise<{ dismissed: true; queueId: string }> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'memory.queue.dismiss', payload: { id } }, 15_000) }
   memoryMigrateEmbeddings(): Promise<{ migrated: number }> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'memory.embeddings.migrate', payload: {} }, 130_000) }
 
   async prepareForQuit(timeoutMs = 60_000): Promise<{ ready: boolean; activeRunIds: string[] }> {

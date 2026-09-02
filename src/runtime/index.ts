@@ -5,6 +5,7 @@ import { RuntimeKernel } from './kernel'
 import { RuntimeStore } from './store'
 import { SIDECAR_PROTOCOL_VERSION, parseRuntimeCommand, type RuntimeOutboundEvent, type RuntimeResponse } from '../shared/runtime-sidecar-protocol'
 import type { BudgetLedgerEntry, Conversation, Message, Run, RunGrant, ToolAction } from './domain'
+import { summarizeUsage } from './usage-service'
 import { EmployeeService } from './employee-service'
 import { TaskService } from './task-service'
 import { ResourceService } from './resource-service'
@@ -262,6 +263,10 @@ parentPort.on('message', async (event) => {
       respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: resources.list() })
       return
     }
+    if (command.type === 'usage.summary') {
+      respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: summarizeUsage(store.list<BudgetLedgerEntry>('BudgetLedgerEntry')) })
+      return
+    }
     if (command.type === 'memory.status') { respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: memory.status() }); return }
     if (command.type === 'memory.model.download') { memory.downloadModel(); respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: memory.status() }); return }
     if (command.type === 'memory.list') { respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: memory.list(command.payload as { scopeType?: 'global' | 'employee' | 'task'; scopeId?: string; category?: MemoryCategory; status?: MemoryStatus }) }); return }
@@ -272,6 +277,8 @@ parentPort.on('message', async (event) => {
     if (command.type === 'memory.resolve_conflict') { respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: memory.resolveConflict(command.payload.chosenId) }); return }
     if (command.type === 'memory.delete') { respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: memory.permanentlyDelete(command.payload.id) }); return }
     if (command.type === 'memory.queue.list') { respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: memory.queue() }); return }
+    if (command.type === 'memory.queue.accept') { respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: memory.acceptQueueItem(command.payload.id) }); return }
+    if (command.type === 'memory.queue.dismiss') { respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: memory.dismissQueueItem(command.payload.id) }); return }
     if (command.type === 'memory.embeddings.migrate') { respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: memory.migrateEmbeddings() }); return }
     if (command.type === 'tool.approve' || command.type === 'tool.reject' || command.type === 'tool.resolve_unknown') {
       let action: ToolAction

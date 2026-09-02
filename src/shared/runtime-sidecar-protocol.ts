@@ -7,6 +7,7 @@ import type { FormalTaskDetail, TaskDraftInput } from '../runtime/task-service'
 import type { ResourceCatalog } from '../runtime/resource-service'
 import type { MemoryHealth, MemoryQueueItem, MemorySearchResult, MemoryView } from '../runtime/memory-service'
 import type { SupervisorConfigInput, SupervisorConfigView } from './supervisor-contract'
+import type { UsageSummaryView } from './usage-contract'
 
 export const SIDECAR_PROTOCOL_VERSION = 1 as const
 
@@ -47,6 +48,7 @@ export type RuntimeCommand =
   | { schemaVersion: 1; requestId: string; type: 'task.reject_change'; payload: { changeRequestId: string } }
   | { schemaVersion: 1; requestId: string; type: 'resource.list'; payload: Record<string, never> }
   | { schemaVersion: 1; requestId: string; type: 'resource.probe'; payload: Record<string, never> }
+  | { schemaVersion: 1; requestId: string; type: 'usage.summary'; payload: Record<string, never> }
   | { schemaVersion: 1; requestId: string; type: 'tool.approve'; payload: { actionId: string } }
   | { schemaVersion: 1; requestId: string; type: 'tool.reject'; payload: { actionId: string } }
   | { schemaVersion: 1; requestId: string; type: 'tool.resolve_unknown'; payload: { actionId: string; outcome: 'succeeded' | 'failed'; evidence: Record<string, unknown> } }
@@ -55,11 +57,12 @@ export type RuntimeCommand =
   | { schemaVersion: 1; requestId: string; type: 'memory.search'; payload: { query: string; allowedScopes: Array<{ type: 'global' | 'employee' | 'task'; id: string }>; categories?: string[]; tags?: string[]; limit?: number; tokenBudget?: number } }
   | { schemaVersion: 1; requestId: string; type: 'memory.update'; payload: { id: string; changes: Record<string, unknown> } }
   | { schemaVersion: 1; requestId: string; type: 'memory.disable' | 'memory.restore' | 'memory.delete'; payload: { id: string } }
+  | { schemaVersion: 1; requestId: string; type: 'memory.queue.accept' | 'memory.queue.dismiss'; payload: { id: string } }
   | { schemaVersion: 1; requestId: string; type: 'memory.resolve_conflict'; payload: { chosenId: string } }
   | { schemaVersion: 1; requestId: string; type: 'provider.event'; payload: { providerRequestId: string; event: ProviderEvent } }
   | { schemaVersion: 1; requestId: string; type: 'provider.failed'; payload: { providerRequestId: string; code: string } }
 
-export type RuntimeCommandResult = RuntimeHealth | StoredAuditEvent[] | Conversation | Conversation[] | Message[] | SupervisorConfigView | EmployeeSummary[] | EmployeeDetail | AgentCapabilityVersionView[] | FormalTaskDetail | FormalTaskDetail[] | ResourceCatalog | MemoryHealth | MemoryView | MemoryView[] | MemorySearchResult[] | MemoryQueueItem[] | { migrated: number } | { deleted: true; memoryId: string; externalBackupsExcluded: true } | { archived: true; conversationId: string } | { ready: boolean; activeRunIds: string[] } | { accepted: true; requestId?: string; testRunId?: string; changeRequestId?: string }
+export type RuntimeCommandResult = RuntimeHealth | StoredAuditEvent[] | Conversation | Conversation[] | Message[] | SupervisorConfigView | EmployeeSummary[] | EmployeeDetail | AgentCapabilityVersionView[] | FormalTaskDetail | FormalTaskDetail[] | ResourceCatalog | MemoryHealth | MemoryView | MemoryView[] | MemorySearchResult[] | MemoryQueueItem[] | UsageSummaryView | { migrated: number } | { deleted: true; memoryId: string; externalBackupsExcluded: true } | { dismissed: true; queueId: string } | { archived: true; conversationId: string } | { ready: boolean; activeRunIds: string[] } | { accepted: true; requestId?: string; testRunId?: string; changeRequestId?: string }
 
 export type RuntimeResponse =
   | { schemaVersion: 1; requestId: string; ok: true; result: RuntimeCommandResult }
@@ -83,13 +86,13 @@ export function parseRuntimeCommand(value: unknown): RuntimeCommand {
   const command = value as Partial<RuntimeCommand>
   if (command.schemaVersion !== SIDECAR_PROTOCOL_VERSION) throw new Error('unsupported_schema_version')
   if (typeof command.requestId !== 'string' || !command.requestId) throw new Error('invalid_request_id')
-  if (!['health', 'recover', 'shutdown.prepare', 'events.after', 'conversation.list', 'conversation.create', 'conversation.archive', 'conversation.send', 'conversation.history', 'conversation.cancel', 'supervisor.get', 'supervisor.update', 'employee.list', 'employee.capabilities', 'employee.detail', 'employee.create', 'employee.begin_edit', 'employee.save_draft', 'employee.test_case.add', 'employee.test.run', 'employee.test.confirm', 'employee.publish', 'employee.rollback', 'employee.disable', 'employee.archive', 'employee.restore', 'employee.delete', 'task.list', 'task.create_draft', 'task.update_draft', 'task.start', 'task.request_change', 'task.accept_change', 'task.reject_change', 'resource.list', 'resource.probe', 'tool.approve', 'tool.reject', 'tool.resolve_unknown', 'memory.status', 'memory.model.download', 'memory.list', 'memory.search', 'memory.update', 'memory.disable', 'memory.restore', 'memory.resolve_conflict', 'memory.delete', 'memory.queue.list', 'memory.embeddings.migrate', 'provider.event', 'provider.failed'].includes(String(command.type))) throw new Error('unknown_command')
+  if (!['health', 'recover', 'shutdown.prepare', 'events.after', 'conversation.list', 'conversation.create', 'conversation.archive', 'conversation.send', 'conversation.history', 'conversation.cancel', 'supervisor.get', 'supervisor.update', 'employee.list', 'employee.capabilities', 'employee.detail', 'employee.create', 'employee.begin_edit', 'employee.save_draft', 'employee.test_case.add', 'employee.test.run', 'employee.test.confirm', 'employee.publish', 'employee.rollback', 'employee.disable', 'employee.archive', 'employee.restore', 'employee.delete', 'task.list', 'task.create_draft', 'task.update_draft', 'task.start', 'task.request_change', 'task.accept_change', 'task.reject_change', 'resource.list', 'resource.probe', 'usage.summary', 'tool.approve', 'tool.reject', 'tool.resolve_unknown', 'memory.status', 'memory.model.download', 'memory.list', 'memory.search', 'memory.update', 'memory.disable', 'memory.restore', 'memory.resolve_conflict', 'memory.delete', 'memory.queue.list', 'memory.queue.accept', 'memory.queue.dismiss', 'memory.embeddings.migrate', 'provider.event', 'provider.failed'].includes(String(command.type))) throw new Error('unknown_command')
   if (!command.payload || typeof command.payload !== 'object' || Array.isArray(command.payload)) throw new Error('invalid_payload')
   if (command.type === 'events.after') {
     const payload = command.payload as { sequence?: unknown; limit?: unknown }
     if (!Number.isSafeInteger(payload.sequence) || Number(payload.sequence) < 0) throw new Error('invalid_event_sequence')
     if (!Number.isSafeInteger(payload.limit) || Number(payload.limit) < 1 || Number(payload.limit) > 500) throw new Error('invalid_event_limit')
-  } else if (command.type === 'health' || command.type === 'recover' || command.type === 'shutdown.prepare' || command.type === 'conversation.list' || command.type === 'supervisor.get' || command.type === 'employee.list' || command.type === 'employee.capabilities' || command.type === 'task.list' || command.type === 'resource.list' || command.type === 'resource.probe' || command.type === 'memory.status' || command.type === 'memory.model.download' || command.type === 'memory.queue.list' || command.type === 'memory.embeddings.migrate') {
+  } else if (command.type === 'health' || command.type === 'recover' || command.type === 'shutdown.prepare' || command.type === 'conversation.list' || command.type === 'supervisor.get' || command.type === 'employee.list' || command.type === 'employee.capabilities' || command.type === 'task.list' || command.type === 'resource.list' || command.type === 'resource.probe' || command.type === 'usage.summary' || command.type === 'memory.status' || command.type === 'memory.model.download' || command.type === 'memory.queue.list' || command.type === 'memory.embeddings.migrate') {
     if (Object.keys(command.payload).length !== 0) throw new Error('unexpected_payload')
   } else if (command.type === 'conversation.create' || command.type === 'conversation.archive') {
     if (typeof (command.payload as { conversationId?: unknown }).conversationId !== 'string') throw new Error('invalid_conversation_id')
@@ -139,6 +142,7 @@ export function parseRuntimeCommand(value: unknown): RuntimeCommand {
       if (!validId(payload.id) || !changes || typeof changes !== 'object' || Array.isArray(changes) || Object.keys(changes).some((key) => !['scopeType', 'scopeId', 'category', 'content', 'tags'].includes(key))) throw new Error('invalid_memory_update')
     }
     if (['memory.disable', 'memory.restore', 'memory.delete'].includes(String(command.type)) && !validId(payload.id)) throw new Error('invalid_memory_id')
+    if (['memory.queue.accept', 'memory.queue.dismiss'].includes(String(command.type)) && !validId(payload.id)) throw new Error('invalid_memory_queue_id')
     if (command.type === 'memory.resolve_conflict' && !validId(payload.chosenId)) throw new Error('invalid_memory_id')
   } else if (command.type === 'provider.event' || command.type === 'provider.failed') {
     if (typeof (command.payload as { providerRequestId?: unknown }).providerRequestId !== 'string') throw new Error('invalid_provider_request_id')

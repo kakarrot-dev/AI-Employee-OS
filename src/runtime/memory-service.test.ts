@@ -45,12 +45,16 @@ describe.skipIf(process.platform !== 'darwin')('MemoryService', () => {
     const queued = service.enqueue({ sourceType: 'conversation', sourceRef: 'conversation:c1:message:m1', scopeType: 'global', scopeId: 'global:local-owner', content: '用户偏好短回答。' })
     await service.enqueueAsync({ sourceType: 'task', sourceRef: `memory:${first.id}`, scopeType: 'employee', scopeId: 'employee-a', content: '与待删除记忆显式关联的候选。' })
     expect(queued.state).toBe('pending_authorization')
-    expect(service.queue()[0]).not.toHaveProperty('content')
+    expect(service.queue().find((item) => item.id === queued.id)?.content).toBe('用户偏好短回答。')
+    expect(service.acceptQueueItem(queued.id)).toMatchObject({ content: '用户偏好短回答。', category: 'summary', status: 'active' })
+    const dismissed = service.enqueue({ sourceType: 'task', sourceRef: 'task:dismiss', scopeType: 'task', scopeId: 'task-dismiss', content: '不需要保留的候选。' })
+    expect(service.dismissQueueItem(dismissed.id)).toEqual({ dismissed: true, queueId: dismissed.id })
+    expect(service.queue().some((item) => item.id === dismissed.id)).toBe(false)
     expect(() => service.enqueue({ sourceType: 'conversation', sourceRef: 'bad', scopeType: 'global', scopeId: 'global:local-owner', content: 'api_key=do-not-store-this-value' })).toThrow('invalid_memory_queue_item')
 
     expect(service.permanentlyDelete(first.id)).toEqual({ deleted: true, memoryId: first.id, externalBackupsExcluded: true })
     expect(() => service.get(first.id)).toThrow('memory_not_found')
-    expect(service.queue().map((item) => item.sourceRef)).toEqual(['conversation:c1:message:m1'])
+    expect(service.queue()).toHaveLength(0)
     expect(diskContains(directory, marker)).toBe(false)
   }, 30_000)
 

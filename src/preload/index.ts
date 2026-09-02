@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { CONVERSATION_IPC, EMPLOYEE_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, SUPERVISOR_IPC, TASK_IPC, type ConversationBridge, type ConversationStreamEvent, type EmployeeBridge, type EmployeeDraftInput, type EmployeeEvent, type MemoryBridge, type ProviderBridge, type ResourceBridge, type RuntimeBridge, type RuntimeStatus, type SupervisorBridge, type SupervisorConfigInput, type TaskBridge, type TaskDraftInputView, type TaskEvent } from '../shared/runtime-contract'
+import { CONVERSATION_IPC, EMPLOYEE_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, SUPERVISOR_IPC, TASK_IPC, USAGE_IPC, type ConversationBridge, type ConversationStreamEvent, type EmployeeBridge, type EmployeeDraftInput, type EmployeeEvent, type MemoryBridge, type ProviderBridge, type ResourceBridge, type RuntimeBridge, type RuntimeStatus, type SupervisorBridge, type SupervisorConfigInput, type TaskBridge, type TaskDraftInputView, type TaskEvent, type UsageBridge } from '../shared/runtime-contract'
 import type { MemoryCategoryView, MemoryScopeTypeView, MemoryStatusView, MemoryViewModel } from '../shared/memory-contract'
 import type { MemorySearchResultView } from '../shared/memory-contract'
 
@@ -85,7 +85,11 @@ const memoryBridge: MemoryBridge = Object.freeze({
   list: (filters?: { scopeType?: MemoryScopeTypeView; scopeId?: string; category?: MemoryCategoryView; status?: MemoryStatusView }) => ipcRenderer.invoke(MEMORY_IPC.list, filters ?? {}),
   search: (input: { query: string; allowedScopes: Array<{ type: MemoryScopeTypeView; id: string }>; categories?: MemoryCategoryView[]; tags?: string[]; limit?: number; tokenBudget?: number }): Promise<MemorySearchResultView[]> => ipcRenderer.invoke(MEMORY_IPC.search, input), update: (id: string, changes: Partial<Pick<MemoryViewModel, 'scopeType' | 'scopeId' | 'category' | 'content' | 'tags'>>) => ipcRenderer.invoke(MEMORY_IPC.update, { id, changes }),
   disable: (id: string) => ipcRenderer.invoke(MEMORY_IPC.disable, { id }), restore: (id: string) => ipcRenderer.invoke(MEMORY_IPC.restore, { id }), resolveConflict: (chosenId: string) => ipcRenderer.invoke(MEMORY_IPC.resolveConflict, { chosenId }),
-  permanentlyDelete: (id: string) => ipcRenderer.invoke(MEMORY_IPC.permanentlyDelete, { id }), queue: () => ipcRenderer.invoke(MEMORY_IPC.queue), migrateEmbeddings: () => ipcRenderer.invoke(MEMORY_IPC.migrateEmbeddings)
+  permanentlyDelete: (id: string) => ipcRenderer.invoke(MEMORY_IPC.permanentlyDelete, { id }), queue: () => ipcRenderer.invoke(MEMORY_IPC.queue),
+  acceptQueueItem: (id: string) => ipcRenderer.invoke(MEMORY_IPC.acceptQueueItem, { id }), dismissQueueItem: (id: string) => ipcRenderer.invoke(MEMORY_IPC.dismissQueueItem, { id }),
+  migrateEmbeddings: () => ipcRenderer.invoke(MEMORY_IPC.migrateEmbeddings)
 })
 
-contextBridge.exposeInMainWorld('aiEmployeeOS', Object.freeze({ runtime: runtimeBridge, provider: providerBridge, conversation: conversationBridge, supervisor: supervisorBridge, employee: employeeBridge, task: taskBridge, resource: resourceBridge, memory: memoryBridge }))
+const usageBridge: UsageBridge = Object.freeze({ summary: () => ipcRenderer.invoke(USAGE_IPC.summary) })
+
+contextBridge.exposeInMainWorld('aiEmployeeOS', Object.freeze({ runtime: runtimeBridge, provider: providerBridge, conversation: conversationBridge, supervisor: supervisorBridge, employee: employeeBridge, task: taskBridge, resource: resourceBridge, memory: memoryBridge, usage: usageBridge }))

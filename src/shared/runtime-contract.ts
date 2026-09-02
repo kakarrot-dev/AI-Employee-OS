@@ -3,6 +3,7 @@ import type { TaskDetailView, TaskDraftInputView, TaskEvent } from './task-contr
 import type { ResourceCatalogView } from './resource-contract'
 import type { MemoryCategoryView, MemoryHealthView, MemoryQueueItemView, MemoryScopeTypeView, MemorySearchResultView, MemoryStatusView, MemoryViewModel } from './memory-contract'
 import type { SupervisorConfigInput, SupervisorConfigView } from './supervisor-contract'
+import type { UsageSummaryView } from './usage-contract'
 
 export const RUNTIME_IPC = {
   getStatus: 'runtime:get-status',
@@ -53,7 +54,8 @@ export const EMPLOYEE_IPC = {
 export const TASK_IPC = { list: 'task:list', chooseDirectory: 'task:choose-directory', openArtifact: 'task:open-artifact', revealArtifact: 'task:reveal-artifact', createDraft: 'task:create-draft', updateDraft: 'task:update-draft', start: 'task:start', requestChange: 'task:request-change', acceptChange: 'task:accept-change', rejectChange: 'task:reject-change', approveTool: 'task:approve-tool', rejectTool: 'task:reject-tool', resolveTool: 'task:resolve-tool', event: 'task:event' } as const
 
 export const RESOURCE_IPC = { list: 'resource:list', probe: 'resource:probe' } as const
-export const MEMORY_IPC = { status: 'memory:status', downloadModel: 'memory:download-model', list: 'memory:list', search: 'memory:search', update: 'memory:update', disable: 'memory:disable', restore: 'memory:restore', resolveConflict: 'memory:resolve-conflict', permanentlyDelete: 'memory:permanently-delete', queue: 'memory:queue', migrateEmbeddings: 'memory:migrate-embeddings' } as const
+export const MEMORY_IPC = { status: 'memory:status', downloadModel: 'memory:download-model', list: 'memory:list', search: 'memory:search', update: 'memory:update', disable: 'memory:disable', restore: 'memory:restore', resolveConflict: 'memory:resolve-conflict', permanentlyDelete: 'memory:permanently-delete', queue: 'memory:queue', acceptQueueItem: 'memory:queue-accept', dismissQueueItem: 'memory:queue-dismiss', migrateEmbeddings: 'memory:migrate-embeddings' } as const
+export const USAGE_IPC = { summary: 'usage:summary' } as const
 
 export type RuntimeConnectionState = 'disconnected' | 'connecting' | 'connected'
 
@@ -113,7 +115,13 @@ export interface MemoryBridge {
   resolveConflict(chosenId: string): Promise<MemoryViewModel>
   permanentlyDelete(id: string): Promise<{ deleted: true; memoryId: string; externalBackupsExcluded: true }>
   queue(): Promise<MemoryQueueItemView[]>
+  acceptQueueItem(id: string): Promise<MemoryViewModel>
+  dismissQueueItem(id: string): Promise<{ dismissed: true; queueId: string }>
   migrateEmbeddings(): Promise<{ migrated: number }>
+}
+
+export interface UsageBridge {
+  summary(): Promise<UsageSummaryView>
 }
 
 export interface ConversationMessageView {

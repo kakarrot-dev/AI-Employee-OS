@@ -32,7 +32,7 @@ export interface MemoryHealth {
   checkedAt: string
 }
 
-export interface MemoryQueueItem { id: string; sourceType: 'conversation' | 'task'; sourceRef: string; scopeType: MemoryScopeType; scopeId: string; state: 'pending_authorization'; createdAt: string }
+export interface MemoryQueueItem { id: string; sourceType: 'conversation' | 'task'; sourceRef: string; scopeType: MemoryScopeType; scopeId: string; state: 'pending_authorization'; content: string; createdAt: string }
 export interface MemorySearchResult extends MemoryView { score: number; vectorScore: number; lexicalMatched: boolean; reason: string; estimatedTokens: number }
 
 export class MemoryService {
@@ -67,6 +67,8 @@ export class MemoryService {
     })
   }
   queue(): MemoryQueueItem[] { return this.call('queue_list', {}) as MemoryQueueItem[] }
+  acceptQueueItem(id: string): MemoryView { return this.call('queue_accept', { id }, 30_000) as MemoryView }
+  dismissQueueItem(id: string): { dismissed: true; queueId: string } { return this.call('queue_dismiss', { id }) as { dismissed: true; queueId: string } }
   migrateEmbeddings(): { migrated: number } { return this.call('migrate_embeddings', {}, 120_000) as { migrated: number } }
   permanentlyDelete(id: string): { deleted: true; memoryId: string; externalBackupsExcluded: true } { return this.call('delete', { id }, 30_000) as { deleted: true; memoryId: string; externalBackupsExcluded: true } }
 

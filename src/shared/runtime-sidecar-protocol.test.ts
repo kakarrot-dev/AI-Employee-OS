@@ -23,5 +23,8 @@ describe('runtime sidecar protocol', () => {
     expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '6', type: 'conversation.send', payload: { conversationId: 'conversation-1', messageId: 'message-1', text: '写文档', directories: ['/tmp/reports'] } })).toMatchObject({ type: 'conversation.send', payload: { directories: ['/tmp/reports'] } })
     expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '7', type: 'supervisor.get', payload: {} })).toMatchObject({ type: 'supervisor.get' })
     expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '8', type: 'supervisor.update', payload: { input: { name: '任务总管', systemPrompt: '先核对目标和证据再组织员工。', modelId: 'deepseek-v4-pro', memoryScopes: ['global'] } } })).toMatchObject({ type: 'supervisor.update' })
+    expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '9', type: 'usage.summary', payload: {} })).toMatchObject({ type: 'usage.summary' })
+    expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '10', type: 'memory.queue.accept', payload: { id: 'queue-1' } })).toMatchObject({ type: 'memory.queue.accept' })
+    expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '11', type: 'memory.queue.dismiss', payload: { id: 'queue-1' } })).toMatchObject({ type: 'memory.queue.dismiss' })
   })
 })

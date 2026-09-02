@@ -258,10 +258,48 @@ class MemoryStore:
         source_type = str(value["sourceType"]); source_ref = str(value["sourceRef"]); scope_type = str(value["scopeType"]); scope_id = str(value["scopeId"]); content = str(value["content"])
         if source_type not in {"conversation", "task"} or scope_type not in SCOPES or not scope_id or not content or source_type == "sandbox_test" or any(pattern.search(content) for pattern in SENSITIVE): raise ValueError("invalid_memory_queue_item")
         queue_id = str(uuid.uuid4()); nonce = os.urandom(12); aad = f"queue\x1f{queue_id}\x1f{source_type}\x1f{source_ref}".encode(); ciphertext = self.aes.encrypt(nonce, json.dumps({"content": content}, ensure_ascii=False).encode(), aad); timestamp = now()
-        self.db.execute("INSERT INTO memory_queue VALUES(?,?,?,?,?,?,?,?,?)", (queue_id, source_type, source_ref, scope_type, scope_id, "pending_authorization", nonce, ciphertext, timestamp)); self.db.commit(); return {"id": queue_id, "sourceType": source_type, "sourceRef": source_ref, "scopeType": scope_type, "scopeId": scope_id, "state": "pending_authorization", "createdAt": timestamp}
+        self.db.execute("INSERT INTO memory_queue VALUES(?,?,?,?,?,?,?,?,?)", (queue_id, source_type, source_ref, scope_type, scope_id, "pending_authorization", nonce, ciphertext, timestamp)); self.db.commit(); return {"id": queue_id, "sourceType": source_type, "sourceRef": source_ref, "scopeType": scope_type, "scopeId": scope_id, "state": "pending_authorization", "content": content, "createdAt": timestamp}
+
+    def require_queue_item(self, queue_id: str) -> tuple[Any, ...]:
+        row = self.db.execute("SELECT queue_id,source_type,source_ref,scope_type,scope_id,state,nonce,ciphertext,created_at FROM memory_queue WHERE queue_id=?", (queue_id,)).fetchone()
+        if row is None:
+            raise ValueError("memory_queue_item_not_found")
+        return row
+
+    def queue_value(self, row: tuple[Any, ...]) -> dict[str, Any]:
+        queue_id, source_type, source_ref, scope_type, scope_id, state, nonce, ciphertext, created_at = row
+        aad = f"queue\x1f{queue_id}\x1f{source_type}\x1f{source_ref}".encode()
+        payload = json.loads(self.aes.decrypt(nonce, ciphertext, aad))
+        return {"id": queue_id, "sourceType": source_type, "sourceRef": source_ref, "scopeType": scope_type, "scopeId": scope_id, "state": state, "content": str(payload["content"]), "createdAt": created_at}
 
     def queue_list(self) -> list[dict[str, Any]]:
-        return [{"id": row[0], "sourceType": row[1], "sourceRef": row[2], "scopeType": row[3], "scopeId": row[4], "state": row[5], "createdAt": row[6]} for row in self.db.execute("SELECT queue_id,source_type,source_ref,scope_type,scope_id,state,created_at FROM memory_queue ORDER BY created_at DESC")]
+        rows = self.db.execute("SELECT queue_id,source_type,source_ref,scope_type,scope_id,state,nonce,ciphertext,created_at FROM memory_queue WHERE state='pending_authorization' ORDER BY created_at DESC").fetchall()
+        return [self.queue_value(row) for row in rows]
+
+    def accept_queue_item(self, queue_id: str) -> dict[str, Any]:
+        queued = self.queue_value(self.require_queue_item(queue_id))
+        if queued["state"] != "pending_authorization":
+            raise ValueError("memory_queue_item_not_pending")
+        existing = self.db.execute("SELECT 1 FROM memories WHERE memory_id=?", (queue_id,)).fetchone()
+        if existing is None:
+            self.add({
+                "id": queue_id,
+                "scopeType": queued["scopeType"],
+                "scopeId": queued["scopeId"],
+                "category": "summary" if queued["sourceType"] == "conversation" else "experience",
+                "content": queued["content"],
+                "tags": [],
+                "sourceRefs": [queued["sourceRef"]],
+            })
+        self.db.execute("DELETE FROM memory_queue WHERE queue_id=?", (queue_id,))
+        self.db.commit()
+        return self.get(queue_id)
+
+    def dismiss_queue_item(self, queue_id: str) -> dict[str, Any]:
+        self.require_queue_item(queue_id)
+        self.db.execute("DELETE FROM memory_queue WHERE queue_id=?", (queue_id,))
+        self.db.commit()
+        return {"dismissed": True, "queueId": queue_id}
 
     def migrate_embeddings(self) -> dict[str, int]:
         if self.model is None: raise ValueError("embedding_model_not_ready")
@@ -292,7 +330,7 @@ def main() -> None:
     payload = json.load(sys.stdin) if not sys.stdin.isatty() else {}
     if operation == "download":
         model = build_model(cache, allow_download=True); vector = next(iter(model.query_embed("模型完整性检查"))); print(json.dumps({"model": MODEL_NAME, "dimensions": len(vector), "modelSha256": MODEL_ONNX_SHA256, "state": "ready"}, sort_keys=True)); return
-    model = build_model(cache, allow_download=False) if operation in {"add", "update", "search", "migrate_embeddings"} else None
+    model = build_model(cache, allow_download=False) if operation in {"add", "update", "search", "queue_accept", "migrate_embeddings"} else None
     socket.socket = NetworkDeniedSocket
     store = MemoryStore(db_path, memory_key(helper), model)
     try:
@@ -307,6 +345,8 @@ def main() -> None:
         elif operation == "search": result = store.search(payload)
         elif operation == "enqueue": result = store.enqueue(payload)
         elif operation == "queue_list": result = store.queue_list()
+        elif operation == "queue_accept": result = store.accept_queue_item(str(payload["id"]))
+        elif operation == "queue_dismiss": result = store.dismiss_queue_item(str(payload["id"]))
         elif operation == "migrate_embeddings": result = store.migrate_embeddings()
         elif operation == "delete": result = store.delete(str(payload["id"]))
         else: raise ValueError("unknown_memory_operation")
