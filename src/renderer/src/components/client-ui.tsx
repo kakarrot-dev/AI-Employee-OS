@@ -77,13 +77,17 @@ export function ProfileValueTags({ label = '基本资料', items }: { label?: st
   return <ul className="profile-value-tags" aria-label={label}>{items.map((item) => <li key={item.label} aria-label={`${item.label}：${item.accessibleValue}`}>{item.value}</li>)}</ul>
 }
 
-export function SummaryCardGrid({ children, emptyMessage }: { children: ReactNode; emptyMessage: string }): React.JSX.Element {
+export function SummaryCardGrid({ children, emptyMessage, label }: { children: ReactNode; emptyMessage: string; label?: string }): React.JSX.Element {
   const items = Children.toArray(children)
-  return <div className="summary-card-grid">{items.length ? items : <p className="summary-card-grid__empty">{emptyMessage}</p>}</div>
+  return <div className="summary-card-grid" aria-label={label} role={label ? 'list' : undefined}>{items.length ? items : <p className="summary-card-grid__empty">{emptyMessage}</p>}</div>
 }
 
-export function SummaryCard({ title, description, leading }: { title: ReactNode; description?: ReactNode; leading?: ReactNode }): React.JSX.Element {
-  return <article className="summary-card">{leading !== undefined && leading !== null && <span className="summary-card__leading">{leading}</span>}<span className="summary-card__body"><strong>{title}</strong>{description !== undefined && description !== null && <small>{description}</small>}</span></article>
+export type SummaryCardTone = 'default' | 'success' | 'muted'
+
+export function SummaryCard({ title, description, leading, trailing, tone = 'default' }: { title: ReactNode; description?: ReactNode; leading?: ReactNode; trailing?: ReactNode; tone?: SummaryCardTone }): React.JSX.Element {
+  const hasLeading = leading !== undefined && leading !== null
+  const hasTrailing = trailing !== undefined && trailing !== null
+  return <article className={`summary-card summary-card--${tone}${hasLeading ? ' has-leading' : ''}${hasTrailing ? ' has-trailing' : ''}`}>{hasLeading && <span className="summary-card__leading">{leading}</span>}<span className="summary-card__body"><strong>{title}</strong>{description !== undefined && description !== null && <small>{description}</small>}</span>{hasTrailing && <span className="summary-card__trailing">{trailing}</span>}</article>
 }
 
 export function SummaryList({ children, emptyMessage, variant = 'subtle' }: { children: ReactNode; emptyMessage: string; variant?: 'subtle' | 'outlined' }): React.JSX.Element {
@@ -147,8 +151,8 @@ export function AppShell({ toolbar, rail, context, contextCollapsed = false, chi
   return <main className={`prototype${contextCollapsed ? ' is-context-collapsed' : ''}`}>{toolbar}{rail}{context}<Workspace>{children}</Workspace></main>
 }
 
-export function DetailPage({ children, className = '' }: { children: ReactNode; className?: string }): React.JSX.Element {
-  return <div className={`workspace-page detail-page${className ? ` ${className}` : ''}`}><div className="detail-canvas">{children}</div></div>
+export function DetailPage({ children, className = '', width = 'default' }: { children: ReactNode; className?: string; width?: 'default' | 'wide' }): React.JSX.Element {
+  return <div className={`workspace-page detail-page${width === 'wide' ? ' detail-page--wide' : ''}${className ? ` ${className}` : ''}`}><div className="detail-canvas">{children}</div></div>
 }
 
 export function SettingsBlock({ title, description, children }: { title: string; description?: string; children: ReactNode }): React.JSX.Element {

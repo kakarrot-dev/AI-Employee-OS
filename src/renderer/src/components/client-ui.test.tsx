@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { ChatBubble, Check, ShieldCheck } from 'iconoir-react'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { AppShell, Avatar, ClientModal, ContextPane, DetailListMark, DetailNote, DetailSectionHeader, DetailState, DetailSummaryPanel, ListRow, ProfileFacts, ProfileSummary, ProfileValueTags, Rail, SelectionCatalog, SelectionOption, SummaryCard, SummaryCardGrid, SummaryList, SummaryListItem, Toolbar } from './client-ui'
+import { AppShell, Avatar, ClientModal, ContextPane, DetailListMark, DetailNote, DetailPage, DetailSectionHeader, DetailState, DetailSummaryPanel, ListRow, ProfileFacts, ProfileSummary, ProfileValueTags, Rail, SelectionCatalog, SelectionOption, SummaryCard, SummaryCardGrid, SummaryList, SummaryListItem, Toolbar } from './client-ui'
 
 describe('client UI contracts', () => {
   it('keeps the toolbar, primary rail, context pane and workspace as stable landmarks', () => {
@@ -59,9 +59,18 @@ describe('client UI contracts', () => {
   })
 
   it('renders summary cards as static information without button affordances', () => {
-    render(<SummaryCardGrid emptyMessage="尚未绑定能力"><SummaryCard leading={<Check />} title="本机文档编写" description="依赖正常，可用于正式任务" /></SummaryCardGrid>)
+    render(<SummaryCardGrid emptyMessage="尚未绑定能力"><SummaryCard leading={<Check />} title="本机文档编写" description="依赖正常，可用于正式任务" trailing="已招募" tone="muted" /></SummaryCardGrid>)
     expect(screen.getByRole('article')).toHaveTextContent('本机文档编写')
+    expect(screen.getByRole('article')).toHaveClass('summary-card--muted')
+    expect(screen.getByText('已招募')).toHaveClass('summary-card__trailing')
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('exposes wide detail pages and labelled card collections through shared contracts', () => {
+    const { container } = render(<DetailPage width="wide"><SummaryCardGrid label="候选员工" emptyMessage="暂无员工"><div role="listitem"><SummaryCard title="产品经理" /></div></SummaryCardGrid></DetailPage>)
+    expect(container.querySelector('.detail-page')).toHaveClass('detail-page--wide')
+    expect(screen.getByRole('list', { name: '候选员工' })).toBeInTheDocument()
+    expect(screen.getByRole('listitem')).toHaveTextContent('产品经理')
   })
 
   it('reuses one searchable selection contract for single and multiple choices', () => {

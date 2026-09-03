@@ -68,6 +68,13 @@ describe('macOS prototype visual contract', () => {
     expect(styles).not.toMatch(/\.prototype \{[\s\S]*?height: min\(100%, var\(--layout-shell-max-height\)\);[\s\S]*?\}/)
   })
 
+  it('lets the application shell fill a horizontally maximized window', () => {
+    const styles = source('prototypes/macos-client-v2/src/styles.css')
+    expect(styles).toMatch(/\.prototype \{[\s\S]*?width: 100%;[\s\S]*?\}/)
+    expect(styles).not.toMatch(/\.prototype \{[\s\S]*?width: min\(100%, var\(--layout-shell-max-width\)\);[\s\S]*?\}/)
+    expect(styles).toMatch(/\.detail-page--wide \.detail-canvas \{[\s\S]*?var\(--layout-workspace-content-max-width\)[\s\S]*?\}/)
+  })
+
   it('does not render passive reminder copy below primary controls', () => {
     const client = source('src/renderer/src/App.tsx')
     const team = source('src/renderer/src/TeamModule.tsx')
