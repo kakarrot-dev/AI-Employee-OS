@@ -18,7 +18,6 @@ const requiredTokens = [
   '--layout-window-default-height',
   '--layout-window-min-width',
   '--layout-window-min-height',
-  '--layout-shell-max-width',
   '--layout-toolbar-height',
   '--layout-rail-width',
   '--layout-context-width',
@@ -56,7 +55,6 @@ const requiredTokens = [
 const requiredUsages = [
   'min-width: var(--layout-window-min-width);',
   'min-height: var(--layout-window-min-height);',
-  'width: min(100%, var(--layout-shell-max-width));',
   'grid-template-columns: calc(var(--layout-rail-width) + var(--layout-context-width)) minmax(0, 1fr);',
   'grid-template-columns: var(--layout-rail-width) var(--layout-context-width) minmax(var(--layout-workspace-min-width), 1fr);',
   'width: min(100%, var(--layout-workspace-content-max-width));',
@@ -172,6 +170,9 @@ if ((cssPixels('--layout-message-stream-item-max-width') ?? Infinity) > (cssPixe
 const modalContentRule = styles.match(/\.modal-content\s*\{([^}]*)\}/s)?.[1] ?? ''
 const modalMainRule = styles.match(/\.modal-content__main\s*\{([^}]*)\}/s)?.[1] ?? ''
 const prototypeRule = styles.match(/\.prototype\s*\{([^}]*)\}/s)?.[1] ?? ''
+if (!/width:\s*100%/.test(prototypeRule) || /width:\s*min\(100%,\s*var\(--layout-shell-max-width\)\)/.test(prototypeRule)) {
+  errors.push('应用主壳层必须跟随窗口完整宽度，不得再受固定最大宽度截断')
+}
 if (!/height:\s*100%/.test(prototypeRule) || /height:\s*min\(100%,\s*var\(--layout-shell-max-height\)\)/.test(prototypeRule)) {
   errors.push('应用主壳层必须跟随窗口完整高度，不得再受固定最大高度截断')
 }
