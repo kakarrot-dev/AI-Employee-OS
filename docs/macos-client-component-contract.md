@@ -6,12 +6,31 @@
 
 正式客户端只有一套一级壳层：
 
-1. `Toolbar`：44px 高的窗口拖拽区，承载当前上下文标题和少量全局动作。
-2. `Rail`：56px 宽的一级导航，只承载消息、通讯录、能力与系统入口。
-3. `ContextPane`：280px 宽的对象目录、搜索、筛选和创建入口。
+1. `Toolbar`：高度使用 `--layout-toolbar-height`，承载当前上下文标题和少量全局动作。
+2. `Rail`：宽度使用 `--layout-rail-width`，只承载消息、通讯录、能力与系统入口。
+3. `ContextPane`：宽度使用 `--layout-context-width`，承载对象目录、搜索、筛选和创建入口。
 4. `Workspace`：业务详情与工作流区域，页面不得自行复制上述三层结构。
 
 窗口尺寸仅由 `src/shared/layout-contract.ts` 管理；视觉尺寸仅由原型 CSS Token 管理，React 组件不得重复声明像素常量。
+
+### 1.1 外壳分隔线契约
+
+外壳分隔线与内容边框是两种不同语义，不能共用同一个 Token：
+
+| Token | 稳定职责 | 允许使用区域 |
+| --- | --- | --- |
+| `--line-shell` | 低干扰地提示持久区域边界 | `Toolbar` 底边、`Rail` 右边、`ContextPane` 右边、可选右侧栏的左边与栏头底边 |
+| `--line` | 区分内容内部结构 | 卡片、表单、弹窗、列表分组、时间线和内容区段 |
+| `--line-strong` | 强调必要的内容边界 | Hover、拖拽目标、重要分组；不得用于持久外壳 |
+| `--focus` | 表达键盘焦点 | 可交互控件的焦点环，不得用普通边框色代替 |
+
+实现规则：
+
+- 外壳边界统一为 `1px solid var(--line-shell)`；不得直接使用 `--line`、`--line-strong`、Hex、RGB 或阴影模拟分隔线。
+- `--line-shell` 的亮色模式目标透明度为 5%，暗色模式目标透明度为 7%；数值只能在主题事实源中定义一次，组件不得覆盖。
+- 相邻区域只由一侧绘制一条边界，禁止双重描边；区域折叠到 0 宽时必须同时隐藏对应边界。
+- 优先依靠 `--surface-app`、`--surface-list`、`--surface-content` 的轻微材质差异建立层级；分隔线只负责结构提示，不能成为主要视觉层级。
+- 新增持久侧栏、Inspector 或全局工具栏时，必须加入布局契约检查的外壳选择器清单；页面内部临时面板不得冒用 `--line-shell`。
 
 ## 2. 组件职责
 
@@ -50,3 +69,4 @@
 - 组件契约测试验证壳层 landmark、一级导航事件和选中态。
 - Renderer 测试、TypeScript 检查、生产构建通过，并在真实 Electron 窗口逐页完成视觉检查。
 - 960×640、1280×820 和 1600×1000 三档窗口下，Toolbar、Rail、ContextPane、Workspace 与 Modal 的 Token 尺寸不得漂移。
+- 外壳选择器只能使用 `--line-shell`，内容组件继续使用 `--line` / `--line-strong`；`npm run prototype:check:layout` 必须阻止语义混用。

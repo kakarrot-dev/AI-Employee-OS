@@ -100,9 +100,66 @@ function tsNumber(property) {
 const errors = []
 const missingTokens = requiredTokens.filter((token) => !contract.includes(`${token}:`))
 const missingUsages = requiredUsages.filter((usage) => !styles.includes(usage))
+const shellLineDefinitionCount = [...styles.matchAll(/--line-shell\s*:/g)].length
+const darkShellLineDefinitionCount = [...styles.matchAll(/--line-shell:\s*rgb\([^;]+\/\s*7%\);/g)].length
 
 if (missingTokens.length) errors.push(`缺少尺寸 Token: ${missingTokens.join(', ')}`)
 if (missingUsages.length) errors.push(`关键布局未使用尺寸契约:\n${missingUsages.join('\n')}`)
+if (shellLineDefinitionCount !== 3) errors.push('外壳分隔线只能通过 --line-shell 分别定义亮色、显式暗色和系统暗色主题，不得重复声明')
+if (!/--line-shell:\s*rgb\([^;]+\/\s*5%\);/.test(styles) || darkShellLineDefinitionCount !== 2) errors.push('--line-shell 必须遵守亮色 5%、暗色 7% 的低干扰对比契约')
+if (styles.includes('--shell-divider:') || rendererStyles.includes('--shell-divider:')) errors.push('不得创建 --line-shell 的页面级别名，外壳必须直接复用统一语义 Token')
+
+function cssRule(source, selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return source.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`, 's'))?.[1] ?? ''
+}
+
+function selectorsUsing(source, token) {
+  const selectors = []
+  for (const match of source.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (!match[2].includes(`var(${token})`)) continue
+    selectors.push(...match[1].split(',').map((selector) => selector.trim()))
+  }
+  return selectors
+}
+
+const allowedShellLineSelectors = new Set([
+  '.toolbar',
+  '.rail',
+  '.context-pane',
+  '.window-controls-safe-area',
+  '.matter-sidebar',
+  '.matter-sidebar__header'
+])
+const invalidShellLineSelectors = [...selectorsUsing(styles, '--line-shell'), ...selectorsUsing(rendererStyles, '--line-shell')]
+  .filter((selector) => !allowedShellLineSelectors.has(selector))
+if (invalidShellLineSelectors.length) errors.push(`--line-shell 只能用于持久外壳边界: ${[...new Set(invalidShellLineSelectors)].join(', ')}`)
+
+for (const [source, selector, property] of [
+  [styles, '.toolbar', 'border-bottom'],
+  [styles, '.rail', 'border-right'],
+  [styles, '.context-pane', 'border-right'],
+  [rendererStyles, '.window-controls-safe-area', 'border-right'],
+  [rendererStyles, '.matter-sidebar', 'border-left'],
+  [rendererStyles, '.matter-sidebar__header', 'border-bottom']
+]) {
+  const rule = cssRule(source, selector)
+  if (!new RegExp(`${property}:\\s*1px solid var\\(--line-shell\\)`).test(rule)) {
+    errors.push(`${selector} 必须以 1px solid var(--line-shell) 复用低干扰外壳分隔线`)
+  }
+  if (/var\(--line(?:-strong)?\)/.test(rule)) {
+    errors.push(`${selector} 不得把内容边框 Token 用作持久外壳分隔线`)
+  }
+}
+
+for (const [selector, property] of [
+  ['.prototype.is-context-collapsed .context-pane', 'border-right'],
+  ['.matter-sidebar.is-collapsed', 'border-left']
+]) {
+  if (!new RegExp(`${property}:\\s*0`).test(cssRule(rendererStyles, selector))) {
+    errors.push(`${selector} 折叠到 0 宽时必须同时移除外壳分隔线`)
+  }
+}
 
 if (cssPixels('--layout-message-content-max-width') !== cssPixels('--layout-detail-content-max-width')) {
   errors.push('对话流与详情内容必须共享同一内容宽度边界，避免主工作区左右留白失衡')
@@ -229,7 +286,7 @@ for (const marker of ['className="topic-bar__count"', 'className="matter-route-n
   if (!app.includes(marker)) errors.push(`缺少会话事项结构: ${marker}`)
 }
 
-for (const marker of ['{conversationTasks.length}</span>', 'conversationTasks.map((task) => <MatterEvent', 'src: employeeAvatarSrc({ employeeVersionId: assignment.employeeVersionId, avatarDataUrl: assignment.avatarDataUrl })']) {
+for (const marker of ['<MatterSidebar tasks={conversationTasks}', '<small>{tasks.length}</small>', 'employeeAvatarSrc({ employeeId: assignment.employeeId, avatarDataUrl: assignment.avatarDataUrl })']) {
   if (!rendererApp.includes(marker)) errors.push(`客户端事项数量或头像未复用当前会话事实: ${marker}`)
 }
 
@@ -241,7 +298,7 @@ for (const marker of ['function MarkdownMessage', '<ReactMarkdown remarkPlugins=
   if (!app.includes(marker)) errors.push(`缺少消息折叠或附件导航复用组件: ${marker}`)
 }
 
-for (const marker of ['variant="timeline"', '<MarkdownMessage compact>', 'className="message-delivery__eyebrow">结果', 'className="message-delivery__verification"', 'className="matter-event__body"><small>目标']) {
+for (const marker of ['variant="timeline"', '<MarkdownMessage compact>', 'className="message-delivery__eyebrow">结果', 'className="message-delivery__verification"', 'className="matter-event__body"><strong>{task.goal}</strong><span>{summary.description}</span>']) {
   if (!rendererApp.includes(marker)) errors.push(`客户端信息流缺少目标、过程或结果分层契约: ${marker}`)
 }
 
@@ -257,8 +314,8 @@ for (const marker of ['message-block--timeline', '--layout-message-process-colla
   if (!styles.includes(marker)) errors.push(`信息流视觉层级未复用共享样式契约: ${marker}`)
 }
 
-if (!/\.matter-event\s*\{[^}]*border:\s*0;/s.test(styles)) {
-  errors.push('时间线事项入口必须使用无描边的共享信息流样式')
+if (!/border:\s*1px solid var\(--line\)/.test(cssRule(rendererStyles, '.matter-event'))) {
+  errors.push('时间线事项卡片属于内容区域，必须使用 --line 而不是外壳分隔线 Token')
 }
 
 if (app.includes('className="delivery-card delivery-card--complete message-stream-item"') || rendererApp.includes('className={`delivery-card delivery-card--')) {

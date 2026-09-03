@@ -22,11 +22,6 @@ const employeeAvatars: Record<string, string> = {
   'employee.document-writer': documentWriterAvatar
 }
 
-const employeeVersionAvatars: Record<string, string> = {
-  'employee-version.network-intelligence.v1': networkIntelligenceAvatar,
-  'employee-version.document-writer.v1': documentWriterAvatar
-}
-
-export function employeeAvatarSrc({ employeeId, employeeVersionId, avatarDataUrl }: { employeeId?: string; employeeVersionId?: string; avatarDataUrl?: string }): string | undefined {
-  return avatarDataUrl ?? (employeeId ? employeeAvatars[employeeId] : undefined) ?? (employeeVersionId ? employeeVersionAvatars[employeeVersionId] : undefined)
+export function employeeAvatarSrc({ employeeId, avatarDataUrl }: { employeeId?: string; avatarDataUrl?: string }): string | undefined {
+  return avatarDataUrl ?? (employeeId ? employeeAvatars[employeeId] : undefined)
 }

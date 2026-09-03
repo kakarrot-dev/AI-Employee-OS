@@ -126,8 +126,8 @@ export function SummaryListItem({ title, subtitle, leading, trailing, onClick }:
   return onClick ? <button type="button" className="summary-list__item summary-list__item--interactive" onClick={onClick}>{content}</button> : <div className="summary-list__item">{content}</div>
 }
 
-export function Toolbar({ title, support, trailing }: { title: string; support?: ReactNode; trailing?: ReactNode }): React.JSX.Element {
-  return <header className="toolbar" aria-label="窗口拖拽区"><div className="window-controls-safe-area" aria-hidden="true" /><div className="toolbar__workspace"><div className="toolbar__content"><div className="toolbar__identity"><h1>{title}</h1>{support}</div>{trailing && <div className="toolbar__trailing">{trailing}</div>}</div></div></header>
+export function Toolbar({ title, icon: Icon, navigation, support, trailing }: { title: string; icon?: ClientIcon; navigation?: ReactNode; support?: ReactNode; trailing?: ReactNode }): React.JSX.Element {
+  return <header className="toolbar" aria-label="窗口拖拽区"><div className="window-controls-safe-area">{navigation}</div><div className="toolbar__workspace"><div className="toolbar__content"><div className="toolbar__identity">{Icon && <span className="toolbar__title-icon" aria-hidden="true"><Icon width={18} height={18} /></span>}<h1>{title}</h1>{support}</div>{trailing && <div className="toolbar__trailing">{trailing}</div>}</div></div></header>
 }
 
 export function Rail<TId extends string>({ active, items, footerItems, userProfile, onProfile, onNavigate }: { active: TId; items: Array<RailItem<TId>>; footerItems: Array<RailItem<TId>>; userProfile?: { name: string; avatarUrl?: string | null }; onProfile?: () => void; onNavigate: (id: TId) => void }): React.JSX.Element {
@@ -143,8 +143,8 @@ export function Workspace({ children }: { children: ReactNode }): React.JSX.Elem
   return <section className="workspace"><div className="workspace-center">{children}</div></section>
 }
 
-export function AppShell({ toolbar, rail, context, children }: { toolbar: ReactNode; rail: ReactNode; context: ReactNode; children: ReactNode }): React.JSX.Element {
-  return <main className="prototype">{toolbar}{rail}{context}<Workspace>{children}</Workspace></main>
+export function AppShell({ toolbar, rail, context, contextCollapsed = false, children }: { toolbar: ReactNode; rail: ReactNode; context: ReactNode; contextCollapsed?: boolean; children: ReactNode }): React.JSX.Element {
+  return <main className={`prototype${contextCollapsed ? ' is-context-collapsed' : ''}`}>{toolbar}{rail}{context}<Workspace>{children}</Workspace></main>
 }
 
 export function DetailPage({ children, className = '' }: { children: ReactNode; className?: string }): React.JSX.Element {

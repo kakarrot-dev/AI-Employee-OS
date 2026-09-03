@@ -55,6 +55,7 @@ button {
   --text-tertiary: #928d84;
   --line: #dfdcd5;
   --line-strong: #cfcbc2;
+  --line-shell: rgb(54 51 45 / 5%);
   --accent: #687749;
   --accent-strong: #4f5d34;
   --accent-soft: #e8ecd9;
@@ -100,6 +101,7 @@ button {
   --text-tertiary: #89857c;
   --line: #3b3934;
   --line-strong: #4b4841;
+  --line-shell: rgb(235 232 224 / 7%);
   --accent: #a7b879;
   --accent-strong: #c0cf91;
   --accent-soft: #333b26;
@@ -132,6 +134,7 @@ button {
     --text-tertiary: #89857c;
     --line: #3b3934;
     --line-strong: #4b4841;
+    --line-shell: rgb(235 232 224 / 7%);
     --accent: #a7b879;
     --accent-strong: #c0cf91;
     --accent-soft: #333b26;
@@ -156,7 +159,7 @@ button {
   grid-template-columns: calc(var(--layout-rail-width) + var(--layout-context-width)) minmax(0, 1fr);
   align-items: center;
   height: var(--layout-toolbar-height);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-shell);
   background: var(--surface-app);
   -webkit-app-region: drag;
   user-select: none;
@@ -258,7 +261,7 @@ button {
   align-items: center;
   gap: 18px;
   padding: 12px 0 14px;
-  border-right: 1px solid var(--line);
+  border-right: 1px solid var(--line-shell);
   background: var(--surface-rail);
 }
 
@@ -374,7 +377,7 @@ button {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--line);
+  border-right: 1px solid var(--line-shell);
   background: var(--surface-list);
   overflow: hidden;
 }

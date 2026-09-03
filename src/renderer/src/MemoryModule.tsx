@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { MemoryCategoryView, MemoryHealthView, MemoryQueueItemView, MemoryStatusView, MemoryViewModel } from '../../shared/memory-contract'
 import { SettingRow } from './components/client-ui'
+import { formatClientTimestamp } from './client-time'
 
 type Filter = 'all' | MemoryStatusView | 'queue'
 
@@ -24,12 +25,6 @@ const statusLabels: Record<MemoryStatusView, string> = {
   pending_verification: '待确认',
   conflicted: '需处理',
   disabled: '已停用'
-}
-
-function formatMemoryTime(value: string): string {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '时间未知'
-  return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date)
 }
 
 function sourceLabels(sourceRefs: string[]): string[] {
@@ -195,11 +190,11 @@ export function MemoryModule({ onSnapshot }: { onSnapshot?: (snapshot: { memorie
     {memories.length > 0 && filter !== 'queue' && <div className="memory-search"><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="搜索记忆" placeholder="搜索记忆内容或标签" /></div>}
     {filterOptions.length > 1 && <div className="memory-filters">{filterOptions.map(([id, label, count]) => <button type="button" key={id} className={filter === id ? 'active' : ''} onClick={() => { setFilter(id); setSelectedId(undefined); setEditing(false); setDeleteConfirm(false) }}>{label}<span>{count}</span></button>)}</div>}
     {error && <div className="memory-inline-error" role="alert"><span>{error}</span><button type="button" className="button button--quiet" onClick={() => void load().catch(() => setError('暂时无法读取本地记忆'))}>重试</button></div>}
-    {filter === 'queue' ? <><div className="memory-queue memory-queue--compact">{queue.length ? queue.slice(0, queueVisibleCount).map((item) => <SettingRow key={item.id} title={friendlyQueueContent(item.content)} description={`${item.sourceType === 'conversation' ? '来自对话' : '来自任务'} · ${formatMemoryTime(item.createdAt)}`}><span className="memory-queue-actions"><button type="button" className="button button--primary" disabled={Boolean(busyQueueId)} onClick={() => void handleQueueItem(item, 'accept')}>{busyQueueId === item.id ? '处理中' : '记住'}</button><button type="button" className="button button--quiet" disabled={Boolean(busyQueueId)} onClick={() => void handleQueueItem(item, 'dismiss')}>忽略</button></span></SettingRow>) : <p className="memory-empty-row">暂无待确认内容</p>}</div>{queue.length > 5 && <button type="button" className="memory-show-more" onClick={() => setQueueVisibleCount((count) => count >= queue.length ? 5 : queue.length)}>{queueVisibleCount >= queue.length ? '收起' : `查看其余 ${queue.length - queueVisibleCount} 条`}</button>}</> : <div className="memory-governance-list">{visible.length ? visible.map((memory) => {
+    {filter === 'queue' ? <><div className="memory-queue memory-queue--compact">{queue.length ? queue.slice(0, queueVisibleCount).map((item) => <SettingRow key={item.id} title={friendlyQueueContent(item.content)} description={`${item.sourceType === 'conversation' ? '来自对话' : '来自任务'} · ${formatClientTimestamp(item.createdAt)}`}><span className="memory-queue-actions"><button type="button" className="button button--primary" disabled={Boolean(busyQueueId)} onClick={() => void handleQueueItem(item, 'accept')}>{busyQueueId === item.id ? '处理中' : '记住'}</button><button type="button" className="button button--quiet" disabled={Boolean(busyQueueId)} onClick={() => void handleQueueItem(item, 'dismiss')}>忽略</button></span></SettingRow>) : <p className="memory-empty-row">暂无待确认内容</p>}</div>{queue.length > 5 && <button type="button" className="memory-show-more" onClick={() => setQueueVisibleCount((count) => count >= queue.length ? 5 : queue.length)}>{queueVisibleCount >= queue.length ? '收起' : `查看其余 ${queue.length - queueVisibleCount} 条`}</button>}</> : <div className="memory-governance-list">{visible.length ? visible.map((memory) => {
       const expanded = selectedId === memory.id
       return <article className={`memory-governance-item${expanded ? ' is-expanded' : ''}`} key={memory.id}>
         <button type="button" className="memory-governance-summary" aria-expanded={expanded} onClick={() => { setSelectedId(expanded ? undefined : memory.id); setEditing(false); setDeleteConfirm(false) }}>
-          <span><strong>{memory.content}</strong><small>{categoryLabels[memory.category]} · {scopeLabels[memory.scopeType]} · {formatMemoryTime(memory.updatedAt)}</small></span>
+          <span><strong>{memory.content}</strong><small>{categoryLabels[memory.category]} · {scopeLabels[memory.scopeType]} · {formatClientTimestamp(memory.updatedAt)}</small></span>
           <span className={`memory-status is-${memory.status}`}>{statusLabels[memory.status]}</span>
         </button>
         {expanded && <div className="memory-governance-detail">{editing ? <div className="memory-editor">

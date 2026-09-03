@@ -6,6 +6,7 @@ import type { ResourceCatalogView } from '../../shared/resource-contract'
 import { Avatar, ClientModal, DetailPage, IconButton, ProfileSummary, ProfileValueTags, SelectionCatalog, SelectionOption, SettingRow, SettingsBlock, StatusLight, SummaryCard, SummaryCardGrid, type ClientIcon } from './components/client-ui'
 import { employeeAvatarSrc } from './employee-avatar'
 import { employeeStatusBreathing, employeeStatusLabel, employeeStatusTone } from './employee-status'
+import { formatClientTimestamp } from './client-time'
 
 const emptyDraft: EmployeeDraftInput = { name: '', role: '', description: '', avatarDataUrl: undefined, systemPrompt: '', modelId: 'deepseek-v4-pro', capabilityVersionIds: [], memoryScopes: ['employee'] }
 type EditorMode = 'create' | 'settings' | null
@@ -53,10 +54,6 @@ function characterCount(value: string): number {
 
 function FieldFeedback({ id, value, issue, min, max }: { id: string; value: string; issue?: EmployeeDraftIssue; min: number; max: number }): React.JSX.Element {
   return <small id={id} className={`form-field__feedback${issue ? ' is-error' : ''}`} aria-live={issue ? 'polite' : undefined}><span>{issue?.message ?? `${min}–${max} 个字符`}</span><span aria-label={`已输入 ${characterCount(value)} 个字符`}>{characterCount(value)}/{max}</span></small>
-}
-
-function dateLabel(value: string): string {
-  return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date(value))
 }
 
 export function TeamModule({ selectedEmployeeId, skills = [], providerStatus, createRequest = 0, editRequest = 0, onEmployeesChanged, onSelectEmployee, onEditEmployee }: { selectedEmployeeId?: string; skills?: ResourceCatalogView['skills']; providerStatus: ProviderStatus; createRequest?: number; editRequest?: number; onEmployeesChanged?: (employees: EmployeeSummary[]) => void; onSelectEmployee?: (employeeId: string) => void; onEditEmployee?: () => void }): React.JSX.Element {
@@ -172,8 +169,8 @@ export function TeamModule({ selectedEmployeeId, skills = [], providerStatus, cr
 
   return <>
     <DetailPage className="employee-detail-page">{error && editorMode === null && <p className="inline-error" role="alert">{error}</p>}{detail ? <>
-      <ProfileSummary identity={{ name: detail.employee.name, initials: detail.employee.name.slice(0, 1), color: '#c5b8e3', avatarSrc: employeeAvatarSrc({ employeeId: detail.employee.id, avatarDataUrl: activeVersion?.avatarDataUrl }) }} title={activeVersion?.role || 'Agent 员工'} description={activeVersion?.description ?? '尚未填写职责说明'} actions={<IconButton label="设置" icon={Settings} onClick={onEditEmployee} />} />
-      <ProfileValueTags items={[{ label: '工作状态', accessibleValue: employeeStatusLabel(detail.status), value: <StatusLight state={employeeStatusTone(detail.status)} label={employeeStatusLabel(detail.status)} breathing={employeeStatusBreathing(detail.status)} /> }, { label: '加入时间', accessibleValue: dateLabel(detail.employee.createdAt), value: dateLabel(detail.employee.createdAt) }, { label: '运行模型', accessibleValue: activeVersion?.modelId || '未配置', value: activeVersion?.modelId || '未配置' }, { label: '配置版本', accessibleValue: activeVersion ? `v${activeVersion.version}` : '未创建', value: activeVersion ? `v${activeVersion.version}` : '未创建' }]} />
+      <ProfileSummary identity={{ name: detail.employee.name, initials: detail.employee.name.slice(0, 1), color: '#c5b8e3', avatarSrc: employeeAvatarSrc({ employeeId: detail.employee.id, avatarDataUrl: detail.employee.avatarDataUrl ?? activeVersion?.avatarDataUrl }) }} title={activeVersion?.role || 'Agent 员工'} description={activeVersion?.description ?? '尚未填写职责说明'} actions={<IconButton label="设置" icon={Settings} onClick={onEditEmployee} />} />
+      <ProfileValueTags items={[{ label: '工作状态', accessibleValue: employeeStatusLabel(detail.status), value: <StatusLight state={employeeStatusTone(detail.status)} label={employeeStatusLabel(detail.status)} breathing={employeeStatusBreathing(detail.status)} /> }, { label: '加入时间', accessibleValue: formatClientTimestamp(detail.employee.createdAt), value: formatClientTimestamp(detail.employee.createdAt) }, { label: '运行模型', accessibleValue: activeVersion?.modelId || '未配置', value: activeVersion?.modelId || '未配置' }, { label: '配置版本', accessibleValue: activeVersion ? `v${activeVersion.version}` : '未创建', value: activeVersion ? `v${activeVersion.version}` : '未创建' }]} />
       <section className="plain-section"><div className="content-section-title"><h3>能力摘要</h3><span>{detailSkills.length} 项 Skill</span></div><SummaryCardGrid emptyMessage="尚未绑定 Skill。">{detailSkills.map((skill) => <SummaryCard key={skill.id} leading={<Sparks aria-hidden width={18} height={18} />} title={skill.name} description={skill.description} />)}</SummaryCardGrid></section>
     </> : <div className="directory-empty"><h3>{employees.length ? '选择一个 Agent 员工' : '还没有 Agent 员工'}</h3><p>{employees.length ? '从左侧通讯录选择员工，查看职责、状态与能力。' : '员工只能由你主动创建；总管不会自动预填。'}</p></div>}</DetailPage>
 

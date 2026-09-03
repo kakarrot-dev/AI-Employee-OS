@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MemoryViewModel } from '../../shared/memory-contract'
-import { App, buildFriendlyTimeline, selectActiveTask } from './App'
+import { App, buildFriendlyTimeline, identityAwareConversationPreview, selectActiveTask } from './App'
 
 describe('App shell', () => {
   it('shows the latest terminal matter when no matter is still active', () => {
@@ -9,6 +9,11 @@ describe('App shell', () => {
     expect(selectActiveTask(completedTasks)?.id).toBe('latest-success')
     const withActiveTask = [{ id: 'latest-success', state: 'succeeded' }, { id: 'active', state: 'running' }] as unknown as Parameters<typeof selectActiveTask>[0]
     expect(selectActiveTask(withActiveTask)?.id).toBe('active')
+  })
+
+  it('projects the current user and supervisor names into conversation previews', () => {
+    expect(identityAwareConversationPreview({ id: 'user', title: '会话', preview: '你：旧值', lastMessageRole: 'user', lastMessageContent: '你好', updatedAt: '', messageCount: 1 }, '卡卡罗特', '任务总管')).toBe('卡卡罗特：你好')
+    expect(identityAwareConversationPreview({ id: 'assistant', title: '会话', preview: '总管：旧值', lastMessageRole: 'assistant', lastMessageContent: '已完成', updatedAt: '', messageCount: 1 }, '卡卡罗特', '任务总管')).toBe('任务总管：已完成')
   })
 
   it('turns repeated Runtime checkpoints into concise Chinese progress', () => {
@@ -77,7 +82,7 @@ describe('App shell', () => {
       },
       task: {
         list: vi.fn().mockResolvedValue([]),
-        chooseDirectory: vi.fn().mockResolvedValue(undefined),
+        outputDirectory: vi.fn().mockResolvedValue('/Users/kakarrot/Downloads'),
         openArtifact: vi.fn().mockResolvedValue({ opened: true }),
         revealArtifact: vi.fn().mockResolvedValue({ revealed: true }),
         createDraft: vi.fn(),
@@ -248,6 +253,7 @@ describe('App shell', () => {
   })
 
   it('edits the Runtime-owned supervisor identity, model, prompt and memory policy', async () => {
+    vi.mocked(window.aiEmployeeOS.conversation.history).mockResolvedValue([{ id: 'message-supervisor', role: 'assistant', content: '身份已经更新。', createdAt: '2026-09-02T00:00:00Z' }])
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: '系统' }))
     fireEvent.click(screen.getByRole('button', { name: '总管' }))
@@ -262,11 +268,18 @@ describe('App shell', () => {
     expect(screen.getByRole('textbox', { name: '总管系统提示词' })).toHaveAttribute('maxlength', '10000')
     fireEvent.change(screen.getByRole('textbox', { name: '总管名称' }), { target: { value: '任务总管' } })
     expect(screen.getByRole('textbox', { name: '总管名称' })).toHaveValue('任务总管')
+    const supervisorAvatar = new File(['supervisor-avatar'], 'supervisor.png', { type: 'image/png' })
+    fireEvent.change(screen.getByLabelText('从本地上传总管头像'), { target: { files: [supervisorAvatar] } })
     fireEvent.change(screen.getByRole('textbox', { name: '总管系统提示词' }), { target: { value: '使用简体中文，先检查目标与证据，再组织最少且充分的员工。' } })
     fireEvent.click(screen.getByRole('button', { name: /claude-sonnet-4\.6/ }))
     fireEvent.click(screen.getByRole('checkbox', { name: '读取全局记忆' }))
     expect(screen.queryByRole('button', { name: '保存' })).not.toBeInTheDocument()
-    await waitFor(() => expect(window.aiEmployeeOS.supervisor.update).toHaveBeenCalledWith(expect.objectContaining({ name: '任务总管', modelId: 'claude-sonnet-4.6', memoryScopes: [] })), { timeout: 1_500 })
+    await waitFor(() => expect(window.aiEmployeeOS.supervisor.update).toHaveBeenCalledWith(expect.objectContaining({ name: '任务总管', avatarDataUrl: expect.stringMatching(/^data:image\/png;base64,/), modelId: 'claude-sonnet-4.6', memoryScopes: [] })), { timeout: 1_500 })
+    fireEvent.click(screen.getByRole('button', { name: '消息' }))
+    const supervisorMessage = (await screen.findByText('身份已经更新。')).closest('.message-block') as HTMLElement
+    expect(within(supervisorMessage).getByText('任务总管')).toBeInTheDocument()
+    expect(within(supervisorMessage).getByLabelText('任务总管').querySelector('img')).toHaveAttribute('src', expect.stringMatching(/^data:image\/png;base64,/))
+    expect(screen.getByRole('textbox', { name: '发送消息' })).toHaveAttribute('placeholder', '发送给任务总管，补充问题或事项信息')
   })
 
   it('uses the prototype conversation list and creates a real runtime conversation', async () => {
@@ -275,6 +288,14 @@ describe('App shell', () => {
     expect(conversationButton).toBeInTheDocument()
     expect(conversationButton).toHaveClass('list-row--text')
     expect(conversationButton.querySelector('.avatar')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '折叠左侧栏' }))
+    expect(document.querySelector('.prototype')).toHaveClass('is-context-collapsed')
+    fireEvent.click(screen.getByRole('button', { name: '展开左侧栏' }))
+    expect(document.querySelector('.prototype')).not.toHaveClass('is-context-collapsed')
+    expect(within(screen.getByRole('banner', { name: '窗口拖拽区' })).getByRole('button', { name: '折叠事项边栏' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '通讯录' }))
+    expect(screen.queryByRole('button', { name: /事项边栏/ })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '消息' }))
     fireEvent.click(screen.getByRole('button', { name: '新建会话' }))
     await waitFor(() => expect(window.aiEmployeeOS.conversation.create).toHaveBeenCalledOnce())
     expect(screen.getByRole('heading', { name: '新会话', level: 1 })).toBeInTheDocument()
@@ -287,9 +308,19 @@ describe('App shell', () => {
     expect(await screen.findByRole('heading', { name: '与总管的对话', level: 1 })).toBeInTheDocument()
     expect(screen.queryByText('总管会判断是直接回答、归入已有事项，还是创建新事项。')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '受控访问' }))
-    expect(await screen.findByRole('dialog', { name: '受控访问说明' })).toHaveTextContent('尚未授权目录')
+    expect(await screen.findByRole('dialog', { name: '受控访问说明' })).toHaveTextContent('/Users/kakarrot/Downloads')
     fireEvent.click(screen.getByRole('button', { name: '语音输入' }))
     expect(await screen.findByRole('dialog', { name: '语音输入说明' })).toHaveTextContent('暂未开放')
+  })
+
+  it('sends every new request with the fixed system Downloads directory', async () => {
+    vi.mocked(window.aiEmployeeOS.runtime.getStatus).mockResolvedValue({ state: 'connected', checkedAt: '2026-09-02T00:00:00Z', message: 'Runtime 已连接' })
+    render(<App />)
+    const input = await screen.findByRole('textbox', { name: '发送消息' })
+    await waitFor(() => expect(window.aiEmployeeOS.task.outputDirectory).toHaveBeenCalled())
+    fireEvent.change(input, { target: { value: '整理为文档' } })
+    fireEvent.submit(input.closest('form')!)
+    await waitFor(() => expect(window.aiEmployeeOS.conversation.send).toHaveBeenCalledWith('local-supervisor', '整理为文档', ['/Users/kakarrot/Downloads']))
   })
 
   it('projects the personal avatar and name into the conversation timeline without calling the user 你', async () => {
@@ -327,9 +358,14 @@ describe('App shell', () => {
     expect(screen.queryByRole('textbox', { name: '身份说明' })).not.toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: '个人简介' })).not.toBeInTheDocument()
     fireEvent.change(screen.getByRole('textbox', { name: '个人名称' }), { target: { value: '卡卡罗特' } })
+    const personalAvatar = new File(['personal-avatar'], 'personal.png', { type: 'image/png' })
+    const personalAvatarInput = screen.getByLabelText('从本地上传个人头像')
+    fireEvent.change(personalAvatarInput, { target: { files: [personalAvatar] } })
+    await waitFor(() => expect(personalAvatarInput.closest('label')?.querySelector('.avatar img')).toHaveAttribute('src', expect.stringMatching(/^data:image\/png;base64,/)))
     fireEvent.click(screen.getByRole('button', { name: '消息' }))
     const updatedUserMessage = (await screen.findByText('hello')).closest('.message-block') as HTMLElement
     expect(within(updatedUserMessage).getByText('卡卡罗特')).toBeInTheDocument()
+    expect(within(updatedUserMessage).getByLabelText('卡卡罗特').querySelector('img')).toHaveAttribute('src', expect.stringMatching(/^data:image\/png;base64,/))
     expect(within(updatedUserMessage).queryByText('你')).not.toBeInTheDocument()
   })
 
@@ -390,7 +426,7 @@ describe('App shell', () => {
       { schemaVersion: 1, id: 'capability-research', createdAt: version.createdAt, name: '网络调研能力', description: '能力聚合说明不应显示在 Skill 卡片中。', version: 1, skillVersionIds: ['skill-research'], toolVersionIds: [], mcpVersionIds: [], requiredModelIds: [], permissionRequirements: ['公开网络读取'], dependencies: [] },
       { schemaVersion: 1, id: 'capability-document', createdAt: version.createdAt, name: '文档交付能力', description: '把已确认资料整理成结构清晰、可验收的文档。', version: 2, skillVersionIds: ['skill-document'], toolVersionIds: ['tool-document'], mcpVersionIds: [], requiredModelIds: [], permissionRequirements: ['授权目录写入'], dependencies: [] }
     ])
-    vi.mocked(window.aiEmployeeOS.resource.list).mockResolvedValue({ skills: [{ id: 'skill-research', createdAt: version.createdAt, name: '多源网络调研', description: '从许可来源收集、核验并结构化公开资料。', version: 1, steps: [], toolVersionIds: [], available: true }], tools: [], mcps: [], healthChecks: [] })
+    vi.mocked(window.aiEmployeeOS.resource.list).mockResolvedValue({ skills: [{ id: 'skill-research', createdAt: version.createdAt, name: '多源网络调研', description: '从许可来源收集、核验并结构化公开资料。', version: 1, steps: [], toolVersionIds: [], instructionsMarkdown: '# 多源网络调研', instructionDigest: 'digest-1', available: true }], tools: [], mcps: [], healthChecks: [] })
     const detail = { employee: { schemaVersion: 1 as const, id: 'employee-1', createdAt: version.createdAt, name: version.name, draftVersionId: version.id, disabled: false, archived: false }, status: 'draft' as const, draft: version, versions: [version], testCases: [], testRuns: [], formalReferences: [] }
     vi.mocked(window.aiEmployeeOS.employee.detail).mockResolvedValue(detail)
     vi.mocked(window.aiEmployeeOS.employee.beginEdit).mockResolvedValue(detail)
@@ -463,8 +499,8 @@ describe('App shell', () => {
   it('renders real matter approval and delivery states and sends the decision through Runtime', async () => {
     const task = {
       id: 'task-view-1', conversationId: 'local-supervisor', createdAt: '2026-08-31T07:59:01Z', sourceMessageIds: ['message-1'], taskId: 'task-1', draftId: 'draft-1', state: 'needs_attention' as const,
-      goal: '生成市场研究报告', acceptanceCriteria: ['关键结论可追溯'], employeeVersionIds: ['employee-version.network-intelligence.v1'], directories: [], draftRevision: 1, frozenRevision: 1, runId: 'run-1',
-      assignments: [{ id: 'assignment-1', sequence: 1, employeeVersionId: 'employee-version.network-intelligence.v1', employeeName: '网络情报员', employeeRole: '公开信息调研', createdAt: '2026-08-31T07:59:02Z', completedAt: '2026-08-31T08:00:00Z', state: 'succeeded' as const, output: '已完成调研并提交报告。' }],
+      goal: '生成市场研究报告', acceptanceCriteria: ['关键结论可追溯'], employeeVersionIds: ['employee-version.network-intelligence.v2'], directories: [], draftRevision: 1, frozenRevision: 1, runId: 'run-1',
+      assignments: [{ id: 'assignment-1', sequence: 1, employeeId: 'employee.network-intelligence', employeeVersionId: 'employee-version.network-intelligence.v2', employeeName: '网络情报员', employeeRole: '公开信息调研', createdAt: '2026-08-31T07:59:02Z', completedAt: '2026-08-31T08:00:00Z', state: 'succeeded' as const, output: '已完成调研并提交报告。' }],
       timeline: [{ phase: 'research', nextNode: 'approval', createdAt: '2026-08-31T08:00:00Z' }],
       delivery: { id: 'delivery-1', summary: '验收通过', result: '已完成调研并提交报告。', createdAt: '2026-08-31T08:00:01Z', acceptanceResults: [{ criterion: '关键结论可追溯', passed: true }], artifacts: [{ id: 'artifact-1', mediaType: 'text/markdown', relativePath: 'report.md', sha256: '1234567890abcdef' }], evidenceCount: 4, unresolvedIssues: [] },
       researchBundles: [], pendingChange: undefined,
@@ -483,13 +519,19 @@ describe('App shell', () => {
     vi.mocked(window.aiEmployeeOS.task.approveTool).mockResolvedValue({ ...task, approvals: [{ ...task.approvals[0], decision: 'approved' as const }] })
 
     render(<App />)
-    expect(await screen.findByRole('tab', { name: /事项\s*2/ })).toBeInTheDocument()
+    expect(await screen.findByLabelText('当前会话事项')).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: /事项/ })).not.toBeInTheDocument()
+    expect(await screen.findAllByRole('button', { name: /^定位事项：/ })).toHaveLength(2)
     expect(screen.getAllByRole('button', { name: /^查看事项：/ })).toHaveLength(2)
     expect(screen.getAllByRole('heading', { name: '生成市场研究报告', level: 3 })).toHaveLength(1)
     expect(document.querySelector('.runtime-matter-card')).not.toBeInTheDocument()
     expect(screen.getByText('已创建事项')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '查看事项：生成市场研究报告' })).toHaveTextContent('目标生成市场研究报告')
-    expect(screen.getByRole('button', { name: '查看事项：生成市场研究报告' })).toHaveClass('message-stream-item')
+    const currentMatterCard = screen.getByRole('button', { name: '查看事项：生成市场研究报告' })
+    expect(currentMatterCard).toHaveTextContent('生成市场研究报告')
+    expect(currentMatterCard).not.toHaveTextContent('目标')
+    expect(currentMatterCard).toHaveClass('message-stream-item')
+    const failedMatterCard = screen.getByRole('button', { name: '查看事项：复核竞争对手信息' })
+    expect(within(failedMatterCard).getByText('执行失败')).toHaveClass('matter-event__state', 'matter-event__state--danger')
     expect(screen.getByText('加入工作')).toBeInTheDocument()
     expect(screen.getAllByText('网络情报员').length).toBeGreaterThan(0)
     expect(screen.getAllByText('已完成调研并提交报告。')).toHaveLength(1)
@@ -501,6 +543,11 @@ describe('App shell', () => {
     expect(document.querySelector('.message-delivery__eyebrow')).toHaveTextContent('结果')
     expect(screen.getByText('验收通过')).toBeInTheDocument()
     expect(screen.getByLabelText('交付概况')).toHaveTextContent('1/1完成要求4来源证据1交付文件')
+    fireEvent.click(screen.getByRole('button', { name: '定位事项：生成市场研究报告' }))
+    expect(screen.getByRole('button', { name: '查看事项：生成市场研究报告' })).toHaveFocus()
+    fireEvent.click(screen.getByRole('button', { name: '查看事项：生成市场研究报告' }))
+    expect(screen.getByRole('dialog', { name: '生成市场研究报告' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }))
     fireEvent.click(screen.getByRole('button', { name: '打开方式 report.md' }))
     fireEvent.click(screen.getByRole('menuitem', { name: /使用系统默认应用打开/ }))
     fireEvent.click(screen.getByRole('button', { name: '打开方式 report.md' }))
@@ -509,9 +556,9 @@ describe('App shell', () => {
     expect(window.aiEmployeeOS.task.revealArtifact).toHaveBeenCalledWith('task-view-1', 'artifact-1')
     fireEvent.click(screen.getByRole('button', { name: '批准' }))
     await waitFor(() => expect(window.aiEmployeeOS.task.approveTool).toHaveBeenCalledWith('action-1'))
-    fireEvent.click(screen.getByRole('tab', { name: /事项\s*2/ }))
-    expect(document.querySelectorAll('.matter-index-card')).toHaveLength(2)
-    expect(document.querySelector('.matter-index-card .avatar img')).toHaveAttribute('src', expect.stringContaining('network-intelligence'))
+    fireEvent.click(within(screen.getByRole('banner', { name: '窗口拖拽区' })).getByRole('button', { name: '折叠事项边栏' }))
+    expect(screen.getByRole('button', { name: '展开事项边栏' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^定位事项：/ })).not.toBeInTheDocument()
   })
 
   it('shows joined employees and their live progress replies in the conversation timeline', async () => {
@@ -537,7 +584,7 @@ describe('App shell', () => {
     expect(workTimeline).not.toHaveTextContent('本机文档写入 · 正在执行')
   })
 
-  it('starts a routed document matter automatically after its directory is attached', async () => {
+  it('starts a legacy draft in the fixed Downloads directory without a picker', async () => {
     const draftTask = {
       id: 'draft-routed', conversationId: 'local-supervisor', draftId: 'draft-routed', state: 'draft' as const,
       goal: '调研学校最新新闻并整理成文档', acceptanceCriteria: ['来源可追溯', '文件可回读'], employeeVersionIds: ['employee-version.network-intelligence.v1', 'employee-version.document-writer.v1'], directories: [], requiresDirectories: true, draftRevision: 1,
@@ -546,17 +593,15 @@ describe('App shell', () => {
     vi.mocked(window.aiEmployeeOS.runtime.getStatus).mockResolvedValue({ state: 'connected', checkedAt: '2026-09-02T00:00:00Z', message: 'Runtime 已连接' })
     vi.mocked(window.aiEmployeeOS.conversation.history).mockResolvedValue([{ id: 'message-route', role: 'user', content: '调研后整理成文档', createdAt: '2026-09-02T00:00:00Z' }])
     vi.mocked(window.aiEmployeeOS.task.list).mockResolvedValue([draftTask])
-    vi.mocked(window.aiEmployeeOS.task.chooseDirectory).mockResolvedValue('/tmp/reports')
-    vi.mocked(window.aiEmployeeOS.task.updateDraft).mockResolvedValue({ ...draftTask, directories: ['/tmp/reports'], draftRevision: 2 })
-    vi.mocked(window.aiEmployeeOS.task.start).mockResolvedValue({ ...draftTask, taskId: 'task-routed', state: 'running', directories: ['/tmp/reports'], draftRevision: 2, frozenRevision: 1, runId: 'run-routed' })
+    vi.mocked(window.aiEmployeeOS.task.updateDraft).mockResolvedValue({ ...draftTask, directories: ['/Users/kakarrot/Downloads'], draftRevision: 2 })
+    vi.mocked(window.aiEmployeeOS.task.start).mockResolvedValue({ ...draftTask, taskId: 'task-routed', state: 'running', directories: ['/Users/kakarrot/Downloads'], draftRevision: 2, frozenRevision: 1, runId: 'run-routed' })
 
     render(<App />)
-    expect(await screen.findByText('事项已生成；选择授权文件夹后将自动开始执行。')).toBeInTheDocument()
+    expect(await screen.findByText('该事项尚未绑定固定下载目录。')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '确认并开始' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '选择文件夹' }))
-    const access = await screen.findByRole('dialog', { name: '受控访问说明' })
-    fireEvent.click(within(access).getByRole('button', { name: '选择文件夹' }))
-    await waitFor(() => expect(window.aiEmployeeOS.task.updateDraft).toHaveBeenCalledWith('draft-routed', expect.objectContaining({ directories: ['/tmp/reports'] })))
+    expect(screen.queryByRole('button', { name: '选择文件夹' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '使用下载文件夹并开始' }))
+    await waitFor(() => expect(window.aiEmployeeOS.task.updateDraft).toHaveBeenCalledWith('draft-routed', expect.objectContaining({ directories: ['/Users/kakarrot/Downloads'] })))
     await waitFor(() => expect(window.aiEmployeeOS.task.start).toHaveBeenCalledWith('draft-routed'))
     expect(screen.queryByRole('button', { name: '确认并开始' })).not.toBeInTheDocument()
   })
@@ -572,8 +617,8 @@ describe('App shell', () => {
     vi.mocked(window.aiEmployeeOS.conversation.history).mockResolvedValue([{ id: 'message-failed', role: 'user', content: '调研并生成文档', createdAt: '2026-09-02T00:00:00Z' }])
     vi.mocked(window.aiEmployeeOS.task.list).mockResolvedValue([failedTask])
     vi.mocked(window.aiEmployeeOS.employee.list).mockResolvedValue([
-      { id: 'employee-network', name: '网络情报员', status: 'active', activeVersionId: 'employee-version.network-intelligence.v1', capabilityVersionIds: ['capability.network-intelligence.v1'], activeCapabilityVersionIds: ['capability.network-intelligence.v1'] },
-      { id: 'employee-writer', name: '文档编写员', status: 'active', activeVersionId: 'employee-version.document-writer.v1', draftVersionId: 'employee-version.document-writer.v2', capabilityVersionIds: [], activeCapabilityVersionIds: ['capability.local-document.v1'] }
+      { id: 'employee-network', name: '网络情报员', status: 'active', activeVersionId: 'employee-version.network-intelligence.v2', capabilityVersionIds: ['capability.network-intelligence.v2'], activeCapabilityVersionIds: ['capability.network-intelligence.v2'] },
+      { id: 'employee-writer', name: '文档编写员', status: 'active', activeVersionId: 'employee-version.document-writer.v2', draftVersionId: 'employee-version.document-writer.v3', capabilityVersionIds: [], activeCapabilityVersionIds: ['capability.local-document.v2'] }
     ])
     const recreated = { ...failedTask, id: 'draft-recreated', draftId: 'draft-recreated', taskId: undefined, state: 'draft' as const, frozenRevision: undefined, runId: undefined, assignments: [], toolActions: [], approvals: [], requiresDirectories: true }
     vi.mocked(window.aiEmployeeOS.task.createDraft).mockResolvedValue(recreated)
@@ -582,13 +627,13 @@ describe('App shell', () => {
     expect(await screen.findByText('本次执行已失败，原有 Tool 审批已失效，不会继续调用外部工具。')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '批准' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '重新创建事项草稿' }))
-    await waitFor(() => expect(window.aiEmployeeOS.task.createDraft).toHaveBeenCalledWith(expect.objectContaining({ directories: ['/tmp/reports'], authorizationMode: 'full_access', employeeVersionIds: ['employee-version.network-intelligence.v1', 'employee-version.document-writer.v1'] })))
+    await waitFor(() => expect(window.aiEmployeeOS.task.createDraft).toHaveBeenCalledWith(expect.objectContaining({ directories: ['/Users/kakarrot/Downloads'], authorizationMode: 'full_access', employeeVersionIds: ['employee-version.network-intelligence.v2', 'employee-version.document-writer.v2'] })))
     expect(window.aiEmployeeOS.task.start).toHaveBeenCalledWith('draft-recreated')
   })
 
   it('uses the prototype Skills and Tools directory backed by the Runtime catalog', async () => {
     vi.mocked(window.aiEmployeeOS.resource.list).mockResolvedValue({
-      skills: [{ id: 'skill-1', createdAt: '2026-08-31T00:00:00Z', name: '多源调研', description: '保留来源和信息缺口', version: 2, steps: ['拆分查询', '形成证据包'], toolVersionIds: ['tool-1'], available: true }],
+      skills: [{ id: 'skill-1', createdAt: '2026-08-31T00:00:00Z', name: '多源调研', description: '保留来源和信息缺口', version: 2, steps: ['拆分查询', '形成证据包'], toolVersionIds: ['tool-1'], instructionsMarkdown: '# 多源调研\n\n保留来源和信息缺口。', instructionDigest: 'digest-1', available: true }],
       tools: [{ id: 'tool-1', createdAt: '2026-08-31T00:00:00Z', name: '公开检索', description: '只读公开来源', version: 1, sideEffect: 'external_read', risk: 'low', networkOrigins: ['https://example.com'], available: true, health: 'available', credentialStatus: 'not_required' }],
       mcps: [], healthChecks: []
     })
