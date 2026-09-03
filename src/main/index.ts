@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, session, shell } from 'electron'
 import { CONVERSATION_IPC, EMPLOYEE_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, SUPERVISOR_IPC, TASK_IPC, USAGE_IPC, type ConversationStreamEvent, type ConversationSummaryView, type EmployeeDraftInput, type EmployeeEvent, type ProviderStatus, type RuntimeStatus, type SupervisorConfigInput, type TaskDetailView, type TaskDraftInputView, type TaskEvent } from '../shared/runtime-contract'
 import type { Conversation, Message } from '../runtime/domain'
 import type { MemoryCategoryView, MemoryScopeTypeView, MemoryStatusView, MemoryViewModel } from '../shared/memory-contract'
@@ -12,6 +12,7 @@ import { createWindowOptions, isTrustedRendererUrl } from './window-security'
 import { bundledRuntimePaths, initializeBundledModel } from './bundled-runtime'
 import { maintainDiagnostics, writeLocalDiagnostic } from './storage-policy'
 import { resolveArtifactFilePath } from './artifact-file-actions'
+import { hasLocalDocumentCapability } from '../shared/capability-contract'
 
 app.enableSandbox()
 
@@ -44,6 +45,10 @@ function assertTrustedSender(url: string | undefined): void {
 function publishRuntimeStatus(status: RuntimeStatus): void {
   runtimeStatus = status
   mainWindow?.webContents.send(RUNTIME_IPC.statusChanged, status)
+}
+
+function fixedOutputDirectories(): string[] {
+  return [app.getPath('downloads')]
 }
 
 function handleRuntimeEvent(event: RuntimeSupervisorEvent): void {
@@ -83,6 +88,7 @@ function toTaskView(detail: FormalTaskDetail): TaskDetailView {
     hasUnknownResult: detail.toolActions.some((action) => action.state === 'result_unknown')
   })
   const versions = new Map(detail.employeeVersions.map((version) => [version.id, version]))
+  const identities = new Map(detail.employeeIdentities.map((identity) => [identity.id, identity]))
   const review = [...detail.checkpoints].reverse().find((checkpoint) => checkpoint.phase === 'manager_review')
   const reviewResult = review?.payload.result && typeof review.payload.result === 'object' && !Array.isArray(review.payload.result) ? review.payload.result as { summary?: unknown } : undefined
   const finalOutput = [...detail.assignments].reverse().find((assignment) => assignment.state === 'succeeded' && assignment.output?.trim())?.output?.trim()
@@ -99,11 +105,11 @@ function toTaskView(detail: FormalTaskDetail): TaskDetailView {
     acceptanceCriteria: detail.draft.acceptanceCriteria,
     employeeVersionIds: detail.draft.employeeVersionIds,
     directories: detail.draft.resourceScope.directories,
-    requiresDirectories: detail.draft.capabilityVersionIds.includes('capability.local-document.v1'),
+    requiresDirectories: hasLocalDocumentCapability(detail.draft.capabilityVersionIds),
     draftRevision: detail.draft.revision,
     frozenRevision: detail.revision?.revision,
     runId: detail.run?.id,
-    assignments: detail.assignments.map(({ id, sequence, employeeVersionId, state: assignmentState, output, createdAt, completedAt, reworkOfAssignmentId }) => { const version = versions.get(employeeVersionId); return { id, sequence, employeeVersionId, employeeName: version?.name, employeeRole: version?.role, avatarDataUrl: version?.avatarDataUrl, createdAt, completedAt, reworkOfAssignmentId, state: assignmentState, output } }),
+    assignments: detail.assignments.map(({ id, sequence, employeeVersionId, state: assignmentState, output, createdAt, completedAt, reworkOfAssignmentId }) => { const version = versions.get(employeeVersionId); const employeeId = version?.employeeId; const identity = employeeId ? identities.get(employeeId) : undefined; return { id, sequence, employeeId, employeeVersionId, employeeName: identity?.name ?? version?.name, employeeRole: version?.role, avatarDataUrl: identity?.avatarDataUrl ?? version?.avatarDataUrl, createdAt, completedAt, reworkOfAssignmentId, state: assignmentState, output } }),
     timeline: detail.checkpoints.map(({ phase, assignmentId, nextNode, createdAt, payload }) => ({ phase, assignmentId, nextNode, createdAt, ...(phase === 'memory_loaded' ? { memoryRefs: (payload.recallReasons as Array<{ id: string; reason: string }> | undefined) ?? [] } : {}) })),
     delivery: detail.delivery ? { id: detail.delivery.id, summary: deliverySummary, result: finalOutput, createdAt: detail.delivery.createdAt, acceptanceResults: detail.delivery.acceptanceResults.map(({ criterion, passed }) => ({ criterion, passed })), artifacts: detail.artifacts.map(({ id, mediaType, relativePath, sha256 }) => ({ id, mediaType, relativePath, sha256 })), evidenceCount: detail.evidence.length, unresolvedIssues: detail.delivery.unresolvedIssues } : undefined,
     researchBundles: detail.researchBundles.map(({ id, contentHash, items, claims, conflicts, informationGaps }) => ({ id, contentHash, sourceCount: items.length, claimCount: claims.length, conflicts, informationGaps })),
@@ -119,6 +125,8 @@ function toConversationSummary(conversation: Conversation, messages: Message[], 
     id: conversation.id,
     title: conversation.title,
     preview: lastMessage ? `${lastMessage.role === 'assistant' ? `${supervisorName}：` : '你：'}${lastMessage.content.replaceAll(/\s+/g, ' ').slice(0, 72)}` : '尚无消息',
+    lastMessageRole: lastMessage?.role,
+    lastMessageContent: lastMessage?.content.replaceAll(/\s+/g, ' ').slice(0, 72),
     updatedAt: lastMessage?.createdAt ?? conversation.createdAt,
     messageCount: messages.length
   }
@@ -211,7 +219,7 @@ function registerRuntimeIpc(): void {
     if (!Array.isArray(directories) || directories.length > 16 || new Set(directories).size !== directories.length || directories.some((directory) => typeof directory !== 'string' || !directory.startsWith('/') || directory.length > 4_096)) throw new Error('invalid_conversation_directories')
     if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable')
     const messageId = randomUUID()
-    const result = await runtimeSupervisor.sendConversation(conversationId, messageId, text, directories)
+    const result = await runtimeSupervisor.sendConversation(conversationId, messageId, text, fixedOutputDirectories())
     return { ...result, messageId }
   })
 
@@ -250,7 +258,7 @@ function registerRuntimeIpc(): void {
   ipcMain.handle(EMPLOYEE_IPC.restore, (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.employeeRestore(employeeIdFrom(value)) })
   ipcMain.handle(EMPLOYEE_IPC.deleteDraft, (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.employeeDeleteDraft(employeeIdFrom(value)) })
   ipcMain.handle(TASK_IPC.list, async (event) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return (await runtimeSupervisor.taskList()).map(toTaskView) })
-  ipcMain.handle(TASK_IPC.chooseDirectory, async (event) => { assertTrustedSender(event.senderFrame?.url); if (!mainWindow) throw new Error('window_unavailable'); const result = await dialog.showOpenDialog(mainWindow, { title: '选择任务可访问的文件夹', properties: ['openDirectory', 'createDirectory'] }); return result.canceled ? undefined : result.filePaths[0] })
+  ipcMain.handle(TASK_IPC.outputDirectory, (event) => { assertTrustedSender(event.senderFrame?.url); return app.getPath('downloads') })
   const artifactFileFrom = async (value: unknown): Promise<string> => {
     const { taskId, artifactId } = value as { taskId?: unknown; artifactId?: unknown }
     if (typeof taskId !== 'string' || taskId.length < 1 || taskId.length > 128) throw new Error('invalid_task_id')
@@ -273,11 +281,11 @@ function registerRuntimeIpc(): void {
     shell.showItemInFolder(await artifactFileFrom(value))
     return { revealed: true }
   })
-  ipcMain.handle(TASK_IPC.createDraft, async (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return toTaskView(await runtimeSupervisor.taskCreateDraft((value as { input: TaskDraftInputView }).input)) })
-  ipcMain.handle(TASK_IPC.updateDraft, async (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); const draftId = (value as { draftId?: unknown }).draftId; if (typeof draftId !== 'string') throw new Error('invalid_task_draft_id'); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return toTaskView(await runtimeSupervisor.taskUpdateDraft(draftId, (value as { changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds'> }).changes)) })
+  ipcMain.handle(TASK_IPC.createDraft, async (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); const input = (value as { input: TaskDraftInputView }).input; return toTaskView(await runtimeSupervisor.taskCreateDraft({ ...input, directories: fixedOutputDirectories() })) })
+  ipcMain.handle(TASK_IPC.updateDraft, async (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); const draftId = (value as { draftId?: unknown }).draftId; if (typeof draftId !== 'string') throw new Error('invalid_task_draft_id'); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); const changes = (value as { changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds'> }).changes; return toTaskView(await runtimeSupervisor.taskUpdateDraft(draftId, { ...changes, directories: fixedOutputDirectories() })) })
   ipcMain.handle(TASK_IPC.start, async (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); const draftId = (value as { draftId?: unknown }).draftId; if (typeof draftId !== 'string') throw new Error('invalid_task_draft_id'); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return toTaskView(await runtimeSupervisor.taskStart(draftId)) })
   ipcMain.handle(TASK_IPC.requestChange, (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); const { taskId, sourceMessageId, requestedDiff } = value as { taskId?: unknown; sourceMessageId?: unknown; requestedDiff?: unknown }; if (typeof taskId !== 'string' || typeof sourceMessageId !== 'string' || !requestedDiff || typeof requestedDiff !== 'object') throw new Error('invalid_change_request'); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.taskRequestChange(taskId, sourceMessageId, requestedDiff as Record<string, unknown>) })
-  ipcMain.handle(TASK_IPC.acceptChange, async (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); const changeRequestId = (value as { changeRequestId?: unknown }).changeRequestId; if (typeof changeRequestId !== 'string') throw new Error('invalid_change_request_id'); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return toTaskView(await runtimeSupervisor.taskAcceptChange(changeRequestId, (value as { changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds'> }).changes)) })
+  ipcMain.handle(TASK_IPC.acceptChange, async (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); const changeRequestId = (value as { changeRequestId?: unknown }).changeRequestId; if (typeof changeRequestId !== 'string') throw new Error('invalid_change_request_id'); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); const changes = (value as { changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds'> }).changes; return toTaskView(await runtimeSupervisor.taskAcceptChange(changeRequestId, { ...changes, directories: fixedOutputDirectories() })) })
   ipcMain.handle(TASK_IPC.rejectChange, async (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); const changeRequestId = (value as { changeRequestId?: unknown }).changeRequestId; if (typeof changeRequestId !== 'string') throw new Error('invalid_change_request_id'); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return toTaskView(await runtimeSupervisor.taskRejectChange(changeRequestId)) })
   ipcMain.handle(RESOURCE_IPC.list, (event) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.resourceList() })
   ipcMain.handle(RESOURCE_IPC.probe, (event) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.resourceProbe() })

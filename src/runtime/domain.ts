@@ -56,6 +56,7 @@ export interface SupervisorConfiguration extends VersionedEntity {
 
 export interface Employee extends VersionedEntity {
   name: string
+  avatarDataUrl?: string
   activeVersionId?: string
   draftVersionId?: string
   disabled: boolean
@@ -113,8 +114,11 @@ export interface SandboxTestRun extends VersionedEntity {
   employeeVersionId: string
   testCaseId: string
   providerRequestId: string
-  status: 'running' | 'completed' | 'failed'
+  status: 'running' | 'evaluating' | 'completed' | 'failed'
   output: string
+  evaluationProviderRequestId?: string
+  evaluationText?: string
+  evaluation?: { passed: boolean; summary: string; criteria: Array<{ id: 'task_acceptance' | 'role_scope' | 'truth_and_evidence' | 'output_actionability'; passed: boolean; reason: string }> }
   automaticPassed?: boolean
   userConfirmed: boolean
   failureCode?: string
@@ -155,6 +159,9 @@ export interface ResourceScope {
   toolVersionIds: string[]
   modelConfigIds: string[]
   memoryScopes: string[]
+  /** Optional only for backward-compatible recovery of revisions created before Skill snapshots existed. */
+  skillVersionIds?: string[]
+  skillDigests?: Record<string, string>
 }
 
 export interface TaskDraft extends VersionedEntity {
@@ -263,6 +270,8 @@ export interface SkillVersion extends VersionedEntity {
   version: number
   steps: string[]
   toolVersionIds: string[]
+  instructionsMarkdown: string
+  instructionDigest: string
   available: boolean
   reason?: string
 }
@@ -444,6 +453,6 @@ export function assertEntityRecord(value: unknown): asserts value is EntityRecor
   if (record.entityType === 'Approval' && !['pending', 'approved', 'rejected'].includes(String((record.entity as Partial<Approval>).decision))) throw new Error('unknown_approval_decision')
   if (record.entityType === 'ChangeRequest' && !['pending', 'accepted', 'rejected'].includes(String((record.entity as Partial<ChangeRequest>).decision))) throw new Error('unknown_change_request_decision')
   if (record.entityType === 'EmployeeVersion' && !['draft', 'tested', 'active', 'superseded'].includes(String((record.entity as Partial<EmployeeVersion>).state))) throw new Error('unknown_employee_version_state')
-  if (record.entityType === 'SandboxTestRun' && !['running', 'completed', 'failed'].includes(String((record.entity as Partial<SandboxTestRun>).status))) throw new Error('unknown_test_run_state')
+  if (record.entityType === 'SandboxTestRun' && !['running', 'evaluating', 'completed', 'failed'].includes(String((record.entity as Partial<SandboxTestRun>).status))) throw new Error('unknown_test_run_state')
   if (record.entityType === 'Task' && !['pending', 'running', 'succeeded', 'failed', 'cancelled'].includes(String((record.entity as Partial<Task>).state))) throw new Error('unknown_task_state')
 }

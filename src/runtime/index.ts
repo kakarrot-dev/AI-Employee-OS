@@ -16,6 +16,7 @@ import { DeliveryExporter } from './delivery-exporter'
 import { MemoryService, type MemoryCategory, type MemoryStatus, type MemoryView } from './memory-service'
 import { SupervisorRouter } from './supervisor-router'
 import { SupervisorService } from './supervisor-service'
+import { hasResearchCapability } from './builtin-contracts'
 
 function databasePathFromArgs(): string {
   const argument = process.argv.find((value) => value.startsWith('--database='))
@@ -53,7 +54,7 @@ const supervisor = new SupervisorService(kernel)
 supervisor.seed()
 const deliveryExporter = new DeliveryExporter(kernel, exportDirectory)
 const tasks = new TaskService(kernel, employees, (request) => memory.search(request), ({ assignment, revision, version, output, actions }) => {
-  if (!version.capabilityVersionIds.some((id) => ['capability.managed-research.v1', 'capability.network-intelligence.v1'].includes(id))) return { text: output }
+  if (!hasResearchCapability(version.capabilityVersionIds)) return { text: output }
   const bundle = research.createBundle({ taskId: revision.taskId, runId: assignment.runId, assignmentId: assignment.id, employeeVersionId: version.id, question: revision.goal, githubQuery: '', feedUrl: '' }, actions)
   const handoff = { schemaVersion: 1, type: 'ResearchHandoff', researchBundleId: bundle.id, contentHash: bundle.contentHash, question: bundle.question, claims: bundle.claims, conflicts: bundle.conflicts, informationGaps: bundle.informationGaps, sources: bundle.items.map((item, index) => ({ index, sourceType: item.sourceType, title: item.title, url: item.url, publishedAt: item.publishedAt, summary: item.summary, contentHash: item.contentHash, trust: item.trust, injectionSignals: item.injectionSignals })), researcherSynthesis: output }
   return { text: JSON.stringify(handoff), researchBundleId: bundle.id }
@@ -423,7 +424,9 @@ parentPort.on('message', async (event) => {
 
     const employeeTestRun = employees.handleProviderEvent(command.payload.providerRequestId, command.payload.event)
     if (employeeTestRun) {
-      emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.employee.event', requestId: command.payload.providerRequestId, event: { type: command.payload.event.type === 'completed' ? 'test_completed' : 'test_progress', employeeId: employeeTestRun.employeeId, testRunId: employeeTestRun.id } })
+      if (employeeTestRun.nextRequest) emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: employeeTestRun.nextRequest.requestId, request: employeeTestRun.nextRequest })
+      const employeeEventType = employeeTestRun.status === 'completed' ? 'test_completed' : employeeTestRun.status === 'failed' ? 'test_failed' : 'test_progress'
+      emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.employee.event', requestId: command.payload.providerRequestId, event: { type: employeeEventType, employeeId: employeeTestRun.employeeId, testRunId: employeeTestRun.id, code: employeeTestRun.failureCode } })
       respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
       return
     }

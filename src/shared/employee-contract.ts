@@ -94,6 +94,7 @@ export interface EmployeeView {
   id: string
   createdAt: string
   name: string
+  avatarDataUrl?: string
   activeVersionId?: string
   draftVersionId?: string
   disabled: boolean
@@ -132,8 +133,11 @@ export interface SandboxTestRunView {
   employeeVersionId: string
   testCaseId: string
   providerRequestId: string
-  status: 'running' | 'completed' | 'failed'
+  status: 'running' | 'evaluating' | 'completed' | 'failed'
   output: string
+  evaluationProviderRequestId?: string
+  evaluationText?: string
+  evaluation?: { passed: boolean; summary: string; criteria: Array<{ id: 'task_acceptance' | 'role_scope' | 'truth_and_evidence' | 'output_actionability'; passed: boolean; reason: string }> }
   automaticPassed?: boolean
   userConfirmed: boolean
   failureCode?: string

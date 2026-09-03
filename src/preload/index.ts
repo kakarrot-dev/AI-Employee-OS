@@ -63,7 +63,7 @@ const employeeBridge: EmployeeBridge = Object.freeze({
 
 const taskBridge: TaskBridge = Object.freeze({
   list: () => ipcRenderer.invoke(TASK_IPC.list),
-  chooseDirectory: () => ipcRenderer.invoke(TASK_IPC.chooseDirectory),
+  outputDirectory: () => ipcRenderer.invoke(TASK_IPC.outputDirectory),
   openArtifact: (taskId: string, artifactId: string) => ipcRenderer.invoke(TASK_IPC.openArtifact, { taskId, artifactId }),
   revealArtifact: (taskId: string, artifactId: string) => ipcRenderer.invoke(TASK_IPC.revealArtifact, { taskId, artifactId }),
   createDraft: (input: TaskDraftInputView) => ipcRenderer.invoke(TASK_IPC.createDraft, { input }),

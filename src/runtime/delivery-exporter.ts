@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { Artifact, Evidence, ResearchBundle, ToolAction } from './domain'
 import type { FormalTaskDetail } from './task-service'
 import { RuntimeKernel } from './kernel'
+import { hasResearchCapability } from './builtin-contracts'
 
 export interface DeliveryMaterialization { artifactIds: string[]; evidenceIds: string[]; unresolvedIssues: string[] }
 
@@ -34,7 +35,7 @@ export class DeliveryExporter {
     })
     for (const artifact of fileArtifacts) this.kernel.save({ entityType: 'Artifact', entity: artifact, immutable: true }, 'artifact.file_action_verified', { path: artifact.relativePath, sha256: artifact.sha256 })
     if (!bundle) {
-      const researchExpected = detail.assignments.some((assignment) => this.kernel.store.get<any>('EmployeeVersion', assignment.employeeVersionId)?.capabilityVersionIds?.some((id: string) => ['capability.managed-research.v1', 'capability.network-intelligence.v1'].includes(id)))
+      const researchExpected = detail.assignments.some((assignment) => hasResearchCapability(this.kernel.store.get<any>('EmployeeVersion', assignment.employeeVersionId)?.capabilityVersionIds ?? []))
       return { artifactIds: fileArtifacts.map((artifact) => artifact.id), evidenceIds: [], unresolvedIssues: researchExpected ? ['没有可导出的 ResearchBundle'] : fileArtifacts.length ? [] : ['没有经过 Runtime 验证的文档写入或编辑结果'] }
     }
     const evidence: Evidence[] = bundle.items.map((item) => ({ schemaVersion: 1, id: randomUUID(), createdAt: timestamp, runId: detail.run!.id, version: 1, sourceType: item.sourceType, sourceRef: item.url, capturedAt: item.fetchedAt, sha256: item.contentHash }))

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { Assignment, EmployeeVersion, ResearchBundle, ResearchItem, SourceAttempt, ToolAction } from './domain'
 import { RuntimeKernel } from './kernel'
 import { ToolGateway } from './tool-gateway'
+import { hasResearchCapability } from './builtin-contracts'
 
 export interface ManagedResearchInput {
   taskId: string
@@ -84,6 +85,6 @@ export class ManagedResearchService {
     const assignment = this.kernel.store.get<Assignment>('Assignment', input.assignmentId)
     const employee = this.kernel.store.get<EmployeeVersion>('EmployeeVersion', input.employeeVersionId)
     if (!assignment || assignment.runId !== input.runId || assignment.employeeVersionId !== input.employeeVersionId || !employee) throw new Error('invalid_research_context')
-    if (!employee.capabilityVersionIds.some((id) => ['capability.managed-research.v1', 'capability.network-intelligence.v1'].includes(id))) throw new Error('research_capability_not_granted')
+    if (!hasResearchCapability(employee.capabilityVersionIds)) throw new Error('research_capability_not_granted')
   }
 }

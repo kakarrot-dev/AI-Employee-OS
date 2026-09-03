@@ -32,11 +32,11 @@ describe('SupervisorRouter', () => {
     const { router, store } = setup()
     const request = router.createRequest({ requestId: 'route-1', conversationId: 'conversation-1', sourceMessageId: 'message-1', text: '为我处理这件事', history: [], directories: [] })
     expect(request).toMatchObject({ provider: 'deepseek', modelId: 'deepseek-v4-pro', stream: false, outputSchema: { name: 'supervisor_route', strict: true } })
-    expect(request.input).toContain('根据语义和完整对话')
-    expect(request.input).toContain('employee-version.network-intelligence.v1')
-    expect(request.input).toContain('employee-version.document-writer.v1')
+    expect(request.input).toContain('根据完整对话选择一种模式')
+    expect(request.input).toContain('employee-version.network-intelligence.v2')
+    expect(request.input).toContain('employee-version.document-writer.v2')
     const ids = ((request.outputSchema!.schema.properties as Record<string, any>).employeeVersionIds.items.enum as string[])
-    expect(ids.sort()).toEqual(['employee-version.document-writer.v1', 'employee-version.network-intelligence.v1'])
+    expect(ids.sort()).toEqual(['employee-version.document-writer.v2', 'employee-version.network-intelligence.v2'])
     store.close()
   })
 
@@ -63,9 +63,9 @@ describe('SupervisorRouter', () => {
   it('creates a network-to-document draft and derives the missing directory gate from capability facts', () => {
     const { router, tasks, store } = setup()
     const result = router.applyDecision({ requestId: 'route-2', conversationId: 'conversation-2', sourceMessageId: 'message-2', text: '用户原话', history: [], directories: [] }, {
-      mode: 'create_task', response: '准备执行', goal: '调研学校最新新闻并整理成文档', acceptanceCriteria: ['新闻范围符合用户目标'], employeeVersionIds: ['employee-version.network-intelligence.v1', 'employee-version.document-writer.v1'], missingInputs: []
+      mode: 'create_task', response: '准备执行', goal: '调研学校最新新闻并整理成文档', acceptanceCriteria: ['新闻范围符合用户目标'], employeeVersionIds: ['employee-version.network-intelligence.v2', 'employee-version.document-writer.v2'], missingInputs: []
     })
-    expect(result).toMatchObject({ mode: 'create_task', missingInputs: ['authorized_directory'], task: { draft: { conversationId: 'conversation-2', authorizationMode: 'full_access', employeeVersionIds: ['employee-version.network-intelligence.v1', 'employee-version.document-writer.v1'], resourceScope: { directories: [] } } } })
+    expect(result).toMatchObject({ mode: 'create_task', missingInputs: ['authorized_directory'], task: { draft: { conversationId: 'conversation-2', authorizationMode: 'full_access', employeeVersionIds: ['employee-version.network-intelligence.v2', 'employee-version.document-writer.v2'], resourceScope: { directories: [] } } } })
     expect(result.startRequest).toBeUndefined()
     expect(result.response).toContain('已识别为需要员工协作的事项')
     expect(result.response).toContain('受控访问')
@@ -79,7 +79,7 @@ describe('SupervisorRouter', () => {
   it('starts a frozen-scope auto-execution task immediately when no required input is missing', () => {
     const { router, store } = setup()
     const result = router.applyDecision({ requestId: 'route-auto', conversationId: 'conversation-auto', sourceMessageId: 'message-auto', text: '搜索近期行业新闻', history: [], directories: [] }, {
-      mode: 'create_task', response: '准备执行', goal: '搜索近期行业新闻', acceptanceCriteria: ['来源可追溯'], employeeVersionIds: ['employee-version.network-intelligence.v1'], missingInputs: []
+      mode: 'create_task', response: '准备执行', goal: '搜索近期行业新闻', acceptanceCriteria: ['来源可追溯'], employeeVersionIds: ['employee-version.network-intelligence.v2'], missingInputs: []
     })
     expect(result).toMatchObject({ mode: 'create_task', missingInputs: [], task: { task: { state: 'running' }, revision: { authorizationMode: 'full_access' }, run: { state: 'running' } } })
     expect(result.startRequest?.requestId).toBeTruthy()

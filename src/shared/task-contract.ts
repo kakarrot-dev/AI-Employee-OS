@@ -24,7 +24,7 @@ export interface TaskDetailView {
   draftRevision: number
   frozenRevision?: number
   runId?: string
-  assignments: Array<{ id: string; sequence: number; employeeVersionId: string; employeeName?: string; employeeRole?: string; avatarDataUrl?: string; createdAt?: string; completedAt?: string; reworkOfAssignmentId?: string; state: 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled'; output?: string }>
+  assignments: Array<{ id: string; sequence: number; employeeId?: string; employeeVersionId: string; employeeName?: string; employeeRole?: string; avatarDataUrl?: string; createdAt?: string; completedAt?: string; reworkOfAssignmentId?: string; state: 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled'; output?: string }>
   timeline: Array<{ phase: string; assignmentId?: string; nextNode?: string; createdAt: string; memoryRefs?: Array<{ id: string; reason: string }> }>
   delivery?: { id: string; summary?: string; result?: string; createdAt?: string; acceptanceResults: Array<{ criterion: string; passed: boolean }>; artifacts: Array<{ id: string; mediaType: string; relativePath: string; sha256: string }>; evidenceCount: number; unresolvedIssues: string[] }
   researchBundles: Array<{ id: string; contentHash: string; sourceCount: number; claimCount: number; conflicts: string[]; informationGaps: string[] }>

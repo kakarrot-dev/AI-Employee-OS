@@ -24,22 +24,38 @@ function setup(): { employees: EmployeeService; tasks: TaskService; store: Runti
   return { employees, tasks: new TaskService(kernel, employees), store, databasePath, kernel, resources }
 }
 
+function managerReview(criteriaCount: number, approved: boolean, summary: string, returnToAssignmentSequence?: number): Record<string, unknown> {
+  return { approved, summary, criteria: Array.from({ length: criteriaCount }, (_, criterionIndex) => ({ criterionIndex, passed: approved, reason: approved ? 'Runtime 证据满足该项标准' : summary, evidenceTypes: ['employee_output'] })), ...(returnToAssignmentSequence ? { returnToAssignmentSequence } : {}) }
+}
+
+function completeEmployeeTest(employees: EmployeeService, candidateRequestId: string) {
+  const evaluating = employees.handleProviderEvent(candidateRequestId, { type: 'completed', requestId: candidateRequestId })!
+  const requestId = evaluating.nextRequest!.requestId
+  employees.handleProviderEvent(requestId, { type: 'structured_result', requestId, value: { passed: true, summary: '发布门禁通过。', criteria: [
+    { id: 'task_acceptance', passed: true, reason: '满足目标。' },
+    { id: 'role_scope', passed: true, reason: '遵守边界。' },
+    { id: 'truth_and_evidence', passed: true, reason: '未伪造证据。' },
+    { id: 'output_actionability', passed: true, reason: '输出可用。' }
+  ] } })
+  return employees.handleProviderEvent(requestId, { type: 'completed', requestId })!
+}
+
 function publishEmployee(employees: EmployeeService): string {
   const created = employees.create({ name: '正式员工', role: '受控文本交付', description: '负责输出结构清晰且可以验证的文本结果。', systemPrompt: '输出简洁、可验证的结果。', modelId: 'deepseek-v4-pro', capabilityVersionIds: ['capability.text-analysis.v1'], memoryScopes: ['employee'] })
   const withCase = employees.addTestCase(created.employee.id, { name: '发布测试', prompt: 'PASS', acceptanceCriteria: '包含 PASS', expectedContains: 'PASS' })
   const started = employees.startTest(created.employee.id, withCase.testCases[0].id, 'employee-test-provider')
   employees.handleProviderEvent(started.request.requestId, { type: 'output_delta', requestId: started.request.requestId, delta: 'PASS' })
-  const completed = employees.handleProviderEvent(started.request.requestId, { type: 'completed', requestId: started.request.requestId })!
+  const completed = completeEmployeeTest(employees, started.request.requestId)
   employees.confirmTest(created.employee.id, completed.id)
   return employees.publish(created.employee.id).employee.activeVersionId!
 }
 
 function publishResearchEmployee(employees: EmployeeService): string {
-  const created = employees.create({ name: '调研员', role: '受管网络调研', description: '负责在任务授权范围内检索并核验公开来源。', systemPrompt: '需要来源时提交 ToolAction Proposal。', modelId: 'deepseek-v4-pro', capabilityVersionIds: ['capability.managed-research.v1'], memoryScopes: ['task'] })
+  const created = employees.create({ name: '调研员', role: '受管网络调研', description: '负责在任务授权范围内检索并核验公开来源。', systemPrompt: '需要来源时提交 ToolAction Proposal。', modelId: 'deepseek-v4-pro', capabilityVersionIds: ['capability.managed-research.v2'], memoryScopes: ['task'] })
   const withCase = employees.addTestCase(created.employee.id, { name: '发布测试', prompt: 'PASS', acceptanceCriteria: '包含 PASS', expectedContains: 'PASS' })
   const started = employees.startTest(created.employee.id, withCase.testCases[0].id, 'research-test-provider')
   employees.handleProviderEvent(started.request.requestId, { type: 'output_delta', requestId: started.request.requestId, delta: 'PASS' })
-  const completed = employees.handleProviderEvent(started.request.requestId, { type: 'completed', requestId: started.request.requestId })!
+  const completed = completeEmployeeTest(employees, started.request.requestId)
   employees.confirmTest(created.employee.id, completed.id)
   return employees.publish(created.employee.id).employee.activeVersionId!
 }
@@ -51,22 +67,45 @@ describe('TaskService', () => {
     const { employees, tasks, store } = setup()
     employees.seedRequestedSpecialists()
     const root = mkdtempSync(join(tmpdir(), 'ai-employee-os-authorized-')); directories.push(root)
-    const draft = tasks.createDraft({ conversationId: 'specialists', sourceMessageIds: ['message-specialists'], goal: '调研后写入报告', acceptanceCriteria: ['保留来源', '文件可回读'], employeeVersionIds: ['employee-version.network-intelligence.v1', 'employee-version.document-writer.v1'], directories: [root] })
+    const draft = tasks.createDraft({ conversationId: 'specialists', sourceMessageIds: ['message-specialists'], goal: '调研后写入报告', acceptanceCriteria: ['保留来源', '文件可回读'], employeeVersionIds: ['employee-version.network-intelligence.v2', 'employee-version.document-writer.v2'], directories: [root] })
     const started = tasks.confirmAndStart(draft.draft.id)
     expect(started.revision?.resourceScope.directories).toEqual([root])
-    expect(started.assignments.map((assignment) => assignment.employeeVersionId)).toEqual(['employee-version.network-intelligence.v1', 'employee-version.document-writer.v1'])
+    expect(started.assignments.map((assignment) => assignment.employeeVersionId)).toEqual(['employee-version.network-intelligence.v2', 'employee-version.document-writer.v2'])
     expect(started.employeeVersions.map((version) => version.name)).toEqual(['网络情报员', '文档编写员'])
+    expect(started.employeeIdentities.map((identity) => identity.name)).toEqual(['网络情报员', '文档编写员'])
+    expect(started.revision?.resourceScope.skillVersionIds).toEqual(['skill.agent-reach.v2', 'skill.last30days.v2', 'skill.opencli.v2', 'skill.local-document-operations.v2'])
+    expect(Object.values(started.revision?.resourceScope.skillDigests ?? {}).every((digest) => /^[a-f0-9]{64}$/.test(digest))).toBe(true)
+    expect(started.request.input).toContain('# Agent-Reach 公开网页研究')
+    expect(started.request.input).toContain('# Last 30 Days 近期信号研究')
+    expect(started.request.input).not.toContain('# 本机文档操作')
     expect(started.request).toMatchObject({ toolChoice: 'required', proposalTool: { parameters: { properties: { toolVersionId: { enum: ['agent-reach.search@network-intelligence/v1', 'last30days.research@network-intelligence/v1', 'opencli.social-search@network-intelligence/v1'] } } } } })
     expect(started.request.proposalTool?.parameters).toMatchObject({ required: ['toolVersionId', 'parameters'] })
     expect(started.request.proposalTool?.parameters.properties).not.toHaveProperty('parameterSources')
     expect(started.request.input).toContain(`授权目录：${root}`)
+
+    const network = employees.detail('employee.network-intelligence').active!
+    const avatarDataUrl = 'data:image/png;base64,aWRlbnRpdHk='
+    employees.saveDraft('employee.network-intelligence', { name: '网络洞察员', role: network.role ?? '', description: network.description, avatarDataUrl, systemPrompt: network.systemPrompt, modelId: network.modelId, capabilityVersionIds: [...network.capabilityVersionIds], memoryScopes: [...network.memoryScopes] })
+    const refreshed = tasks.detailByTask(started.task!.id)
+    expect(refreshed.employeeIdentities[0]).toEqual({ id: 'employee.network-intelligence', name: '网络洞察员', avatarDataUrl })
+    expect(refreshed.employeeVersions[0].name).toBe('网络情报员')
+    store.close()
+  })
+
+  it('rejects a task when its frozen Skill digest is changed before start', () => {
+    const { employees, tasks, store, kernel } = setup()
+    employees.seedRequestedSpecialists()
+    const draft = tasks.createDraft({ conversationId: 'skill-digest', sourceMessageIds: ['message-skill-digest'], goal: '调研公开信息', acceptanceCriteria: ['来源可追溯'], employeeVersionIds: ['employee-version.network-intelligence.v2'] })
+    kernel.save({ entityType: 'TaskDraft', entity: { ...draft.draft, resourceScope: { ...draft.draft.resourceScope, skillDigests: { ...draft.draft.resourceScope.skillDigests, 'skill.agent-reach.v2': 'tampered' } } }, immutable: false }, 'test.skill_tampered', {})
+    expect(() => tasks.confirmAndStart(draft.draft.id)).toThrow('skill_snapshot_mismatch')
+    expect(store.list('Task')).toHaveLength(0)
     store.close()
   })
 
   it('does not start a local-document assignment before a directory is authorized', () => {
     const { employees, tasks, store } = setup()
     employees.seedRequestedSpecialists()
-    const draft = tasks.createDraft({ conversationId: 'document-gate', sourceMessageIds: ['message-document-gate'], goal: '写入报告', acceptanceCriteria: ['文件可回读'], employeeVersionIds: ['employee-version.document-writer.v1'], directories: [] })
+    const draft = tasks.createDraft({ conversationId: 'document-gate', sourceMessageIds: ['message-document-gate'], goal: '写入报告', acceptanceCriteria: ['文件可回读'], employeeVersionIds: ['employee-version.document-writer.v2'], directories: [] })
     expect(() => tasks.confirmAndStart(draft.draft.id)).toThrow('task_directory_required')
     expect(store.list('Task')).toHaveLength(0)
     expect(store.list('Assignment')).toHaveLength(0)
@@ -77,7 +116,7 @@ describe('TaskService', () => {
     const { employees, tasks, store, kernel, resources } = setup()
     employees.seedRequestedSpecialists()
     const root = mkdtempSync(join(tmpdir(), 'ai-employee-os-document-finish-')); directories.push(root)
-    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'document-finish', sourceMessageIds: ['message-document-finish'], goal: '把上游新闻整理成文档', acceptanceCriteria: ['文件可回读'], employeeVersionIds: ['employee-version.document-writer.v1'], directories: [root], authorizationMode: 'full_access' }).draft.id)
+    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'document-finish', sourceMessageIds: ['message-document-finish'], goal: '把上游新闻整理成文档', acceptanceCriteria: ['文件可回读'], employeeVersionIds: ['employee-version.document-writer.v2'], directories: [root], authorizationMode: 'full_access' }).draft.id)
     const gateway = new ToolGateway(kernel, resources, async (tool) => tool.id.startsWith('document.create') ? { path: join(root, 'report.md'), sha256: 'created-hash' } : { path: join(root, 'report.md'), sha256: 'read-hash', content: '# report' })
 
     const createEvent = { type: 'tool_proposal' as const, requestId: started.request.requestId, callId: 'create', name: 'propose_tool_action', arguments: { toolVersionId: 'document.create@local-document/v1', parameters: { path: join(root, 'report.md'), content: '# report' } } }
@@ -124,12 +163,27 @@ describe('TaskService', () => {
 
     const managerRequest = tasks.beginManagerReview(started.run!.id)
     expect(managerRequest.outputSchema?.name).toBe('manager_review')
-    tasks.handleProviderEvent(managerRequest.requestId, { type: 'structured_result', requestId: managerRequest.requestId, value: { approved: true, summary: '验收通过' } })
+    tasks.handleProviderEvent(managerRequest.requestId, { type: 'structured_result', requestId: managerRequest.requestId, value: managerReview(1, true, '验收通过') })
     const delivered = tasks.handleProviderEvent(managerRequest.requestId, { type: 'completed', requestId: managerRequest.requestId })!
     expect(delivered).toMatchObject({ event: 'delivery_completed', detail: { task: { state: 'succeeded' }, run: { state: 'succeeded' }, delivery: { unresolvedIssues: [] } } })
     expect(delivered.detail.delivery?.acceptanceResults).toEqual([{ criterion: '包含完成状态', passed: true, evidenceIds: [] }])
     expect(store.list('BudgetLedgerEntry')).toHaveLength(1)
     expect(() => store.deleteMutable('TaskRevision', started.revision!.id, { schemaVersion: 1, eventId: 'tamper', occurredAt: new Date().toISOString(), eventType: 'tamper', aggregateType: 'TaskRevision', aggregateId: started.revision!.id, payload: {} })).toThrow('immutable_entity_cannot_change')
+    store.close()
+  })
+
+  it('does not accept a document completion claim without a verified file action', () => {
+    const { employees, tasks, store } = setup()
+    employees.seedRequestedSpecialists()
+    const root = mkdtempSync(join(tmpdir(), 'ai-employee-os-evidence-gate-')); directories.push(root)
+    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'evidence-gate', sourceMessageIds: ['message'], goal: '创建报告文件', acceptanceCriteria: ['文件已写入并可核验'], employeeVersionIds: ['employee-version.document-writer.v2'], directories: [root], authorizationMode: 'full_access' }).draft.id)
+    tasks.handleProviderEvent(started.request.requestId, { type: 'output_delta', requestId: started.request.requestId, delta: '报告已经写入，可以交付。' })
+    tasks.handleProviderEvent(started.request.requestId, { type: 'completed', requestId: started.request.requestId })
+    const review = tasks.beginManagerReview(started.run!.id)
+    tasks.handleProviderEvent(review.requestId, { type: 'structured_result', requestId: review.requestId, value: managerReview(1, true, '验收通过') })
+    const rejected = tasks.handleProviderEvent(review.requestId, { type: 'completed', requestId: review.requestId })!
+    expect(rejected).toMatchObject({ event: 'progress', detail: { delivery: undefined, run: { state: 'running' } } })
+    expect(rejected.request?.input).toContain('Runtime 证据门禁未通过：文档任务没有经过 Runtime 核验的写入或编辑结果')
     store.close()
   })
 
@@ -211,7 +265,7 @@ describe('TaskService', () => {
     tasks.handleProviderEvent(started.request.requestId, { type: 'output_delta', requestId: started.request.requestId, delta: '不完整' })
     const employeeDone = tasks.handleProviderEvent(started.request.requestId, { type: 'completed', requestId: started.request.requestId })!
     const managerRequest = tasks.beginManagerReview(started.run!.id)
-    tasks.handleProviderEvent(managerRequest.requestId, { type: 'structured_result', requestId: managerRequest.requestId, value: { approved: false, summary: '请补足验收证据', returnToAssignmentSequence: 1 } })
+    tasks.handleProviderEvent(managerRequest.requestId, { type: 'structured_result', requestId: managerRequest.requestId, value: managerReview(1, false, '请补足验收证据', 1) })
     const rejected = tasks.handleProviderEvent(managerRequest.requestId, { type: 'completed', requestId: managerRequest.requestId })!
     expect(rejected).toMatchObject({ event: 'progress', detail: { task: { state: 'running' }, run: { state: 'running' } }, request: { modelId: 'deepseek-v4-pro' } })
     expect(rejected.detail.assignments.at(-1)).toMatchObject({ sequence: 2, employeeVersionId, state: 'running', reworkOfAssignmentId: started.assignments[0].id })
@@ -231,7 +285,7 @@ describe('TaskService', () => {
     tasks.handleProviderEvent(firstDone.request!.requestId, { type: 'output_delta', requestId: firstDone.request!.requestId, delta: '分析报告' })
     tasks.handleProviderEvent(firstDone.request!.requestId, { type: 'completed', requestId: firstDone.request!.requestId })
     const review = tasks.beginManagerReview(started.run!.id)
-    tasks.handleProviderEvent(review.requestId, { type: 'structured_result', requestId: review.requestId, value: { approved: false, summary: '上游证据不足', returnToAssignmentSequence: 1 } })
+    tasks.handleProviderEvent(review.requestId, { type: 'structured_result', requestId: review.requestId, value: managerReview(1, false, '上游证据不足', 1) })
     const rejected = tasks.handleProviderEvent(review.requestId, { type: 'completed', requestId: review.requestId })!
     expect(rejected.detail.assignments.slice(2)).toEqual([
       expect.objectContaining({ sequence: 3, employeeVersionId: researcher, state: 'running', reworkOfAssignmentId: started.assignments[0].id }),

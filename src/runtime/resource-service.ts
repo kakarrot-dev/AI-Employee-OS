@@ -3,6 +3,7 @@ import type { MCPVersion, SkillVersion, SourceHealthCheck, ToolVersion } from '.
 import { RuntimeKernel } from './kernel'
 import { managedResearchRunner } from './managed-research-runner'
 import { probeExternalIntelligenceTool } from './external-intelligence-runner'
+import { BUILT_IN_SKILLS } from './builtin-contracts'
 
 export interface ResourceCatalog {
   skills: SkillVersion[]
@@ -107,33 +108,13 @@ const builtInTools: ToolVersion[] = [
   }
 ]
 
-const managedResearchSkill: SkillVersion = {
-  schemaVersion: 1,
-  id: 'skill.managed-research.v1',
-  createdAt: now,
-  name: '多源网络调研',
-  description: '使用固定 GitHub REST 与 RSS/Atom 两类来源，保留失败来源、时间、Hash 与信息缺口。',
-  version: 1,
-  steps: ['拆分公开、非敏感查询', '分别提交 GitHub 与 RSS ToolAction Proposal', '保留 SourceAttempt 与非可信标记', '形成带来源的 ResearchBundle'],
-  toolVersionIds: ['github.repositories.search@research-source/v1', 'rss.read@research-source/v1'],
-  available: true
-}
-
-const builtInSkills: SkillVersion[] = [
-  managedResearchSkill,
-  { schemaVersion: 1, id: 'skill.agent-reach.v1', createdAt: now, name: 'Agent-Reach', description: '互联网能力路由与公开网页搜索。', version: 1, steps: ['运行依赖体检', '提交非敏感查询', '保留来源 URL 与失败通道'], toolVersionIds: ['agent-reach.search@network-intelligence/v1'], available: true },
-  { schemaVersion: 1, id: 'skill.last30days.v1', createdAt: now, name: 'Last 30 Days', description: '汇总最近 30 天社区与网页信号。', version: 1, steps: ['读取已配置来源状态', '执行近期情报检索', '保留来源覆盖与缺口'], toolVersionIds: ['last30days.research@network-intelligence/v1'], available: true },
-  { schemaVersion: 1, id: 'skill.opencli.v1', createdAt: now, name: 'OpenCLI', description: '复用已连接浏览器会话的只读平台 Adapter。', version: 1, steps: ['确认浏览器桥接', '调用固定只读 Adapter', '分平台记录成功与失败'], toolVersionIds: ['opencli.social-search@network-intelligence/v1'], available: true },
-  { schemaVersion: 1, id: 'skill.local-document-operations.v1', createdAt: now, name: '本机文档操作', description: '在用户授权目录内查看、独占创建和精确编辑本机文档。', version: 1, steps: ['校验 RunGrant 授权目录', '查看或执行单次写入/编辑', '回读并记录 SHA-256'], toolVersionIds: ['document.read@local-document/v1', 'document.create@local-document/v1', 'document.edit@local-document/v1'], available: true }
-]
-
 export class ResourceService {
   constructor(private readonly kernel: RuntimeKernel) {}
 
   seed(): void {
     for (const mcp of builtInMcps) if (!this.kernel.store.get<MCPVersion>('MCPVersion', mcp.id)) this.kernel.save({ entityType: 'MCPVersion', entity: mcp, immutable: true }, 'resource.mcp.seeded', {})
     for (const tool of builtInTools) if (!this.kernel.store.get<ToolVersion>('ToolVersion', tool.id)) this.kernel.save({ entityType: 'ToolVersion', entity: tool, immutable: true }, 'resource.tool.seeded', {})
-    for (const skill of builtInSkills) if (!this.kernel.store.get<SkillVersion>('SkillVersion', skill.id)) this.kernel.save({ entityType: 'SkillVersion', entity: skill, immutable: true }, 'resource.skill.seeded', {})
+    for (const skill of BUILT_IN_SKILLS) if (!this.kernel.store.get<SkillVersion>('SkillVersion', skill.id)) this.kernel.save({ entityType: 'SkillVersion', entity: skill, immutable: true }, 'resource.skill.seeded', { version: skill.version, instructionDigest: skill.instructionDigest })
   }
 
   list(): ResourceCatalog {
@@ -149,8 +130,13 @@ export class ResourceService {
       const available = mcp.available && dependencies.every((tool) => tool?.available)
       return { ...mcp, available, health: available ? mcp.health : 'degraded' as const, reason: available ? undefined : '至少一个数据源不可用' }
     })
+    const latestSkills = new Map<string, SkillVersion>()
+    for (const skill of this.kernel.store.list<SkillVersion>('SkillVersion')) {
+      const current = latestSkills.get(skill.name)
+      if (!current || skill.version > current.version) latestSkills.set(skill.name, skill)
+    }
     return {
-      skills: this.kernel.store.list<SkillVersion>('SkillVersion').map((skill) => { const available = skill.available && skill.toolVersionIds.every((id) => toolById.get(id)?.available); return { ...skill, available, reason: available ? undefined : '至少一个 Tool 依赖不可用' } }),
+      skills: [...latestSkills.values()].map((skill) => { const available = skill.available && skill.toolVersionIds.every((id) => toolById.get(id)?.available); return { ...skill, available, reason: available ? undefined : '至少一个 Tool 依赖不可用' } }),
       tools,
       mcps,
       healthChecks
