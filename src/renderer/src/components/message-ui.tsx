@@ -134,7 +134,7 @@ export function fileSizeLabel(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function fileDetail(file: File): string {
+export function fileDetail(file: Pick<File, 'name' | 'size'>): string {
   const extension = file.name.includes('.') ? file.name.split('.').pop()?.toUpperCase() : undefined
   return `${extension || '文件'} · ${fileSizeLabel(file.size)}`
 }

@@ -317,6 +317,127 @@ body,
 .form-field__feedback { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; color: var(--faint); font-size: 10px; font-weight: 480; line-height: 1.45; }
 .form-field__feedback > span:last-child { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 .form-field__feedback.is-error { color: var(--danger); }
+
+.agent-entry-choice {
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 16px;
+}
+
+.agent-entry-choice > p {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-secondary-size);
+}
+
+.agent-entry-choice__options {
+  display: grid;
+  gap: 7px;
+}
+
+.agent-entry-choice__options > button {
+  min-height: 60px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 11px;
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-tag);
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-entry-choice__options > button:hover { background: var(--surface-hover); }
+.agent-entry-choice__options > button:active { transform: scale(.99); }
+.agent-entry-choice__options > button:focus-visible { box-shadow: 0 0 0 2px var(--focus); outline: none; }
+.agent-entry-choice__options > button > span:nth-child(2) { min-width: 0; display: grid; gap: 3px; }
+.agent-entry-choice__options strong { font-size: var(--type-body-size); }
+.agent-entry-choice__options small { overflow: hidden; color: var(--text-tertiary); font-size: var(--type-meta-size); text-overflow: ellipsis; white-space: nowrap; }
+.agent-entry-choice__options > button > svg { color: var(--text-tertiary); }
+
+.agent-entry-choice__icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.recruitment-catalog__header {
+  padding: 4px 0 28px;
+}
+
+.recruitment-catalog__header h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--type-page-title-size);
+  letter-spacing: var(--type-tracking-tight);
+}
+
+.recruitment-catalog__header p {
+  max-width: var(--layout-reading-content-max-width);
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--type-body-size);
+  line-height: var(--type-leading-reading);
+}
+
+.recruitment-catalog__categories { display: grid; gap: 28px; }
+.recruitment-category { min-width: 0; }
+
+.recruitment-category__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.recruitment-category__heading h3 { margin: 0; color: var(--text-primary); font-size: var(--type-section-title-size); }
+.recruitment-category__heading span { color: var(--text-tertiary); font-size: var(--type-meta-size); }
+
+.recruitment-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.recruitment-employee {
+  min-width: 0;
+  min-height: 126px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px;
+  border-radius: 13px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-card);
+}
+
+.recruitment-employee strong {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--text-primary);
+  font-size: var(--type-body-size);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .recruitment-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 .supervisor-settings-form {
   display: grid;
   gap: 0;
@@ -1040,6 +1161,30 @@ body,
     inset 0 0 0 1px var(--line-strong),
     var(--shell-composer-shadow);
 }
+
+.composer__box.is-file-dragging {
+  box-shadow:
+    inset 0 0 0 1.5px var(--accent-strong),
+    var(--shell-composer-shadow);
+}
+
+.composer-drop-zone {
+  position: absolute;
+  z-index: 11;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: inherit;
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--surface-raised) 92%, var(--accent-soft));
+  pointer-events: none;
+}
+
+.composer-drop-zone span { display: grid; gap: 2px; }
+.composer-drop-zone strong { font-size: var(--type-body-size); }
+.composer-drop-zone small { color: var(--text-secondary); font-size: var(--type-meta-size); }
 
 .composer__control,
 .composer .icon-button {

@@ -1,4 +1,4 @@
-import type { ConversationBridge, EmployeeBridge, MemoryBridge, ProviderBridge, ResourceBridge, RuntimeBridge, SupervisorBridge, TaskBridge, UsageBridge } from '../../shared/runtime-contract'
+import type { AttachmentBridge, ConversationBridge, EmployeeBridge, MemoryBridge, ProviderBridge, ResourceBridge, RuntimeBridge, SupervisorBridge, TaskBridge, UsageBridge } from '../../shared/runtime-contract'
 
 declare global {
   interface Window {
@@ -6,6 +6,7 @@ declare global {
       runtime: RuntimeBridge
       provider: ProviderBridge
       conversation: ConversationBridge
+      attachment: AttachmentBridge
       supervisor: SupervisorBridge
       employee: EmployeeBridge
       task: TaskBridge

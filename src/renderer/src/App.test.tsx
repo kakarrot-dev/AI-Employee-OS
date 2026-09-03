@@ -58,6 +58,12 @@ describe('App shell', () => {
         history: vi.fn().mockResolvedValue([]),
         onEvent: vi.fn().mockReturnValue(() => undefined)
       },
+      attachment: {
+        select: vi.fn().mockResolvedValue([]),
+        importDropped: vi.fn().mockResolvedValue([]),
+        open: vi.fn().mockResolvedValue({ opened: true }),
+        reveal: vi.fn().mockResolvedValue({ revealed: true })
+      },
       supervisor: {
         get: vi.fn().mockResolvedValue({ schemaVersion: 1, id: 'supervisor.local', createdAt: '2026-09-02T00:00:00Z', updatedAt: '2026-09-02T00:00:00Z', name: '总管', systemPrompt: '使用简体中文，依据证据组织和验收员工工作。', modelId: 'deepseek-v4-pro', memoryScopes: ['global'] }),
         update: vi.fn().mockImplementation(async (input) => ({ schemaVersion: 1, id: 'supervisor.local', createdAt: '2026-09-02T00:00:00Z', updatedAt: '2026-09-02T00:01:00Z', ...input }))
@@ -320,7 +326,44 @@ describe('App shell', () => {
     await waitFor(() => expect(window.aiEmployeeOS.task.outputDirectory).toHaveBeenCalled())
     fireEvent.change(input, { target: { value: '整理为文档' } })
     fireEvent.submit(input.closest('form')!)
-    await waitFor(() => expect(window.aiEmployeeOS.conversation.send).toHaveBeenCalledWith('local-supervisor', '整理为文档', ['/Users/kakarrot/Downloads']))
+    await waitFor(() => expect(window.aiEmployeeOS.conversation.send).toHaveBeenCalledWith('local-supervisor', '整理为文档', ['/Users/kakarrot/Downloads'], []))
+  })
+
+  it('imports customer documents and sends their managed attachment ids to Runtime', async () => {
+    vi.mocked(window.aiEmployeeOS.runtime.getStatus).mockResolvedValue({ state: 'connected', checkedAt: '2026-09-02T00:00:00Z', message: 'Runtime 已连接' })
+    vi.mocked(window.aiEmployeeOS.attachment.select).mockResolvedValue([{ id: 'attachment-1', name: '客户需求.pdf', mediaType: 'application/pdf', size: 2048, sha256: 'a'.repeat(64) }])
+    render(<App />)
+    await screen.findByRole('textbox', { name: '发送消息' })
+    fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
+    expect(await screen.findByText('客户需求.pdf')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(window.aiEmployeeOS.conversation.send).toHaveBeenCalledWith('local-supervisor', '请分析这些客户招投标材料，并交给文档编写员形成可验收的响应文档。', ['/Users/kakarrot/Downloads'], ['attachment-1']))
+  })
+
+  it('imports files dropped onto the composer through the managed attachment bridge', async () => {
+    vi.mocked(window.aiEmployeeOS.attachment.importDropped).mockResolvedValue([{ id: 'attachment-dropped', name: '技术需求.docx', mediaType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 4096, sha256: 'b'.repeat(64) }])
+    render(<App />)
+    const composer = (await screen.findByRole('textbox', { name: '发送消息' })).closest('form')!
+    const file = new File(['requirements'], '技术需求.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
+    const dataTransfer = { types: ['Files'], files: [file], dropEffect: 'none' }
+
+    fireEvent.dragEnter(composer, { dataTransfer })
+    expect(screen.getByRole('status')).toHaveTextContent('松开以上传文件')
+    fireEvent.drop(composer, { dataTransfer })
+
+    await waitFor(() => expect(window.aiEmployeeOS.attachment.importDropped).toHaveBeenCalledWith([file]))
+    expect(await screen.findByText('技术需求.docx')).toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('asks for a restart instead of exposing a missing preload bridge error', async () => {
+    window.aiEmployeeOS.attachment.importDropped = undefined as unknown as typeof window.aiEmployeeOS.attachment.importDropped
+    render(<App />)
+    const composer = (await screen.findByRole('textbox', { name: '发送消息' })).closest('form')!
+    const file = new File(['requirements'], '技术需求.docx')
+    fireEvent.drop(composer, { dataTransfer: { types: ['Files'], files: [file], dropEffect: 'none' } })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('附件上传组件已更新，请重启客户端后重试')
   })
 
   it('projects the personal avatar and name into the conversation timeline without calling the user 你', async () => {
@@ -375,14 +418,33 @@ describe('App shell', () => {
     await waitFor(() => expect(window.aiEmployeeOS.runtime.reconnect).toHaveBeenCalledOnce())
   })
 
-  it('opens the prototype three-step employee creation modal', async () => {
+  it('routes the new Agent entry to the read-only recruitment catalog', async () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: '通讯录' }))
+    fireEvent.click(await screen.findByRole('button', { name: '新建 Agent' }))
+
+    const entryDialog = screen.getByRole('dialog', { name: '新建 Agent' })
+    expect(within(entryDialog).getByRole('button', { name: /招募员工/ })).toBeInTheDocument()
+    expect(within(entryDialog).getByRole('button', { name: /创建员工/ })).toBeInTheDocument()
+    fireEvent.click(within(entryDialog).getByRole('button', { name: /招募员工/ }))
+
+    const catalog = screen.getByRole('region', { name: '招募员工' })
+    expect(within(catalog).getByText('信息与分析')).toBeInTheDocument()
+    expect(within(catalog).getByText('内容与交付')).toBeInTheDocument()
+    for (const employee of ['网络情报员', '招投标分析员', '文档编写员']) expect(within(catalog).getByText(employee)).toBeInTheDocument()
+    expect(within(catalog).getAllByRole('listitem')).toHaveLength(3)
+    expect(within(catalog).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('routes the new Agent entry to the existing three-step employee creation modal', async () => {
     vi.mocked(window.aiEmployeeOS.employee.capabilities).mockResolvedValue([
       { schemaVersion: 1, id: 'capability-research', createdAt: '2026-09-02T00:00:00Z', name: '网络调研能力', description: '收集、核验并整理公开资料。', version: 1, skillVersionIds: ['skill-research'], toolVersionIds: [], mcpVersionIds: [], requiredModelIds: [], permissionRequirements: ['公开网络读取'], dependencies: [] },
       { schemaVersion: 1, id: 'capability-document', createdAt: '2026-09-02T00:00:00Z', name: '文档交付能力', description: '生成可验收的结构化文档。', version: 1, skillVersionIds: ['skill-document'], toolVersionIds: ['tool-document'], mcpVersionIds: [], requiredModelIds: [], permissionRequirements: ['授权目录写入'], dependencies: [] }
     ])
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: '通讯录' }))
-    fireEvent.click(await screen.findByRole('button', { name: '新建 Agent 员工' }))
+    fireEvent.click(await screen.findByRole('button', { name: '新建 Agent' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '新建 Agent' })).getByRole('button', { name: /创建员工/ }))
     const navigation = screen.getByRole('navigation', { name: '创建步骤' })
     expect(navigation).toBeInTheDocument()
     for (const step of ['基本资料', '提示词', '模型与能力']) expect(within(navigation).getByRole('button', { name: step })).toBeInTheDocument()
@@ -500,7 +562,7 @@ describe('App shell', () => {
     const task = {
       id: 'task-view-1', conversationId: 'local-supervisor', createdAt: '2026-08-31T07:59:01Z', sourceMessageIds: ['message-1'], taskId: 'task-1', draftId: 'draft-1', state: 'needs_attention' as const,
       goal: '生成市场研究报告', acceptanceCriteria: ['关键结论可追溯'], employeeVersionIds: ['employee-version.network-intelligence.v2'], directories: [], draftRevision: 1, frozenRevision: 1, runId: 'run-1',
-      assignments: [{ id: 'assignment-1', sequence: 1, employeeId: 'employee.network-intelligence', employeeVersionId: 'employee-version.network-intelligence.v2', employeeName: '网络情报员', employeeRole: '公开信息调研', createdAt: '2026-08-31T07:59:02Z', completedAt: '2026-08-31T08:00:00Z', state: 'succeeded' as const, output: '已完成调研并提交报告。' }],
+      assignments: [{ id: 'assignment-1', sequence: 1, employeeId: 'employee.network-intelligence', employeeVersionId: 'employee-version.network-intelligence.v2', employeeName: '网络情报员', employeeRole: '公开信息调研', createdAt: '2026-08-31T07:59:02Z', completedAt: '2026-08-31T08:00:00Z', state: 'succeeded' as const, summary: '已完成调研并提交报告。' }],
       timeline: [{ phase: 'research', nextNode: 'approval', createdAt: '2026-08-31T08:00:00Z' }],
       delivery: { id: 'delivery-1', summary: '验收通过', result: '已完成调研并提交报告。', createdAt: '2026-08-31T08:00:01Z', acceptanceResults: [{ criterion: '关键结论可追溯', passed: true }], artifacts: [{ id: 'artifact-1', mediaType: 'text/markdown', relativePath: 'report.md', sha256: '1234567890abcdef' }], evidenceCount: 4, unresolvedIssues: [] },
       researchBundles: [], pendingChange: undefined,
@@ -510,7 +572,7 @@ describe('App shell', () => {
     const previousTask = {
       ...task,
       id: 'task-view-2', taskId: 'task-2', draftId: 'draft-2', runId: 'run-2', state: 'failed' as const, goal: '复核竞争对手信息', delivery: undefined,
-      assignments: [{ ...task.assignments[0], id: 'assignment-2', output: '历史执行未完成。' }],
+      assignments: [{ ...task.assignments[0], id: 'assignment-2', summary: '历史执行未完成。' }],
       timeline: [{ phase: 'failed', createdAt: '2026-08-31T07:58:00Z' }],
       toolActions: [], approvals: []
     }
@@ -566,8 +628,8 @@ describe('App shell', () => {
       id: 'task-live', conversationId: 'local-supervisor', createdAt: '2026-09-02T01:00:01Z', sourceMessageIds: ['message-live'], taskId: 'task-live', draftId: 'draft-live', state: 'running' as const,
       goal: '调研学校新闻并整理文档', acceptanceCriteria: ['来源可追溯'], employeeVersionIds: ['employee-network', 'employee-writer'], directories: ['/tmp/reports'], draftRevision: 1, frozenRevision: 1, runId: 'run-live',
       assignments: [
-        { id: 'assignment-network', sequence: 1, employeeVersionId: 'employee-network', employeeName: '网络情报员', employeeRole: '多源公开信息调研', createdAt: '2026-09-02T01:00:02Z', completedAt: '2026-09-02T01:05:00Z', state: 'succeeded' as const, output: '已完成多源检索，并将来源交接给文档编写员。' },
-        { id: 'assignment-writer', sequence: 2, employeeVersionId: 'employee-writer', employeeName: '文档编写员', employeeRole: '本机文档写入', createdAt: '2026-09-02T01:00:02Z', state: 'running' as const, output: '正在整理 Markdown 结构和来源索引。' }
+        { id: 'assignment-network', sequence: 1, employeeVersionId: 'employee-network', employeeName: '网络情报员', employeeRole: '多源公开信息调研', createdAt: '2026-09-02T01:00:02Z', completedAt: '2026-09-02T01:05:00Z', state: 'succeeded' as const, summary: '已完成多源检索，并将来源交接给文档编写员。' },
+        { id: 'assignment-writer', sequence: 2, employeeVersionId: 'employee-writer', employeeName: '文档编写员', employeeRole: '本机文档写入', createdAt: '2026-09-02T01:00:02Z', state: 'running' as const, summary: '正在整理 Markdown 结构和来源索引。' }
       ],
       timeline: [{ phase: 'created', nextNode: 'employee', createdAt: '2026-09-02T01:00:02Z' }, { phase: 'employee_completed', assignmentId: 'assignment-network', nextNode: 'employee', createdAt: '2026-09-02T01:05:00Z' }],
       researchBundles: [], toolActions: [], approvals: []
