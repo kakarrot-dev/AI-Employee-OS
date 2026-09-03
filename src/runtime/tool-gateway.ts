@@ -50,6 +50,10 @@ function decodedVariants(value: string): string[] {
   return variants
 }
 
+function isLocalFileTool(toolVersionId: string): boolean {
+  return toolVersionId.startsWith('document.') || toolVersionId.startsWith('tender.')
+}
+
 export class ToolGateway {
   constructor(private readonly kernel: RuntimeKernel, private readonly resources: ResourceService, private readonly runner: ToolRunner) {}
 
@@ -159,16 +163,18 @@ export class ToolGateway {
       if (keys.some((key) => !['path', 'content'].includes(key)) || typeof parameters.path !== 'string' || typeof parameters.content !== 'string') throw new Error('invalid_tool_parameters')
     } else if (tool.id === 'document.edit@local-document/v1') {
       if (keys.some((key) => !['path', 'oldText', 'newText'].includes(key)) || typeof parameters.path !== 'string' || typeof parameters.oldText !== 'string' || typeof parameters.newText !== 'string') throw new Error('invalid_tool_parameters')
+    } else if (tool.id === 'tender.requirements.extract@document-analysis/v1') {
+      if (keys.length !== 1 || !Array.isArray(parameters.paths) || parameters.paths.length < 1 || parameters.paths.length > 8 || new Set(parameters.paths).size !== parameters.paths.length || parameters.paths.some((path) => typeof path !== 'string')) throw new Error('invalid_tool_parameters')
     }
     if (parameters.limit !== undefined && (!Number.isSafeInteger(parameters.limit) || Number(parameters.limit) < 1 || Number(parameters.limit) > 10)) throw new Error('invalid_tool_parameters')
   }
 
   private blockReason(action: ToolAction): string | undefined {
     const text = allText(action.parameters).flatMap(decodedVariants)
-    if (!action.toolVersionId.startsWith('document.') && text.some((value) => sensitivePatterns.some((pattern) => pattern.test(value)))) return 'sensitive_egress_blocked'
-    if (action.toolVersionId.startsWith('document.') && Object.values(action.parameterSources).some((source) => source.kind === 'untrusted_external_content')) return 'untrusted_file_parameter_blocked'
+    if (!isLocalFileTool(action.toolVersionId) && text.some((value) => sensitivePatterns.some((pattern) => pattern.test(value)))) return 'sensitive_egress_blocked'
+    if (isLocalFileTool(action.toolVersionId) && Object.values(action.parameterSources).some((source) => source.kind === 'untrusted_external_content')) return 'untrusted_file_parameter_blocked'
     for (const [key, source] of Object.entries(action.parameterSources)) {
-      if (!action.toolVersionId.startsWith('document.') && ['model_output', 'untrusted_external_content'].includes(source.kind) && injectionPatterns.some((pattern) => pattern.test(String(action.parameters[key] ?? '')))) return 'prompt_injection_blocked'
+      if (!isLocalFileTool(action.toolVersionId) && ['model_output', 'untrusted_external_content'].includes(source.kind) && injectionPatterns.some((pattern) => pattern.test(String(action.parameters[key] ?? '')))) return 'prompt_injection_blocked'
     }
     return undefined
   }

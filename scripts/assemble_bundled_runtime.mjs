@@ -63,6 +63,7 @@ cpSync(join(repository, 'spikes/local-memory/memory_worker.py'), join(memoryRoot
 mkdirSync(join(memoryRoot, 'bin'), { recursive: true })
 cpSync(join(repository, 'build/native/memory-keychain-helper'), join(memoryRoot, 'bin/memory-keychain-helper'))
 cpSync(join(repository, 'build/native/provider-keychain-helper'), join(memoryRoot, 'bin/provider-keychain-helper'))
+cpSync(join(repository, 'build/native/image-text-extractor'), join(memoryRoot, 'bin/image-text-extractor'))
 cpSync(join(repository, 'spikes/local-memory/.model-cache'), join(memoryRoot, 'model-cache'), { recursive: true, filter: (source) => !source.includes('/.locks') })
 materializeSymlinks(runtimeRoot)
 
@@ -85,7 +86,8 @@ const manifest = {
     deepAgents: sha256(join(deepRoot, 'formal_worker.py')),
     localMemory: sha256(join(memoryRoot, 'memory_worker.py')),
     keychainHelper: sha256(join(memoryRoot, 'bin/memory-keychain-helper')),
-    providerKeychainHelper: sha256(join(memoryRoot, 'bin/provider-keychain-helper'))
+    providerKeychainHelper: sha256(join(memoryRoot, 'bin/provider-keychain-helper')),
+    imageTextExtractor: sha256(join(memoryRoot, 'bin/image-text-extractor'))
   },
   embedding: {
     model: 'BAAI/bge-small-zh-v1.5',

@@ -135,9 +135,19 @@ export interface Message extends VersionedEntity {
   conversationId: string
   role: 'user' | 'assistant'
   content: string
+  attachments?: MessageAttachmentReference[]
   provider?: 'deepseek' | 'poe'
   modelId?: string
   providerRequestId?: string
+}
+
+export interface MessageAttachmentReference {
+  id: string
+  name: string
+  path: string
+  mediaType: string
+  size: number
+  sha256: string
 }
 
 export interface BudgetSnapshot {
@@ -167,6 +177,7 @@ export interface ResourceScope {
 export interface TaskDraft extends VersionedEntity {
   conversationId: string
   sourceMessageIds: string[]
+  attachments: MessageAttachmentReference[]
   goal: string
   acceptanceCriteria: string[]
   employeeVersionIds: string[]
@@ -183,6 +194,7 @@ export interface TaskRevision extends VersionedEntity {
   sourceDraftId: string
   revision: number
   frozen: true
+  attachments: MessageAttachmentReference[]
   goal: string
   acceptanceCriteria: string[]
   employeeVersionIds: string[]
@@ -218,6 +230,7 @@ export interface Assignment extends VersionedEntity {
   state: 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled'
   providerRequestId?: string
   output?: string
+  summary?: string
   completedAt?: string
   toolActionIds?: string[]
   awaitingToolActionId?: string

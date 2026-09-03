@@ -57,15 +57,17 @@ function completePassingEvaluation(service: EmployeeService, candidateRequestId:
 }
 
 describe('EmployeeService', () => {
-  it('installs the two requested specialist employees once with disjoint capabilities', () => {
+  it('installs the requested specialist employees once with disjoint capabilities', () => {
     const { service, store } = setup()
     service.seedRequestedSpecialists(); service.seedRequestedSpecialists()
     const installed = service.list().filter((employee) => employee.id.startsWith('employee.'))
-    expect(installed).toHaveLength(2)
+    expect(installed).toHaveLength(3)
     expect(installed.find((employee) => employee.id === 'employee.network-intelligence')).toMatchObject({ name: '网络情报员', status: 'active', capabilityVersionIds: ['capability.network-intelligence.v2'], activeCapabilityVersionIds: ['capability.network-intelligence.v2'] })
     expect(installed.find((employee) => employee.id === 'employee.document-writer')).toMatchObject({ name: '文档编写员', status: 'active', capabilityVersionIds: ['capability.local-document.v2'], activeCapabilityVersionIds: ['capability.local-document.v2'] })
+    expect(installed.find((employee) => employee.id === 'employee.tender-analyst')).toMatchObject({ name: '招投标分析员', status: 'active', capabilityVersionIds: ['capability.tender-analysis.v2'], activeCapabilityVersionIds: ['capability.tender-analysis.v2'] })
     expect(service.detail('employee.network-intelligence').active?.systemPrompt).toContain('主张与来源的对应关系')
     expect(service.detail('employee.document-writer').active?.systemPrompt).toContain('逐条核对验收标准')
+    expect(service.detail('employee.tender-analyst').active?.systemPrompt).toContain('需求矩阵')
     store.close()
   })
 

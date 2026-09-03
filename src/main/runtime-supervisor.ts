@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { utilityProcess, type UtilityProcess } from 'electron'
 import type { RuntimeHealth } from '../runtime/kernel'
-import type { Conversation, Message } from '../runtime/domain'
+import type { Conversation, Message, MessageAttachmentReference } from '../runtime/domain'
 import type { AgentCapabilityVersionView, EmployeeDetail, EmployeeDraftInput, EmployeeSummary } from '../shared/employee-contract'
 import type { FormalTaskDetail, TaskDraftInput } from '../runtime/task-service'
 import type { ResourceCatalog } from '../runtime/resource-service'
@@ -34,6 +34,7 @@ export class RuntimeSupervisor {
     private readonly databasePath: string,
     private readonly deepAgentWorker: { pythonPath: string; scriptPath: string; checkpointDirectory: string },
     private readonly memoryWorker: { pythonPath: string; scriptPath: string; databasePath: string; modelCachePath: string; keychainHelperPath: string },
+    private readonly imageTextExtractorPath: string,
     private readonly exportDirectory: string,
     private readonly onEvent: (event: RuntimeSupervisorEvent) => void,
     private readonly onProviderExecute?: (request: ProviderRequest, onEvent: (event: ProviderEvent) => Promise<void>) => Promise<void>,
@@ -51,7 +52,7 @@ export class RuntimeSupervisor {
       this.rejectReady = reject
     })
 
-    const child = utilityProcess.fork(this.runtimeEntry, [`--database=${this.databasePath}`, `--worker-python=${this.deepAgentWorker.pythonPath}`, `--worker-script=${this.deepAgentWorker.scriptPath}`, `--checkpoint-directory=${this.deepAgentWorker.checkpointDirectory}`, `--memory-python=${this.memoryWorker.pythonPath}`, `--memory-script=${this.memoryWorker.scriptPath}`, `--memory-database=${this.memoryWorker.databasePath}`, `--memory-model-cache=${this.memoryWorker.modelCachePath}`, `--memory-keychain-helper=${this.memoryWorker.keychainHelperPath}`, `--export-directory=${this.exportDirectory}`], {
+    const child = utilityProcess.fork(this.runtimeEntry, [`--database=${this.databasePath}`, `--worker-python=${this.deepAgentWorker.pythonPath}`, `--worker-script=${this.deepAgentWorker.scriptPath}`, `--checkpoint-directory=${this.deepAgentWorker.checkpointDirectory}`, `--memory-python=${this.memoryWorker.pythonPath}`, `--memory-script=${this.memoryWorker.scriptPath}`, `--memory-database=${this.memoryWorker.databasePath}`, `--memory-model-cache=${this.memoryWorker.modelCachePath}`, `--memory-keychain-helper=${this.memoryWorker.keychainHelperPath}`, `--image-text-extractor=${this.imageTextExtractorPath}`, `--export-directory=${this.exportDirectory}`], {
       serviceName: 'com.kakarrot.ai-employee-os.runtime',
       stdio: 'pipe'
     })
@@ -71,9 +72,9 @@ export class RuntimeSupervisor {
     return this.request<RuntimeHealth>({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId: randomUUID(), type: 'health', payload: {} })
   }
 
-  sendConversation(conversationId: string, messageId: string, text: string, directories: string[] = []): Promise<{ accepted: true; requestId: string }> {
+  sendConversation(conversationId: string, messageId: string, text: string, directories: string[] = [], attachments: MessageAttachmentReference[] = []): Promise<{ accepted: true; requestId: string }> {
     const requestId = randomUUID()
-    return this.request<{ accepted: true }>({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, type: 'conversation.send', payload: { conversationId, messageId, text, directories } }, 5000).then((result) => ({ ...result, requestId }))
+    return this.request<{ accepted: true }>({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, type: 'conversation.send', payload: { conversationId, messageId, text, directories, attachments } }, 5000).then((result) => ({ ...result, requestId }))
   }
 
   conversationHistory(conversationId: string): Promise<Message[]> {

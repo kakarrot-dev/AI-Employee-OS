@@ -43,7 +43,14 @@ const localDocumentMcp: MCPVersion = {
   credentialRequirement: 'none', credentialStatus: 'not_required', health: 'available', available: true
 }
 
-const builtInMcps = [managedResearchMcp, externalIntelligenceMcp, localDocumentMcp]
+const tenderDocumentMcp: MCPVersion = {
+  schemaVersion: 1, id: 'mcp.tender-document-runner.v1', createdAt: now, name: '招投标文档解析 Runner',
+  description: '在任务授权目录内只读解析 DOCX、PPTX、XLSX、PDF 与图片，并保留页、幻灯片、工作表/单元格、段落或文字区域定位。', version: 1,
+  transport: 'built_in_runner', toolVersionIds: ['tender.requirements.extract@document-analysis/v1'],
+  credentialRequirement: 'none', credentialStatus: 'not_required', health: 'available', available: true
+}
+
+const builtInMcps = [managedResearchMcp, externalIntelligenceMcp, localDocumentMcp, tenderDocumentMcp]
 
 const builtInTools: ToolVersion[] = [
   {
@@ -91,6 +98,11 @@ const builtInTools: ToolVersion[] = [
     inputSchema: { type: 'object', required: ['query'], properties: { query: { type: 'string', minLength: 1, maxLength: 256 }, limit: { type: 'integer', minimum: 1, maximum: 10 } }, additionalProperties: false },
     sideEffect: 'external_read', risk: 'low', timeoutMs, networkOrigins: ['fixed_by_installed_skill'], available: true, health: 'available', credentialStatus: 'configured'
   })),
+  {
+    schemaVersion: 1, id: 'tender.requirements.extract@document-analysis/v1', createdAt: now, name: '提取招投标客户要求', description: '批量只读解析任务附件，并返回带原始文件定位和 SHA-256 的结构化内容。', version: 1,
+    source: 'mcp', mcpVersionId: tenderDocumentMcp.id, inputSchema: { type: 'object', required: ['paths'], properties: { paths: { type: 'array', minItems: 1, maxItems: 8, uniqueItems: true, items: { type: 'string', minLength: 1, maxLength: 4096 } } }, additionalProperties: false },
+    sideEffect: 'none', risk: 'low', timeoutMs: 30_000, networkOrigins: [], available: true, health: 'available', credentialStatus: 'not_required'
+  },
   {
     schemaVersion: 1, id: 'document.read@local-document/v1', createdAt: now, name: '查看本机文档', description: '读取任务已授权目录内单个不超过 1 MiB 的 UTF-8 文档。', version: 1,
     source: 'mcp', mcpVersionId: localDocumentMcp.id, inputSchema: { type: 'object', required: ['path'], properties: { path: { type: 'string', minLength: 1, maxLength: 4096 } }, additionalProperties: false },

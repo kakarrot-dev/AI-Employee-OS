@@ -4,19 +4,19 @@ import { spawnSync } from 'node:child_process'
 import { RuntimeKernel } from './kernel'
 import { RuntimeStore } from './store'
 import { SIDECAR_PROTOCOL_VERSION, parseRuntimeCommand, type RuntimeOutboundEvent, type RuntimeResponse } from '../shared/runtime-sidecar-protocol'
-import type { BudgetLedgerEntry, Conversation, Message, Run, RunGrant, ToolAction } from './domain'
+import type { BudgetLedgerEntry, Conversation, Message, MessageAttachmentReference, Run, RunGrant, ToolAction } from './domain'
 import { summarizeUsage } from './usage-service'
 import { EmployeeService } from './employee-service'
 import { TaskService } from './task-service'
 import { ResourceService } from './resource-service'
 import { ToolGateway } from './tool-gateway'
-import { toolRunner } from './tool-runner'
+import { createToolRunner } from './tool-runner'
 import { ManagedResearchService } from './managed-research-service'
 import { DeliveryExporter } from './delivery-exporter'
 import { MemoryService, type MemoryCategory, type MemoryStatus, type MemoryView } from './memory-service'
 import { SupervisorRouter } from './supervisor-router'
 import { SupervisorService } from './supervisor-service'
-import { hasResearchCapability } from './builtin-contracts'
+import { hasResearchCapability, hasTenderAnalysisCapability } from './builtin-contracts'
 
 function databasePathFromArgs(): string {
   const argument = process.argv.find((value) => value.startsWith('--database='))
@@ -43,7 +43,7 @@ resources.seed()
 const employees = new EmployeeService(kernel)
 employees.seedCapabilities()
 employees.seedRequestedSpecialists()
-const toolGateway = new ToolGateway(kernel, resources, toolRunner)
+const toolGateway = new ToolGateway(kernel, resources, createToolRunner(requiredPathArgument('image-text-extractor')))
 const research = new ManagedResearchService(kernel, toolGateway)
 const workerPython = requiredPathArgument('worker-python')
 const workerScript = requiredPathArgument('worker-script')
@@ -54,6 +54,20 @@ const supervisor = new SupervisorService(kernel)
 supervisor.seed()
 const deliveryExporter = new DeliveryExporter(kernel, exportDirectory)
 const tasks = new TaskService(kernel, employees, (request) => memory.search(request), ({ assignment, revision, version, output, actions }) => {
+  if (hasTenderAnalysisCapability(version.capabilityVersionIds)) {
+    const extraction = actions.find((action) => action.toolVersionId === 'tender.requirements.extract@document-analysis/v1' && action.state === 'succeeded' && action.resultVerified === true)
+    const documents = Array.isArray(extraction?.result?.documents) ? extraction.result.documents as Array<Record<string, unknown>> : []
+    const handoff = {
+      schemaVersion: 1,
+      type: 'TenderRequirementHandoff',
+      taskRevisionId: revision.id,
+      sourceEvidence: documents.map((document) => ({ name: document.name, path: document.path, format: document.format, sha256: document.sha256, sectionCount: Array.isArray(document.sections) ? document.sections.length : 0, truncated: document.truncated === true })),
+      warnings: Array.isArray(extraction?.result?.warnings) ? extraction.result.warnings : [],
+      analystSynthesis: output,
+      sourceBodyIncluded: false
+    }
+    return { text: JSON.stringify(handoff) }
+  }
   if (!hasResearchCapability(version.capabilityVersionIds)) return { text: output }
   const bundle = research.createBundle({ taskId: revision.taskId, runId: assignment.runId, assignmentId: assignment.id, employeeVersionId: version.id, question: revision.goal, githubQuery: '', feedUrl: '' }, actions)
   const handoff = { schemaVersion: 1, type: 'ResearchHandoff', researchBundleId: bundle.id, contentHash: bundle.contentHash, question: bundle.question, claims: bundle.claims, conflicts: bundle.conflicts, informationGaps: bundle.informationGaps, sources: bundle.items.map((item, index) => ({ index, sourceType: item.sourceType, title: item.title, url: item.url, publishedAt: item.publishedAt, summary: item.summary, contentHash: item.contentHash, trust: item.trust, injectionSignals: item.injectionSignals })), researcherSynthesis: output }
@@ -90,6 +104,7 @@ const pendingConversations = new Map<string, {
   userText: string
   history: Message[]
   directories: string[]
+  attachments: MessageAttachmentReference[]
   text: string
   provider: 'deepseek' | 'poe'
   modelId: string
@@ -167,12 +182,12 @@ parentPort.on('message', async (event) => {
       } else if (existingConversation.title === '新会话') {
         kernel.save({ entityType: 'Conversation', entity: { ...existingConversation, title: command.payload.text.slice(0, 36) }, immutable: false }, 'conversation.titled', {})
       }
-      const userMessage: Message = { schemaVersion: 1, id: command.payload.messageId, createdAt: new Date().toISOString(), conversationId: command.payload.conversationId, role: 'user', content: command.payload.text }
+      const userMessage: Message = { schemaVersion: 1, id: command.payload.messageId, createdAt: new Date().toISOString(), conversationId: command.payload.conversationId, role: 'user', content: command.payload.text, attachments: command.payload.attachments.map((attachment) => ({ ...attachment })) }
       kernel.save({ entityType: 'Message', entity: userMessage, immutable: true }, 'message.created', { role: 'user' })
       const history = store.list<Message>('Message').filter((message) => message.conversationId === command.payload.conversationId && message.id !== userMessage.id)
-      const routeInput = { requestId, conversationId: command.payload.conversationId, sourceMessageId: userMessage.id, text: command.payload.text, history, directories: command.payload.directories }
+      const routeInput = { requestId, conversationId: command.payload.conversationId, sourceMessageId: userMessage.id, text: command.payload.text, history, directories: command.payload.directories, attachments: command.payload.attachments }
       const supervisorRequest = supervisorRouter.createRequest(routeInput)
-      pendingConversations.set(requestId, { conversationId: routeInput.conversationId, sourceMessageId: routeInput.sourceMessageId, assistantMessageId: randomUUID(), userText: routeInput.text, history, directories: [...routeInput.directories], text: '', provider: supervisorRequest.provider, modelId: supervisorRequest.modelId })
+      pendingConversations.set(requestId, { conversationId: routeInput.conversationId, sourceMessageId: routeInput.sourceMessageId, assistantMessageId: randomUUID(), userText: routeInput.text, history, directories: [...routeInput.directories], attachments: routeInput.attachments.map((attachment) => ({ ...attachment })), text: '', provider: supervisorRequest.provider, modelId: supervisorRequest.modelId })
       emit({
         schemaVersion: SIDECAR_PROTOCOL_VERSION,
         type: 'runtime.provider.execute',
@@ -444,7 +459,7 @@ parentPort.on('message', async (event) => {
     if (providerEvent.type === 'usage') emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.conversation.event', requestId: command.payload.providerRequestId, event: providerEvent })
     if (providerEvent.type === 'completed') {
       try {
-        const route = supervisorRouter.applyDecision({ requestId: command.payload.providerRequestId, conversationId: pending.conversationId, sourceMessageId: pending.sourceMessageId, text: pending.userText, history: pending.history, directories: pending.directories }, pending.routeValue ?? JSON.parse(pending.text))
+        const route = supervisorRouter.applyDecision({ requestId: command.payload.providerRequestId, conversationId: pending.conversationId, sourceMessageId: pending.sourceMessageId, text: pending.userText, history: pending.history, directories: pending.directories, attachments: pending.attachments }, pending.routeValue ?? JSON.parse(pending.text))
         const assistantMessage: Message = { schemaVersion: 1, id: pending.assistantMessageId, createdAt: new Date().toISOString(), conversationId: pending.conversationId, role: 'assistant', content: route.response, provider: pending.provider, modelId: pending.modelId, providerRequestId: pending.providerRequestId }
         kernel.save({ entityType: 'Message', entity: assistantMessage, immutable: true }, 'message.created', { role: 'assistant', provider: pending.provider, modelId: pending.modelId, routeMode: route.mode, taskDraftId: route.task?.draft.id, missingInputs: route.missingInputs })
         if (route.startRequest) emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: route.startRequest.requestId, request: route.startRequest })

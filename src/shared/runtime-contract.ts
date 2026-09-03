@@ -27,6 +27,13 @@ export const CONVERSATION_IPC = {
   event: 'conversation:event'
 } as const
 
+export const ATTACHMENT_IPC = {
+  select: 'attachment:select',
+  importDropped: 'attachment:import-dropped',
+  open: 'attachment:open',
+  reveal: 'attachment:reveal'
+} as const
+
 export const SUPERVISOR_IPC = {
   get: 'supervisor:get',
   update: 'supervisor:update'
@@ -128,8 +135,17 @@ export interface ConversationMessageView {
   id: string
   role: 'user' | 'assistant'
   content: string
+  attachments?: AttachmentView[]
   createdAt: string
   modelId?: string
+}
+
+export interface AttachmentView {
+  id: string
+  name: string
+  mediaType: string
+  size: number
+  sha256: string
 }
 
 export interface ConversationSummaryView {
@@ -152,10 +168,17 @@ export interface ConversationBridge {
   list(): Promise<ConversationSummaryView[]>
   create(): Promise<ConversationSummaryView>
   archive(conversationId: string): Promise<{ archived: true; conversationId: string }>
-  send(conversationId: string, text: string, directories?: string[]): Promise<{ accepted: true; requestId: string; messageId: string }>
+  send(conversationId: string, text: string, directories?: string[], attachmentIds?: string[]): Promise<{ accepted: true; requestId: string; messageId: string }>
   cancel(requestId: string): Promise<{ accepted: true }>
   history(conversationId: string): Promise<ConversationMessageView[]>
   onEvent(listener: (event: ConversationStreamEvent) => void): () => void
+}
+
+export interface AttachmentBridge {
+  select(): Promise<AttachmentView[]>
+  importDropped(files: File[]): Promise<AttachmentView[]>
+  open(attachmentId: string): Promise<{ opened: true }>
+  reveal(attachmentId: string): Promise<{ revealed: true }>
 }
 
 export interface SupervisorBridge {

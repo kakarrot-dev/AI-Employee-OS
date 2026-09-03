@@ -1,8 +1,8 @@
-import { join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { app, BrowserWindow, ipcMain, Menu, session, shell } from 'electron'
-import { CONVERSATION_IPC, EMPLOYEE_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, SUPERVISOR_IPC, TASK_IPC, USAGE_IPC, type ConversationStreamEvent, type ConversationSummaryView, type EmployeeDraftInput, type EmployeeEvent, type ProviderStatus, type RuntimeStatus, type SupervisorConfigInput, type TaskDetailView, type TaskDraftInputView, type TaskEvent } from '../shared/runtime-contract'
-import type { Conversation, Message } from '../runtime/domain'
+import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron'
+import { ATTACHMENT_IPC, CONVERSATION_IPC, EMPLOYEE_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, SUPERVISOR_IPC, TASK_IPC, USAGE_IPC, type ConversationStreamEvent, type ConversationSummaryView, type EmployeeDraftInput, type EmployeeEvent, type ProviderStatus, type RuntimeStatus, type SupervisorConfigInput, type TaskDetailView, type TaskDraftInputView, type TaskEvent } from '../shared/runtime-contract'
+import type { Conversation, Message, MessageAttachmentReference } from '../runtime/domain'
 import type { MemoryCategoryView, MemoryScopeTypeView, MemoryStatusView, MemoryViewModel } from '../shared/memory-contract'
 import type { FormalTaskDetail } from '../runtime/task-service'
 import { projectTaskState } from '../runtime/state-machines'
@@ -12,7 +12,8 @@ import { createWindowOptions, isTrustedRendererUrl } from './window-security'
 import { bundledRuntimePaths, initializeBundledModel } from './bundled-runtime'
 import { maintainDiagnostics, writeLocalDiagnostic } from './storage-policy'
 import { resolveArtifactFilePath } from './artifact-file-actions'
-import { hasLocalDocumentCapability } from '../shared/capability-contract'
+import { hasLocalDocumentCapability, hasTenderAnalysisCapability } from '../shared/capability-contract'
+import { AttachmentImportService, SUPPORTED_ATTACHMENT_EXTENSIONS } from './attachment-import'
 
 app.enableSandbox()
 
@@ -47,8 +48,12 @@ function publishRuntimeStatus(status: RuntimeStatus): void {
   mainWindow?.webContents.send(RUNTIME_IPC.statusChanged, status)
 }
 
-function fixedOutputDirectories(): string[] {
-  return [app.getPath('downloads')]
+function attachmentImports(): AttachmentImportService {
+  return new AttachmentImportService(join(app.getPath('userData'), 'attachments'))
+}
+
+function fixedOutputDirectories(attachments: MessageAttachmentReference[] = []): string[] {
+  return [...new Set([app.getPath('downloads'), ...attachments.map((attachment) => dirname(attachment.path))])]
 }
 
 function handleRuntimeEvent(event: RuntimeSupervisorEvent): void {
@@ -105,11 +110,11 @@ function toTaskView(detail: FormalTaskDetail): TaskDetailView {
     acceptanceCriteria: detail.draft.acceptanceCriteria,
     employeeVersionIds: detail.draft.employeeVersionIds,
     directories: detail.draft.resourceScope.directories,
-    requiresDirectories: hasLocalDocumentCapability(detail.draft.capabilityVersionIds),
+    requiresDirectories: hasLocalDocumentCapability(detail.draft.capabilityVersionIds) || hasTenderAnalysisCapability(detail.draft.capabilityVersionIds),
     draftRevision: detail.draft.revision,
     frozenRevision: detail.revision?.revision,
     runId: detail.run?.id,
-    assignments: detail.assignments.map(({ id, sequence, employeeVersionId, state: assignmentState, output, createdAt, completedAt, reworkOfAssignmentId }) => { const version = versions.get(employeeVersionId); const employeeId = version?.employeeId; const identity = employeeId ? identities.get(employeeId) : undefined; return { id, sequence, employeeId, employeeVersionId, employeeName: identity?.name ?? version?.name, employeeRole: version?.role, avatarDataUrl: identity?.avatarDataUrl ?? version?.avatarDataUrl, createdAt, completedAt, reworkOfAssignmentId, state: assignmentState, output } }),
+    assignments: detail.assignments.map(({ id, sequence, employeeVersionId, state: assignmentState, summary, createdAt, completedAt, reworkOfAssignmentId }) => { const version = versions.get(employeeVersionId); const employeeId = version?.employeeId; const identity = employeeId ? identities.get(employeeId) : undefined; return { id, sequence, employeeId, employeeVersionId, employeeName: identity?.name ?? version?.name, employeeRole: version?.role, avatarDataUrl: identity?.avatarDataUrl ?? version?.avatarDataUrl, createdAt, completedAt, reworkOfAssignmentId, state: assignmentState, summary } }),
     timeline: detail.checkpoints.map(({ phase, assignmentId, nextNode, createdAt, payload }) => ({ phase, assignmentId, nextNode, createdAt, ...(phase === 'memory_loaded' ? { memoryRefs: (payload.recallReasons as Array<{ id: string; reason: string }> | undefined) ?? [] } : {}) })),
     delivery: detail.delivery ? { id: detail.delivery.id, summary: deliverySummary, result: finalOutput, createdAt: detail.delivery.createdAt, acceptanceResults: detail.delivery.acceptanceResults.map(({ criterion, passed }) => ({ criterion, passed })), artifacts: detail.artifacts.map(({ id, mediaType, relativePath, sha256 }) => ({ id, mediaType, relativePath, sha256 })), evidenceCount: detail.evidence.length, unresolvedIssues: detail.delivery.unresolvedIssues } : undefined,
     researchBundles: detail.researchBundles.map(({ id, contentHash, items, claims, conflicts, informationGaps }) => ({ id, contentHash, sourceCount: items.length, claimCount: claims.length, conflicts, informationGaps })),
@@ -211,15 +216,53 @@ function registerRuntimeIpc(): void {
     return runtimeSupervisor.conversationArchive(conversationId)
   })
 
+  ipcMain.handle(ATTACHMENT_IPC.select, async (event) => {
+    assertTrustedSender(event.senderFrame?.url)
+    if (!mainWindow) throw new Error('window_unavailable')
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择客户招投标资料',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Word、PowerPoint、Excel、PDF、图片', extensions: SUPPORTED_ATTACHMENT_EXTENSIONS }]
+    })
+    if (result.canceled || !result.filePaths.length) return []
+    return attachmentImports().stage(result.filePaths).map(({ id, name, mediaType, size, sha256 }) => ({ id, name, mediaType, size, sha256 }))
+  })
+
+  ipcMain.handle(ATTACHMENT_IPC.importDropped, async (event, value: unknown) => {
+    assertTrustedSender(event.senderFrame?.url)
+    const paths = (value as { paths?: unknown })?.paths
+    if (!Array.isArray(paths) || paths.length < 1 || paths.length > 8 || paths.some((path) => typeof path !== 'string' || path.length < 1 || path.length > 4_096 || !isAbsolute(path))) throw new Error('invalid_attachment_selection')
+    return attachmentImports().stage(paths).map(({ id, name, mediaType, size, sha256 }) => ({ id, name, mediaType, size, sha256 }))
+  })
+
+  const attachmentIdFrom = (value: unknown): string => {
+    const attachmentId = (value as { attachmentId?: unknown })?.attachmentId
+    if (typeof attachmentId !== 'string' || attachmentId.length > 64) throw new Error('invalid_attachment_id')
+    return attachmentId
+  }
+  ipcMain.handle(ATTACHMENT_IPC.open, async (event, value: unknown) => {
+    assertTrustedSender(event.senderFrame?.url)
+    const result = await shell.openPath(attachmentImports().path(attachmentIdFrom(value)))
+    if (result) throw new Error('attachment_open_failed')
+    return { opened: true }
+  })
+  ipcMain.handle(ATTACHMENT_IPC.reveal, (event, value: unknown) => {
+    assertTrustedSender(event.senderFrame?.url)
+    shell.showItemInFolder(attachmentImports().path(attachmentIdFrom(value)))
+    return { revealed: true }
+  })
+
   ipcMain.handle(CONVERSATION_IPC.send, async (event, value: unknown) => {
     assertTrustedSender(event.senderFrame?.url)
     if (!value || typeof value !== 'object') throw new Error('invalid_conversation_request')
-    const { conversationId, text, directories = [] } = value as { conversationId?: unknown; text?: unknown; directories?: unknown }
+    const { conversationId, text, directories = [], attachmentIds = [] } = value as { conversationId?: unknown; text?: unknown; directories?: unknown; attachmentIds?: unknown }
     if (typeof conversationId !== 'string' || conversationId.length > 128 || typeof text !== 'string' || text.length < 1 || text.length > 100_000) throw new Error('invalid_conversation_request')
     if (!Array.isArray(directories) || directories.length > 16 || new Set(directories).size !== directories.length || directories.some((directory) => typeof directory !== 'string' || !directory.startsWith('/') || directory.length > 4_096)) throw new Error('invalid_conversation_directories')
+    if (!Array.isArray(attachmentIds) || attachmentIds.some((id) => typeof id !== 'string')) throw new Error('invalid_attachment_ids')
     if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable')
+    const attachments = attachmentImports().resolve(attachmentIds)
     const messageId = randomUUID()
-    const result = await runtimeSupervisor.sendConversation(conversationId, messageId, text, fixedOutputDirectories())
+    const result = await runtimeSupervisor.sendConversation(conversationId, messageId, text, fixedOutputDirectories(attachments), attachments)
     return { ...result, messageId }
   })
 
@@ -236,7 +279,7 @@ function registerRuntimeIpc(): void {
     const conversationId = (value as { conversationId?: unknown })?.conversationId
     if (typeof conversationId !== 'string' || conversationId.length > 128) throw new Error('invalid_conversation_id')
     if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable')
-    return (await runtimeSupervisor.conversationHistory(conversationId)).map(({ id, role, content, createdAt, modelId }) => ({ id, role, content, createdAt, modelId }))
+    return (await runtimeSupervisor.conversationHistory(conversationId)).map(({ id, role, content, attachments, createdAt, modelId }) => ({ id, role, content, attachments: attachments?.map(({ id: attachmentId, name, mediaType, size, sha256 }) => ({ id: attachmentId, name, mediaType, size, sha256 })), createdAt, modelId }))
   })
 
   ipcMain.handle(SUPERVISOR_IPC.get, (event) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.supervisorGet() })
@@ -383,6 +426,7 @@ app.whenReady().then(async () => {
     join(app.getPath('userData'), 'runtime', 'control.sqlite3'),
     { pythonPath: runtimePaths.deepAgentPython, scriptPath: runtimePaths.deepAgentWorker, checkpointDirectory: join(app.getPath('userData'), 'runtime', 'checkpoints') },
     { pythonPath: runtimePaths.memoryPython, scriptPath: runtimePaths.memoryWorker, databasePath: join(app.getPath('userData'), 'memory', 'memory.sqlite'), modelCachePath: join(app.getPath('userData'), 'memory', 'model-cache'), keychainHelperPath: runtimePaths.memoryKeychainHelper },
+    runtimePaths.imageTextExtractor,
     join(app.getPath('userData'), 'exports'),
     handleRuntimeEvent,
     (request, onEvent) => {

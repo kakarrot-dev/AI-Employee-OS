@@ -4,7 +4,7 @@ import type { AllowedModelId } from '../provider/models'
 import { normalizeEmployeeDraft, validateEmployeeDraft, type EmployeeDetail, type EmployeeDraftInput, type EmployeeSummary, type EmployeeUiStatus } from '../shared/employee-contract'
 import type { AgentCapabilityVersion, Assignment, Employee, EmployeeVersion, MCPVersion, SandboxTestRun, SkillVersion, SourceHealthCheck, TestCase, ToolVersion } from './domain'
 import { RuntimeKernel } from './kernel'
-import { DOCUMENT_EMPLOYEE_PROMPT, LEGACY_DOCUMENT_EMPLOYEE_PROMPT, LEGACY_NETWORK_EMPLOYEE_PROMPT, NETWORK_EMPLOYEE_PROMPT } from './builtin-contracts'
+import { DOCUMENT_EMPLOYEE_PROMPT, LEGACY_DOCUMENT_EMPLOYEE_PROMPT, LEGACY_NETWORK_EMPLOYEE_PROMPT, NETWORK_EMPLOYEE_PROMPT, TENDER_ANALYST_PROMPT } from './builtin-contracts'
 
 export interface TestStartResult {
   request: ProviderRequest
@@ -71,6 +71,24 @@ const BUILT_IN_CAPABILITIES: AgentCapabilityVersion[] = [
   },
   {
     schemaVersion: 1,
+    id: 'capability.tender-analysis.v2',
+    createdAt: '2026-09-03T00:00:00.000Z',
+    name: '招投标文件分析',
+    description: '只读解析 Word、PowerPoint、Excel、PDF 与图片客户材料，形成带原始定位的需求矩阵和下游写作交接。',
+    version: 2,
+    skillVersionIds: ['skill.tender-requirements-analysis.v2'],
+    toolVersionIds: ['tender.requirements.extract@document-analysis/v1'],
+    mcpVersionIds: ['mcp.tender-document-runner.v1'],
+    requiredModelIds: ['deepseek-v4-pro', 'claude-sonnet-4.6'],
+    permissionRequirements: ['filesystem.read'],
+    dependencies: [
+      { kind: 'Skill', versionId: 'skill.tender-requirements-analysis.v2', available: true },
+      { kind: 'Tool', versionId: 'tender.requirements.extract@document-analysis/v1', available: true },
+      { kind: 'MCP', versionId: 'mcp.tender-document-runner.v1', available: true }
+    ]
+  },
+  {
+    schemaVersion: 1,
     id: 'capability.local-document.v2',
     createdAt: '2026-09-02T00:00:00.000Z',
     name: '本机文档编写',
@@ -99,6 +117,15 @@ const SPECIALIST_EMPLOYEES: Array<{ employee: Employee; version: EmployeeVersion
       description: '设计跨来源查询，区分事实、推断、冲突与未知，形成可供下游复核的 ResearchHandoff；不读取或修改本机文档。',
       systemPrompt: NETWORK_EMPLOYEE_PROMPT,
       modelId: 'deepseek-v4-pro', capabilityVersionIds: ['capability.network-intelligence.v2'], memoryScopes: ['employee', 'task'], testRunIds: [], publishedAt: '2026-09-02T00:00:00.000Z'
+    }
+  },
+  {
+    employee: { schemaVersion: 1, id: 'employee.tender-analyst', createdAt: '2026-09-03T00:00:00.000Z', name: '招投标分析员', activeVersionId: 'employee-version.tender-analyst.v2', disabled: false, archived: false },
+    version: {
+      schemaVersion: 1, id: 'employee-version.tender-analyst.v2', createdAt: '2026-09-03T00:00:00.000Z', employeeId: 'employee.tender-analyst', version: 2, state: 'active', name: '招投标分析员', role: '客户招投标材料解析、要求归类与写作交接',
+      description: '只读分析 Word、PowerPoint、Excel、PDF 和图片客户材料，形成带来源定位的需求矩阵、冲突风险与待澄清问题，再交接给文档编写员。',
+      systemPrompt: TENDER_ANALYST_PROMPT,
+      modelId: 'deepseek-v4-pro', capabilityVersionIds: ['capability.tender-analysis.v2'], memoryScopes: ['employee', 'task'], testRunIds: [], publishedAt: '2026-09-03T00:00:00.000Z'
     }
   },
   {
@@ -132,7 +159,8 @@ export class EmployeeService {
         const currentIdentityVersion = currentIdentityVersionId ? this.kernel.store.get<EmployeeVersion>('EmployeeVersion', currentIdentityVersionId) : undefined
         const identity = current.avatarDataUrl === undefined && currentIdentityVersion?.avatarDataUrl ? { ...current, avatarDataUrl: currentIdentityVersion.avatarDataUrl } : current
         if (current.draftVersionId) this.upgradeUntouchedBuiltInDraft(current.draftVersionId, version)
-        if (!current.activeVersionId || current.activeVersionId === version.id.replace('.v2', '.v1')) this.kernel.save({ entityType: 'Employee', entity: { ...identity, activeVersionId: version.id }, immutable: false }, 'employee.profile_upgraded', { previousVersionId: current.activeVersionId, activeVersionId: version.id, draftPreserved: Boolean(current.draftVersionId), identityPreserved: Boolean(identity.avatarDataUrl) })
+        const legacyBuiltInVersionId = version.version > 1 ? version.id.replace(`.v${version.version}`, `.v${version.version - 1}`) : undefined
+        if (!current.activeVersionId || current.activeVersionId === legacyBuiltInVersionId) this.kernel.save({ entityType: 'Employee', entity: { ...identity, activeVersionId: version.id }, immutable: false }, 'employee.profile_upgraded', { previousVersionId: current.activeVersionId, activeVersionId: version.id, draftPreserved: Boolean(current.draftVersionId), identityPreserved: Boolean(identity.avatarDataUrl) })
         else if (identity !== current) this.kernel.save({ entityType: 'Employee', entity: identity, immutable: false }, 'employee.identity_migrated', { sourceVersionId: currentIdentityVersionId })
       }
     }

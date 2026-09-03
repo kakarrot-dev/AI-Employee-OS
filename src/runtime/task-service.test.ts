@@ -112,6 +112,39 @@ describe('TaskService', () => {
     store.close()
   })
 
+  it('stops the tender workflow before writing when extraction fails', async () => {
+    const { employees, tasks, store, kernel, resources } = setup()
+    employees.seedRequestedSpecialists()
+    const root = mkdtempSync(join(tmpdir(), 'ai-employee-os-tender-failure-')); directories.push(root)
+    const attachment = { id: 'attachment-failed', name: '客户要求.pdf', path: join(root, '客户要求.pdf'), mediaType: 'application/pdf', size: 100, sha256: 'a'.repeat(64) }
+    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'tender-failure', sourceMessageIds: ['message'], goal: '分析并形成响应文件', acceptanceCriteria: ['全部文件可追溯'], employeeVersionIds: ['employee-version.tender-analyst.v2', 'employee-version.document-writer.v2'], attachments: [attachment], directories: [root], authorizationMode: 'full_access' }).draft.id)
+    const gateway = new ToolGateway(kernel, resources, async () => { throw new Error('invalid_pdf') })
+    const context = tasks.toolProposalContext(started.request.requestId, { type: 'tool_proposal', requestId: started.request.requestId, callId: 'extract', name: 'propose_tool_action', arguments: { toolVersionId: 'tender.requirements.extract@document-analysis/v1', parameters: { paths: [attachment.path] } } })
+    const action = await gateway.propose(context); tasks.attachToolAction(context.assignmentId, action.id)
+    const failed = tasks.handleProviderEvent(started.request.requestId, { type: 'completed', requestId: started.request.requestId })!
+    expect(failed).toMatchObject({ event: 'failed', detail: { task: { state: 'failed' }, run: { state: 'failed' }, assignments: [{ state: 'failed' }, { state: 'pending' }] } })
+    expect(failed.detail.assignments[0].summary).toContain('已停止下游编写')
+    store.close()
+  })
+
+  it('keeps extracted source text internal and exposes only a concise assignment summary', async () => {
+    const { employees, tasks, store, kernel, resources } = setup()
+    employees.seedRequestedSpecialists()
+    const root = mkdtempSync(join(tmpdir(), 'ai-employee-os-tender-summary-')); directories.push(root)
+    const attachment = { id: 'attachment-ok', name: '客户要求.docx', path: join(root, '客户要求.docx'), mediaType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 100, sha256: 'b'.repeat(64) }
+    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'tender-summary', sourceMessageIds: ['message'], goal: '分析并形成响应文件', acceptanceCriteria: ['全部文件可追溯'], employeeVersionIds: ['employee-version.tender-analyst.v2', 'employee-version.document-writer.v2'], attachments: [attachment], directories: [root], authorizationMode: 'full_access' }).draft.id)
+    const gateway = new ToolGateway(kernel, resources, async () => ({ status: 'succeeded', documents: [{ path: attachment.path, name: attachment.name, format: 'word', sha256: attachment.sha256, sections: [{ locator: '段落 1', text: '这是不应在会话时间线中重写的客户原文' }], truncated: false }], totalCharacters: 20, warnings: [] }))
+    const context = tasks.toolProposalContext(started.request.requestId, { type: 'tool_proposal', requestId: started.request.requestId, callId: 'extract', name: 'propose_tool_action', arguments: { toolVersionId: 'tender.requirements.extract@document-analysis/v1', parameters: { paths: [attachment.path] } } })
+    const action = await gateway.propose(context); tasks.attachToolAction(context.assignmentId, action.id)
+    const afterTool = tasks.handleProviderEvent(started.request.requestId, { type: 'completed', requestId: started.request.requestId })!
+    expect(afterTool.request?.input).toContain('不得逐段复述')
+    tasks.handleProviderEvent(afterTool.request!.requestId, { type: 'output_delta', requestId: afterTool.request!.requestId, delta: '已归纳为一项可追溯需求。' })
+    const completed = tasks.handleProviderEvent(afterTool.request!.requestId, { type: 'completed', requestId: afterTool.request!.requestId })!
+    expect(completed.detail.assignments[0].summary).toBe('已解析 1 个客户文件，形成 1 个可追溯内容片段并完成内部需求交接。源文件正文不在会话中重复展示。')
+    expect(completed.request?.input).not.toContain('这是不应在会话时间线中重写的客户原文')
+    store.close()
+  })
+
   it('finishes a document assignment after create and read evidence even if the model repeats an unavailable Tool', async () => {
     const { employees, tasks, store, kernel, resources } = setup()
     employees.seedRequestedSpecialists()

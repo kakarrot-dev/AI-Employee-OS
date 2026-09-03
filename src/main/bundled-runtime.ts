@@ -9,6 +9,7 @@ export interface BundledRuntimePaths {
   memoryWorker: string
   memoryKeychainHelper: string
   providerKeychainHelper: string
+  imageTextExtractor: string
 }
 
 function sha256(path: string): string { return createHash('sha256').update(readFileSync(path)).digest('hex') }
@@ -61,7 +62,8 @@ export function bundledRuntimePaths(appPath: string, resourcesPath: string, pack
     memoryPython: join(appPath, 'spikes/local-memory/.venv/bin/python'),
     memoryWorker: join(appPath, 'spikes/local-memory/memory_worker.py'),
     memoryKeychainHelper: join(appPath, 'build/native/memory-keychain-helper'),
-    providerKeychainHelper: join(appPath, 'build/native/provider-keychain-helper')
+    providerKeychainHelper: join(appPath, 'build/native/provider-keychain-helper'),
+    imageTextExtractor: join(appPath, 'build/native/image-text-extractor')
   }
   const root = join(resourcesPath, 'runtime')
   const paths = {
@@ -70,7 +72,8 @@ export function bundledRuntimePaths(appPath: string, resourcesPath: string, pack
     memoryPython: join(root, 'local-memory/python/bin/python3'),
     memoryWorker: join(root, 'local-memory/memory_worker.py'),
     memoryKeychainHelper: join(root, 'local-memory/bin/memory-keychain-helper'),
-    providerKeychainHelper: join(root, 'local-memory/bin/provider-keychain-helper')
+    providerKeychainHelper: join(root, 'local-memory/bin/provider-keychain-helper'),
+    imageTextExtractor: join(root, 'local-memory/bin/image-text-extractor')
   }
   for (const path of Object.values(paths)) {
     if (!existsSync(path)) throw new Error(`bundled_runtime_missing:${basename(path)}`)
@@ -79,5 +82,6 @@ export function bundledRuntimePaths(appPath: string, resourcesPath: string, pack
   chmodSync(paths.memoryPython, 0o755)
   chmodSync(paths.memoryKeychainHelper, 0o755)
   chmodSync(paths.providerKeychainHelper, 0o755)
+  chmodSync(paths.imageTextExtractor, 0o755)
   return paths
 }

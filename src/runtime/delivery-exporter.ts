@@ -1,10 +1,10 @@
 import { closeSync, existsSync, linkSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, join, relative, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
-import type { Artifact, Evidence, ResearchBundle, ToolAction } from './domain'
+import type { Artifact, EmployeeVersion, Evidence, ResearchBundle, ToolAction } from './domain'
 import type { FormalTaskDetail } from './task-service'
 import { RuntimeKernel } from './kernel'
-import { hasResearchCapability } from './builtin-contracts'
+import { hasResearchCapability, hasTenderAnalysisCapability } from './builtin-contracts'
 
 export interface DeliveryMaterialization { artifactIds: string[]; evidenceIds: string[]; unresolvedIssues: string[] }
 
@@ -34,13 +34,22 @@ export class DeliveryExporter {
       return [{ schemaVersion: 1, id: randomUUID(), createdAt: timestamp, runId: detail.run!.id, version: 1, mediaType: typeof action.result?.mediaType === 'string' ? action.result.mediaType : 'text/plain', relativePath: path, sha256: hash }]
     })
     for (const artifact of fileArtifacts) this.kernel.save({ entityType: 'Artifact', entity: artifact, immutable: true }, 'artifact.file_action_verified', { path: artifact.relativePath, sha256: artifact.sha256 })
+    const tenderActions = this.kernel.store.list<ToolAction>('ToolAction').filter((action) => action.runId === detail.run?.id && action.state === 'succeeded' && action.resultVerified === true && action.toolVersionId === 'tender.requirements.extract@document-analysis/v1' && Array.isArray(action.result?.documents))
+    const tenderWarnings = tenderActions.flatMap((action) => Array.isArray(action.result?.warnings) ? action.result.warnings.filter((warning): warning is string => typeof warning === 'string') : [])
+    const tenderEvidence = tenderActions.flatMap((action): Evidence[] => (action.result!.documents as Array<Record<string, unknown>>).flatMap((document) => {
+      if (typeof document.path !== 'string' || typeof document.sha256 !== 'string' || typeof document.format !== 'string') return []
+      return [{ schemaVersion: 1, id: randomUUID(), createdAt: timestamp, runId: detail.run!.id, version: 1, sourceType: `customer_${document.format}`, sourceRef: document.path, capturedAt: action.completedAt ?? timestamp, sha256: document.sha256 }]
+    }))
+    for (const item of tenderEvidence) this.kernel.save({ entityType: 'Evidence', entity: item, immutable: true }, 'evidence.customer_attachment_committed', { sourceType: item.sourceType, sourceRef: item.sourceRef, sha256: item.sha256 })
     if (!bundle) {
-      const researchExpected = detail.assignments.some((assignment) => hasResearchCapability(this.kernel.store.get<any>('EmployeeVersion', assignment.employeeVersionId)?.capabilityVersionIds ?? []))
-      return { artifactIds: fileArtifacts.map((artifact) => artifact.id), evidenceIds: [], unresolvedIssues: researchExpected ? ['没有可导出的 ResearchBundle'] : fileArtifacts.length ? [] : ['没有经过 Runtime 验证的文档写入或编辑结果'] }
+      const researchExpected = detail.assignments.some((assignment) => hasResearchCapability(this.kernel.store.get<EmployeeVersion>('EmployeeVersion', assignment.employeeVersionId)?.capabilityVersionIds ?? []))
+      const tenderExpected = detail.assignments.some((assignment) => hasTenderAnalysisCapability(this.kernel.store.get<EmployeeVersion>('EmployeeVersion', assignment.employeeVersionId)?.capabilityVersionIds ?? []))
+      const unresolvedIssues = researchExpected ? ['没有可导出的 ResearchBundle'] : tenderExpected && tenderEvidence.length === 0 ? ['没有可导出的客户源文件证据'] : fileArtifacts.length || tenderEvidence.length ? tenderWarnings : ['没有经过 Runtime 验证的文档写入或编辑结果']
+      return { artifactIds: fileArtifacts.map((artifact) => artifact.id), evidenceIds: tenderEvidence.map((item) => item.id), unresolvedIssues }
     }
-    const evidence: Evidence[] = bundle.items.map((item) => ({ schemaVersion: 1, id: randomUUID(), createdAt: timestamp, runId: detail.run!.id, version: 1, sourceType: item.sourceType, sourceRef: item.url, capturedAt: item.fetchedAt, sha256: item.contentHash }))
-    for (const item of evidence) this.kernel.save({ entityType: 'Evidence', entity: item, immutable: true }, 'evidence.committed', { sourceType: item.sourceType, sourceRef: item.sourceRef })
-    if (fileArtifacts.length) return { artifactIds: fileArtifacts.map((artifact) => artifact.id), evidenceIds: evidence.map((item) => item.id), unresolvedIssues: [...bundle.informationGaps] }
+    const evidence: Evidence[] = [...tenderEvidence, ...bundle.items.map((item) => ({ schemaVersion: 1 as const, id: randomUUID(), createdAt: timestamp, runId: detail.run!.id, version: 1, sourceType: item.sourceType, sourceRef: item.url, capturedAt: item.fetchedAt, sha256: item.contentHash }))]
+    for (const item of evidence.slice(tenderEvidence.length)) this.kernel.save({ entityType: 'Evidence', entity: item, immutable: true }, 'evidence.committed', { sourceType: item.sourceType, sourceRef: item.sourceRef })
+    if (fileArtifacts.length) return { artifactIds: fileArtifacts.map((artifact) => artifact.id), evidenceIds: evidence.map((item) => item.id), unresolvedIssues: [...tenderWarnings, ...bundle.informationGaps] }
     const finalOutput = detail.assignments.at(-1)?.output?.trim() || '未生成分析报告正文。'
     const sourceLines = bundle.items.map((item, index) => `${index + 1}. [${item.title}](${item.url}) · ${item.sourceType} · ${item.contentHash}`)
     const markdown = `${finalOutput}\n\n## 来源清单\n\n${sourceLines.length ? sourceLines.join('\n') : '没有成功来源。'}\n\n## 信息缺口\n\n${bundle.informationGaps.length ? bundle.informationGaps.map((value) => `- ${value}`).join('\n') : '- 无已记录缺口'}\n`
@@ -51,7 +60,7 @@ export class DeliveryExporter {
       { schemaVersion: 1, id: randomUUID(), createdAt: timestamp, runId: detail.run!.id, version: 1, mediaType: 'application/json', relativePath: relative(this.root, pair.sourcePath), sha256: sha256(readFileSync(pair.sourcePath)) }
     ]
     for (const artifact of artifacts) this.kernel.save({ entityType: 'Artifact', entity: artifact, immutable: true }, 'artifact.exported', { relativePath: artifact.relativePath, sha256: artifact.sha256 })
-    return { artifactIds: artifacts.map((artifact) => artifact.id), evidenceIds: evidence.map((item) => item.id), unresolvedIssues: [...bundle.informationGaps] }
+    return { artifactIds: artifacts.map((artifact) => artifact.id), evidenceIds: evidence.map((item) => item.id), unresolvedIssues: [...tenderWarnings, ...bundle.informationGaps] }
   }
 
   private writePair(base: string, markdown: string, sourceJson: string): { markdownPath: string; sourcePath: string } {

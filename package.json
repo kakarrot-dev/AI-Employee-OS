@@ -20,13 +20,15 @@
     "build:runtime": "node scripts/assemble_bundled_runtime.mjs",
     "build:release-metadata": "node scripts/generate_release_metadata.mjs",
     "package:local": "npm run build && npm run build:runtime && npm run build:release-metadata && node scripts/package_local_app.mjs",
-    "build:native-memory": "mkdir -p build/native && xcrun clang -O2 -Wall -Wextra spikes/local-memory/memory_keychain_helper.c -framework Security -framework CoreFoundation -o build/native/memory-keychain-helper && xcrun clang -O2 -Wall -Wextra spikes/macos-process-security/provider_keychain_helper.c -framework Security -framework CoreFoundation -o build/native/provider-keychain-helper",
+    "build:native-memory": "mkdir -p build/native && xcrun clang -O2 -Wall -Wextra spikes/local-memory/memory_keychain_helper.c -framework Security -framework CoreFoundation -o build/native/memory-keychain-helper && xcrun clang -O2 -Wall -Wextra spikes/macos-process-security/provider_keychain_helper.c -framework Security -framework CoreFoundation -o build/native/provider-keychain-helper && xcrun swiftc -O spikes/macos-process-security/image_text_extractor.swift -framework Vision -framework ImageIO -o build/native/image-text-extractor",
     "preview": "electron-vite preview",
     "test": "npm run build:native-memory && vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit"
   },
   "dependencies": {
+    "jszip": "3.10.1",
+    "pdfjs-dist": "6.3.289",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-markdown": "10.1.0",

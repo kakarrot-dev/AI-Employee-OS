@@ -1,5 +1,5 @@
-import { contextBridge, ipcRenderer } from 'electron'
-import { CONVERSATION_IPC, EMPLOYEE_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, SUPERVISOR_IPC, TASK_IPC, USAGE_IPC, type ConversationBridge, type ConversationStreamEvent, type EmployeeBridge, type EmployeeDraftInput, type EmployeeEvent, type MemoryBridge, type ProviderBridge, type ResourceBridge, type RuntimeBridge, type RuntimeStatus, type SupervisorBridge, type SupervisorConfigInput, type TaskBridge, type TaskDraftInputView, type TaskEvent, type UsageBridge } from '../shared/runtime-contract'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { ATTACHMENT_IPC, CONVERSATION_IPC, EMPLOYEE_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, SUPERVISOR_IPC, TASK_IPC, USAGE_IPC, type AttachmentBridge, type ConversationBridge, type ConversationStreamEvent, type EmployeeBridge, type EmployeeDraftInput, type EmployeeEvent, type MemoryBridge, type ProviderBridge, type ResourceBridge, type RuntimeBridge, type RuntimeStatus, type SupervisorBridge, type SupervisorConfigInput, type TaskBridge, type TaskDraftInputView, type TaskEvent, type UsageBridge } from '../shared/runtime-contract'
 import type { MemoryCategoryView, MemoryScopeTypeView, MemoryStatusView, MemoryViewModel } from '../shared/memory-contract'
 import type { MemorySearchResultView } from '../shared/memory-contract'
 
@@ -23,7 +23,7 @@ const conversationBridge: ConversationBridge = Object.freeze({
   list: () => ipcRenderer.invoke(CONVERSATION_IPC.list),
   create: () => ipcRenderer.invoke(CONVERSATION_IPC.create),
   archive: (conversationId: string) => ipcRenderer.invoke(CONVERSATION_IPC.archive, { conversationId }),
-  send: (conversationId: string, text: string, directories: string[] = []) => ipcRenderer.invoke(CONVERSATION_IPC.send, { conversationId, text, directories }),
+  send: (conversationId: string, text: string, directories: string[] = [], attachmentIds: string[] = []) => ipcRenderer.invoke(CONVERSATION_IPC.send, { conversationId, text, directories, attachmentIds }),
   cancel: (requestId: string) => ipcRenderer.invoke(CONVERSATION_IPC.cancel, { requestId }),
   history: (conversationId: string) => ipcRenderer.invoke(CONVERSATION_IPC.history, { conversationId }),
   onEvent: (listener: (event: ConversationStreamEvent) => void) => {
@@ -31,6 +31,13 @@ const conversationBridge: ConversationBridge = Object.freeze({
     ipcRenderer.on(CONVERSATION_IPC.event, handler)
     return () => ipcRenderer.removeListener(CONVERSATION_IPC.event, handler)
   }
+})
+
+const attachmentBridge: AttachmentBridge = Object.freeze({
+  select: () => ipcRenderer.invoke(ATTACHMENT_IPC.select),
+  importDropped: (files: File[]) => ipcRenderer.invoke(ATTACHMENT_IPC.importDropped, { paths: files.map((file) => webUtils.getPathForFile(file)) }),
+  open: (attachmentId: string) => ipcRenderer.invoke(ATTACHMENT_IPC.open, { attachmentId }),
+  reveal: (attachmentId: string) => ipcRenderer.invoke(ATTACHMENT_IPC.reveal, { attachmentId })
 })
 
 const supervisorBridge: SupervisorBridge = Object.freeze({
@@ -92,4 +99,4 @@ const memoryBridge: MemoryBridge = Object.freeze({
 
 const usageBridge: UsageBridge = Object.freeze({ summary: () => ipcRenderer.invoke(USAGE_IPC.summary) })
 
-contextBridge.exposeInMainWorld('aiEmployeeOS', Object.freeze({ runtime: runtimeBridge, provider: providerBridge, conversation: conversationBridge, supervisor: supervisorBridge, employee: employeeBridge, task: taskBridge, resource: resourceBridge, memory: memoryBridge, usage: usageBridge }))
+contextBridge.exposeInMainWorld('aiEmployeeOS', Object.freeze({ runtime: runtimeBridge, provider: providerBridge, conversation: conversationBridge, attachment: attachmentBridge, supervisor: supervisorBridge, employee: employeeBridge, task: taskBridge, resource: resourceBridge, memory: memoryBridge, usage: usageBridge }))

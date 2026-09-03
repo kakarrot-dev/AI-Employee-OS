@@ -1,7 +1,7 @@
 import type { RuntimeHealth } from '../runtime/kernel'
 import type { StoredAuditEvent } from '../runtime/store'
 import type { ProviderEvent, ProviderRequest } from '../provider/contract'
-import type { Conversation, Message } from '../runtime/domain'
+import type { Conversation, Message, MessageAttachmentReference } from '../runtime/domain'
 import type { AgentCapabilityVersionView, EmployeeDetail, EmployeeDraftInput, EmployeeSummary } from './employee-contract'
 import type { FormalTaskDetail, TaskDraftInput } from '../runtime/task-service'
 import type { ResourceCatalog } from '../runtime/resource-service'
@@ -19,7 +19,7 @@ export type RuntimeCommand =
   | { schemaVersion: 1; requestId: string; type: 'conversation.list'; payload: Record<string, never> }
   | { schemaVersion: 1; requestId: string; type: 'conversation.create'; payload: { conversationId: string } }
   | { schemaVersion: 1; requestId: string; type: 'conversation.archive'; payload: { conversationId: string } }
-  | { schemaVersion: 1; requestId: string; type: 'conversation.send'; payload: { conversationId: string; messageId: string; text: string; directories: string[] } }
+  | { schemaVersion: 1; requestId: string; type: 'conversation.send'; payload: { conversationId: string; messageId: string; text: string; directories: string[]; attachments: MessageAttachmentReference[] } }
   | { schemaVersion: 1; requestId: string; type: 'conversation.history'; payload: { conversationId: string } }
   | { schemaVersion: 1; requestId: string; type: 'conversation.cancel'; payload: { providerRequestId: string } }
   | { schemaVersion: 1; requestId: string; type: 'supervisor.get'; payload: Record<string, never> }
@@ -97,9 +97,14 @@ export function parseRuntimeCommand(value: unknown): RuntimeCommand {
   } else if (command.type === 'conversation.create' || command.type === 'conversation.archive') {
     if (typeof (command.payload as { conversationId?: unknown }).conversationId !== 'string') throw new Error('invalid_conversation_id')
   } else if (command.type === 'conversation.send') {
-    const payload = command.payload as { conversationId?: unknown; messageId?: unknown; text?: unknown; directories?: unknown }
+    const payload = command.payload as { conversationId?: unknown; messageId?: unknown; text?: unknown; directories?: unknown; attachments?: unknown }
     if (typeof payload.conversationId !== 'string' || typeof payload.messageId !== 'string' || typeof payload.text !== 'string' || payload.text.length < 1 || payload.text.length > 100_000) throw new Error('invalid_conversation_message')
     if (!Array.isArray(payload.directories) || payload.directories.length > 16 || new Set(payload.directories).size !== payload.directories.length || payload.directories.some((directory) => typeof directory !== 'string' || !directory.startsWith('/') || directory.length > 4_096)) throw new Error('invalid_conversation_directories')
+    if (!Array.isArray(payload.attachments) || payload.attachments.length > 8 || payload.attachments.some((attachment) => {
+      if (!attachment || typeof attachment !== 'object' || Array.isArray(attachment)) return true
+      const item = attachment as Record<string, unknown>
+      return typeof item.id !== 'string' || typeof item.name !== 'string' || typeof item.path !== 'string' || !item.path.startsWith('/') || typeof item.mediaType !== 'string' || typeof item.size !== 'number' || item.size < 1 || item.size > 25 * 1024 * 1024 || typeof item.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(item.sha256)
+    })) throw new Error('invalid_conversation_attachments')
   } else if (command.type === 'conversation.history') {
     if (typeof (command.payload as { conversationId?: unknown }).conversationId !== 'string') throw new Error('invalid_conversation_id')
   } else if (command.type === 'conversation.cancel') {
