@@ -419,6 +419,11 @@ describe('App shell', () => {
   })
 
   it('routes the new Agent entry to the read-only recruitment catalog', async () => {
+    vi.mocked(window.aiEmployeeOS.employee.list).mockResolvedValue([
+      { id: 'employee.network-intelligence', name: '网络情报员', status: 'active', activeVersionId: 'employee-version.network-intelligence.v2', capabilityVersionIds: [], activeCapabilityVersionIds: [] },
+      { id: 'employee.tender-analyst', name: '招投标分析员', status: 'disabled', activeVersionId: 'employee-version.tender-analyst.v2', capabilityVersionIds: [], activeCapabilityVersionIds: [] },
+      { id: 'employee.document-writer', name: '文档编写员', status: 'archived', activeVersionId: 'employee-version.document-writer.v2', capabilityVersionIds: [], activeCapabilityVersionIds: [] }
+    ])
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: '通讯录' }))
     fireEvent.click(await screen.findByRole('button', { name: '新建 Agent' }))
@@ -429,10 +434,29 @@ describe('App shell', () => {
     fireEvent.click(within(entryDialog).getByRole('button', { name: /招募员工/ }))
 
     const catalog = screen.getByRole('region', { name: '招募员工' })
-    expect(within(catalog).getByText('信息与分析')).toBeInTheDocument()
-    expect(within(catalog).getByText('内容与交付')).toBeInTheDocument()
-    for (const employee of ['网络情报员', '招投标分析员', '文档编写员']) expect(within(catalog).getByText(employee)).toBeInTheDocument()
-    expect(within(catalog).getAllByRole('listitem')).toHaveLength(3)
+    for (const category of ['信息与分析', '内容与交付', '产品与研究', '工程与质量', '方案与业务']) expect(within(catalog).getByText(category)).toBeInTheDocument()
+    for (const employee of [
+      '网络情报员',
+      '招投标分析员',
+      '文档编写员',
+      '产品经理',
+      '用户体验研究员',
+      '软件架构师',
+      '代码审查员',
+      '生产就绪验证员',
+      '工作流架构师',
+      '提案策略师',
+      '政务数字化售前顾问'
+    ]) expect(within(catalog).getByText(employee)).toBeInTheDocument()
+    expect(within(catalog).getAllByRole('listitem')).toHaveLength(11)
+    await waitFor(() => expect(catalog.querySelectorAll('.detail-state')).toHaveLength(11))
+    expect(within(catalog).getAllByText('已招募', { selector: '.detail-state' })).toHaveLength(2)
+    expect(within(catalog).getAllByText('未开放', { selector: '.detail-state' })).toHaveLength(9)
+    expect(catalog.querySelectorAll('[data-availability="recruited"]')).toHaveLength(2)
+    expect(catalog.querySelectorAll('[data-availability="unavailable"]')).toHaveLength(9)
+    expect(catalog.querySelector('[data-availability="recruited"] .summary-card')).toHaveClass('summary-card--success')
+    expect(catalog.querySelector('[data-availability="unavailable"] .summary-card')).toHaveClass('summary-card--muted')
+    expect(within(within(catalog).getByText('文档编写员').closest('[role="listitem"]')!).getByText('未开放')).toBeInTheDocument()
     expect(within(catalog).queryByRole('button')).not.toBeInTheDocument()
   })
 
