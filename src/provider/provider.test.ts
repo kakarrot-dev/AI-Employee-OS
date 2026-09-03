@@ -63,11 +63,24 @@ describe('provider adapters', () => {
     expect(body.tools[0].name).toBe('propose_task')
   })
 
-  it('accepts one bounded JSON code fence from DeepSeek structured output', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'response-fenced', output: [{ type: 'message', content: [{ type: 'output_text', text: '```json\n{"mode":"create_task"}\n```' }] }] }), { status: 200 }))
+  it('uses DeepSeek JSON mode for pure structured control requests', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'chat-structured', choices: [{ message: { content: '```json\n{"mode":"create_task"}\n```' } }], usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 } }), { status: 200 }))
     const events = []
     for await (const event of new DeepSeekAdapter(credentials, fetchMock).execute({ requestId: 'request-fenced', provider: 'deepseek', modelId: 'deepseek-v4-pro', input: 'route', maxOutputTokens: 32, stream: false, outputSchema: { name: 'route', schema: { type: 'object' }, strict: true } })) events.push(event)
     expect(events).toContainEqual({ type: 'structured_result', requestId: 'request-fenced', value: { mode: 'create_task' } })
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.deepseek.com/chat/completions')
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.response_format).toEqual({ type: 'json_object' })
+    expect(body.messages[0].content).toContain('只输出一个可被 JSON.parse 解析')
+    expect(body.messages[0].content).toContain('"type":"object"')
+  })
+
+  it('normalizes non-JSON structured output into a stable provider failure code', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'chat-invalid', choices: [{ message: { content: '根据您的要求，我将安排员工。' } }] }), { status: 200 }))
+    const adapter = new DeepSeekAdapter(credentials, fetchMock)
+    await expect(async () => {
+      for await (const _event of adapter.execute({ requestId: 'request-invalid-json', provider: 'deepseek', modelId: 'deepseek-v4-pro', input: 'route', maxOutputTokens: 32, stream: false, outputSchema: { name: 'route', schema: { type: 'object' }, strict: true } })) void _event
+    }).rejects.toThrow('invalid_structured_output')
   })
 
   it.each([
@@ -113,6 +126,49 @@ describe('provider adapters', () => {
     for await (const event of new DeepSeekAdapter(credentials, vi.fn().mockResolvedValue(new Response(sse, { status: 200 }))).execute({ requestId: 'request-tool-stream', provider: 'deepseek', modelId: 'deepseek-v4-pro', input: 'call it', maxOutputTokens: 32, stream: true, proposalTool: { name: 'submit_proposal', description: 'submit', parameters: { type: 'object' } }, toolChoice: 'required' })) events.push(event)
     expect(events[0]).toEqual({ type: 'tool_proposal', requestId: 'request-tool-stream', callId: 'call-stream', name: 'submit_proposal', arguments: { summary: 'ready' } })
     expect(events.at(-1)).toEqual({ type: 'completed', requestId: 'request-tool-stream', providerRequestId: 'response-tool' })
+  })
+
+  it('preserves multiline document content when DeepSeek decodes control characters inside tool arguments', async () => {
+    const argumentsWithDecodedNewline = '{"toolVersionId":"document.create@local-document/v1","parameters":{"path":"/Users/kakarrot/Downloads/report.md","content":"第一行\n第二行"}}'
+    const sse = [
+      `event: response.function_call_arguments.done\ndata: ${JSON.stringify({ item_id: 'call-document', arguments: argumentsWithDecodedNewline })}\n\n`,
+      'event: response.completed\ndata: {"response":{"id":"response-document"}}\n\n'
+    ].join('')
+    const events = []
+    for await (const event of new DeepSeekAdapter(credentials, vi.fn().mockResolvedValue(new Response(sse, { status: 200 }))).execute({ requestId: 'request-document', provider: 'deepseek', modelId: 'deepseek-v4-pro', input: 'write it', maxOutputTokens: 4096, stream: true, proposalTool: { name: 'propose_tool_action', description: 'submit', parameters: { type: 'object' } }, toolChoice: 'required' })) events.push(event)
+    expect(events[0]).toMatchObject({ type: 'tool_proposal', arguments: { parameters: { content: '第一行\n第二行' } } })
+  })
+
+  it('still rejects malformed tool arguments that are not fixed by control-character escaping', async () => {
+    const payload = { id: 'response-invalid-tool', output: [{ type: 'function_call', call_id: 'call-invalid', name: 'propose_tool_action', arguments: '{"content":not-json}' }] }
+    const adapter = new DeepSeekAdapter(credentials, vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 })))
+    await expect(async () => {
+      for await (const _event of adapter.execute({ requestId: 'request-invalid-tool', provider: 'deepseek', modelId: 'deepseek-v4-pro', input: 'write it', maxOutputTokens: 32, stream: false, proposalTool: { name: 'propose_tool_action', description: 'submit', parameters: { type: 'object' } }, toolChoice: 'required' })) void _event
+    }).rejects.toThrow('invalid_tool_arguments')
+  })
+
+  it('normalizes Poe structured output and sends the frozen JSON schema', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'poe-structured', output: [{ type: 'message', content: [{ type: 'output_text', text: '{"passed":true}' }] }] }), { status: 200 }))
+    const events = []
+    for await (const event of new PoeAdapter(credentials, fetchMock).execute({ requestId: 'poe-evaluation', provider: 'poe', modelId: 'claude-sonnet-4.6', input: 'evaluate', maxOutputTokens: 32, stream: false, toolChoice: 'none', outputSchema: { name: 'employee_test_evaluation', schema: { type: 'object' }, strict: true } })) events.push(event)
+    expect(events).toContainEqual({ type: 'structured_result', requestId: 'poe-evaluation', value: { passed: true } })
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.text.format).toEqual({ type: 'json_schema', name: 'employee_test_evaluation', schema: { type: 'object' } })
+    expect(body.tool_choice).toBe('none')
+  })
+
+  it('normalizes Poe Responses streaming output', async () => {
+    const sse = [
+      'event: response.output_text.delta\ndata: {"delta":"OK"}\n\n',
+      'event: response.completed\ndata: {"response":{"id":"poe-stream","usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3}}}\n\n'
+    ].join('')
+    const events = []
+    for await (const event of new PoeAdapter(credentials, vi.fn().mockResolvedValue(new Response(sse, { status: 200 }))).execute({ requestId: 'poe-stream-request', provider: 'poe', modelId: 'claude-sonnet-4.6', input: 'work', maxOutputTokens: 32, stream: true })) events.push(event)
+    expect(events).toEqual([
+      { type: 'output_delta', requestId: 'poe-stream-request', delta: 'OK' },
+      { type: 'usage', requestId: 'poe-stream-request', inputTokens: 2, outputTokens: 1, totalTokens: 3, source: 'provider_actual' },
+      { type: 'completed', requestId: 'poe-stream-request', providerRequestId: 'poe-stream' }
+    ])
   })
 
   it('uses separate non-streaming media paths for Poe image and video', async () => {
