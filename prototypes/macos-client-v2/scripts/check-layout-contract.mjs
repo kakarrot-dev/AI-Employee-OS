@@ -322,7 +322,7 @@ for (const [name, source] of [['原型', app], ['客户端', `${rendererApp}\n${
   }
 }
 if (!app.includes('data-source="static"') || !app.includes('>未连接<')) errors.push('原型连接目录必须保留静态未连接参考状态')
-for (const marker of ['data-source="bridge"', 'connectFeishu', 'disconnectFeishu', '打开飞书授权']) {
+for (const marker of ['data-source="bridge"', 'openFeishuDeveloperConsole', 'connectFeishu', 'cancelFeishuAuthorization', 'disconnectFeishu', '打开安全设置', '开始用户授权']) {
   if (!rendererConnections.includes(marker)) errors.push(`客户端飞书连接缺少真实 Bridge 契约: ${marker}`)
 }
 if (!rendererConnections.includes("label: '未连接'")) errors.push('客户端连接目录必须保留非飞书应用的未连接状态')

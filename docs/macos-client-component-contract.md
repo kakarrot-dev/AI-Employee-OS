@@ -71,13 +71,13 @@
 - 消息：`ContextPane` 展示真实会话；`Workspace` 永久保留 Composer，消息与业务事项共用同一条时间线。
 - 通讯录：`ContextPane` 展示真实 Agent 员工；`Workspace` 展示资料、能力摘要和最近交付；三步创建与五分区设置复用 `ClientModal`，测试、发布和治理继续调用真实 Runtime 状态机。
 - 能力：`ContextPane` 只按原型展示 Skill、Tool；`Workspace` 展示 SKILL.md、适用任务、依赖、绑定 Agent 与高级信息。MCP 和数据源健康归入系统的资源治理。
-- 连接：`ContextPane` 只保留模块标题；`Workspace` 复用招募员工目录的摘要、分组、卡片与状态组件，按协作沟通、知识与文件、研发与云服务三类展示 12 个可连接应用。飞书状态来自窄 `ConnectionBridge`，支持自建应用凭证、系统浏览器 OAuth、按需自动续期与断开；App Secret、用户令牌和 refresh token 只保存在 macOS Keychain，Renderer 不持有持久凭证。其余 11 个应用仍为静态“未连接”，顶部已连接数只能由 Bridge 的真实状态派生。
+- 连接：`ContextPane` 只列出 Bridge 确认处于 `connected` 的应用，使用官方应用图标、名称、能力摘要和“已连接”状态；未连接、检查中、异常或需重新授权的应用不得混入该列表，空状态明确显示“暂无已连接应用”。点击已连接应用进入其管理弹窗。`Workspace` 复用招募员工目录的摘要、分组、卡片与状态组件，按协作沟通、知识与文件、研发与云服务三类展示 12 个可连接应用。飞书状态来自顶层持有的窄 `ConnectionBridge`，左侧列表、目录卡片和顶部指标共享同一状态事实；App Secret、用户令牌和 refresh token 只保存在 macOS Keychain，Renderer 不持有持久凭证。其余 11 个应用仍为静态“未连接”。
 - 系统：`ContextPane` 固定承载个人资料、通用、总管、模型服务、资源、记忆与存储、用量、关于；默认打开个人资料，`Workspace` 只显示所选设置页。右侧所有设置分区统一使用单栏阅读流，不为分区说明另建左侧标签栏。
 
 ## 4. 状态与数据边界
 
 - 列表、详情、创建、归档、运行状态必须来自 preload 暴露的窄 Bridge。
-- 飞书授权固定监听本机回环 `localhost:3000`，必须校验 OAuth `state` 与 PKCE；token 交换使用飞书官方 Node SDK 的 OAuth v3 能力。连接阶段只申请 `offline_access`，文档、消息、日历等业务权限随具体 Tool 单独申请。
+- 飞书授权固定监听本机回环 `localhost:3000`，必须校验 OAuth `state`；自建应用以 App Secret 作为机密客户端凭证，token 交换使用飞书官方 Node SDK 的 OAuth v3 能力，不混用 PKCE 参数。连接阶段按“应用凭证 → 配置文档权限与重定向 URL → 用户授权”三步执行：确认配置前不得打开授权页，授权中必须支持主动取消，错误码 `20029` 必须引导用户返回安全设置修复。完整状态与恢复契约见 `docs/feishu-connection-flow.md`。当前只申请 `offline_access`、`search:docs:read`、`docx:document:readonly`；消息、文档写入、日历和组织权限不在范围内。
 - 暂未接入的上传、用量等能力明确显示不可用，不用假数据补齐原型。
 - 页面状态由顶层模块持有；共享视觉组件保持无业务状态，事件通过 props 上送。
 - 当前态必须同时具备视觉类名与可访问名称，不能只依赖颜色表达。
