@@ -19,6 +19,7 @@ import { SupervisorService } from './supervisor-service'
 import { hasResearchCapability, hasTenderAnalysisCapability } from './builtin-contracts'
 import { createAttachmentContentInspector } from './attachment-content-inspector'
 import { nativeImageTextRecognizer } from './tender-document-runner'
+import { normalizeHandoffJsonValue } from './handoff-contract'
 
 function databasePathFromArgs(): string {
   const argument = process.argv.find((value) => value.startsWith('--database='))
@@ -69,12 +70,12 @@ const tasks = new TaskService(kernel, employees, (request) => memory.search(requ
       analystSynthesis: output,
       sourceBodyIncluded: false
     }
-    return { text: JSON.stringify(handoff) }
+    return { parts: [{ kind: 'data', name: '招投标需求交接', mediaType: 'application/json', schemaId: 'ai-employee-os/TenderRequirementHandoff/v1', value: normalizeHandoffJsonValue(handoff) }] }
   }
   if (!hasResearchCapability(version.capabilityVersionIds)) return { text: output }
   const bundle = research.createBundle({ taskId: revision.taskId, runId: assignment.runId, assignmentId: assignment.id, employeeVersionId: version.id, question: revision.goal, githubQuery: '', feedUrl: '' }, actions)
   const handoff = { schemaVersion: 1, type: 'ResearchHandoff', researchBundleId: bundle.id, contentHash: bundle.contentHash, question: bundle.question, claims: bundle.claims, conflicts: bundle.conflicts, informationGaps: bundle.informationGaps, sources: bundle.items.map((item, index) => ({ index, sourceType: item.sourceType, title: item.title, url: item.url, publishedAt: item.publishedAt, summary: item.summary, contentHash: item.contentHash, trust: item.trust, injectionSignals: item.injectionSignals })), researcherSynthesis: output }
-  return { text: JSON.stringify(handoff), researchBundleId: bundle.id }
+  return { parts: [{ kind: 'data', name: '网络调研交接', mediaType: 'application/json', schemaId: 'ai-employee-os/ResearchHandoff/v1', value: normalizeHandoffJsonValue(handoff) }], researchBundleId: bundle.id }
 }, (detail) => deliveryExporter.materialize(detail), () => supervisor.get())
 const supervisorRouter = new SupervisorRouter(employees, tasks, () => supervisor.get(), (request) => memory.search(request), createAttachmentContentInspector(nativeImageTextRecognizer(imageTextExtractorPath)))
 
@@ -411,7 +412,7 @@ parentPort.on('message', async (event) => {
         action = await toolGateway.propose(proposal)
       } catch (error) {
         const code = error instanceof Error ? error.message.split(':')[0] : 'invalid_tool_proposal'
-        if (['invalid_tool_parameters', 'parameter_source_required', 'invalid_parameter_source', 'invalid_tool_proposal_name', 'invalid_tool_proposal_arguments', 'invalid_tool_proposal_schema', 'tool_not_available_for_assignment'].includes(code)) {
+        if (['invalid_tool_parameters', 'parameter_source_required', 'invalid_parameter_source', 'invalid_tool_proposal_name', 'invalid_tool_proposal_arguments', 'invalid_tool_proposal_schema', 'tool_not_available_for_assignment', 'invalid_document_create_path', 'invalid_document_create_filename', 'document_draft_required_before_create', 'document_write_or_existing_create_required_before_read', 'document_draft_required_before_edit', 'document_read_required_before_edit'].includes(code)) {
           const detail = tasks.recordInvalidToolProposal(command.payload.providerRequestId, code)
           emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId: command.payload.providerRequestId, event: { type: 'progress', taskId: detail.task!.id, runId: detail.run?.id } })
           respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
@@ -500,6 +501,7 @@ parentPort.on('message', async (event) => {
 })
 
 tasks.reconcileFailedRunToolActions()
+const authorizationPolicyMigrations = tasks.migrateLegacyAuthorizationRuns()
 parentPort.postMessage({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.ready', health: kernel.recover() })
 setTimeout(() => {
   try {
@@ -511,7 +513,9 @@ setTimeout(() => {
         tasks.failRun(detail.run!.id, error instanceof Error ? error.message : 'deep_agents_worker_failed')
       }
     }
-    for (const request of tasks.recoverPendingRequests()) emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: request.requestId, request })
+    const migratedRequestIds = new Set(authorizationPolicyMigrations.map(({ request }) => request.requestId))
+    for (const request of tasks.recoverPendingRequests(migratedRequestIds)) emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: request.requestId, request })
+    for (const { request } of authorizationPolicyMigrations) emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: request.requestId, request })
   } catch (error) {
     console.error('[startup-recovery]', error instanceof Error ? error.stack ?? error.message : String(error))
   }

@@ -1,4 +1,5 @@
 import type { ChatContentView } from '../shared/chat-content-contract'
+import type { AgentHandoffEnvelope } from './handoff-contract'
 
 export const RUNTIME_SCHEMA_VERSION = 1 as const
 
@@ -276,8 +277,10 @@ export interface Handoff extends VersionedEntity {
   fromAssignmentId: string
   toAssignmentId?: string
   toSupervisor: boolean
-  input: Record<string, unknown>
-  output: Record<string, unknown>
+  envelope?: AgentHandoffEnvelope
+  /** Legacy fields are read-only compatibility for Handoffs created before AgentHandoffEnvelope v1. */
+  input?: Record<string, unknown>
+  output?: Record<string, unknown>
   artifactIds: string[]
   evidenceIds: string[]
   sha256: string

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { EmployeeService } from './employee-service'
 import { RuntimeKernel } from './kernel'
 import { RuntimeStore } from './store'
-import { TaskService } from './task-service'
+import { TaskService, type AssignmentHandoffProjection } from './task-service'
 import { ResourceService } from './resource-service'
 import { ToolGateway } from './tool-gateway'
 import { localDocumentRunner } from './local-document-runner'
@@ -73,6 +73,7 @@ describe('TaskService', () => {
     const draft = tasks.createDraft({ conversationId: 'source-conversation', sourceMessageIds: ['source-message'], goal: '分析附件', acceptanceCriteria: ['结论可验证'], employeeVersionIds: [employeeVersionId] })
 
     expect(draft.draft.attachments).toEqual([attachment])
+    expect(draft.draft.authorizationMode).toBe('full_access')
     store.close()
   })
 
@@ -227,7 +228,7 @@ describe('TaskService', () => {
 
     tasks.handleProviderEvent(started.request.requestId, { type: 'output_delta', requestId: started.request.requestId, delta: '# report' })
     const createTurn = tasks.handleProviderEvent(started.request.requestId, { type: 'completed', requestId: started.request.requestId })!
-    const createEvent = { type: 'tool_proposal' as const, requestId: createTurn.request!.requestId, callId: 'create', name: 'propose_tool_action', arguments: { toolVersionId: 'document.create@local-document/v1', parameters: { path: '/workspace/deliverables/report.md' } } }
+    const createEvent = { type: 'tool_proposal' as const, requestId: createTurn.request!.requestId, callId: 'create', name: 'propose_tool_action', arguments: { toolVersionId: 'document.create@local-document/v1', parameters: { path: 'report.md' } } }
     const createContext = tasks.toolProposalContext(createTurn.request!.requestId, createEvent)
     expect(createContext.parameters).toEqual({ path: join(root, 'report.md'), content: '# report' })
     expect(createContext.parameterSources.path).toMatchObject({ kind: 'trusted_runtime', sourceRef: expect.stringContaining('authorized_directory') })
@@ -293,6 +294,8 @@ describe('TaskService', () => {
     const completed = tasks.handleProviderEvent(finalTurn.request!.requestId, { type: 'completed', requestId: finalTurn.request!.requestId })!
     expect(completed).toMatchObject({ event: 'assignment_completed', detail: { assignments: [{ state: 'succeeded' }] } })
     expect(completed.detail.toolActions.filter((action) => action.toolVersionId === 'document.read@local-document/v1')).toHaveLength(2)
+    const review = tasks.beginManagerReview(started.run!.id)
+    expect(review.input.split('# 新报告\\n有效内容\\n')).toHaveLength(2)
     store.close()
   })
 
@@ -569,8 +572,42 @@ describe('TaskService', () => {
     const thirdStarted = tasks.handleProviderEvent(secondStarted.request!.requestId, { type: 'completed', requestId: secondStarted.request!.requestId })!
 
     expect(thirdStarted.request?.input).toContain('[已核验上游累计交接]')
+    expect(thirdStarted.request?.input).toContain('AgentHandoffEnvelope')
     expect(thirdStarted.request?.input).toContain('第一阶段招投标需求矩阵')
     expect(thirdStarted.request?.input).toContain('第二阶段网络来源结论')
+    expect(thirdStarted.detail.handoffs.every((handoff) => handoff.envelope?.audience.assignmentIds.includes(thirdStarted.detail.assignments[2].id))).toBe(true)
+    store.close()
+  })
+
+  it('passes structured and extension results without flattening them into employee text', () => {
+    const { employees, store, kernel } = setup()
+    const first = publishEmployee(employees)
+    const second = publishEmployee(employees)
+    const tasks = new TaskService(kernel, employees, () => [], (): AssignmentHandoffProjection => ({
+      summary: '结构化计算结果',
+      parts: [
+        { kind: 'data', mediaType: 'application/json', schemaId: 'example/Calculation/v1', value: { total: 42, rows: [{ key: 'alpha', score: 0.9 }] } },
+        { kind: 'extension', namespace: 'com.example/model-output', mediaType: 'application/vnd.example.result+json', value: { labels: ['A', 'B'] } }
+      ]
+    }))
+    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'typed-handoff', sourceMessageIds: ['message'], goal: '传递结构化结果', acceptanceCriteria: ['结构保持不变'], employeeVersionIds: [first, second] }).draft.id)
+
+    tasks.handleProviderEvent(started.request.requestId, { type: 'output_delta', requestId: started.request.requestId, delta: '这段原始文本不应替代结构化载荷' })
+    const next = tasks.handleProviderEvent(started.request.requestId, { type: 'completed', requestId: started.request.requestId })!
+
+    expect(next.detail.handoffs[0]).toMatchObject({
+      envelope: {
+        schemaVersion: 1,
+        type: 'AgentHandoffEnvelope',
+        parts: [
+          { kind: 'data', schemaId: 'example/Calculation/v1', value: { total: 42 } },
+          { kind: 'extension', namespace: 'com.example/model-output', value: { labels: ['A', 'B'] } }
+        ]
+      }
+    })
+    expect(next.request?.input).toContain('"total":42')
+    expect(next.request?.input).toContain('com.example/model-output')
+    expect(next.request?.input).not.toContain('这段原始文本不应替代结构化载荷')
     store.close()
   })
 
@@ -721,6 +758,52 @@ describe('TaskService', () => {
     store.close()
   })
 
+  it('upgrades a legacy approval-required retry through a new immutable full-access revision', () => {
+    const { employees, tasks, store } = setup()
+    const employeeVersionId = publishEmployee(employees)
+    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'legacy-retry-policy', sourceMessageIds: ['message'], goal: '生成结果', acceptanceCriteria: ['完成'], employeeVersionIds: [employeeVersionId], authorizationMode: 'approval_required' }).draft.id)
+    tasks.failRun(started.run!.id, 'provider_execution_timeout')
+
+    const retried = tasks.retryFailedTask(started.task!.id)
+
+    expect(retried.revision).toMatchObject({ revision: 2, authorizationMode: 'full_access' })
+    expect(retried.revision?.id).not.toBe(started.revision?.id)
+    expect(retried.run).toMatchObject({ taskRevisionId: retried.revision?.id, supersedesRunId: started.run!.id })
+    expect(store.get<any>('RunGrant', retried.run!.runGrantId)).toMatchObject({ authorizationMode: 'full_access' })
+    expect(store.get<any>('TaskRevision', started.revision!.id)).toMatchObject({ authorizationMode: 'approval_required' })
+    store.close()
+  })
+
+  it('supersedes an active legacy approval run before startup recovery', async () => {
+    const { employees, tasks, store, kernel, resources } = setup()
+    const employeeVersionId = publishResearchEmployee(employees)
+    const legacyDraft = tasks.createDraft({ conversationId: 'legacy-active-policy', sourceMessageIds: ['message'], goal: '调研公开信息', acceptanceCriteria: ['保留来源'], employeeVersionIds: [employeeVersionId], authorizationMode: 'approval_required' }).draft
+    kernel.save({ entityType: 'TaskDraft', entity: { ...legacyDraft, resourceScope: { ...legacyDraft.resourceScope, skillVersionIds: undefined, skillDigests: undefined } }, immutable: false }, 'test.legacy_draft_without_skill_snapshot', {})
+    const started = tasks.confirmAndStart(legacyDraft.id)
+    const proposal = { type: 'tool_proposal' as const, requestId: started.request.requestId, callId: 'legacy-call', name: 'propose_tool_action', arguments: { toolVersionId: 'github.repositories.search@research-source/v1', parameters: { query: 'agents' } } }
+    const context = tasks.toolProposalContext(started.request.requestId, proposal)
+    const action = await new ToolGateway(kernel, resources, async () => ({ status: 'succeeded', items: [] })).propose(context)
+    tasks.attachToolAction(context.assignmentId, action.id)
+    const waiting = tasks.handleProviderEvent(started.request.requestId, { type: 'completed', requestId: started.request.requestId })!
+    expect(waiting.detail.run?.state).toBe('paused')
+
+    const [migration] = tasks.migrateLegacyAuthorizationRuns()
+    const migrated = tasks.detailByTask(started.task!.id)
+
+    expect(migration).toMatchObject({ runId: migrated.run?.id, request: { requestId: expect.any(String) } })
+    expect(migrated.revision).toMatchObject({ revision: 2, authorizationMode: 'full_access' })
+    expect(migrated.revision?.resourceScope.skillVersionIds).toEqual(['skill.managed-research.v2'])
+    expect(migrated.revision?.resourceScope.skillDigests?.['skill.managed-research.v2']).toMatch(/^[a-f0-9]{64}$/)
+    expect(migrated.run).toMatchObject({ state: 'running', supersedesRunId: started.run!.id })
+    expect(store.get<any>('RunGrant', migrated.run!.runGrantId)).toMatchObject({ authorizationMode: 'full_access' })
+    expect(store.get<any>('Run', started.run!.id)).toMatchObject({ state: 'cancelled' })
+    expect(store.get<any>('ToolAction', action.id)).toMatchObject({ state: 'cancelled', failureCode: 'authorization_policy_superseded' })
+    expect(store.get<any>('Approval', action.approvalId!)).toMatchObject({ decision: 'rejected' })
+    expect(tasks.recoverPendingRequests(new Set([migration.request.requestId]))).toEqual([])
+    expect(tasks.migrateLegacyAuthorizationRuns()).toEqual([])
+    store.close()
+  })
+
   it('repairs a legacy retry from the uniquely referenced source message without creating a new Task', () => {
     const { employees, tasks, store, kernel } = setup()
     employees.seedRequestedSpecialists()
@@ -767,12 +850,13 @@ describe('TaskService', () => {
     store.close()
   })
 
-  it('allows retry after a verified non-overwriting document create but keeps the same Task', () => {
+  it('allows retry after verified local document writes but keeps the same Task', () => {
     const { employees, tasks, store } = setup()
     const employeeVersionId = publishEmployee(employees)
     const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'retry-created-document', sourceMessageIds: ['message'], title: '失败事项恢复', goal: '恢复失败事项', acceptanceCriteria: ['完成'], employeeVersionIds: [employeeVersionId], authorizationMode: 'full_access' }).draft.id)
     tasks.failRun(started.run!.id, 'provider_execution_timeout')
     store.save({ entityType: 'ToolAction', entity: { schemaVersion: 1, id: 'verified-create', createdAt: new Date().toISOString(), runId: started.run!.id, assignmentId: started.assignments[0].id, toolVersionId: 'document.create@local-document/v1', idempotencyKey: 'verified-create', state: 'succeeded', parameters: { path: '/tmp/report.md', content: 'draft' }, parameterSources: { path: { kind: 'task_input', sourceRef: 'task' }, content: { kind: 'model_output', sourceRef: 'provider' } }, risk: 'medium', sideEffect: 'external_write', timeoutMs: 10_000, resultVerified: true, completedAt: new Date().toISOString() }, immutable: false }, { schemaVersion: 1, eventId: 'verified-create-event', occurredAt: new Date().toISOString(), eventType: 'tool_action.succeeded', aggregateType: 'ToolAction', aggregateId: 'verified-create', payload: {} })
+    store.save({ entityType: 'ToolAction', entity: { schemaVersion: 1, id: 'verified-edit', createdAt: new Date().toISOString(), runId: started.run!.id, assignmentId: started.assignments[0].id, toolVersionId: 'document.edit@local-document/v1', idempotencyKey: 'verified-edit', state: 'succeeded', parameters: { path: '/tmp/report.md', oldText: 'draft', newText: 'final' }, parameterSources: { path: { kind: 'trusted_runtime', sourceRef: 'read:path' }, oldText: { kind: 'trusted_runtime', sourceRef: 'read:content' }, newText: { kind: 'model_output', sourceRef: 'provider' } }, risk: 'medium', sideEffect: 'external_write', timeoutMs: 10_000, resultVerified: true, completedAt: new Date().toISOString() }, immutable: false }, { schemaVersion: 1, eventId: 'verified-edit-event', occurredAt: new Date().toISOString(), eventType: 'tool_action.succeeded', aggregateType: 'ToolAction', aggregateId: 'verified-edit', payload: {} })
 
     const retried = tasks.retryFailedTask(started.task!.id)
 
@@ -850,7 +934,7 @@ describe('TaskService', () => {
   it('turns a provider tool call into a Runtime proposal and resumes only with the verified result', async () => {
     const { employees, tasks, store, kernel, resources } = setup()
     const employeeVersionId = publishResearchEmployee(employees)
-    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'c', sourceMessageIds: ['m'], goal: '调研 Deep Agents', acceptanceCriteria: ['包含来源'], employeeVersionIds: [employeeVersionId] }).draft.id)
+    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'c', sourceMessageIds: ['m'], goal: '调研 Deep Agents', acceptanceCriteria: ['包含来源'], employeeVersionIds: [employeeVersionId], authorizationMode: 'approval_required' }).draft.id)
     expect(started.request.proposalTool?.name).toBe('propose_tool_action')
     expect(started.revision?.resourceScope.toolVersionIds).toEqual(['github.repositories.search@research-source/v1', 'rss.read@research-source/v1'])
     const proposalEvent = { type: 'tool_proposal' as const, requestId: started.request.requestId, callId: 'call-1', name: 'propose_tool_action', arguments: { toolVersionId: 'github.repositories.search@research-source/v1', parameters: { query: 'deep agents', limit: 2 }, parameterSources: { query: { kind: 'task_input', sourceRef: 'task:goal' }, limit: { kind: 'trusted_runtime', sourceRef: 'limit' } } } }
@@ -884,7 +968,7 @@ describe('TaskService', () => {
   it('records model proposal provenance in Runtime when the provider returns only Tool parameters', async () => {
     const { employees, tasks, store, kernel, resources } = setup()
     const employeeVersionId = publishResearchEmployee(employees)
-    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'runtime-provenance', sourceMessageIds: ['message'], goal: '调研郑州近期公开新闻', acceptanceCriteria: ['保留来源'], employeeVersionIds: [employeeVersionId] }).draft.id)
+    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'runtime-provenance', sourceMessageIds: ['message'], goal: '调研郑州近期公开新闻', acceptanceCriteria: ['保留来源'], employeeVersionIds: [employeeVersionId], authorizationMode: 'approval_required' }).draft.id)
     const proposalEvent = { type: 'tool_proposal' as const, requestId: started.request.requestId, callId: 'call-runtime-provenance', name: 'propose_tool_action', arguments: { toolVersionId: 'github.repositories.search@research-source/v1', parameters: { query: '郑州近期公开新闻', limit: 5 } } }
 
     const context = tasks.toolProposalContext(started.request.requestId, proposalEvent)
@@ -900,7 +984,7 @@ describe('TaskService', () => {
   it('defers additional proposals from the same provider turn before creating orphan actions', async () => {
     const { employees, tasks, store, kernel, resources } = setup()
     const employeeVersionId = publishResearchEmployee(employees)
-    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'multi-proposal', sourceMessageIds: ['message'], goal: '调研多个来源', acceptanceCriteria: ['保留来源'], employeeVersionIds: [employeeVersionId] }).draft.id)
+    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'multi-proposal', sourceMessageIds: ['message'], goal: '调研多个来源', acceptanceCriteria: ['保留来源'], employeeVersionIds: [employeeVersionId], authorizationMode: 'approval_required' }).draft.id)
     const gateway = new ToolGateway(kernel, resources, async () => ({ status: 'succeeded', items: [] }))
     const firstEvent = { type: 'tool_proposal' as const, requestId: started.request.requestId, callId: 'call-first', name: 'propose_tool_action', arguments: { toolVersionId: 'github.repositories.search@research-source/v1', parameters: { query: 'agents' }, parameterSources: { query: { kind: 'task_input', sourceRef: 'task:goal' } } } }
     expect(tasks.canAcceptToolProposal(started.request.requestId)).toBe(true)
@@ -920,7 +1004,7 @@ describe('TaskService', () => {
   it('invalidates pending approvals when an expired RunGrant fails before tool approval', async () => {
     const { employees, tasks, store, kernel, resources } = setup()
     const employeeVersionId = publishResearchEmployee(employees)
-    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'failed-approval', sourceMessageIds: ['message'], goal: '调研', acceptanceCriteria: ['保留来源'], employeeVersionIds: [employeeVersionId] }).draft.id)
+    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'failed-approval', sourceMessageIds: ['message'], goal: '调研', acceptanceCriteria: ['保留来源'], employeeVersionIds: [employeeVersionId], authorizationMode: 'approval_required' }).draft.id)
     const event = { type: 'tool_proposal' as const, requestId: started.request.requestId, callId: 'call', name: 'propose_tool_action', arguments: { toolVersionId: 'github.repositories.search@research-source/v1', parameters: { query: 'agents' }, parameterSources: { query: { kind: 'task_input', sourceRef: 'task:goal' } } } }
     const context = tasks.toolProposalContext(started.request.requestId, event)
     const action = await new ToolGateway(kernel, resources, async () => ({ status: 'succeeded' })).propose(context)

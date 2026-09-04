@@ -70,7 +70,7 @@ describe('SupervisorRouter', () => {
     expect(result).toMatchObject({ mode: 'create_task', missingInputs: ['authorized_directory'], task: { draft: { title: '学校新闻调研文档', conversationId: 'conversation-2', authorizationMode: 'full_access', employeeVersionIds: ['employee-version.network-intelligence.v2', 'employee-version.document-writer.v2'], resourceScope: { directories: [] } } } })
     expect(result.startRequest).toBeUndefined()
     expect(result.response).toContain('已识别为需要员工协作的事项')
-    expect(result.response).toContain('受控访问')
+    expect(result.response).toContain('系统下载文件夹尚未就绪')
     expect(result.response).toContain('将自动开始')
     expect(result.task?.draft.acceptanceCriteria).toContain('网络结论保留来源、发布时间、冲突与信息缺口')
     expect(result.task?.draft.acceptanceCriteria).toContain('目标文档已在授权目录内写入或编辑，并以回读 SHA-256 作为完成证据')

@@ -11,6 +11,7 @@ import { hasLocalDocumentCapability, hasResearchCapability, hasTenderAnalysisCap
 import { createTenderSourceBatches, createTextBatches, inputBatchCharacterBudget } from './content-batching'
 import type { ExtractedDocument } from './tender-document-runner'
 import { normalizeMatterTitle } from '../shared/task-contract'
+import { createHandoffEnvelope, renderHandoffEnvelope, type HandoffPart } from './handoff-contract'
 
 const MIN_ACTIVE_STREAM_IDLE_MS = 600_000
 const MIN_TASK_FIRST_EVENT_MS = 120_000
@@ -52,6 +53,7 @@ export interface FormalTaskDetail {
 }
 
 export interface TaskStartResult extends FormalTaskDetail { request: ProviderRequest }
+export interface TaskPolicyMigrationResult { runId: string; request: ProviderRequest }
 export interface TaskProviderResult { request?: ProviderRequest; detail: FormalTaskDetail; event: 'progress' | 'assignment_completed' | 'delivery_completed' | 'needs_attention' | 'failed' }
 export interface ToolResumeResult { request?: ProviderRequest; detail: FormalTaskDetail }
 interface ManagerCriterionResult { criterionIndex: number; passed: boolean; reason: string; evidenceTypes: Array<'tool_result' | 'research_bundle' | 'handoff' | 'employee_output'> }
@@ -67,7 +69,13 @@ export interface AssignmentMemoryContext {
   reason: string
 }
 export type AssignmentMemoryRecall = (request: { query: string; allowedScopes: Array<{ type: 'global' | 'employee' | 'task'; id: string }>; limit: number; tokenBudget: number }) => AssignmentMemoryContext[]
-export type AssignmentHandoffProjector = (request: { assignment: Assignment; revision: TaskRevision; version: EmployeeVersion; output: string; actions: ToolAction[] }) => { text: string; researchBundleId?: string }
+export interface AssignmentHandoffProjection {
+  text?: string
+  parts?: HandoffPart[]
+  summary?: string
+  researchBundleId?: string
+}
+export type AssignmentHandoffProjector = (request: { assignment: Assignment; revision: TaskRevision; version: EmployeeVersion; output: string; actions: ToolAction[] }) => AssignmentHandoffProjection
 export type DeliveryMaterializer = (detail: FormalTaskDetail) => { artifactIds: string[]; evidenceIds: string[]; unresolvedIssues: string[] }
 
 const DEFAULT_BUDGET = { maxInputTokens: 32_000, maxOutputTokens: 4_096, maxAmountUsdMicros: 1_000_000, maxSteps: 64 }
@@ -118,7 +126,7 @@ function compileCompressedContextFragments(outputs: string[]): string {
 }
 
 export class TaskService {
-  constructor(private readonly kernel: RuntimeKernel, private readonly employees: EmployeeService, private readonly recallMemory: AssignmentMemoryRecall = () => [], private readonly projectHandoff: AssignmentHandoffProjector = ({ output }) => ({ text: output }), private readonly materializeDelivery: DeliveryMaterializer = () => ({ artifactIds: [], evidenceIds: [], unresolvedIssues: [] }), private readonly supervisorConfiguration: () => SupervisorConfigInput = () => ({ ...DEFAULT_SUPERVISOR_CONFIG, memoryScopes: [...DEFAULT_SUPERVISOR_CONFIG.memoryScopes] })) {}
+  constructor(private readonly kernel: RuntimeKernel, private readonly employees: EmployeeService, private readonly recallMemory: AssignmentMemoryRecall = () => [], private readonly projectHandoff: AssignmentHandoffProjector = ({ output }) => ({ parts: [{ kind: 'text', mediaType: 'text/plain', text: output }] }), private readonly materializeDelivery: DeliveryMaterializer = () => ({ artifactIds: [], evidenceIds: [], unresolvedIssues: [] }), private readonly supervisorConfiguration: () => SupervisorConfigInput = () => ({ ...DEFAULT_SUPERVISOR_CONFIG, memoryScopes: [...DEFAULT_SUPERVISOR_CONFIG.memoryScopes] })) {}
 
   createDraft(input: TaskDraftInput): FormalTaskDetail {
     if (this.detailByAnySourceMessage(input.conversationId, input.sourceMessageIds)) throw new Error('matter_already_exists_for_source')
@@ -132,7 +140,7 @@ export class TaskService {
     const draft: TaskDraft = {
       schemaVersion: 1, id, createdAt: new Date().toISOString(), conversationId: normalizedInput.conversationId, sourceMessageIds: [...normalizedInput.sourceMessageIds], title: normalizeMatterTitle(normalizedInput.title, normalizedInput.goal), goal: normalizedInput.goal,
       acceptanceCriteria: [...normalizedInput.acceptanceCriteria], employeeVersionIds: [...normalizedInput.employeeVersionIds], capabilityVersionIds: [...new Set(versions.flatMap((version) => version.capabilityVersionIds))],
-      modelConfigIds: [...new Set(versions.map((version) => version.modelId))], budget: { ...DEFAULT_BUDGET }, authorizationMode: normalizedInput.authorizationMode ?? 'approval_required',
+      modelConfigIds: [...new Set(versions.map((version) => version.modelId))], budget: { ...DEFAULT_BUDGET }, authorizationMode: normalizedInput.authorizationMode ?? 'full_access',
       attachments: structuredClone(attachments), resourceScope: this.resourceScopeForVersions(versions, normalizedInput.directories ?? [], attachments), revision: 1
     }
     this.kernel.save({ entityType: 'TaskDraft', entity: draft, immutable: false }, 'task_draft.created', { conversationId: normalizedInput.conversationId, employeeVersionIds: normalizedInput.employeeVersionIds })
@@ -224,19 +232,30 @@ export class TaskService {
     if (previousRun.state === 'failed') this.settleToolActionsAfterRunFailure(previousRun.id, 'retry_reconciliation')
     const previousActions = this.kernel.store.list<ToolAction>('ToolAction').filter((action) => action.runId === previousRun.id)
     if (previousActions.some((action) => ['pending', 'running', 'result_unknown'].includes(action.state))) throw new Error('unsettled_tool_action')
-    if (previousActions.some((action) => action.state === 'succeeded' && action.sideEffect === 'external_write' && (action.toolVersionId !== 'document.create@local-document/v1' || action.resultVerified !== true))) throw new Error('retry_requires_external_write_review')
+    const retrySafeLocalWrites = new Set(['document.create@local-document/v1', 'document.edit@local-document/v1'])
+    if (previousActions.some((action) => action.state === 'succeeded' && action.sideEffect === 'external_write' && (!retrySafeLocalWrites.has(action.toolVersionId) || action.resultVerified !== true))) throw new Error('retry_requires_external_write_review')
 
     const previousRevision = this.repairMissingRevisionInputsForRetry(task, this.revisionForRun(previousRun.id))
-    const revision: TaskRevision = previousRevision.budget.maxSteps >= DEFAULT_BUDGET.maxSteps
+    const needsBudgetUpgrade = previousRevision.budget.maxSteps < DEFAULT_BUDGET.maxSteps
+    const needsAuthorizationUpgrade = previousRevision.authorizationMode !== 'full_access'
+    const versions = previousRevision.employeeVersionIds.map((id) => this.version(id))
+    const revision: TaskRevision = !needsBudgetUpgrade && !needsAuthorizationUpgrade
       ? previousRevision
-      : { ...previousRevision, id: randomUUID(), createdAt: new Date().toISOString(), revision: previousRevision.revision + 1, budget: { ...previousRevision.budget, maxSteps: DEFAULT_BUDGET.maxSteps } }
+      : {
+          ...previousRevision,
+          id: randomUUID(),
+          createdAt: new Date().toISOString(),
+          revision: Math.max(previousRevision.revision, ...this.kernel.store.list<TaskRevision>('TaskRevision').filter((item) => item.taskId === task.id).map((item) => item.revision)) + 1,
+          budget: needsBudgetUpgrade ? { ...previousRevision.budget, maxSteps: DEFAULT_BUDGET.maxSteps } : previousRevision.budget,
+          authorizationMode: 'full_access',
+          resourceScope: needsAuthorizationUpgrade ? this.resourceScopeForVersions(versions, previousRevision.resourceScope.directories, previousRevision.attachments ?? []) : previousRevision.resourceScope
+        }
     this.assertSkillSnapshot(revision.resourceScope)
-    const versions = revision.employeeVersionIds.map((id) => this.version(id))
     const now = new Date().toISOString()
     const runId = randomUUID(), grantId = randomUUID()
     const grant: RunGrant = { schemaVersion: 1, id: grantId, createdAt: now, runId, expiresAt: new Date(Date.now() + this.effectiveRunTimeoutMs(versions.length, revision.timeoutsMs.run)).toISOString(), budget: { ...revision.budget }, authorizationMode: revision.authorizationMode, resourceScope: structuredClone(revision.resourceScope) }
     const run: Run = { schemaVersion: 1, id: runId, createdAt: now, taskId: task.id, taskRevisionId: revision.id, runGrantId: grantId, state: 'running', supersedesRunId: previousRun.id }
-    if (revision.id !== previousRevision.id) this.kernel.save({ entityType: 'TaskRevision', entity: revision, immutable: true }, 'task_revision.runtime_contract_upgraded', { previousRevisionId: previousRevision.id, reason: 'complete_batch_and_continuation_budget' })
+    if (revision.id !== previousRevision.id) this.kernel.save({ entityType: 'TaskRevision', entity: revision, immutable: true }, 'task_revision.runtime_contract_upgraded', { previousRevisionId: previousRevision.id, reasons: [...(needsBudgetUpgrade ? ['complete_batch_and_continuation_budget'] : []), ...(needsAuthorizationUpgrade ? ['current_full_access_policy'] : [])] })
     this.kernel.save({ entityType: 'RunGrant', entity: grant, immutable: true }, 'run_grant.created', { runId, retryOfRunId: previousRun.id })
     this.kernel.save({ entityType: 'Run', entity: run, immutable: false }, 'run.retried', { retryOfRunId: previousRun.id })
     this.kernel.save({ entityType: 'Task', entity: { ...task, state: 'running', activeRevisionId: revision.id, activeRunId: runId }, immutable: false }, 'task.retried', { runId, retryOfRunId: previousRun.id, revisionId: revision.id })
@@ -245,6 +264,48 @@ export class TaskService {
     this.saveCheckpoint(runId, undefined, 'created', 'employee', { assignmentIds: assignments.map((assignment) => assignment.id), retryOfRunId: previousRun.id, skillVersionIds: revision.resourceScope.skillVersionIds ?? [], skillDigests: revision.resourceScope.skillDigests ?? {} })
     const request = this.startAssignment(assignments[0], revision, versions[0])
     return { ...this.detailByTask(task.id), request }
+  }
+
+  migrateLegacyAuthorizationRuns(): TaskPolicyMigrationResult[] {
+    const migrated: TaskPolicyMigrationResult[] = []
+    for (const task of this.kernel.store.list<Task>('Task').filter((item) => item.state === 'running' && Boolean(item.activeRunId))) {
+      const oldRun = this.kernel.store.get<Run>('Run', task.activeRunId!)
+      if (!oldRun || !['running', 'paused'].includes(oldRun.state)) continue
+      const oldGrant = this.kernel.store.get<RunGrant>('RunGrant', oldRun.runGrantId)
+      if (!oldGrant || oldGrant.authorizationMode !== 'approval_required') continue
+      const oldActions = this.kernel.store.list<ToolAction>('ToolAction').filter((action) => action.runId === oldRun.id)
+      if (oldActions.some((action) => ['running', 'result_unknown'].includes(action.state))) continue
+
+      const previousRevision = this.revisionForRun(oldRun.id)
+      const versions = previousRevision.employeeVersionIds.map((id) => this.version(id))
+      const resourceScope = this.resourceScopeForVersions(versions, previousRevision.resourceScope.directories, previousRevision.attachments ?? [])
+      this.assertSkillSnapshot(resourceScope)
+      const now = new Date().toISOString()
+      const revisionId = randomUUID(), runId = randomUUID(), grantId = randomUUID()
+      const revisionNumber = Math.max(previousRevision.revision, ...this.kernel.store.list<TaskRevision>('TaskRevision').filter((item) => item.taskId === task.id).map((item) => item.revision)) + 1
+      const revision: TaskRevision = { ...previousRevision, id: revisionId, createdAt: now, revision: revisionNumber, authorizationMode: 'full_access', resourceScope }
+      const grant: RunGrant = { schemaVersion: 1, id: grantId, createdAt: now, runId, expiresAt: new Date(Date.now() + this.effectiveRunTimeoutMs(versions.length, revision.timeoutsMs.run)).toISOString(), budget: { ...revision.budget }, authorizationMode: 'full_access', resourceScope: structuredClone(revision.resourceScope) }
+      const run: Run = { schemaVersion: 1, id: runId, createdAt: now, taskId: task.id, taskRevisionId: revisionId, runGrantId: grantId, state: 'running', supersedesRunId: oldRun.id }
+
+      for (const action of oldActions.filter((item) => item.state === 'pending')) {
+        this.kernel.save({ entityType: 'ToolAction', entity: { ...action, state: 'cancelled', completedAt: now, failureCode: 'authorization_policy_superseded' }, immutable: false }, 'tool_action.cancelled_for_policy_upgrade', { newRunId: runId })
+        const approval = action.approvalId ? this.kernel.store.get<Approval>('Approval', action.approvalId) : undefined
+        if (approval?.decision === 'pending') this.kernel.save({ entityType: 'Approval', entity: { ...approval, decision: 'rejected', decidedAt: now }, immutable: false }, 'approval.superseded_by_policy', { newRunId: runId })
+      }
+      for (const assignment of this.assignments(oldRun.id).filter((item) => item.state === 'running' || item.state === 'pending')) {
+        this.kernel.save({ entityType: 'Assignment', entity: { ...assignment, state: 'cancelled', providerRequestId: undefined, awaitingToolActionId: undefined, completedAt: now, summary: '旧运行已按当前免审批策略迁移。' }, immutable: false }, 'assignment.cancelled_for_policy_upgrade', { newRunId: runId })
+      }
+      this.kernel.save({ entityType: 'Run', entity: { ...oldRun, state: 'cancelled' }, immutable: false }, 'run.superseded_for_policy_upgrade', { newRunId: runId })
+      this.kernel.save({ entityType: 'TaskRevision', entity: revision, immutable: true }, 'task_revision.authorization_policy_upgraded', { previousRevisionId: previousRevision.id, authorizationMode: 'full_access' })
+      this.kernel.save({ entityType: 'RunGrant', entity: grant, immutable: true }, 'run_grant.created', { runId, policyUpgradeOfRunId: oldRun.id })
+      this.kernel.save({ entityType: 'Run', entity: run, immutable: false }, 'run.started_after_policy_upgrade', { supersedesRunId: oldRun.id })
+      this.kernel.save({ entityType: 'Task', entity: { ...task, activeRevisionId: revisionId, activeRunId: runId }, immutable: false }, 'task.authorization_policy_upgraded', { runId, revisionId })
+      const assignments = versions.map((version, index): Assignment => ({ schemaVersion: 1, id: randomUUID(), createdAt: now, runId, sequence: index + 1, employeeVersionId: version.id, state: 'pending' }))
+      for (const assignment of assignments) this.kernel.save({ entityType: 'Assignment', entity: assignment, immutable: false }, 'assignment.created', { runId, sequence: assignment.sequence })
+      this.saveCheckpoint(runId, undefined, 'created', 'employee', { assignmentIds: assignments.map((assignment) => assignment.id), policyUpgradeOfRunId: oldRun.id, authorizationMode: 'full_access', skillVersionIds: revision.resourceScope.skillVersionIds ?? [], skillDigests: revision.resourceScope.skillDigests ?? {} })
+      migrated.push({ runId, request: this.startAssignment(assignments[0], revision, versions[0]) })
+    }
+    return migrated
   }
 
   reconcileFailedRunToolActions(): number {
@@ -345,10 +406,10 @@ export class TaskService {
       const authorizedRoot = revision.resourceScope.directories[0]
       if (!authorizedRoot) throw new Error('authorized_directory_required')
       const proposedPath = parameters.path.trim()
-      if (!isAbsolute(proposedPath) || proposedPath.includes('\0')) throw new Error('invalid_document_create_path')
+      if (proposedPath.includes('\0')) throw new Error('invalid_document_create_path')
       const proposedFilename = basename(proposedPath)
       if (!proposedFilename || proposedFilename === '.' || proposedFilename === '..' || proposedFilename.length > 255) throw new Error('invalid_document_create_filename')
-      const boundPath = revision.resourceScope.directories.some((root) => pathWithin(root, proposedPath)) ? resolve(proposedPath) : resolve(authorizedRoot, proposedFilename)
+      const boundPath = isAbsolute(proposedPath) && revision.resourceScope.directories.some((root) => pathWithin(root, proposedPath)) ? resolve(proposedPath) : resolve(authorizedRoot, proposedFilename)
       parameters = { path: boundPath, content: assignment.draftContent }
       parameterSources = {
         path: { kind: 'trusted_runtime' as const, sourceRef: `task_revision:${revision.id}:authorized_directory+provider_request:${providerRequestId}:filename` },
@@ -526,7 +587,7 @@ export class TaskService {
       .sort((left, right) => Date.parse(right.task?.createdAt ?? right.draft.createdAt) - Date.parse(left.task?.createdAt ?? left.draft.createdAt))
   }
 
-  recoverPendingRequests(): ProviderRequest[] {
+  recoverPendingRequests(excludedProviderRequestIds: ReadonlySet<string> = new Set()): ProviderRequest[] {
     this.backfillMatterTitles()
     this.pauseInterruptedChangeRequests()
     const requests: ProviderRequest[] = []
@@ -539,6 +600,7 @@ export class TaskService {
       const assignments = this.assignments(run.id)
       const active = assignments.find((assignment) => assignment.state === 'running') ?? assignments.find((assignment) => assignment.state === 'pending')
       if (active) {
+        if (active.providerRequestId && excludedProviderRequestIds.has(active.providerRequestId)) continue
         const version = this.version(active.employeeVersionId)
         try {
           if (active.sourceBatchState) requests.push(this.requestSourceBatch({ ...active, output: '' }, revision, version, active.sourceBatchState, true))
@@ -763,7 +825,33 @@ export class TaskService {
     const presentation = projectAssignmentChatContent({ assignment: updated, actions, researchBundle })
     updated = { ...updated, summary: presentation.summary, presentation }
     this.kernel.save({ entityType: 'Assignment', entity: updated, immutable: false }, 'assignment.completed', {})
-    const handoff: Handoff = { schemaVersion: 1, id: randomUUID(), createdAt: new Date().toISOString(), runId: assignment.runId, fromAssignmentId: assignment.id, toAssignmentId: next?.id, toSupervisor: !next, input: { employeeVersionId: assignment.employeeVersionId, ...(projected.researchBundleId ? { researchBundleId: projected.researchBundleId } : {}) }, output: { text: projected.text }, artifactIds: [], evidenceIds: [], sha256: createHash('sha256').update(projected.text).digest('hex') }
+    const projectedParts: HandoffPart[] = projected.parts?.length
+      ? projected.parts
+      : [{ kind: 'text', mediaType: 'text/plain', text: projected.text ?? updated.output ?? '' }]
+    const downstreamAssignmentIds = this.assignments(assignment.runId).filter((item) => item.sequence > assignment.sequence).map((item) => item.id)
+    const artifactIds = [...new Set(projectedParts.filter((part): part is Extract<HandoffPart, { kind: 'artifact_ref' }> => part.kind === 'artifact_ref').map((part) => part.artifactId))]
+    const evidenceIds = [...new Set(projectedParts.filter((part): part is Extract<HandoffPart, { kind: 'evidence_ref' }> => part.kind === 'evidence_ref').map((part) => part.evidenceId))]
+    for (const artifactId of artifactIds) {
+      const artifact = this.kernel.store.get<Artifact>('Artifact', artifactId)
+      if (!artifact || artifact.runId !== assignment.runId) throw new Error('handoff_artifact_not_found')
+      const expectedHash = projectedParts.find((part): part is Extract<HandoffPart, { kind: 'artifact_ref' }> => part.kind === 'artifact_ref' && part.artifactId === artifactId)?.sha256
+      if (expectedHash && expectedHash !== artifact.sha256) throw new Error('handoff_artifact_integrity_failed')
+    }
+    for (const evidenceId of evidenceIds) {
+      const evidence = this.kernel.store.get<Evidence>('Evidence', evidenceId)
+      if (!evidence || evidence.runId !== assignment.runId) throw new Error('handoff_evidence_not_found')
+      const expectedHash = projectedParts.find((part): part is Extract<HandoffPart, { kind: 'evidence_ref' }> => part.kind === 'evidence_ref' && part.evidenceId === evidenceId)?.sha256
+      if (expectedHash && expectedHash !== evidence.sha256) throw new Error('handoff_evidence_integrity_failed')
+    }
+    const { envelope, sha256 } = createHandoffEnvelope({
+      runId: assignment.runId,
+      taskRevisionId: revision.id,
+      producer: { assignmentId: assignment.id, employeeVersionId: assignment.employeeVersionId },
+      audience: { assignmentIds: downstreamAssignmentIds, supervisor: true },
+      summary: projected.summary ?? presentation.summary,
+      parts: projectedParts
+    })
+    const handoff: Handoff = { schemaVersion: 1, id: randomUUID(), createdAt: new Date().toISOString(), runId: assignment.runId, fromAssignmentId: assignment.id, toAssignmentId: next?.id, toSupervisor: !next, envelope, artifactIds, evidenceIds, sha256 }
     this.kernel.save({ entityType: 'Handoff', entity: handoff, immutable: true }, 'handoff.committed', { fromAssignmentId: assignment.id, toAssignmentId: next?.id, toSupervisor: !next })
     this.saveCheckpoint(assignment.runId, assignment.id, 'employee_completed', next ? 'employee' : 'manager', { handoffId: handoff.id })
     if (this.shutdownRequested(assignment.runId)) {
@@ -844,7 +932,7 @@ export class TaskService {
       for (const rework of reworks) this.kernel.save({ entityType: 'Assignment', entity: rework, immutable: false }, 'assignment.rework_created', { targetAssignmentId: rework.reworkOfAssignmentId, requestedSequence, summary: result.summary ?? '' })
       const rework = reworks[0]
       this.saveCheckpoint(checkpoint.runId, rework.id, 'manager_rework', 'employee', { targetAssignmentIds: reworks.map((item) => item.reworkOfAssignmentId), requestedSequence, summary: result.summary ?? '' })
-      const reworkInput = inbound ? String(inbound.output.text ?? '') : target.output ?? ''
+      const reworkInput = inbound ? this.renderHandoffForSupervisor(inbound) : target.output ?? ''
       return { request: this.startAssignment(rework, detail.revision!, this.version(rework.employeeVersionId), `总管退回意见：${result.summary ?? '未通过验收'}\n原交接：${reworkInput}`), detail: this.detailByRun(checkpoint.runId), event: 'progress' }
     }
     const detail = this.detailByRun(checkpoint.runId)
@@ -900,15 +988,33 @@ export class TaskService {
 
   private accumulatedHandoffText(runId: string, beforeSequence: number): string | undefined {
     const sequenceByAssignmentId = new Map(this.assignments(runId).map((assignment) => [assignment.id, assignment.sequence]))
+    const recipient = this.assignments(runId).find((assignment) => assignment.sequence === beforeSequence)
+    if (!recipient) throw new Error('handoff_recipient_assignment_not_found')
     const handoffs = this.handoffRefs(runId, beforeSequence)
       .sort((left, right) => (sequenceByAssignmentId.get(left.fromAssignmentId) ?? 0) - (sequenceByAssignmentId.get(right.fromAssignmentId) ?? 0))
       .map((ref) => {
         const handoff = this.kernel.store.get<Handoff>('Handoff', ref.handoffId)!
-        return { sequence: sequenceByAssignmentId.get(ref.fromAssignmentId), sha256: ref.sha256, text: String(handoff.output.text ?? '') }
+        return { sequence: sequenceByAssignmentId.get(ref.fromAssignmentId), sha256: ref.sha256, text: this.renderHandoffForAssignment(handoff, recipient.id) }
       })
       .filter((handoff) => handoff.text.trim())
     if (!handoffs.length) return undefined
     return handoffs.map((handoff, index) => `--- 上游交接 ${index + 1}/${handoffs.length}（Assignment ${handoff.sequence ?? '?'}，SHA-256 ${handoff.sha256}） ---\n${handoff.text}`).join('\n\n')
+  }
+
+  private renderHandoffForAssignment(handoff: Handoff, assignmentId: string): string {
+    if (handoff.envelope) return renderHandoffEnvelope(handoff.envelope, handoff.sha256, { assignmentId })
+    return this.renderLegacyHandoff(handoff)
+  }
+
+  private renderHandoffForSupervisor(handoff: Handoff): string {
+    if (handoff.envelope) return renderHandoffEnvelope(handoff.envelope, handoff.sha256, { supervisor: true })
+    return this.renderLegacyHandoff(handoff)
+  }
+
+  private renderLegacyHandoff(handoff: Handoff): string {
+    const text = String(handoff.output?.text ?? '')
+    if (createHash('sha256').update(text).digest('hex') !== handoff.sha256) throw new Error('handoff_integrity_failed')
+    return JSON.stringify({ schemaVersion: 0, type: 'LegacyTextHandoff', text })
   }
 
   private handoffRefs(runId: string, beforeSequence: number): Array<{ handoffId: string; fromAssignmentId: string; sha256: string }> {
@@ -1082,7 +1188,7 @@ export class TaskService {
   private continueAssignmentForRequiredTools(assignment: Assignment, revision: TaskRevision, version: EmployeeVersion, remainingToolIds: string[]): ProviderRequest {
     const requestId = randomUUID()
     this.kernel.save({ entityType: 'Assignment', entity: { ...assignment, providerRequestId: requestId, output: '' }, immutable: false }, 'assignment.required_source_requested', { remainingToolIds })
-    return this.trackProviderStep(assignment.runId, assignment.id, revision, { requestId, provider: version.modelId === 'deepseek-v4-pro' ? 'deepseek' : 'poe', modelId: version.modelId, input: `${version.systemPrompt}\n\n${this.skillContext(version, revision)}\n[正式任务]\n目标：${revision.goal}\n${this.attachmentContext(revision, version)}尚未完成必需的独立来源。只提交下列精确 ToolVersion 之一的 Proposal，不要先生成最终结论：${remainingToolIds.join('、')}\n字段契约：网络搜索=query[,limit]；RSS=url[,limit]；tender.requirements.extract=paths；document.read=path；document.create=path（content 由 Runtime 绑定当前 Assignment 草稿）；document.edit=path（oldText/newText 由 Runtime 绑定）。parameters 禁止额外字段；参数来源由 Runtime 记录。`, maxOutputTokens: Math.min(1024, revision.budget.maxOutputTokens), stream: true, executionTimeouts: this.executionTimeouts(assignment.runId, revision), ...this.proposalConfiguration(remainingToolIds) }, 'tool_proposal')
+    return this.trackProviderStep(assignment.runId, assignment.id, revision, { requestId, provider: version.modelId === 'deepseek-v4-pro' ? 'deepseek' : 'poe', modelId: version.modelId, input: `${version.systemPrompt}\n\n${this.skillContext(version, revision)}\n[正式任务]\n目标：${revision.goal}\n${this.attachmentContext(revision, version)}尚未完成必需的独立来源。只提交下列精确 ToolVersion 之一的 Proposal，不要先生成最终结论：${remainingToolIds.join('、')}\n字段契约：网络搜索=query[,limit]；RSS=url[,limit]；tender.requirements.extract=paths；document.read=path；document.create=path（可提供文件名，Runtime 会绑定到任务下载目录，并绑定 content 为当前 Assignment 草稿）；document.edit=path（oldText/newText 由 Runtime 绑定）。parameters 禁止额外字段；参数来源由 Runtime 记录。`, maxOutputTokens: Math.min(1024, revision.budget.maxOutputTokens), stream: true, executionTimeouts: this.executionTimeouts(assignment.runId, revision), ...this.proposalConfiguration(remainingToolIds) }, 'tool_proposal')
   }
 
   private continueIncompleteOutput(assignment: Assignment, revision: TaskRevision, version: EmployeeVersion): ProviderRequest {
@@ -1164,8 +1270,10 @@ export class TaskService {
     const detail = this.detailByRun(runId)
     const supervisor = this.supervisorConfiguration()
     const requestId = randomUUID()
-    const output = detail.assignments.at(-1)?.output ?? ''
+    const finalHandoff = [...detail.handoffs].reverse().find((handoff) => handoff.toSupervisor)
+    const output = finalHandoff ? this.renderHandoffForSupervisor(finalHandoff) : detail.assignments.at(-1)?.output ?? ''
     const bundleProjection = detail.researchBundles.map((bundle) => ({ id: bundle.id, contentHash: bundle.contentHash, sourceCount: bundle.items.length, claimCount: bundle.claims.length, conflicts: bundle.conflicts, informationGaps: bundle.informationGaps }))
+    const reviewedReadId = documentContent ? [...detail.toolActions].reverse().find((action) => action.toolVersionId === 'document.read@local-document/v1' && action.state === 'succeeded' && action.resultVerified === true)?.id : undefined
     const toolEvidence = detail.toolActions.filter((action) => action.state === 'succeeded').map((action) => ({
       toolVersionId: action.toolVersionId,
       assignmentId: action.assignmentId,
@@ -1173,7 +1281,7 @@ export class TaskService {
       path: typeof action.result?.path === 'string' ? action.result.path : undefined,
       sha256: typeof action.result?.sha256 === 'string' ? action.result.sha256 : undefined,
       bytes: typeof action.result?.bytes === 'number' ? action.result.bytes : typeof action.result?.bytesWritten === 'number' ? action.result.bytesWritten : undefined,
-      content: action.toolVersionId === 'document.read@local-document/v1' ? documentContent : undefined,
+      content: action.id === reviewedReadId ? documentContent : undefined,
       documentCount: Array.isArray(action.result?.documents) ? action.result.documents.length : undefined,
       sectionCount: Array.isArray(action.result?.documents) ? (action.result.documents as Array<Record<string, unknown>>).reduce((total, document) => total + (Array.isArray(document.sections) ? document.sections.length : 0), 0) : undefined,
       warnings: Array.isArray(action.result?.warnings) ? action.result.warnings : undefined,
