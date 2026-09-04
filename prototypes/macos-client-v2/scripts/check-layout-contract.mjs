@@ -395,11 +395,11 @@ for (const marker of ['function MarkdownMessage', '<ReactMarkdown remarkPlugins=
   if (!app.includes(marker)) errors.push(`缺少消息折叠或附件导航复用组件: ${marker}`)
 }
 
-for (const marker of ['variant="timeline"', '<MarkdownMessage compact>', 'className="message-delivery__eyebrow">结果', 'className="message-delivery__verification"', 'className="matter-event__body"><strong>{task.goal}</strong><span>{summary.description}</span>']) {
+for (const marker of ['variant="timeline"', '<TimelineSummary content={assignment.content}', '<ChatContentBlock content={content} variant="delivery">', '<MessageAttachmentGroup source="agent" embedded', 'className="matter-event__body"><strong>{task.title}</strong><span>{summary.description}</span>']) {
   if (!rendererApp.includes(marker)) errors.push(`客户端信息流缺少目标、过程或结果分层契约: ${marker}`)
 }
 
-for (const marker of ['matter-route-note message-stream-item', 'matter-event message-stream-item', 'approval-card message-stream-item', 'message-block--timeline message-stream-item', 'runtime-route-note message-stream-item', 'change-card message-stream-item', 'boundary-note message-stream-item']) {
+for (const marker of ['matter-route-note message-stream-item', 'matter-event message-stream-item', 'message-block--timeline message-stream-item', 'runtime-route-note message-stream-item', 'change-card message-stream-item', 'boundary-note message-stream-item']) {
   if (!rendererApp.includes(marker) && !rendererMessageComponents.includes(marker)) errors.push(`客户端信息流组件未复用最大宽度与自适应契约: ${marker}`)
 }
 
@@ -407,7 +407,7 @@ if (/\.(?:matter-event|approval-card|delivery-card)\s*\{[^}]*width:\s*calc\(100%
   errors.push('事项、审批和交付组件不得继续使用固定左缩进计算宽度')
 }
 
-for (const marker of ['message-block--timeline', '--layout-message-process-collapse-lines', '.message-delivery__verification']) {
+for (const marker of ['message-block--timeline', '--layout-message-process-collapse-lines', '.chat-content--delivery']) {
   if (!styles.includes(marker)) errors.push(`信息流视觉层级未复用共享样式契约: ${marker}`)
 }
 
