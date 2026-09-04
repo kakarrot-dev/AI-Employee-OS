@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -11,7 +11,24 @@ const rendererStyles = await readFile(`${repositoryRoot}/src/renderer/src/protot
 const rendererComponents = await readFile(`${repositoryRoot}/src/renderer/src/components/client-ui.tsx`, 'utf8')
 const rendererMessageComponents = await readFile(`${repositoryRoot}/src/renderer/src/components/message-ui.tsx`, 'utf8')
 const rendererApp = await readFile(`${repositoryRoot}/src/renderer/src/App.tsx`, 'utf8')
+const rendererConnections = await readFile(`${repositoryRoot}/src/renderer/src/ConnectionsCatalog.tsx`, 'utf8')
 const rendererSystem = await readFile(`${repositoryRoot}/src/renderer/src/SystemModule.tsx`, 'utf8')
+const iconSystem = await readFile(`${repositoryRoot}/src/renderer/src/components/client-icon-system.tsx`, 'utf8')
+
+async function readTsxSources(directory) {
+  const sources = []
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = `${directory}/${entry.name}`
+    if (entry.isDirectory()) sources.push(...await readTsxSources(path))
+    if (entry.isFile() && entry.name.endsWith('.tsx')) sources.push({ path, source: await readFile(path, 'utf8') })
+  }
+  return sources
+}
+
+const clientTsxSources = [
+  ...await readTsxSources(`${repositoryRoot}/src/renderer/src`),
+  ...await readTsxSources(`${root}/src`)
+]
 
 const requiredTokens = [
   '--layout-window-default-width',
@@ -19,11 +36,20 @@ const requiredTokens = [
   '--layout-window-min-width',
   '--layout-window-min-height',
   '--layout-toolbar-height',
+  '--layout-toolbar-inline-padding',
+  '--layout-toolbar-navigation-edge-padding',
+  '--layout-toolbar-window-controls-gap',
+  '--layout-toolbar-collapsed-navigation-width',
   '--layout-rail-width',
   '--layout-context-width',
   '--layout-workspace-min-width',
   '--layout-window-controls-safe-left',
   '--layout-window-controls-safe-top',
+  '--icon-size-inline',
+  '--icon-size-control',
+  '--icon-size-standard',
+  '--icon-size-navigation',
+  '--icon-size-feature',
   '--layout-message-content-max-width',
   '--layout-message-stream-item-max-width',
   '--layout-detail-content-max-width',
@@ -55,6 +81,8 @@ const requiredTokens = [
 const requiredUsages = [
   'min-width: var(--layout-window-min-width);',
   'min-height: var(--layout-window-min-height);',
+  'padding: 0 var(--layout-toolbar-inline-padding);',
+  'padding-right: var(--layout-toolbar-navigation-edge-padding);',
   'grid-template-columns: calc(var(--layout-rail-width) + var(--layout-context-width)) minmax(0, 1fr);',
   'grid-template-columns: var(--layout-rail-width) var(--layout-context-width) minmax(var(--layout-workspace-min-width), 1fr);',
   'width: min(100%, var(--layout-message-content-max-width));',
@@ -105,6 +133,21 @@ if (missingUsages.length) errors.push(`关键布局未使用尺寸契约:\n${mis
 if (shellLineDefinitionCount !== 3) errors.push('外壳分隔线只能通过 --line-shell 分别定义亮色、显式暗色和系统暗色主题，不得重复声明')
 if (!/--line-shell:\s*rgb\([^;]+\/\s*5%\);/.test(styles) || darkShellLineDefinitionCount !== 2) errors.push('--line-shell 必须遵守亮色 5%、暗色 7% 的低干扰对比契约')
 if (styles.includes('--shell-divider:') || rendererStyles.includes('--shell-divider:')) errors.push('不得创建 --line-shell 的页面级别名，外壳必须直接复用统一语义 Token')
+
+if (!iconSystem.includes("library: 'iconoir-react'") || !iconSystem.includes('strokeWidth: 1.5')) {
+  errors.push('客户端图标系统必须由 ClientIconSystem 固定 Iconoir 与 1.5 线宽')
+}
+if (!app.includes('<ClientIconSystem>') || !rendererApp.includes('<ClientIconSystem>')) {
+  errors.push('原型与正式客户端必须复用同一个 ClientIconSystem Provider')
+}
+for (const { path, source } of clientTsxSources) {
+  if (path.endsWith('/client-icon-system.tsx')) continue
+  if (source.includes('IconoirProvider')) errors.push(`页面不得绕过 ClientIconSystem 创建 Provider: ${path}`)
+  if (/<svg(?:\s|>)/.test(source)) errors.push(`页面不得手绘 SVG 图标: ${path}`)
+  if (/\bwidth=\{\d+\}\s+height=\{\d+\}/.test(source)) errors.push(`页面不得声明图标像素尺寸: ${path}`)
+  if (/[✓×›]/.test(source)) errors.push(`页面不得用文本字符模拟图标: ${path}`)
+  if (/from\s+['"](?:lucide-react|react-icons|@heroicons|@mui\/icons|phosphor-react)/.test(source)) errors.push(`客户端只允许使用 Iconoir 图标库: ${path}`)
+}
 
 function cssRule(source, selector) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -212,8 +255,32 @@ if (/\.(?:rail|context-pane)[^{]*\{[^}]*display:\s*none/s.test(styles)) {
   errors.push('图标栏或列表栏被隐藏，违反固定三栏契约')
 }
 
-if (!app.includes('function Toolbar({ title, support, trailing }') || !app.includes('className="window-controls-safe-area"') || !app.includes('className="toolbar__workspace"')) {
+if (!app.includes('function Toolbar({ title, support, trailing }') || !app.includes('className="window-controls-safe-area"') || !app.includes('className="toolbar__workspace"') || !app.includes('data-layout-contract="application-toolbar"')) {
   errors.push('顶部栏必须复用集成式 macOS 窗口栏，保留原生窗口控制安全区、当前标题和必要操作')
+}
+
+if (!rendererComponents.includes('data-layout-contract="application-toolbar"') || !rendererComponents.includes('data-toolbar-zone="navigation"') || !rendererComponents.includes('data-toolbar-zone="actions"')) {
+  errors.push('客户端顶部栏缺少统一容器与插槽契约')
+}
+
+for (const [selector, source] of [['.toolbar', styles], ['.window-controls-safe-area', styles], ['.toolbar__workspace', styles], ['.toolbar__content', styles], ['.toolbar__identity', styles], ['.toolbar__trailing', styles]]) {
+  if (!/-webkit-app-region:\s*drag/.test(cssRule(source, selector))) errors.push(`${selector} 必须属于全宽窗口拖拽区域`)
+}
+
+if (!/-webkit-app-region:\s*no-drag/.test(cssRule(styles, '.toolbar :is(button, a, input, textarea, select, [role="button"])'))) {
+  errors.push('顶部栏交互控件必须显式退出窗口拖拽区域')
+}
+
+if (rendererStyles.includes('--layout-toolbar-height:')) {
+  errors.push('正式客户端不得覆盖顶部栏高度事实源')
+}
+
+if (!cssRule(rendererStyles, '.prototype.is-context-collapsed .toolbar').includes('var(--layout-toolbar-collapsed-navigation-width)')) {
+  errors.push('左侧栏收起后的顶部导航槽位必须保留 macOS 窗口控件安全区')
+}
+
+if (/-webkit-app-region:\s*no-drag/.test(cssRule(rendererStyles, '.window-controls-safe-area'))) {
+  errors.push('窗口控制安全区不得整体退出拖拽区域，只允许其中的交互控件 no-drag')
 }
 
 if (app.includes('className="traffic-lights"') || styles.includes('.traffic-lights span')) {
@@ -244,6 +311,21 @@ if (styles.includes('.composer__box:focus-within')) {
 if (app.includes('archive-row') || app.includes('<Archive')) {
   errors.push('消息列表不得保留归档入口，应直接提供删除会话操作')
 }
+
+if (app.includes('aria-label="消息筛选"') || rendererApp.includes('aria-label="消息筛选"')) {
+  errors.push('消息列表必须直接展示全部会话，不得保留全部、待处理或未读分类入口')
+}
+
+for (const [name, source] of [['原型', app], ['客户端', `${rendererApp}\n${rendererConnections}`]]) {
+  for (const marker of ['connections', 'GitHub', '飞书', 'Microsoft Teams', 'Notion', '钉钉', '企业微信', '微信', '语雀', 'WPS Office', '百度网盘', 'Gitee', '阿里云', '协作沟通', '知识与文件', '研发与云服务', '应用总数', '应用类型']) {
+    if (!source.includes(marker)) errors.push(`${name}连接目录缺少展示契约: ${marker}`)
+  }
+}
+if (!app.includes('data-source="static"') || !app.includes('>未连接<')) errors.push('原型连接目录必须保留静态未连接参考状态')
+for (const marker of ['data-source="bridge"', 'connectFeishu', 'disconnectFeishu', '打开飞书授权']) {
+  if (!rendererConnections.includes(marker)) errors.push(`客户端飞书连接缺少真实 Bridge 契约: ${marker}`)
+}
+if (!rendererConnections.includes("label: '未连接'")) errors.push('客户端连接目录必须保留非飞书应用的未连接状态')
 
 if (styles.includes('.conversation-row:focus-within .conversation-row__delete')) {
   errors.push('点击选中会话后不得因 focus-within 持续显示删除按钮')

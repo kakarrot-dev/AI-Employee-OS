@@ -15,10 +15,19 @@ describe('macOS prototype visual contract', () => {
       '--layout-window-min-width: 960px',
       '--layout-window-min-height: 640px',
       '--layout-toolbar-height: 40px',
+      '--layout-toolbar-inline-padding: 24px',
+      '--layout-toolbar-navigation-edge-padding: 10px',
+      '--layout-toolbar-window-controls-gap: 16px',
+      '--layout-toolbar-collapsed-navigation-width: calc(var(--layout-window-controls-safe-left) + var(--layout-toolbar-window-controls-gap) + var(--layout-icon-button-size) + var(--layout-toolbar-navigation-edge-padding))',
       '--layout-rail-width: 52px',
       '--layout-context-width: 264px',
       '--layout-window-controls-safe-left: 76px',
       '--layout-window-controls-safe-top: 44px',
+      '--icon-size-inline: 14px',
+      '--icon-size-control: 16px',
+      '--icon-size-standard: 18px',
+      '--icon-size-navigation: 20px',
+      '--icon-size-feature: 24px',
       '--layout-composer-min-height: 100px',
       '--layout-modal-large-width: 900px',
       '--layout-modal-large-height: 680px'
@@ -55,11 +64,56 @@ describe('macOS prototype visual contract', () => {
 
   it('uses native macOS window controls and keeps modal surfaces outside their safe area', () => {
     const toolbar = source('src/renderer/src/components/client-ui.tsx')
+    const rendererApp = source('src/renderer/src/App.tsx')
     const styles = source('prototypes/macos-client-v2/src/styles.css')
+    const adapter = source('src/renderer/src/prototype-adapter.css')
     expect(toolbar).toContain('window-controls-safe-area')
+    expect(toolbar).toContain('data-layout-contract="application-toolbar"')
+    expect(toolbar).toContain('data-toolbar-zone="actions"')
     expect(toolbar).not.toContain('<span /><span /><span />')
     expect(styles).not.toContain('.traffic-lights span')
+    expect(styles).toMatch(/\.toolbar \{[\s\S]*?-webkit-app-region: drag;[\s\S]*?\}/)
+    expect(styles).toMatch(/\.window-controls-safe-area \{[\s\S]*?-webkit-app-region: drag;[\s\S]*?\}/)
+    expect(styles).toMatch(/\.toolbar__content \{[\s\S]*?padding: 0 var\(--layout-toolbar-inline-padding\);[\s\S]*?-webkit-app-region: drag;[\s\S]*?\}/)
+    expect(styles).toMatch(/\.toolbar :is\([^)]+\) \{[\s\S]*?-webkit-app-region: no-drag;[\s\S]*?\}/)
+    expect(adapter).not.toContain('--layout-toolbar-height:')
+    expect(adapter).toMatch(/\.prototype\.is-context-collapsed \.toolbar \{[\s\S]*?grid-template-columns:\s*var\(--layout-toolbar-collapsed-navigation-width\) minmax\(0, 1fr\);[\s\S]*?\}/)
+    expect(adapter).not.toContain('.matter-toolbar-toggle svg { transform: scaleX(-1); }')
+    expect(rendererApp).not.toMatch(/\n\s+Sidebar(?:Collapse|Expand),/)
+    expect(rendererApp).toContain("icon={contextCollapsed ? NavArrowRight : NavArrowLeft}")
+    expect(rendererApp).toContain("icon={matterSidebarCollapsed ? NavArrowLeft : NavArrowRight}")
+    expect(styles).toMatch(/\.prototype :is\(\.icon-button,[^}]+\) svg \{[\s\S]*?width:\s*var\(--icon-size-control\);[\s\S]*?height:\s*var\(--icon-size-control\);[\s\S]*?\}/)
+    expect(adapter).not.toMatch(/\.window-controls-safe-area \{[^}]*-webkit-app-region: no-drag;[^}]*\}/)
     expect(styles).toMatch(/\.modal-overlay \{[\s\S]*?--layout-window-controls-safe-top[\s\S]*?--layout-window-controls-safe-left[\s\S]*?\}/)
+  })
+
+  it('keeps one minimal icon family and semantic icon-size contract', () => {
+    const layout = source('prototypes/macos-client-v2/src/layout.css')
+    const styles = source('prototypes/macos-client-v2/src/styles.css')
+    const iconSystem = source('src/renderer/src/components/client-icon-system.tsx')
+    const rendererApp = source('src/renderer/src/App.tsx')
+    const prototypeApp = source('prototypes/macos-client-v2/src/App.tsx')
+    const sourceFiles = [
+      rendererApp,
+      prototypeApp,
+      source('src/renderer/src/components/client-ui.tsx'),
+      source('src/renderer/src/components/message-ui.tsx'),
+      source('src/renderer/src/SystemModule.tsx'),
+      source('src/renderer/src/TeamModule.tsx'),
+      source('src/renderer/src/TaskModule.tsx'),
+      source('src/renderer/src/ResourceModule.tsx'),
+      source('src/renderer/src/RecruitmentCatalog.tsx'),
+      source('src/renderer/src/ConnectionsCatalog.tsx')
+    ]
+
+    expect(iconSystem).toContain("library: 'iconoir-react'")
+    expect(iconSystem).toContain('strokeWidth: 1.5')
+    expect(rendererApp).toContain('<ClientIconSystem>')
+    expect(prototypeApp).toContain('<ClientIconSystem>')
+    for (const token of ['inline', 'control', 'standard', 'navigation', 'feature']) expect(layout).toContain(`--icon-size-${token}:`)
+    expect(styles).toContain('width: var(--icon-size-standard)')
+    expect(sourceFiles.join('\n')).not.toMatch(/IconoirProvider|<svg(?:\s|>)|\bwidth=\{\d+\}\s+height=\{\d+\}|[✓×›]/)
+    expect(sourceFiles.join('\n')).not.toMatch(/from\s+['"](?:lucide-react|react-icons|@heroicons|@mui\/icons|phosphor-react)/)
   })
 
   it('lets the application shell fill a vertically resized window', () => {

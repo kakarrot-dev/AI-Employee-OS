@@ -12,7 +12,7 @@
 
 Electron 窗口边界由 `src/shared/layout-contract.ts` 提供，Web 原型使用同值的 CSS Token。最大值限制的是工作表面，不限制用户最大化系统窗口。
 
-顶部栏固定为 44px 高的集成式窗口拖拽区，承载左侧 macOS 三色窗口控制灯、当前页面或会话标题、必要状态与关键操作；不承载前进、后退和更多按钮。
+顶部栏固定为 40px 高的集成式窗口拖拽区，左右内容安全边距统一使用 `--layout-toolbar-inline-padding`，左侧导航控件距分栏边界使用 `--layout-toolbar-navigation-edge-padding`。列表栏收起时，导航槽位使用 `--layout-toolbar-collapsed-navigation-width`，并以 `--layout-toolbar-window-controls-gap` 在 macOS 窗口控件和极简方向折叠按钮之间保留稳定间距。顶栏承载左侧 macOS 三色窗口控制灯、当前页面或会话标题、必要状态与关键操作；不承载前进、后退和更多按钮。
 
 ## 2. 三栏布局
 
@@ -35,11 +35,13 @@ Electron 窗口边界由 `src/shared/layout-contract.ts` 提供，Web 原型使�
 
 内容容器达到最大宽度后居中，不随窗口无限拉宽。
 
-客户端采用单层集成式 macOS 窗口栏：红黄绿窗口控制灯位于左侧，当前会话或页面的简短标题进入同一窗口栏的内容区 leading 位置，必要状态紧随标题，页面级关键操作位于 trailing 位置。不得再在内容区重复生成独立标题栏，也不得恢复前进、后退或更多按钮。窗口栏保留完整拖拽区域，交互控件使用 no-drag 区域。
+客户端采用单层集成式 macOS 窗口栏：红黄绿窗口控制灯位于左侧，当前会话或页面的简短标题进入同一窗口栏的内容区 leading 位置，必要状态紧随标题，页面级关键操作位于 trailing 位置。不得再在内容区重复生成独立标题栏，也不得恢复前进、后退或更多按钮。`Toolbar`、原生窗口控制安全区、工作区容器、标题区和操作区均属于 `drag` 区域；只有按钮、链接与表单控件自身使用 `no-drag`。任何页面不得用大块 `no-drag` 容器截断全宽拖拽能力。
 
 右侧内容区不使用左右框线，也不在集成窗口栏和页签栏下方额外绘制结构分割线。区域层级由背景、留白、标题和选中状态表达；卡片内部用于表达任务状态或数据关系的语义分隔不受此规则影响。
 
 ## 4. 复用组件
+
+功能图标统一使用 Iconoir 极简单线风格，根节点线宽固定为 1.5。尺寸不由页面组件传入，而由 `--icon-size-inline`（14px）、`--icon-size-control`（16px）、`--icon-size-standard`（18px）、`--icon-size-navigation`（20px）、`--icon-size-feature`（24px）五种语义 Token 决定。官方品牌 Logo 是图像资产，不纳入功能图标替换范围。
 
 | 组件 | 尺寸 Token | 尺寸 |
 | --- | --- | ---: |
@@ -84,6 +86,7 @@ Electron 窗口边界由 `src/shared/layout-contract.ts` 提供，Web 原型使�
 3. 不允许通过隐藏栏位来适配最小窗口。
 4. 可滚动容器必须复用隐藏滚动条规则，不得恢复原生可见滚动条。
 5. 运行 `npm run prototype:check:layout` 检查关键布局是否绕过契约。
+6. 页面不得声明图标像素尺寸、创建局部图标 Provider、手绘 SVG、使用文本字符模拟图标或引入第二套图标库。
 
 Composer 中待发送的单附件和多附件都使用正方形卡片，多附件横向排列；删除按钮固定在附件卡片右上角。已发送消息和 Agent 交付物继续使用消息流附件组件，不受 Composer 规格影响。
 

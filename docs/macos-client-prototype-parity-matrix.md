@@ -10,11 +10,12 @@
 
 | 区域 | 原型契约 | 复用组件 | 状态 |
 | --- | --- | --- | --- |
-| Window Toolbar | macOS 原生 traffic lights、当前对象标题、辅助状态、右侧动作 | `Toolbar` | normal / loading / disconnected；不得在 Renderer 重绘三色按钮，弹窗必须避开原生按钮安全区 |
-| Rail | 消息、通讯录、能力；底部个人资料与系统 | `Rail`、`Avatar` | default / selected / badge |
+| Window Toolbar | 40px 全宽拖拽区、macOS 原生 traffic lights、当前对象标题、辅助状态、右侧动作 | `Toolbar` + `application-toolbar` 四插槽契约 | normal / loading / disconnected；非控件区域均可拖动，交互控件保持 no-drag，右侧动作距窗口边缘 24px，不得在 Renderer 重绘三色按钮 |
+| Rail | 消息、通讯录、能力、连接；底部个人资料与系统 | `Rail`、`Avatar` | default / selected / badge |
 | Context Pane | 标题、搜索、筛选、对象列表、Runtime 页脚 | `ContextPane`、`SectionHeader`、`SearchBox`、`ListRow` | loading / empty / populated / filtered |
 | Workspace | 页面工具条下的稳定内容区 | `Workspace`、`DetailPage` | loading / empty / ready / error |
 | Overlay | 创建、设置、确认删除与详情 | `ClientModal` | open / busy / error / nested confirm |
+| Icon System | Iconoir 极简单线图标、1.5 线宽、14/16/18/20/24px 五种语义尺寸；官方品牌 Logo 保持原图 | `ClientIconSystem` + `--icon-size-*` | 页面不得设置像素尺寸、手绘 SVG、使用文本伪图标或引入第二套图标库 |
 
 共享组件只负责结构、样式和可访问行为，不持有业务状态，不解释 Runtime 字符串。
 
@@ -22,7 +23,7 @@
 
 | 页面/组件 | 原型状态 | Runtime 映射 | 验收 |
 | --- | --- | --- | --- |
-| 会话列表 | 全部 / 待处理 / 未读、选中、归档 | `ConversationSummaryView` + `TaskDetailView`；未读为本地阅读状态 | 搜索筛选、选中、归档、空态均可操作 |
+| 会话列表 | 不分类展示全部会话、选中、删除 | `ConversationSummaryView`；未读为本地阅读状态 | 搜索、选中、删除、未读提示、空态均可操作 |
 | 对话时间线 | 用户消息、总管消息、流式生成、失败 | `ConversationMessageView`、`ConversationStreamEvent` | 历史与流式内容使用同一消息组件；只有实际超过折叠阈值且尚未展开的消息显示渐变，短消息不显示渐变 |
 | 事项路由 | 新建事项 / 归入事项 / 变更事项 | `TaskBridge.createDraft/requestChange` | 每个入口只触发真实 Runtime 命令；直接回答或未形成事项不在消息时间线插入横幅 |
 | 事项卡 | draft / pending / running / succeeded / failed / cancelled / needs_attention | `TaskDetailView.state` | 标签、动作与状态机一致 |
@@ -49,6 +50,12 @@
 | Tool 目录 | 搜索、选中、健康状态 | `ResourceCatalogView.tools` | sideEffect/risk/origin/credential 完整显示 |
 | Tool 详情 | 调用边界、依赖、绑定 Agent、高级信息 | Tool contract + health checks | 不提供不存在的执行按钮 |
 
+## 连接
+
+| 页面/组件 | 原型状态 | Runtime 映射 | 验收 |
+| --- | --- | --- | --- |
+| 可连接应用 | 协作沟通：飞书、Microsoft Teams、钉钉、企业微信、微信；知识与文件：Notion、语雀、WPS Office、百度网盘；研发与云服务：GitHub、Gitee、阿里云 | 客户端为 `data-source="bridge"`；飞书映射 `ConnectionBridge`，其余应用仍为静态目录 | 复用招募员工目录组件和顶部指标；飞书支持连接、重新授权、状态与断开，已连接数来自真实状态；敏感凭证不进入 Renderer 或配置文件，其余 11 项保持“未连接”且无虚假动作 |
+
 ## 系统
 
 | 分区 | 原型契约 | 数据来源 / 边界 |
@@ -72,7 +79,8 @@
 4. 事项七种状态、变更待处理、审批三种决策与结果未知。
 5. 员工六种 UI 状态、创建草稿、测试失败/通过/确认、发布、回滚、停用、归档、恢复、受限删除。
 6. Skill/Tool 可用、降级、不可用、Credential 缺失。
-7. 浅色、深色与系统主题，同尺寸原型对照。
+7. 连接目录十二个应用、三类分组、三项顶部指标与品牌图标；飞书覆盖未连接、授权中、已连接、需重新授权、异常和断开，其余应用保持无操作边界。
+8. 浅色、深色与系统主题，同尺寸原型对照。
 
 ## 样式与交互复用规则
 
