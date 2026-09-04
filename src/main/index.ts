@@ -17,6 +17,8 @@ import { resolveArtifactFilePath } from './artifact-file-actions'
 import { hasLocalDocumentCapability, hasTenderAnalysisCapability } from '../shared/capability-contract'
 import { isChatContentView } from '../shared/chat-content-contract'
 import { AttachmentImportService, SUPPORTED_ATTACHMENT_EXTENSIONS } from './attachment-import'
+import { CONNECTION_IPC } from '../shared/connection-contract'
+import { FeishuConnectionService, MacOSKeychainFeishuCredentialStore } from './feishu-connection'
 
 app.enableSandbox()
 
@@ -27,6 +29,7 @@ process.on('uncaughtExceptionMonitor', (error) => {
 let mainWindow: BrowserWindow | null = null
 let runtimeSupervisor: RuntimeSupervisor | null = null
 let providerSupervisor: ProviderSupervisor | null = null
+let feishuConnection: FeishuConnectionService | null = null
 let runtimeStatus: RuntimeStatus = {
   state: 'connecting',
   checkedAt: new Date().toISOString(),
@@ -209,6 +212,24 @@ function registerRuntimeIpc(): void {
     const health = await providerSupervisor.verifyModel('poe', modelId)
     handleProviderEvent({ type: 'ready', health })
     return providerStatus
+  })
+
+  ipcMain.handle(CONNECTION_IPC.getFeishuStatus, async (event) => {
+    assertTrustedSender(event.senderFrame?.url)
+    if (!feishuConnection) throw new Error('feishu_connection_unavailable')
+    return feishuConnection.getStatus()
+  })
+
+  ipcMain.handle(CONNECTION_IPC.connectFeishu, async (event, value: unknown) => {
+    assertTrustedSender(event.senderFrame?.url)
+    if (!feishuConnection) throw new Error('feishu_connection_unavailable')
+    return feishuConnection.connect(value)
+  })
+
+  ipcMain.handle(CONNECTION_IPC.disconnectFeishu, async (event) => {
+    assertTrustedSender(event.senderFrame?.url)
+    if (!feishuConnection) throw new Error('feishu_connection_unavailable')
+    return feishuConnection.disconnect()
   })
 
   ipcMain.handle(CONVERSATION_IPC.list, async (event) => {
@@ -425,6 +446,7 @@ app.whenReady().then(async () => {
   registerRuntimeIpc()
   createApplicationMenu()
   const runtimePaths = bundledRuntimePaths(app.getAppPath(), process.resourcesPath, app.isPackaged)
+  feishuConnection = new FeishuConnectionService(new MacOSKeychainFeishuCredentialStore(runtimePaths.providerKeychainHelper), (url) => shell.openExternal(url))
   if (app.isPackaged) {
     try {
       initializeBundledModel(join(process.resourcesPath, 'runtime'), app.getPath('userData'), (completed, total) => {

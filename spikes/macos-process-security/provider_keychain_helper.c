@@ -9,6 +9,7 @@
 static const char *service_for_provider(const char *provider) {
     if (strcmp(provider, "deepseek") == 0) return "com.kakarrot.ai-employee-os.credentials.v2";
     if (strcmp(provider, "poe") == 0) return "com.kakarrot.ai-employee-os.poe.credentials.v1";
+    if (strcmp(provider, "feishu") == 0) return "com.kakarrot.ai-employee-os.feishu.credentials.v1";
     if (strcmp(provider, "test") == 0) return "com.kakarrot.ai-employee-os.provider-keychain-test";
     return NULL;
 }
@@ -16,6 +17,7 @@ static const char *service_for_provider(const char *provider) {
 static const char *account_for_provider(const char *provider) {
     if (strcmp(provider, "deepseek") == 0) return "deepseek-api-key";
     if (strcmp(provider, "poe") == 0) return "poe-api-key";
+    if (strcmp(provider, "feishu") == 0) return "feishu-oauth-credential";
     if (strcmp(provider, "test") == 0) return "provider-keychain-test";
     return NULL;
 }
@@ -87,8 +89,8 @@ static int write_item(const char *service_name, const char *account_name) {
     return 0;
 }
 
-static int delete_test_item(const char *provider, const char *service_name, const char *account_name) {
-    if (strcmp(provider, "test") != 0) return 65;
+static int delete_item(const char *provider, const char *service_name, const char *account_name) {
+    if (strcmp(provider, "test") != 0 && strcmp(provider, "feishu") != 0) return 65;
     CFMutableDictionaryRef query = base_query(service_name, account_name);
     if (query == NULL) return 70;
     OSStatus status = SecItemDelete(query);
@@ -103,6 +105,6 @@ int main(int argc, char **argv) {
     if (service_name == NULL || account_name == NULL) return 65;
     if (strcmp(argv[1], "read") == 0) return read_item(service_name, account_name);
     if (strcmp(argv[1], "write") == 0) return write_item(service_name, account_name);
-    if (strcmp(argv[1], "delete") == 0) return delete_test_item(argv[2], service_name, account_name);
+    if (strcmp(argv[1], "delete") == 0) return delete_item(argv[2], service_name, account_name);
     return 65;
 }

@@ -1,4 +1,5 @@
 import type { AttachmentBridge, ConversationBridge, EmployeeBridge, MemoryBridge, ProviderBridge, ResourceBridge, RuntimeBridge, SupervisorBridge, TaskBridge, UsageBridge } from '../../shared/runtime-contract'
+import type { ConnectionBridge } from '../../shared/connection-contract'
 
 declare global {
   interface Window {
@@ -13,6 +14,7 @@ declare global {
       resource: ResourceBridge
       memory: MemoryBridge
       usage?: UsageBridge
+      connection: ConnectionBridge
     }
   }
 }

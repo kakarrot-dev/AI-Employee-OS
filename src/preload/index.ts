@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { ATTACHMENT_IPC, CONVERSATION_IPC, EMPLOYEE_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, SUPERVISOR_IPC, TASK_IPC, USAGE_IPC, type AttachmentBridge, type ConversationBridge, type ConversationStreamEvent, type EmployeeBridge, type EmployeeDraftInput, type EmployeeEvent, type MemoryBridge, type ProviderBridge, type ResourceBridge, type RuntimeBridge, type RuntimeStatus, type SupervisorBridge, type SupervisorConfigInput, type TaskBridge, type TaskDraftInputView, type TaskEvent, type UsageBridge } from '../shared/runtime-contract'
 import type { MemoryCategoryView, MemoryScopeTypeView, MemoryStatusView, MemoryViewModel } from '../shared/memory-contract'
 import type { MemorySearchResultView } from '../shared/memory-contract'
+import { CONNECTION_IPC, type ConnectionBridge, type FeishuConnectionInput } from '../shared/connection-contract'
 
 const runtimeBridge: RuntimeBridge = Object.freeze({
   getStatus: () => ipcRenderer.invoke(RUNTIME_IPC.getStatus),
@@ -100,4 +101,10 @@ const memoryBridge: MemoryBridge = Object.freeze({
 
 const usageBridge: UsageBridge = Object.freeze({ summary: () => ipcRenderer.invoke(USAGE_IPC.summary) })
 
-contextBridge.exposeInMainWorld('aiEmployeeOS', Object.freeze({ runtime: runtimeBridge, provider: providerBridge, conversation: conversationBridge, attachment: attachmentBridge, supervisor: supervisorBridge, employee: employeeBridge, task: taskBridge, resource: resourceBridge, memory: memoryBridge, usage: usageBridge }))
+const connectionBridge: ConnectionBridge = Object.freeze({
+  getFeishuStatus: () => ipcRenderer.invoke(CONNECTION_IPC.getFeishuStatus),
+  connectFeishu: (input: FeishuConnectionInput) => ipcRenderer.invoke(CONNECTION_IPC.connectFeishu, input),
+  disconnectFeishu: () => ipcRenderer.invoke(CONNECTION_IPC.disconnectFeishu)
+})
+
+contextBridge.exposeInMainWorld('aiEmployeeOS', Object.freeze({ runtime: runtimeBridge, provider: providerBridge, conversation: conversationBridge, attachment: attachmentBridge, supervisor: supervisorBridge, employee: employeeBridge, task: taskBridge, resource: resourceBridge, memory: memoryBridge, usage: usageBridge, connection: connectionBridge }))
