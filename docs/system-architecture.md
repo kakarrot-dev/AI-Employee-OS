@@ -57,6 +57,7 @@
 - UI、表单、只读资源展示、时间线和用户审批。
 - 读取 Runtime 投影，不直接读写 Runtime 数据库。
 - 通过受认证的本地 IPC 发送命令和订阅事件。
+- 通过客户端组件库的 `AgentActivityMessageContract` / `AgentActivityMessage` 统一呈现任意 Agent 的瞬时活动状态；该状态无消息气泡、不写入历史，也不参与 Runtime 领域状态投影。
 - 通过窄 IPC 请求对应 Provider/Memory/MCP Service 保存或撤销 Credential；Renderer、Preload 和 Main 不加入业务 Secret Access Group，也不持久化 Secret。
 
 禁止：
@@ -286,6 +287,8 @@ Run
 TaskRevision 必须冻结目标、验收标准、员工版本、能力版本、模型配置、预算、超时、授权模式和资源范围。
 
 ChangeRequest 记录来源消息、差异、请求时间、旧 Run、安全停止点和用户决策；Handoff 记录上下游 Assignment、结构化输入输出、Artifact/Evidence 引用与 Hash。两者都是 Phase 2 契约，不允许在 Phase 5 临时引入。
+
+所有员工结果统一封装为版本化 `AgentHandoffEnvelope`，不再把结构化结果临时拼接成普通对话文本。Envelope 固定包含 Run/TaskRevision、生产 Assignment/EmployeeVersion、允许接收的下游 Assignment、总管可见性、摘要和 `parts[]`；`parts` 支持 `text`、JSON `data`、`artifact_ref`、`evidence_ref`、`error` 与带命名空间的 `extension`。Runtime 对完整 Envelope 做规范化 JSON、大小限制、SHA-256 和接收方校验；二进制或大结果必须以带 Hash 的 Artifact/Evidence 引用传递，不允许内联任意对象、函数、Credential 或未验证路径。旧版 `output.text` 只作为只读兼容输入，不再用于创建新 Handoff。
 
 ## 7. 状态机
 
