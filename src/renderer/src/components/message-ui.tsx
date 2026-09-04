@@ -67,7 +67,7 @@ export function ChatContentBlock({ content, variant = 'timeline', children }: { 
   const detailParagraphs = content.detail?.content.split(/\n{2,}/).map((paragraph) => paragraph.trim()).filter(Boolean) ?? []
   return <div className={`chat-content chat-content--${variant}`}>
     <strong className="chat-content__title">{content.title}</strong>
-    <p className="chat-content__summary">{content.summary}</p>
+    <MarkdownContent className="chat-content__summary">{content.summary}</MarkdownContent>
     {content.metrics && content.metrics.length > 0 && <dl className="chat-content__metrics" aria-label={variant === 'delivery' ? '交付概况' : '内容概况'}>{content.metrics.map((item) => <div key={`${item.label}:${item.value}`}><dd>{item.value}</dd><dt>{item.label}</dt></div>)}</dl>}
     {content.detail && <div className="chat-content__detail"><Button className="message-expand-button" aria-expanded={expanded} onPress={() => setExpanded((value) => !value)}>{expanded ? '收起详情' : content.detail.label}<NavArrowDown aria-hidden className={expanded ? 'is-expanded' : ''} /></Button>{expanded && <div className="chat-content__detail-body">{detailParagraphs.map((paragraph, index) => <p key={`${index}:${paragraph}`}>{paragraph}</p>)}</div>}</div>}
     {children}

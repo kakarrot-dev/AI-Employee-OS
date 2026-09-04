@@ -25,7 +25,7 @@ function skillMarkdown(skill: ResourceCatalogView['skills'][number]): string {
   return skill.instructionsMarkdown
 }
 
-export function ResourceModule({ catalog = empty, kind = 'skills', selectedId, probing = false, error, onProbe, onOpenEmployee }: { catalog?: ResourceCatalogView; kind?: ResourceKind; selectedId?: string; probing?: boolean; error?: string; onProbe?: () => void; onOpenEmployee?: (employeeId: string) => void }): React.JSX.Element {
+export function ResourceModule({ catalog = empty, kind = 'skills', selectedId, loading = false, probing = false, error, onProbe, onOpenEmployee }: { catalog?: ResourceCatalogView; kind?: ResourceKind; selectedId?: string; loading?: boolean; probing?: boolean; error?: string; onProbe?: () => void; onOpenEmployee?: (employeeId: string) => void }): React.JSX.Element {
   const [employeeCapabilities, setEmployeeCapabilities] = useState<AgentCapabilityVersionView[]>([])
   const [employeeDetails, setEmployeeDetails] = useState<Array<{ summary: EmployeeSummary; detail: EmployeeDetail }>>([])
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -47,7 +47,7 @@ export function ResourceModule({ catalog = empty, kind = 'skills', selectedId, p
     return employeeDetails.filter(({ detail }) => [detail.active, detail.draft].some((version) => version?.capabilityVersionIds.some((id) => capabilityIds.has(id))))
   }, [employeeCapabilities, employeeDetails, selected])
 
-  if (!selected) return <DetailPage>{error && <p className="inline-error" role="alert">{error}</p>}<div className="directory-empty"><h3>暂无 {kind === 'skills' ? 'Skill' : 'Tool'}</h3><p>{error ? 'Runtime 连接成功后会自动重新读取能力目录。' : 'Runtime 尚未提供该类型的版本化资源。'}</p></div></DetailPage>
+  if (!selected) return <DetailPage>{error && <p className="inline-error" role="alert">{error}</p>}<div className="directory-empty"><h3>{loading ? '正在读取能力目录' : `暂无 ${kind === 'skills' ? 'Skill' : 'Tool'}`}</h3><p>{loading ? 'Runtime 正在同步版本化资源，短暂中断会自动重试。' : error ? 'Runtime 连接成功后会自动重新读取能力目录。' : 'Runtime 尚未提供该类型的版本化资源。'}</p></div></DetailPage>
   const isSkill = 'steps' in selected
   const Icon = isSkill ? Sparks : Tools
   const sourceHealth = catalog.healthChecks.find((check) => check.adapterVersionId === selected.id)

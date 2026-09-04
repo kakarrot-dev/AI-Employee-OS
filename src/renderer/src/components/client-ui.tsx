@@ -56,8 +56,8 @@ export function ListRow({ title, subtitle, meta, selected = false, avatar, ident
   return <Button className={`list-row list-row--${identity}${selected ? ' is-selected' : ''}`} onPress={onClick}>{showAvatar && <span className="list-row__avatar">{avatar}</span>}<span className="list-row__body"><span className="list-row__title">{title}</span><span className="list-row__subtitle">{subtitle}</span></span><span className="list-row__meta">{meta}{marker}</span></Button>
 }
 
-export function ProfileSummary({ identity, title, description, actions }: { identity: PersonIdentity; title: string; description: string; actions?: ReactNode }): React.JSX.Element {
-  return <section className="profile-summary"><div className="profile-summary__identity"><PersonAvatar identity={identity} size="large" /><div className="profile-summary__copy"><span>{identity.name}</span><h2>{title}</h2><p>{description}</p></div></div>{actions && <div className="profile-summary__actions" aria-label="资料操作">{actions}</div>}</section>
+export function ProfileSummary({ identity, title, description, avatar, actions }: { identity: PersonIdentity; title: string; description: string; avatar?: ReactNode; actions?: ReactNode }): React.JSX.Element {
+  return <section className="profile-summary"><div className="profile-summary__identity">{avatar ?? <PersonAvatar identity={identity} size="large" />}<div className="profile-summary__copy"><span>{identity.name}</span><h2>{title}</h2><p>{description}</p></div></div>{actions && <div className="profile-summary__actions" aria-label="资料操作">{actions}</div>}</section>
 }
 
 export interface ProfileFact {
@@ -84,10 +84,12 @@ export function SummaryCardGrid({ children, emptyMessage, label }: { children: R
 
 export type SummaryCardTone = 'default' | 'success' | 'muted'
 
-export function SummaryCard({ title, description, leading, trailing, tone = 'default' }: { title: ReactNode; description?: ReactNode; leading?: ReactNode; trailing?: ReactNode; tone?: SummaryCardTone }): React.JSX.Element {
+export function SummaryCard({ title, description, leading, trailing, tone = 'default', onClick, label }: { title: ReactNode; description?: ReactNode; leading?: ReactNode; trailing?: ReactNode; tone?: SummaryCardTone; onClick?: () => void; label?: string }): React.JSX.Element {
   const hasLeading = leading !== undefined && leading !== null
   const hasTrailing = trailing !== undefined && trailing !== null
-  return <article className={`summary-card summary-card--${tone}${hasLeading ? ' has-leading' : ''}${hasTrailing ? ' has-trailing' : ''}`}>{hasLeading && <span className="summary-card__leading">{leading}</span>}<span className="summary-card__body"><strong>{title}</strong>{description !== undefined && description !== null && <small>{description}</small>}</span>{hasTrailing && <span className="summary-card__trailing">{trailing}</span>}</article>
+  const className = `summary-card summary-card--${tone}${hasLeading ? ' has-leading' : ''}${hasTrailing ? ' has-trailing' : ''}${onClick ? ' summary-card--interactive' : ''}`
+  const content = <>{hasLeading && <span className="summary-card__leading">{leading}</span>}<span className="summary-card__body"><strong>{title}</strong>{description !== undefined && description !== null && <small>{description}</small>}</span>{hasTrailing && <span className="summary-card__trailing">{trailing}</span>}</>
+  return onClick ? <button type="button" className={className} aria-label={label} onClick={onClick}>{content}</button> : <article className={className}>{content}</article>
 }
 
 export function SummaryList({ children, emptyMessage, variant = 'subtle' }: { children: ReactNode; emptyMessage: string; variant?: 'subtle' | 'outlined' }): React.JSX.Element {

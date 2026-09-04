@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatClientTimestamp, UNKNOWN_CLIENT_TIME } from './client-time'
+import { formatClientTimestamp, formatRunDuration, UNKNOWN_CLIENT_TIME } from './client-time'
 
 describe('client timestamp display contract', () => {
   const reference = new Date(2026, 8, 3, 12, 0)
@@ -18,5 +18,13 @@ describe('client timestamp display contract', () => {
 
   it('uses one stable fallback for invalid persisted values', () => {
     expect(formatClientTimestamp('not-a-timestamp', reference)).toBe(UNKNOWN_CLIENT_TIME)
+  })
+})
+
+describe('formatRunDuration', () => {
+  it('formats live and completed runtimes instead of wall-clock timestamps', () => {
+    expect(formatRunDuration('2026-09-04T08:00:00.000Z', undefined, Date.parse('2026-09-04T08:01:05.000Z'))).toBe('1分5秒')
+    expect(formatRunDuration('2026-09-04T08:00:00.000Z', '2026-09-04T09:02:30.000Z')).toBe('1小时2分')
+    expect(formatRunDuration(undefined, undefined)).toBe('未开始')
   })
 })

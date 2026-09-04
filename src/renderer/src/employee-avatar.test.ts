@@ -6,6 +6,10 @@ describe('employeeAvatarSrc', () => {
     expect(employeeAvatarSrc({ employeeId: 'employee.tender-analyst' })).toContain('tender-analyst.png')
   })
 
+  it('returns the generated built-in Feishu researcher avatar', () => {
+    expect(employeeAvatarSrc({ employeeId: 'employee.feishu-researcher' })).toContain('feishu-researcher.png')
+  })
+
   it('prefers a configured avatar over the built-in avatar', () => {
     expect(
       employeeAvatarSrc({

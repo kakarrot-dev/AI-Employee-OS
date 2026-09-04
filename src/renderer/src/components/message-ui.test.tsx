@@ -100,9 +100,12 @@ describe('message UI contracts', () => {
   })
 
   it('renders one structured chat content contract for timeline and delivery messages', () => {
-    const content = { schemaVersion: 1 as const, title: '公开信息核验完成', summary: '已形成可追溯结论。', metrics: [{ label: '来源', value: '11' }, { label: '结论', value: '5' }], detail: { label: '查看研究说明', content: '查询结果。\n冲突明细。\n\n补充结论。' } }
+    const content = { schemaVersion: 1 as const, title: '公开信息核验完成', summary: '共有 **3 条结论**：\n\n- 目标不清\n- 数据不足', metrics: [{ label: '来源', value: '11' }, { label: '结论', value: '5' }], detail: { label: '查看研究说明', content: '查询结果。\n冲突明细。\n\n补充结论。' } }
     const { rerender } = render(<ChatContentBlock content={content} />)
     expect(screen.getByText('公开信息核验完成')).toHaveClass('chat-content__title')
+    expect(screen.getByText('3 条结论')).toHaveProperty('tagName', 'STRONG')
+    expect(screen.getByText('目标不清')).toHaveProperty('tagName', 'LI')
+    expect(screen.getByText('数据不足')).toHaveProperty('tagName', 'LI')
     expect(screen.getByLabelText('内容概况')).toHaveTextContent('11来源5结论')
     fireEvent.click(screen.getByRole('button', { name: /查看研究说明/ }))
     const detailParagraphs = document.querySelectorAll('.chat-content__detail-body p')

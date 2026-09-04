@@ -21,3 +21,16 @@ export function formatClientTimestamp(value: string | number | Date, reference =
   const monthAndDay = `${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
   return sameYear ? monthAndDay : `${date.getFullYear()}-${monthAndDay}`
 }
+
+export function formatRunDuration(startedAt: string | undefined, completedAt: string | undefined, now = Date.now()): string {
+  const start = Date.parse(startedAt ?? '')
+  const end = completedAt ? Date.parse(completedAt) : now
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return '未开始'
+  const totalSeconds = Math.max(0, Math.floor((end - start) / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  if (hours > 0) return `${hours}小时${minutes}分`
+  if (minutes > 0) return `${minutes}分${seconds}秒`
+  return `${seconds}秒`
+}

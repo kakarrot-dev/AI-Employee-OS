@@ -2,8 +2,21 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MemoryViewModel } from '../../shared/memory-contract'
 import { App, buildFriendlyTimeline, coalesceMatterCards, identityAwareConversationPreview, selectActiveTask } from './App'
+import { readableConnectionError } from './ConnectionsCatalog'
 
 describe('App shell', () => {
+  it('turns Feishu token failures into targeted recovery guidance', () => {
+    expect(readableConnectionError(new Error('feishu_token_invalid_client:provider_0:http_401'))).toContain('App ID 与 App Secret 不匹配')
+    expect(readableConnectionError(new Error('feishu_token_invalid_grant:provider_0:http_400'))).toContain('重新发起用户授权')
+    expect(readableConnectionError(new Error('feishu_token_exchange_failed:invalid_client'))).toContain('App ID 与 App Secret 不匹配')
+    expect(readableConnectionError(new Error('feishu_token_exchange_failed:invalid_grant'))).toContain('重新发起用户授权')
+    expect(readableConnectionError(new Error('feishu_token_exchange_failed:20003'))).toContain('重新发起用户授权')
+    expect(readableConnectionError(new Error('feishu_token_network_failed'))).toContain('检查网络')
+    expect(readableConnectionError(new Error('feishu_token_service_unavailable:provider_20050:http_503'))).toContain('暂时不可用')
+    expect(readableConnectionError(new Error('feishu_required_scopes_missing:search:docs:read'))).toContain('search:docs:read')
+    expect(readableConnectionError(new Error('feishu_token_exchange_failed:20049:provider_20049:http_400'))).toContain('错误码 20049')
+  })
+
   it('shows the latest terminal matter when no matter is still active', () => {
     const completedTasks = [{ id: 'latest-success', state: 'succeeded' }, { id: 'older-failure', state: 'failed' }] as unknown as Parameters<typeof selectActiveTask>[0]
     expect(selectActiveTask(completedTasks)?.id).toBe('latest-success')
@@ -109,6 +122,10 @@ describe('App shell', () => {
         deleteDraft: vi.fn(),
         onEvent: vi.fn().mockReturnValue(() => undefined)
       },
+      expertGroup: {
+        list: vi.fn().mockResolvedValue([]),
+        archive: vi.fn()
+      },
       task: {
         list: vi.fn().mockResolvedValue([]),
         outputDirectory: vi.fn().mockResolvedValue('/Users/kakarrot/Downloads'),
@@ -139,7 +156,9 @@ describe('App shell', () => {
       },
       connection: {
         getFeishuStatus: vi.fn().mockResolvedValue({ provider: 'feishu', state: 'not_connected', checkedAt: '2026-09-04T00:00:00Z', scopes: [] }),
+        openFeishuDeveloperConsole: vi.fn().mockResolvedValue(undefined),
         connectFeishu: vi.fn(),
+        cancelFeishuAuthorization: vi.fn().mockResolvedValue({ provider: 'feishu', state: 'not_connected', checkedAt: '2026-09-04T00:00:01Z', scopes: [] }),
         disconnectFeishu: vi.fn()
       }
     }
@@ -503,25 +522,100 @@ describe('App shell', () => {
     await waitFor(() => expect(window.aiEmployeeOS.runtime.reconnect).toHaveBeenCalledOnce())
   })
 
+  it('shows the first recruited expert group, dismisses it, and keeps the recruit action available', async () => {
+    let groups = [{
+      id: 'expert-group.customer-solution',
+      name: '售前分析专家团',
+      description: '从客户材料分析、公开信息核验到最终文档交付。',
+      createdAt: '2026-09-04T00:00:00Z',
+      status: 'active' as const,
+      members: [
+        { employeeId: 'employee.tender-analyst', employeeVersionId: 'employee-version.tender-analyst.v2', name: '招投标分析员', role: '招投标需求分析', status: 'active' as const },
+        { employeeId: 'employee.network-intelligence', employeeVersionId: 'employee-version.network-intelligence.v2', name: '网络情报员', role: '公开信息核验', status: 'active' as const },
+        { employeeId: 'employee.document-writer', employeeVersionId: 'employee-version.document-writer.v2', name: '文档编写员', role: '文档交付', status: 'active' as const }
+      ]
+    }]
+    vi.mocked(window.aiEmployeeOS.runtime.getStatus).mockResolvedValue({ state: 'connected', checkedAt: '2026-09-04T00:00:00Z', message: 'Runtime 已连接' })
+    vi.mocked(window.aiEmployeeOS.expertGroup.list).mockImplementation(async () => [...groups])
+    vi.mocked(window.aiEmployeeOS.expertGroup.archive).mockImplementation(async () => {
+      const archived = { ...groups[0], status: 'archived' as const }
+      groups = []
+      return archived
+    })
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: '通讯录' }))
+
+    const directoryTabs = screen.getByRole('tablist', { name: '通讯录类型' })
+    expect(within(directoryTabs).getByRole('tab', { name: '专家' })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(within(directoryTabs).getByRole('tab', { name: '专家团' }))
+
+    const context = directoryTabs.closest('.context-pane') as HTMLElement
+    expect(screen.getByRole('textbox', { name: '搜索专家团' })).toBeInTheDocument()
+    expect(await within(context).findByText('售前分析专家团')).toBeInTheDocument()
+    expect(within(context).queryByText('会议专家团')).not.toBeInTheDocument()
+    expect(within(context).queryByText('报销专家团')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '招募' })).toBeInTheDocument()
+    expect(within(context).getByRole('img', { name: '售前分析专家团组合头像，成员：招投标分析员、网络情报员、文档编写员' })).toBeInTheDocument()
+    expect(screen.getAllByRole('img', { name: '售前分析专家团组合头像，成员：招投标分析员、网络情报员、文档编写员' })).toHaveLength(2)
+    for (const member of ['招投标分析员', '网络情报员', '文档编写员']) expect(screen.getByText(member)).toBeInTheDocument()
+    expect(screen.getByText('悟空调用规则')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '招募' }))
+    let catalog = screen.getByRole('region', { name: '招募员工' })
+    expect(within(catalog).getByRole('tab', { name: '专家团' })).toHaveAttribute('aria-selected', 'true')
+    expect(within(catalog).getByRole('button', { name: '查看专家团 售前分析专家团' })).toBeInTheDocument()
+    expect(within(catalog).getAllByRole('listitem')).toHaveLength(3)
+    expect(catalog.querySelector('.recruitment-card__members')).not.toBeInTheDocument()
+    fireEvent.click(within(catalog).getByRole('button', { name: '查看专家团 售前分析专家团' }))
+    const detailDialog = screen.getByRole('dialog', { name: '售前分析专家团详情' })
+    expect(within(detailDialog).getByText('多 Agent 协作专家团')).toBeInTheDocument()
+    expect(within(detailDialog).getByText('悟空按此顺序调用')).toBeInTheDocument()
+    for (const member of ['招投标分析员', '网络情报员', '文档编写员']) expect(within(detailDialog).getByText(member)).toBeInTheDocument()
+    fireEvent.click(within(detailDialog).getByRole('button', { name: '选择并进入会话' }))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: '发送消息' })).toHaveValue('请调用售前分析专家团协作处理：'))
+
+    fireEvent.click(screen.getByRole('button', { name: '通讯录' }))
+    fireEvent.click(within(context).getByText('售前分析专家团'))
+    fireEvent.click(screen.getByRole('button', { name: '解雇专家团' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '解雇 售前分析专家团？' })).getByRole('button', { name: '确认解雇' }))
+    await waitFor(() => expect(window.aiEmployeeOS.expertGroup.archive).toHaveBeenCalledWith('expert-group.customer-solution'))
+    expect(await within(context).findByText('暂无已招募专家团')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '还没有已招募专家团' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '招募' }))
+    catalog = screen.getByRole('region', { name: '招募员工' })
+    expect(within(catalog).getByRole('tab', { name: '专家团' })).toHaveAttribute('aria-selected', 'true')
+    expect(within(catalog).getByText('会议专家团')).toBeInTheDocument()
+    expect(within(catalog).getByText('报销专家团')).toBeInTheDocument()
+    expect(within(catalog).getByRole('img', { name: '会议专家团组合头像，成员：会议策划、会议纪要、行动项跟进' })).toBeInTheDocument()
+    expect(within(catalog).getByRole('img', { name: '报销专家团组合头像，成员：报销受理、票据核验、报销政策' })).toBeInTheDocument()
+  })
+
   it('routes the new Agent entry to the read-only recruitment catalog', async () => {
     vi.mocked(window.aiEmployeeOS.employee.list).mockResolvedValue([
       { id: 'employee.network-intelligence', name: '网络情报员', status: 'active', activeVersionId: 'employee-version.network-intelligence.v2', capabilityVersionIds: [], activeCapabilityVersionIds: [] },
+      { id: 'employee.feishu-researcher', name: '飞书资料员', status: 'active', activeVersionId: 'employee-version.feishu-researcher.v2', capabilityVersionIds: [], activeCapabilityVersionIds: [] },
       { id: 'employee.tender-analyst', name: '招投标分析员', status: 'disabled', activeVersionId: 'employee-version.tender-analyst.v2', capabilityVersionIds: [], activeCapabilityVersionIds: [] },
       { id: 'employee.document-writer', name: '文档编写员', status: 'archived', activeVersionId: 'employee-version.document-writer.v2', capabilityVersionIds: [], activeCapabilityVersionIds: [] }
     ])
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: '通讯录' }))
-    fireEvent.click(await screen.findByRole('button', { name: '新建 Agent' }))
+    fireEvent.click(await screen.findByRole('button', { name: '招募' }))
 
-    const entryDialog = screen.getByRole('dialog', { name: '新建 Agent' })
-    expect(within(entryDialog).getByRole('button', { name: /招募员工/ })).toBeInTheDocument()
-    expect(within(entryDialog).getByRole('button', { name: /创建员工/ })).toBeInTheDocument()
-    fireEvent.click(within(entryDialog).getByRole('button', { name: /招募员工/ }))
+    const entryDialog = screen.getByRole('dialog', { name: '招募' })
+    expect(within(entryDialog).getByRole('button', { name: /招募专家/ })).toBeInTheDocument()
+    expect(within(entryDialog).getByRole('button', { name: /创建专家/ })).toBeInTheDocument()
+    fireEvent.click(within(entryDialog).getByRole('button', { name: /招募专家/ }))
 
     const catalog = screen.getByRole('region', { name: '招募员工' })
+    const recruitmentTabs = within(catalog).getByRole('tablist', { name: '招募类型' })
+    expect(within(recruitmentTabs).getByRole('tab', { name: '专家' })).toHaveAttribute('aria-selected', 'true')
+    expect(within(recruitmentTabs).getByText('单个 Agent')).toBeInTheDocument()
+    expect(catalog.querySelector('.recruitment-overview--experts')).toBeInTheDocument()
     for (const category of ['信息与分析', '内容与交付', '产品与研究', '工程与质量', '方案与业务']) expect(within(catalog).getByText(category)).toBeInTheDocument()
     for (const employee of [
       '网络情报员',
+      '飞书资料员',
       '招投标分析员',
       '文档编写员',
       '产品经理',
@@ -533,16 +627,89 @@ describe('App shell', () => {
       '提案策略师',
       '政务数字化售前顾问'
     ]) expect(within(catalog).getByText(employee)).toBeInTheDocument()
-    expect(within(catalog).getAllByRole('listitem')).toHaveLength(11)
-    await waitFor(() => expect(catalog.querySelectorAll('.detail-state')).toHaveLength(11))
-    expect(within(catalog).getAllByText('已招募', { selector: '.detail-state' })).toHaveLength(2)
-    expect(within(catalog).getAllByText('未开放', { selector: '.detail-state' })).toHaveLength(9)
-    expect(catalog.querySelectorAll('[data-availability="recruited"]')).toHaveLength(2)
+    expect(within(catalog).getAllByRole('listitem')).toHaveLength(12)
+    await waitFor(() => expect(catalog.querySelectorAll('.detail-state')).toHaveLength(12))
+    expect(within(catalog).getAllByText('已招募', { selector: '.detail-state' })).toHaveLength(3)
+    expect(within(catalog).getAllByText('候选', { selector: '.detail-state' })).toHaveLength(9)
+    expect(catalog.querySelectorAll('[data-availability="recruited"]')).toHaveLength(3)
     expect(catalog.querySelectorAll('[data-availability="unavailable"]')).toHaveLength(9)
     expect(catalog.querySelector('[data-availability="recruited"] .summary-card')).toHaveClass('summary-card--success')
     expect(catalog.querySelector('[data-availability="unavailable"] .summary-card')).toHaveClass('summary-card--muted')
-    expect(within(within(catalog).getByText('文档编写员').closest('[role="listitem"]')!).getByText('未开放')).toBeInTheDocument()
-    expect(within(catalog).queryByRole('button')).not.toBeInTheDocument()
+    expect(within(within(catalog).getByText('文档编写员').closest('[role="listitem"]')!).getByText('候选')).toBeInTheDocument()
+    expect(within(catalog).getAllByRole('button', { name: /^查看专家 / })).toHaveLength(12)
+
+    fireEvent.click(within(catalog).getByRole('button', { name: '查看专家 产品经理' }))
+    const candidateDialog = screen.getByRole('dialog', { name: '产品经理详情' })
+    expect(within(candidateDialog).getByText('单 Agent 专家')).toBeInTheDocument()
+    expect(within(candidateDialog).getByRole('button', { name: '尚未招募' })).toBeDisabled()
+    fireEvent.click(within(candidateDialog).getByText('关闭').closest('button')!)
+
+    fireEvent.click(within(recruitmentTabs).getByRole('tab', { name: '专家团' }))
+    expect(within(catalog).getByRole('heading', { name: '候选专家团目录' })).toBeInTheDocument()
+    expect(within(recruitmentTabs).getByText('多个 Agent 协作')).toBeInTheDocument()
+    expect(within(catalog).getByText('会议专家团')).toBeInTheDocument()
+    expect(within(catalog).getByText('报销专家团')).toBeInTheDocument()
+    expect(catalog.querySelector('.recruitment-card__members')).not.toBeInTheDocument()
+    expect(within(catalog).getAllByRole('listitem')).toHaveLength(2)
+    expect(catalog.querySelectorAll('[data-availability="static"]')).toHaveLength(2)
+    expect(within(catalog).getAllByText('候选', { selector: '.detail-state' })).toHaveLength(2)
+    fireEvent.click(within(catalog).getByRole('button', { name: '查看专家团 会议专家团' }))
+    const groupDialog = screen.getByRole('dialog', { name: '会议专家团详情' })
+    expect(within(groupDialog).getByText('会议策划')).toBeInTheDocument()
+    expect(within(groupDialog).getByText('会议纪要')).toBeInTheDocument()
+    expect(within(groupDialog).getByText('行动项跟进')).toBeInTheDocument()
+    expect(within(groupDialog).getByRole('button', { name: '尚未招募' })).toBeDisabled()
+  })
+
+  it('reuses the address-book expert profile in recruitment and enters a targeted conversation', async () => {
+    const createdAt = '2026-09-02T00:00:00Z'
+    const version = {
+      schemaVersion: 1 as const,
+      id: 'employee-version.network-intelligence.v2',
+      createdAt,
+      employeeId: 'employee.network-intelligence',
+      version: 2,
+      state: 'active' as const,
+      name: '网络情报员',
+      role: '公开信息核验',
+      description: '核验公开来源并输出可追溯证据。',
+      systemPrompt: '只依据公开来源完成信息核验，并保留来源。',
+      modelId: 'deepseek-v4-pro' as const,
+      capabilityVersionIds: ['capability-network'],
+      memoryScopes: ['employee' as const],
+      testRunIds: []
+    }
+    const detail = {
+      employee: { schemaVersion: 1 as const, id: 'employee.network-intelligence', createdAt, name: '网络情报员', activeVersionId: version.id, disabled: false, archived: false },
+      status: 'active' as const,
+      active: version,
+      versions: [version],
+      testCases: [],
+      testRuns: [],
+      formalReferences: []
+    }
+    vi.mocked(window.aiEmployeeOS.employee.list).mockResolvedValue([{ id: 'employee.network-intelligence', name: '网络情报员', role: '公开信息核验', status: 'active', activeVersionId: version.id, capabilityVersionIds: ['capability-network'], activeCapabilityVersionIds: ['capability-network'] }])
+    vi.mocked(window.aiEmployeeOS.employee.detail).mockResolvedValue(detail)
+    vi.mocked(window.aiEmployeeOS.employee.capabilities).mockResolvedValue([{ schemaVersion: 1, id: 'capability-network', createdAt, name: '网络情报能力', description: '网络信息核验', version: 1, skillVersionIds: ['skill-network'], toolVersionIds: [], mcpVersionIds: [], requiredModelIds: [], permissionRequirements: [], dependencies: [] }])
+    vi.mocked(window.aiEmployeeOS.resource.list).mockResolvedValue({ skills: [{ id: 'skill-network', createdAt, name: '公开信息核验', description: '交叉核验公开来源并保留证据链。', version: 1, steps: [], toolVersionIds: [], instructionsMarkdown: '# 公开信息核验', instructionDigest: 'digest-network', available: true }], tools: [], mcps: [], healthChecks: [] })
+    vi.mocked(window.aiEmployeeOS.runtime.getStatus).mockResolvedValue({ state: 'connected', checkedAt: createdAt, message: 'Runtime 已连接' })
+
+    render(<App />)
+    await waitFor(() => expect(window.aiEmployeeOS.resource.list).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: '通讯录' }))
+    fireEvent.click(await screen.findByRole('button', { name: '招募' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '招募' })).getByRole('button', { name: /招募专家/ }))
+    const catalog = screen.getByRole('region', { name: '招募员工' })
+    fireEvent.click(within(catalog).getByRole('button', { name: '查看专家 网络情报员' }))
+
+    const detailDialog = await screen.findByRole('dialog', { name: '网络情报员详情' })
+    await waitFor(() => expect(within(detailDialog).getByText('核验公开来源并输出可追溯证据。')).toBeInTheDocument())
+    expect(within(detailDialog).getByText('deepseek-v4-pro')).toBeInTheDocument()
+    expect(within(detailDialog).getAllByText('公开信息核验')).toHaveLength(2)
+    expect(within(detailDialog).getByText('交叉核验公开来源并保留证据链。')).toBeInTheDocument()
+    expect(window.aiEmployeeOS.employee.detail).toHaveBeenCalledWith('employee.network-intelligence')
+    fireEvent.click(within(detailDialog).getByRole('button', { name: '选择并进入会话' }))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: '发送消息' })).toHaveValue('请调用网络情报员处理：'))
   })
 
   it('shows the application catalog with a real Feishu connection entry', async () => {
@@ -565,6 +732,7 @@ describe('App shell', () => {
       expect(within(catalog).getByRole('img', { name: `${application} 官方图标` })).toBeInTheDocument()
     }
     await waitFor(() => expect(window.aiEmployeeOS.connection.getFeishuStatus).toHaveBeenCalled())
+    expect(await within(screen.getByLabelText('已连接应用')).findByText('暂无已连接应用')).toBeInTheDocument()
     expect(within(catalog).getAllByText('未连接', { selector: '.detail-state' })).toHaveLength(12)
     expect(catalog.querySelectorAll('.summary-card--muted')).toHaveLength(12)
     expect(within(catalog).getByRole('button', { name: '连接' })).toBeInTheDocument()
@@ -572,6 +740,12 @@ describe('App shell', () => {
 
   it('authorizes Feishu through the narrow connection bridge and reflects the connected state', async () => {
     vi.mocked(window.aiEmployeeOS.connection.connectFeishu).mockResolvedValue({ provider: 'feishu', state: 'connected', checkedAt: '2026-09-04T00:01:00Z', appId: 'cli_example123', expiresAt: '2026-09-04T02:01:00Z', scopes: ['offline_access'] })
+    vi.mocked(window.aiEmployeeOS.resource.list).mockResolvedValue({
+      skills: [{ schemaVersion: 1, id: 'skill.feishu-documents.v2', createdAt: '2026-09-04T00:00:00Z', name: '飞书文档读取', description: '读取飞书文档', version: 2, steps: [], toolVersionIds: [], instructionsMarkdown: '# 飞书文档读取', instructionDigest: 'digest', available: true }],
+      tools: [],
+      mcps: [],
+      healthChecks: []
+    } as never)
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: '连接' }))
     const catalog = screen.getByRole('region', { name: '连接' })
@@ -579,13 +753,66 @@ describe('App shell', () => {
     expect(screen.getByRole('dialog', { name: '飞书连接' })).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('飞书 App ID'), { target: { value: 'cli_example123' } })
     fireEvent.change(screen.getByLabelText('飞书 App Secret'), { target: { value: 'secret-example' } })
-    fireEvent.click(screen.getByRole('button', { name: /打开飞书授权/ }))
+    const authorize = screen.getByRole('button', { name: /开始用户授权/ })
+    expect(authorize).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: /打开安全设置/ }))
+    await waitFor(() => expect(window.aiEmployeeOS.connection.openFeishuDeveloperConsole).toHaveBeenCalledWith('cli_example123'))
+    fireEvent.click(screen.getByRole('checkbox', { name: '我已添加三个只读权限、发布版本，并保存上述重定向 URL' }))
+    expect(authorize).toBeEnabled()
+    fireEvent.click(authorize)
 
     await waitFor(() => expect(window.aiEmployeeOS.connection.connectFeishu).toHaveBeenCalledWith({ appId: 'cli_example123', appSecret: 'secret-example' }))
     expect(await screen.findByText('已连接飞书')).toBeInTheDocument()
     expect(within(catalog).getByText('已连接', { selector: '.detail-state' })).toBeInTheDocument()
     expect(within(catalog).getByRole('button', { name: '管理' })).toBeInTheDocument()
     expect(within(catalog).getByLabelText('概况指标')).toHaveTextContent('1已连接')
+    const connectedApplications = screen.getByLabelText('已连接应用')
+    expect(within(connectedApplications).getByText('飞书')).toBeInTheDocument()
+    expect(within(connectedApplications).getByText('已连接')).toBeInTheDocument()
+    fireEvent.click(within(connectedApplications).getByRole('button'))
+    expect(screen.getByRole('dialog', { name: '飞书连接' })).toBeInTheDocument()
+    await waitFor(() => expect(window.aiEmployeeOS.resource.list).toHaveBeenCalledOnce())
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }))
+    fireEvent.click(screen.getByRole('button', { name: '能力' }))
+    expect(await screen.findByText('v2 · 可用')).toBeInTheDocument()
+  })
+
+  it('reauthorizes Feishu by reusing the App Secret kept in Keychain', async () => {
+    vi.mocked(window.aiEmployeeOS.connection.getFeishuStatus).mockResolvedValue({ provider: 'feishu', state: 'reauthorization_required', checkedAt: '2026-09-04T00:00:00Z', appId: 'cli_example123', scopes: ['offline_access', 'search:docs:read', 'docx:document:readonly'], message: '缺少知识库权限' })
+    vi.mocked(window.aiEmployeeOS.connection.connectFeishu).mockResolvedValue({ provider: 'feishu', state: 'connected', checkedAt: '2026-09-04T00:01:00Z', appId: 'cli_example123', expiresAt: '2026-09-04T02:01:00Z', scopes: ['offline_access', 'search:docs:read', 'docx:document:readonly', 'wiki:wiki:readonly'] })
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: '连接' }))
+    fireEvent.click(await within(screen.getByRole('region', { name: '连接' })).findByRole('button', { name: '重新授权' }))
+
+    expect(screen.queryByLabelText('飞书 App Secret')).not.toBeInTheDocument()
+    expect(screen.getByText('复用 macOS 钥匙串中已保存的 App Secret，不返回界面、不写入日志。')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox', { name: '我已添加三个只读权限、发布版本，并保存上述重定向 URL' }))
+    fireEvent.click(screen.getByRole('button', { name: '开始用户授权' }))
+
+    await waitFor(() => expect(window.aiEmployeeOS.connection.connectFeishu).toHaveBeenCalledWith({ appId: 'cli_example123', appSecret: '' }))
+    expect(await screen.findByText('已连接飞书')).toBeInTheDocument()
+  })
+
+  it('cancels a pending Feishu authorization without leaving the modal blocked', async () => {
+    let rejectConnection!: (error: Error) => void
+    vi.mocked(window.aiEmployeeOS.connection.connectFeishu).mockImplementation(() => new Promise((_resolve, reject) => { rejectConnection = reject }))
+    vi.mocked(window.aiEmployeeOS.connection.cancelFeishuAuthorization).mockImplementation(async () => {
+      rejectConnection(new Error('feishu_authorization_cancelled'))
+      return { provider: 'feishu', state: 'not_connected', checkedAt: '2026-09-04T00:01:00Z', scopes: [], message: '已取消飞书授权' }
+    })
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: '连接' }))
+    fireEvent.click(await within(screen.getByRole('region', { name: '连接' })).findByRole('button', { name: '连接' }))
+    fireEvent.change(screen.getByLabelText('飞书 App ID'), { target: { value: 'cli_example123' } })
+    fireEvent.change(screen.getByLabelText('飞书 App Secret'), { target: { value: 'secret-example' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: '我已添加三个只读权限、发布版本，并保存上述重定向 URL' }))
+    fireEvent.click(screen.getByRole('button', { name: '开始用户授权' }))
+
+    const cancel = await screen.findByRole('button', { name: '取消授权' })
+    fireEvent.click(cancel)
+    await waitFor(() => expect(window.aiEmployeeOS.connection.cancelFeishuAuthorization).toHaveBeenCalledOnce())
+    expect(await screen.findByRole('alert')).toHaveTextContent('已取消本次飞书授权')
+    await waitFor(() => expect(screen.getByRole('button', { name: '开始用户授权' })).toBeEnabled())
   })
 
   it('routes the new Agent entry to the existing three-step employee creation modal', async () => {
@@ -595,12 +822,12 @@ describe('App shell', () => {
     ])
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: '通讯录' }))
-    fireEvent.click(await screen.findByRole('button', { name: '新建 Agent' }))
-    fireEvent.click(within(screen.getByRole('dialog', { name: '新建 Agent' })).getByRole('button', { name: /创建员工/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '招募' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '招募' })).getByRole('button', { name: /创建专家/ }))
     const navigation = screen.getByRole('navigation', { name: '创建步骤' })
     expect(navigation).toBeInTheDocument()
     for (const step of ['基本资料', '提示词', '模型与能力']) expect(within(navigation).getByRole('button', { name: step })).toBeInTheDocument()
-    expect(screen.getByRole('dialog', { name: '新建 Agent 员工' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: '创建专家' })).toBeInTheDocument()
     expect(screen.getByText('第 1 / 3 步')).toBeInTheDocument()
     expect(screen.getByLabelText('从本地上传新员工头像')).toBeEnabled()
     expect(screen.queryByText('所有字段稍后仍可在员工设置中修改。')).not.toBeInTheDocument()
@@ -724,7 +951,7 @@ describe('App shell', () => {
     }
     const previousTask = {
       ...task,
-      id: 'task-view-2', sourceMessageIds: ['message-previous'], taskId: 'task-2', draftId: 'draft-2', runId: 'run-2', state: 'failed' as const, title: '复核竞争对手信息', goal: '复核竞争对手信息', delivery: undefined,
+      id: 'task-view-2', sourceMessageIds: ['message-previous'], taskId: 'task-2', draftId: 'draft-2', runId: 'run-2', runStartedAt: '2026-08-31T07:57:00Z', runCompletedAt: '2026-08-31T07:58:00Z', state: 'failed' as const, title: '复核竞争对手信息', goal: '复核竞争对手信息', delivery: undefined,
       assignments: [{ ...task.assignments[0], id: 'assignment-2', summary: '历史执行未完成。' }],
       timeline: [{ phase: 'failed', createdAt: '2026-08-31T07:58:00Z' }],
       toolActions: [], approvals: []
@@ -736,6 +963,7 @@ describe('App shell', () => {
     expect(await screen.findByLabelText('当前会话事项')).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: /事项/ })).not.toBeInTheDocument()
     expect(await screen.findAllByRole('button', { name: /^定位事项：/ })).toHaveLength(2)
+    expect(screen.getByRole('button', { name: '定位事项：复核竞争对手信息' })).toHaveTextContent('执行失败 · 运行 1分0秒')
     expect(screen.getAllByRole('button', { name: /^查看事项：/ })).toHaveLength(2)
     expect(screen.queryByRole('heading', { name: '生成市场研究报告', level: 3 })).not.toBeInTheDocument()
     expect(screen.getByText('交付结果已完成')).toHaveClass('chat-content__title')
@@ -750,14 +978,16 @@ describe('App shell', () => {
     expect(screen.getByText('加入工作')).toBeInTheDocument()
     expect(screen.getAllByText('网络情报员').length).toBeGreaterThan(0)
     expect(screen.getAllByText('已完成调研并提交报告。')).toHaveLength(1)
-    const deliveryMessage = screen.getByText('验收通过').closest('.message-block')
+    const deliveryMessage = screen.getByText('交付文件已生成。').closest('.message-block')
     expect(deliveryMessage).toHaveClass('message-block--timeline', 'message-stream-item')
     expect(within(deliveryMessage as HTMLElement).getByText('总管')).toBeInTheDocument()
     expect(within(deliveryMessage as HTMLElement).getByText('已交付')).toBeInTheDocument()
     expect(document.querySelector('.delivery-card')).toBeNull()
     expect(document.querySelector('.message-delivery__eyebrow')).toBeNull()
-    expect(screen.getByText('验收通过')).toBeInTheDocument()
-    expect(screen.getByLabelText('交付概况')).toHaveTextContent('1/1完成要求4来源证据1交付文件')
+    expect(screen.queryByText('验收通过')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('交付概况')).not.toBeInTheDocument()
+    expect(within(deliveryMessage as HTMLElement).getByText('Markdown 文档')).toBeInTheDocument()
+    expect(within(deliveryMessage as HTMLElement).queryByText(/完整性|校验/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '定位事项：生成市场研究报告' }))
     expect(screen.getByRole('button', { name: '查看事项：生成市场研究报告' })).toHaveFocus()
     fireEvent.click(screen.getByRole('button', { name: '查看事项：生成市场研究报告' }))
@@ -969,6 +1199,24 @@ describe('App shell', () => {
     expect(window.aiEmployeeOS.employee.list).toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Tools' }))
     expect(await screen.findByRole('heading', { name: '连接后恢复的 Tool', level: 2 })).toBeInTheDocument()
+  })
+
+  it('automatically retries an initial resource timeout without exposing a permanent catalog error', async () => {
+    const catalog = {
+      skills: [{ id: 'skill-recovered', createdAt: '2026-09-04T00:00:00Z', name: '自动恢复 Skill', description: '首次超时后由自动重试读取', version: 1, steps: ['自动重试'], toolVersionIds: [], instructionsMarkdown: '# 自动恢复 Skill', instructionDigest: 'digest-recovered', available: true }],
+      tools: [], mcps: [], healthChecks: []
+    }
+    vi.mocked(window.aiEmployeeOS.runtime.getStatus).mockResolvedValue({ state: 'connected', checkedAt: '2026-09-04T00:00:00Z', message: 'Runtime 已连接' })
+    vi.mocked(window.aiEmployeeOS.resource.list).mockRejectedValueOnce(new Error('runtime_request_timeout')).mockResolvedValueOnce(catalog)
+
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: '能力' }))
+
+    expect(await screen.findByRole('heading', { name: '正在读取能力目录' })).toBeInTheDocument()
+    expect(screen.queryByText('资源目录读取失败')).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '自动恢复 Skill', level: 2 })).toBeInTheDocument()
+    expect(window.aiEmployeeOS.resource.list).toHaveBeenCalledTimes(2)
+    expect(screen.queryByText('资源目录读取失败')).not.toBeInTheDocument()
   })
 
   it('keeps a valid capability catalog when a later connected refresh fails transiently', async () => {

@@ -26,19 +26,24 @@ import { TeamModule } from './TeamModule'
 import { employeeAvatarSrc, supervisorIdentity, userIdentity } from './employee-avatar'
 import { employeeStatusBreathing, employeeStatusLabel, employeeStatusTone, isActiveEmployeeStatus } from './employee-status'
 import { ResourceModule, resourcesFor, type ResourceKind } from './ResourceModule'
-import { RecruitmentCatalog } from './RecruitmentCatalog'
-import { ConnectionsCatalog } from './ConnectionsCatalog'
+import { RecruitmentCatalog, type RecruitmentKind } from './RecruitmentCatalog'
+import { ConnectionsCatalog, EMPTY_FEISHU_STATUS, FEISHU_CONNECTION_APPLICATION } from './ConnectionsCatalog'
 import type { ResourceCatalogView } from '../../shared/resource-contract'
+import type { FeishuConnectionStatus } from '../../shared/connection-contract'
+import type { ExpertGroupView } from '../../shared/expert-group-contract'
+import { ExpertGroupAvatar } from './ExpertGroupAvatar'
 import { DEFAULT_SUPERVISOR_CONFIG, type SupervisorConfigInput } from '../../shared/supervisor-contract'
-import { AppShell, Avatar, ClientModal, ContextPane, DetailListMark, DetailNote, DetailSectionHeader, DetailState, DetailSummaryPanel, IconButton, ListRow, PersonAvatar, Rail, SearchBox, SectionHeader, StatusLight, SummaryList, SummaryListItem, Toolbar, type ClientIcon, type DetailTone, type PersonIdentity } from './components/client-ui'
+import { AppShell, Avatar, ClientModal, ContextPane, DetailListMark, DetailNote, DetailPage, DetailSectionHeader, DetailState, DetailSummaryPanel, IconButton, ListRow, PersonAvatar, Rail, SearchBox, SectionHeader, StatusLight, SummaryList, SummaryListItem, Toolbar, type ClientIcon, type DetailTone, type PersonIdentity } from './components/client-ui'
 import { ClientIconSystem } from './components/client-icon-system'
 import { AgentActivityMessage, ChatContentBlock, ChatMessage, MarkdownMessage, MatterRouteNote, MatterTeamAvatars, MessageAttachmentGroup, StreamingMarkdownMessage, TimelineSummary, fileDetail } from './components/message-ui'
 import { readClientProfile, SystemModule, systemSections, type ClientProfile, type SystemSectionId } from './SystemModule'
-import { formatClientTimestamp } from './client-time'
+import { formatClientTimestamp, formatRunDuration } from './client-time'
+import { ExpertGroupModule } from './ExpertGroupModule'
 
 type ModuleId = 'workbench' | 'team' | 'resources' | 'connections' | 'settings'
 type ComposerPanel = 'model' | 'voice' | null
 type TeamView = 'directory' | 'recruitment'
+type TeamDirectoryKind = 'experts' | 'groups'
 
 function attachmentImportErrorMessage(reason: unknown): string {
   const code = reason instanceof Error ? reason.message : String(reason)
@@ -81,6 +86,7 @@ const initialProviderStatus: ProviderStatus = {
   checkedAt: new Date(0).toISOString()
 }
 const emptyResourceCatalog: ResourceCatalogView = { skills: [], tools: [], mcps: [], healthChecks: [] }
+const resourceCatalogRetryDelaysMs = [250, 750, 1_500, 3_000, 5_000] as const
 
 function readConversationCounts(): Record<string, number> {
   try { return JSON.parse(window.localStorage.getItem('ai-employee-os.conversation-read-counts') ?? '{}') as Record<string, number> } catch { return {} }
@@ -273,7 +279,7 @@ function EmployeeProgressMessage({ task, assignment }: { task: TaskDetailView; a
   const statusState = assignment.state === 'succeeded' ? 'success' : assignment.state === 'failed' ? 'danger' : assignment.state === 'cancelled' ? 'muted' : waitingAction ? 'waiting' : 'active'
   const fallbackTitle = assignment.state === 'succeeded' ? '阶段工作已完成' : assignment.state === 'failed' ? '阶段执行未完成' : assignment.state === 'cancelled' ? '阶段执行已取消' : waitingAction ? '阶段需要处理' : '阶段工作进行中'
   const content = assignment.summary?.trim() || (waitingAction
-    ? `工具操作 ${waitingAction.toolVersionId} 未能自动收敛，需要核验实际结果。`
+    ? '当前步骤需要核验实际结果后才能继续。'
     : assignment.state === 'running' ? `我已接手“${task.goal}”，正在执行当前阶段。`
       : assignment.state === 'failed' ? '当前阶段未能完成，详细失败原因已交给总管处理。'
         : '当前阶段已取消。')
@@ -301,17 +307,12 @@ function DeliveryMessage({ task, supervisor, onOpen, onOpenArtifact, onRevealArt
   const content = delivery.content ?? {
     schemaVersion: 1 as const,
     title: completed ? '交付结果已完成' : '交付结果需要处理',
-    summary: delivery.summary?.trim() || (completed ? '员工结果已经通过验收，交付文件与来源证据均已保存。' : '部分完成要求尚未通过，请查看完整验收记录。'),
-    metrics: [
-      { label: '完成要求', value: `${passed}/${delivery.acceptanceResults.length}` },
-      { label: '来源证据', value: String(delivery.evidenceCount) },
-      { label: '交付文件', value: String(delivery.artifacts.length) }
-    ],
+    summary: completed ? delivery.artifacts.length ? '交付文件已生成。' : '结果已完成。' : '部分结果尚未满足要求。',
     ...(delivery.unresolvedIssues.length ? { detail: { label: '查看未决问题', content: delivery.unresolvedIssues.join('；') } } : {})
   }
   return <ChatMessage source="agent" variant="timeline" name={supervisor.name} initials={supervisor.initials} color={supervisor.color} avatarSrc={supervisor.avatarSrc ?? undefined} time={formatClientTimestamp(delivery.createdAt ?? task.timeline.at(-1)?.createdAt ?? new Date().toISOString())} status={<StatusLight state={completed ? 'success' : 'waiting'} label={completed ? '已交付' : '部分通过'} />}>
     <ChatContentBlock content={content} variant="delivery">
-      <MessageAttachmentGroup source="agent" embedded attachments={delivery.artifacts.map((artifact) => ({ id: artifact.id, name: artifactDisplayName(artifact.relativePath), detail: `${artifactTypeLabel(artifact.mediaType)} · 完整性校验已记录` }))} onOpen={onOpenArtifact} onReveal={onRevealArtifact} />
+      <MessageAttachmentGroup source="agent" embedded attachments={delivery.artifacts.map((artifact) => ({ id: artifact.id, name: artifactDisplayName(artifact.relativePath), detail: artifactTypeLabel(artifact.mediaType) }))} onOpen={onOpenArtifact} onReveal={onRevealArtifact} />
       <button type="button" className="text-action" onClick={onOpen}>查看完整验收记录 <NavArrowRight aria-hidden /></button>
     </ChatContentBlock>
   </ChatMessage>
@@ -360,7 +361,7 @@ function MatterDetailModal({ task, retrying, onRetry, onClose }: { task?: TaskDe
 
     {task.delivery && <section>
       <DetailSectionHeader title="交付文件与证据" description="任务结果、交付文件和来源证据已保存，可在下方查看" meta={`${task.delivery.artifacts.length} 个文件`} />
-      <SummaryList emptyMessage="本事项没有生成交付文件。" variant="outlined">{task.delivery.artifacts.map((item) => <SummaryListItem key={item.id} leading={<DetailListMark tone="success" shape="rounded"><Page aria-hidden /></DetailListMark>} title={item.relativePath} subtitle={`${artifactTypeLabel(item.mediaType)}，文件完整性校验已记录`} trailing={<DetailState tone="muted">已保存</DetailState>} />)}</SummaryList>
+      <SummaryList emptyMessage="本事项没有生成交付文件。" variant="outlined">{task.delivery.artifacts.map((item) => <SummaryListItem key={item.id} leading={<DetailListMark tone="success" shape="rounded"><Page aria-hidden /></DetailListMark>} title={item.relativePath} subtitle={artifactTypeLabel(item.mediaType)} trailing={<DetailState tone="muted">已保存</DetailState>} />)}</SummaryList>
       <DetailNote icon={<ShieldCheck aria-hidden />} tone="success">已保存 {task.delivery.evidenceCount} 条来源证据，可用于核对结果。</DetailNote>
       {task.delivery.unresolvedIssues.length > 0 && <div className="boundary-note">仍需注意：{task.delivery.unresolvedIssues.join('；')}</div>}
     </section>}
@@ -380,15 +381,23 @@ function MatterEvent({ task, onOpen, onAnchor }: { task: TaskDetailView; onOpen:
 }
 
 function MatterSidebar({ tasks, collapsed, onLocate }: { tasks: TaskDetailView[]; collapsed: boolean; onLocate: (task: TaskDetailView) => void }): React.JSX.Element {
+  const hasRunningTask = tasks.some((task) => task.state === 'running')
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    if (!hasRunningTask) return
+    setNow(Date.now())
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000)
+    return () => window.clearInterval(timer)
+  }, [hasRunningTask])
   const orderedTasks = [...tasks].sort((left, right) => new Date(taskUpdatedAt(right)).getTime() - new Date(taskUpdatedAt(left)).getTime())
   return (
     <aside className={`matter-sidebar${collapsed ? ' is-collapsed' : ''}`} aria-label="当前会话事项">
-      {!collapsed && <><div className="matter-sidebar__header"><span><strong>事项</strong><small>{tasks.length}</small></span></div><div className="matter-sidebar__list">{orderedTasks.map((task) => <button type="button" className="matter-sidebar__item" key={task.id} aria-label={`定位事项：${task.title}`} onClick={() => onLocate(task)}><span className={`matter-sidebar__status matter-sidebar__status--${task.state}`} aria-hidden /><span><strong>{task.title}</strong><small>{taskStateLabel(task.state)} · {formatClientTimestamp(taskUpdatedAt(task))}</small></span></button>)}{tasks.length === 0 && <p className="matter-sidebar__empty">当前会话暂无事项</p>}</div></>}
+      {!collapsed && <><div className="matter-sidebar__header"><span><strong>事项</strong><small>{tasks.length}</small></span></div><div className="matter-sidebar__list">{orderedTasks.map((task) => <button type="button" className="matter-sidebar__item" key={task.id} aria-label={`定位事项：${task.title}`} onClick={() => onLocate(task)}><span className={`matter-sidebar__status matter-sidebar__status--${task.state}`} aria-hidden /><span><strong>{task.title}</strong><small>{taskStateLabel(task.state)} · 运行 {formatRunDuration(task.runStartedAt, task.runCompletedAt, now)}</small></span></button>)}{tasks.length === 0 && <p className="matter-sidebar__empty">当前会话暂无事项</p>}</div></>}
     </aside>
   )
 }
 
-function Workbench({ runtimeStatus, providerStatus, conversationId, user, supervisor, matterSidebarCollapsed, onDataChanged }: { runtimeStatus: RuntimeStatus; providerStatus: ProviderStatus; conversationId: string; user: PersonIdentity; supervisor: PersonIdentity; matterSidebarCollapsed: boolean; onDataChanged: () => void }): React.JSX.Element {
+function Workbench({ runtimeStatus, providerStatus, conversationId, user, supervisor, matterSidebarCollapsed, initialDraft, onInitialDraftConsumed, onDataChanged }: { runtimeStatus: RuntimeStatus; providerStatus: ProviderStatus; conversationId: string; user: PersonIdentity; supervisor: PersonIdentity; matterSidebarCollapsed: boolean; initialDraft?: string; onInitialDraftConsumed?: () => void; onDataChanged: () => void }): React.JSX.Element {
   const [messages, setMessages] = useState<ConversationMessageView[]>([])
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -404,6 +413,15 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
   const [isFileDragging, setIsFileDragging] = useState(false)
   const [authorizedDirectories, setAuthorizedDirectories] = useState<string[]>([])
   const matterAnchors = useRef(new Map<string, HTMLButtonElement>())
+  const composerInputRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (!initialDraft) return
+    setDraft(initialDraft)
+    const frame = window.requestAnimationFrame(() => composerInputRef.current?.focus())
+    onInitialDraftConsumed?.()
+    return () => window.cancelAnimationFrame(frame)
+  }, [conversationId, initialDraft])
 
   useEffect(() => {
     let mounted = true
@@ -452,10 +470,9 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
     })
     const unsubscribeTask = window.aiEmployeeOS.task.onEvent(refreshTasks)
     const unsubscribeEmployee = window.aiEmployeeOS.employee.onEvent(() => { window.aiEmployeeOS.task.list().then(receiveTasks) })
-    const refreshTimer = window.setInterval(refreshTasks, 2_000)
     const refreshOnFocus = (): void => refreshTasks()
     window.addEventListener('focus', refreshOnFocus)
-    return () => { mounted = false; window.clearInterval(refreshTimer); window.removeEventListener('focus', refreshOnFocus); unsubscribe(); unsubscribeTask(); unsubscribeEmployee() }
+    return () => { mounted = false; window.removeEventListener('focus', refreshOnFocus); unsubscribe(); unsubscribeTask(); unsubscribeEmployee() }
   }, [conversationId])
 
   const conversationTasks = coalesceMatterCards(tasks.filter((task) => task.conversationId === conversationId))
@@ -641,7 +658,7 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
         <div className={`composer__box${isFileDragging ? ' is-file-dragging' : ''}`}>
           {isFileDragging && <div className="composer-drop-zone" role="status"><Page aria-hidden /><span><strong>松开以上传文件</strong><small>Word、PowerPoint、Excel、PDF 或图片</small></span></div>}
           {draftAttachments.length > 0 && <div className="composer-attachment-tray"><MessageAttachmentGroup source="user" attachments={draftAttachments.map((attachment) => ({ id: attachment.id, name: attachment.name, detail: fileDetail(attachment) }))} onRemove={(id) => setDraftAttachments((items) => items.filter((attachment) => attachment.id !== id))} /></div>}
-          <textarea id="supervisor-input" aria-label="发送消息" rows={2} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder={`发送给${supervisor.name}，补充问题或事项信息`} disabled={runtimeStatus.state !== 'connected' || sending} />
+          <textarea ref={composerInputRef} id="supervisor-input" aria-label="发送消息" rows={2} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder={`发送给${supervisor.name}，补充问题或事项信息`} disabled={runtimeStatus.state !== 'connected' || sending} />
           <div className="composer__toolbar">
             <div className="composer__group"><button type="button" className="attachment-upload-button icon-button" aria-label="添加附件" title="选择 Word、PowerPoint、Excel、PDF 或图片附件" onClick={() => void selectAttachments()}><Plus aria-hidden /></button></div>
             <div className="composer__group">
@@ -668,7 +685,6 @@ export function App(): React.JSX.Element {
   const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus>(initialStatus)
   const [providerStatus, setProviderStatus] = useState<ProviderStatus>(initialProviderStatus)
   const [conversations, setConversations] = useState<ConversationSummaryView[]>([])
-  const [conversationTasks, setConversationTasks] = useState<TaskDetailView[]>([])
   const [selectedConversationId, setSelectedConversationId] = useState(readInitialConversationId)
   const [conversationQuery, setConversationQuery] = useState('')
   const [systemSection, setSystemSection] = useState<SystemSectionId>('profile')
@@ -676,34 +692,47 @@ export function App(): React.JSX.Element {
   const [supervisor, setSupervisor] = useState<SupervisorConfigInput>({ ...DEFAULT_SUPERVISOR_CONFIG, memoryScopes: [...DEFAULT_SUPERVISOR_CONFIG.memoryScopes] })
   const [readCounts, setReadCounts] = useState<Record<string, number>>(readConversationCounts)
   const [employees, setEmployees] = useState<EmployeeSummary[]>([])
+  const [expertGroups, setExpertGroups] = useState<ExpertGroupView[]>([])
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>()
+  const [selectedExpertGroupId, setSelectedExpertGroupId] = useState<string>()
   const [employeeQuery, setEmployeeQuery] = useState('')
   const [employeeCreateRequest, setEmployeeCreateRequest] = useState(0)
   const [employeeEditRequest, setEmployeeEditRequest] = useState(0)
   const [agentEntryOpen, setAgentEntryOpen] = useState(false)
   const [teamView, setTeamView] = useState<TeamView>('directory')
+  const [teamDirectoryKind, setTeamDirectoryKind] = useState<TeamDirectoryKind>('experts')
+  const [recruitmentKind, setRecruitmentKind] = useState<RecruitmentKind>('experts')
+  const [conversationDraftSeed, setConversationDraftSeed] = useState<{ conversationId: string; text: string }>()
   const [resourceCatalog, setResourceCatalog] = useState<ResourceCatalogView>(emptyResourceCatalog)
   const [resourceKind, setResourceKind] = useState<ResourceKind>('skills')
   const [selectedResourceId, setSelectedResourceId] = useState<string>()
   const [resourceQuery, setResourceQuery] = useState('')
   const [resourceError, setResourceError] = useState<string>()
+  const [resourceCatalogLoading, setResourceCatalogLoading] = useState(false)
   const [probingResources, setProbingResources] = useState(false)
   const [resourceInfoOpen, setResourceInfoOpen] = useState(false)
+  const [feishuStatus, setFeishuStatus] = useState<FeishuConnectionStatus>(EMPTY_FEISHU_STATUS)
+  const [connectionStatusLoading, setConnectionStatusLoading] = useState(true)
+  const [connectionModalOpen, setConnectionModalOpen] = useState(false)
   const [contextCollapsed, setContextCollapsed] = useState(false)
   const [matterSidebarCollapsed, setMatterSidebarCollapsed] = useState(false)
   const resourceCatalogRef = useRef<ResourceCatalogView>(emptyResourceCatalog)
   const runtimeCatalogRefreshRef = useRef<Promise<void> | null>(null)
+  const runtimeCatalogRetryRef = useRef<number | null>(null)
+  const runtimeCatalogRetryAttemptRef = useRef(0)
+  const runtimeConnectedRef = useRef(false)
+  const mountedRef = useRef(true)
   const activeModule = useMemo(() => modules.find((module) => module.id === activeId)!, [activeId])
   const selectedConversation = conversations.find((conversation) => conversation.id === selectedConversationId)
   const selectedEmployee = employees.find((employee) => employee.id === selectedEmployeeId)
+  const selectedExpertGroup = expertGroups.find((group) => group.id === selectedExpertGroupId) ?? expertGroups[0]
   const selectedResource = resourcesFor(resourceCatalog, resourceKind).find((item) => item.id === selectedResourceId) ?? resourcesFor(resourceCatalog, resourceKind)[0]
   const runtimeLabel = runtimeStatus.state === 'connecting' ? '正在连接' : '重新连接'
   const unreadCountFor = (conversation: ConversationSummaryView): number => Math.max(0, conversation.messageCount - (readCounts[conversation.id] ?? 0))
   const totalUnread = conversations.reduce((total, conversation) => total + unreadCountFor(conversation), 0)
 
   const refreshConversationData = async (): Promise<void> => {
-    const [items, tasks] = await Promise.all([window.aiEmployeeOS.conversation.list(), window.aiEmployeeOS.task.list()])
-    setConversationTasks(tasks)
+    const items = await window.aiEmployeeOS.conversation.list()
     if (items.length > 0) {
       setConversations(items)
       setSelectedConversationId((current) => items.some((item) => item.id === current) ? current : items[0].id)
@@ -716,23 +745,42 @@ export function App(): React.JSX.Element {
 
   const refreshRuntimeCatalogs = (mounted: () => boolean): Promise<void> => {
     if (runtimeCatalogRefreshRef.current) return runtimeCatalogRefreshRef.current
+    const hasCatalog = resourceCatalogRef.current.skills.length > 0 || resourceCatalogRef.current.tools.length > 0
+    if (!hasCatalog) setResourceCatalogLoading(true)
     const refresh = Promise.allSettled([
       window.aiEmployeeOS.employee.list(),
+      window.aiEmployeeOS.expertGroup.list(),
       window.aiEmployeeOS.resource.list()
-    ]).then(([employeeResult, resourceResult]) => {
+    ]).then(([employeeResult, expertGroupResult, resourceResult]) => {
       if (!mounted()) return
       if (employeeResult.status === 'fulfilled') {
-        setEmployees(employeeResult.value)
-        setSelectedEmployeeId((current) => current && employeeResult.value.some((employee) => employee.id === current) ? current : employeeResult.value[0]?.id)
+        const activeEmployees = employeeResult.value.filter((employee) => employee.status !== 'archived')
+        setEmployees(activeEmployees)
+        setSelectedEmployeeId((current) => current && activeEmployees.some((employee) => employee.id === current) ? current : activeEmployees[0]?.id)
+      }
+      if (expertGroupResult.status === 'fulfilled') {
+        setExpertGroups(expertGroupResult.value)
+        setSelectedExpertGroupId((current) => current && expertGroupResult.value.some((group) => group.id === current) ? current : expertGroupResult.value[0]?.id)
       }
       if (resourceResult.status === 'fulfilled') {
         const catalog = resourceResult.value
+        if (runtimeCatalogRetryRef.current !== null) window.clearTimeout(runtimeCatalogRetryRef.current)
+        runtimeCatalogRetryRef.current = null
+        runtimeCatalogRetryAttemptRef.current = 0
         resourceCatalogRef.current = catalog
         setResourceCatalog(catalog)
         setSelectedResourceId((current) => current && [...catalog.skills, ...catalog.tools].some((resource) => resource.id === current) ? current : catalog.skills[0]?.id ?? catalog.tools[0]?.id)
+        setResourceCatalogLoading(false)
         setResourceError(undefined)
-      } else if (resourceCatalogRef.current.skills.length === 0 && resourceCatalogRef.current.tools.length === 0) {
-        setResourceError('资源目录读取失败')
+      } else if (resourceCatalogRef.current.skills.length === 0 && resourceCatalogRef.current.tools.length === 0 && runtimeCatalogRetryRef.current === null) {
+        setResourceError(undefined)
+        const attempt = runtimeCatalogRetryAttemptRef.current
+        const delay = resourceCatalogRetryDelaysMs[Math.min(attempt, resourceCatalogRetryDelaysMs.length - 1)]
+        runtimeCatalogRetryAttemptRef.current = attempt + 1
+        runtimeCatalogRetryRef.current = window.setTimeout(() => {
+          runtimeCatalogRetryRef.current = null
+          if (mounted() && runtimeConnectedRef.current) void refreshRuntimeCatalogs(mounted)
+        }, delay)
       }
     }).finally(() => {
       if (runtimeCatalogRefreshRef.current === refresh) runtimeCatalogRefreshRef.current = null
@@ -743,20 +791,35 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     let mounted = true
+    mountedRef.current = true
     const handleRuntimeStatus = (status: RuntimeStatus): void => {
       if (!mounted) return
       setRuntimeStatus(status)
+      runtimeConnectedRef.current = status.state === 'connected'
       if (status.state === 'connected') void refreshRuntimeCatalogs(() => mounted)
+      else {
+        if (runtimeCatalogRetryRef.current !== null) window.clearTimeout(runtimeCatalogRetryRef.current)
+        runtimeCatalogRetryRef.current = null
+        runtimeCatalogRetryAttemptRef.current = 0
+        if (resourceCatalogRef.current.skills.length === 0 && resourceCatalogRef.current.tools.length === 0) setResourceCatalogLoading(false)
+      }
     }
     window.aiEmployeeOS.runtime.getStatus().then(handleRuntimeStatus)
     window.aiEmployeeOS.provider.getStatus().then((status) => {
       if (mounted) setProviderStatus(status)
     })
     window.aiEmployeeOS.supervisor.get().then((value) => { if (mounted) setSupervisor({ name: value.name, avatarDataUrl: value.avatarDataUrl, systemPrompt: value.systemPrompt, modelId: value.modelId, memoryScopes: [...value.memoryScopes] }) }).catch(() => undefined)
+    window.aiEmployeeOS.connection.getFeishuStatus()
+      .then((value) => { if (mounted) setFeishuStatus(value) })
+      .catch(() => { if (mounted) setFeishuStatus({ ...EMPTY_FEISHU_STATUS, state: 'error', checkedAt: new Date().toISOString(), message: '无法读取飞书连接状态' }) })
+      .finally(() => { if (mounted) setConnectionStatusLoading(false) })
     refreshConversationData().catch(() => undefined)
     const unsubscribe = window.aiEmployeeOS.runtime.onStatusChanged(handleRuntimeStatus)
     return () => {
       mounted = false
+      mountedRef.current = false
+      if (runtimeCatalogRetryRef.current !== null) window.clearTimeout(runtimeCatalogRetryRef.current)
+      runtimeCatalogRetryRef.current = null
       unsubscribe()
     }
   }, [])
@@ -785,6 +848,14 @@ export function App(): React.JSX.Element {
     setSelectedConversationId(created.id)
   }
 
+  const enterRecruitmentConversation = async (name: string, kind: 'expert' | 'group'): Promise<void> => {
+    const created = await window.aiEmployeeOS.conversation.create()
+    setConversations((items) => [created, ...items])
+    setSelectedConversationId(created.id)
+    setConversationDraftSeed({ conversationId: created.id, text: `请调用${name}${kind === 'group' ? '协作处理' : '处理'}：` })
+    setActiveId('workbench')
+  }
+
   const archiveConversation = async (conversationId: string): Promise<void> => {
     await window.aiEmployeeOS.conversation.archive(conversationId)
     const remaining = conversations.filter((item) => item.id !== conversationId)
@@ -807,13 +878,18 @@ export function App(): React.JSX.Element {
     } catch { setResourceError('数据源健康检查失败') } finally { setProbingResources(false) }
   }
 
+  const handleFeishuStatusChange = (status: FeishuConnectionStatus): void => {
+    setFeishuStatus(status)
+    void refreshRuntimeCatalogs(() => mountedRef.current)
+  }
+
   const visibleConversations = conversations.filter((conversation) => {
     if (!`${conversation.title} ${identityAwareConversationPreview(conversation, profile.name, supervisor.name)}`.toLocaleLowerCase().includes(conversationQuery.trim().toLocaleLowerCase())) return false
     return true
   })
 
   const context = <ContextPane>
-    <SectionHeader title={activeModule.contextTitle} action={activeId === 'workbench' ? <IconButton label="新建会话" icon={Plus} onClick={createConversation} /> : activeId === 'team' ? <IconButton label="新建 Agent" icon={Plus} onClick={() => setAgentEntryOpen(true)} /> : activeId === 'resources' ? <IconButton label="能力目录信息" icon={InfoCircle} onClick={() => setResourceInfoOpen(true)} /> : undefined} />
+    <SectionHeader title={activeModule.contextTitle} action={activeId === 'workbench' ? <IconButton label="新建会话" icon={Plus} onClick={createConversation} /> : activeId === 'team' && teamView === 'directory' ? <IconButton label="招募" icon={Plus} onClick={() => { if (teamDirectoryKind === 'groups') { setRecruitmentKind('groups'); setTeamView('recruitment') } else setAgentEntryOpen(true) }} /> : activeId === 'resources' ? <IconButton label="能力目录信息" icon={InfoCircle} onClick={() => setResourceInfoOpen(true)} /> : undefined} />
     {activeId === 'workbench' ? <>
       <SearchBox label="搜索会话" placeholder="搜索会话" value={conversationQuery} onChange={setConversationQuery} />
       <div className="context-scroll">{visibleConversations.map((conversation) => {
@@ -821,16 +897,21 @@ export function App(): React.JSX.Element {
         return <div className="conversation-row" key={conversation.id}><ListRow title={conversation.title} subtitle={identityAwareConversationPreview(conversation, profile.name, supervisor.name)} meta={formatClientTimestamp(conversation.updatedAt)} selected={selectedConversationId === conversation.id} identity="text" marker={unread > 0 ? <span className="unread-dot" aria-label="未读消息" /> : undefined} onClick={() => setSelectedConversationId(conversation.id)} /><IconButton label={`归档会话 ${conversation.title}`} icon={Trash} className="conversation-row__delete" onClick={() => archiveConversation(conversation.id)} /></div>
       })}</div>
     </> : activeId === 'team' ? <>
-      <SearchBox label="搜索 Agent" placeholder="搜索 Agent" value={employeeQuery} onChange={setEmployeeQuery} />
-      <div className="context-scroll context-scroll--flush">{employees.filter((employee) => `${employee.name} ${employee.role ?? ''}`.includes(employeeQuery.trim())).map((employee) => <ListRow key={employee.id} title={employee.name} subtitle={employee.role || '尚未填写职责'} selected={teamView === 'directory' && selectedEmployeeId === employee.id} avatar={<Avatar label={employee.name} initials={employee.name.slice(0, 1)} color="#c5b8e3" size="small" src={employeeAvatarSrc({ employeeId: employee.id, avatarDataUrl: employee.avatarDataUrl })} />} marker={<StatusLight state={employeeStatusTone(employee.status)} label={employeeStatusLabel(employee.status)} />} onClick={() => { setSelectedEmployeeId(employee.id); setTeamView('directory') }} />)}</div>
+      <SearchBox label={teamDirectoryKind === 'experts' ? '搜索专家' : '搜索专家团'} placeholder={teamDirectoryKind === 'experts' ? '搜索专家' : '搜索专家团'} value={employeeQuery} onChange={setEmployeeQuery} />
+      <div className="filter-row capability-kind-switch" role="tablist" aria-label="通讯录类型">{([['experts', '专家'], ['groups', '专家团']] as const).map(([id, label]) => <button type="button" role="tab" id={`team-${id}-tab`} aria-controls="team-directory-panel" aria-selected={teamDirectoryKind === id} key={id} className={teamDirectoryKind === id ? 'is-active' : ''} onClick={() => { setTeamDirectoryKind(id); setTeamView('directory'); setEmployeeQuery('') }}>{label}</button>)}</div>
+      <div className="context-scroll context-scroll--flush" role="tabpanel" id="team-directory-panel" aria-labelledby={`team-${teamDirectoryKind}-tab`}>{teamDirectoryKind === 'experts'
+        ? employees.filter((employee) => `${employee.name} ${employee.role ?? ''}`.includes(employeeQuery.trim())).map((employee) => <ListRow key={employee.id} title={employee.name} subtitle={employee.role || '尚未填写职责'} selected={teamView === 'directory' && selectedEmployeeId === employee.id} avatar={<Avatar label={employee.name} initials={employee.name.slice(0, 1)} color="#c5b8e3" size="small" src={employeeAvatarSrc({ employeeId: employee.id, avatarDataUrl: employee.avatarDataUrl })} />} marker={<StatusLight state={employeeStatusTone(employee.status)} label={employeeStatusLabel(employee.status)} />} onClick={() => { setSelectedEmployeeId(employee.id); setTeamView('directory') }} />)
+        : expertGroups.filter((group) => `${group.name} ${group.description} ${group.members.map((member) => member.name).join(' ')}`.includes(employeeQuery.trim())).map((group) => <ListRow key={group.id} title={group.name} subtitle={`${group.members.length} 位专家`} selected={teamView === 'directory' && selectedExpertGroup?.id === group.id} avatar={<ExpertGroupAvatar name={group.name} members={group.members} size="small" />} marker={<StatusLight state="success" label="可调用" />} onClick={() => { setSelectedExpertGroupId(group.id); setTeamView('directory') }} />)}{teamDirectoryKind === 'groups' && expertGroups.length === 0 && <p className="context-list-empty">暂无已招募专家团</p>}</div>
     </> : activeId === 'resources' ? <>
       <SearchBox label="搜索能力" placeholder="搜索能力" value={resourceQuery} onChange={setResourceQuery} />
       <div className="filter-row capability-kind-switch">{([['skills', 'Skills'], ['tools', 'Tools']] as const).map(([id, label]) => <button type="button" key={id} className={resourceKind === id ? 'is-active' : ''} onClick={() => { setResourceKind(id); setSelectedResourceId(resourcesFor(resourceCatalog, id)[0]?.id) }}>{label}</button>)}</div>
       <div className="context-scroll context-scroll--flush">{resourcesFor(resourceCatalog, resourceKind).filter((item) => `${item.name} ${item.description}`.includes(resourceQuery.trim())).map((item) => <ListRow key={item.id} title={item.name} subtitle={`v${item.version} · ${item.available ? '可用' : '不可用'}`} selected={selectedResourceId === item.id} marker={<StatusLight state={item.available ? 'success' : 'danger'} label={item.available ? '可用' : '不可用'} />} onClick={() => setSelectedResourceId(item.id)} />)}</div>
-    </> : activeId === 'connections' ? <div className="context-scroll context-scroll--flush" /> : <div className="system-navigation">{systemSections.map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={systemSection === item.id ? 'is-active' : ''} onClick={() => setSystemSection(item.id)}><Icon aria-hidden /><span>{item.label}</span><NavArrowRight aria-hidden /></button> })}</div>}
+    </> : activeId === 'connections' ? <div className="context-scroll context-scroll--flush" aria-label="已连接应用">
+      {connectionStatusLoading ? <p className="context-list-empty" role="status">正在读取连接状态</p> : feishuStatus.state === 'connected' ? <ListRow title={FEISHU_CONNECTION_APPLICATION.name} subtitle={FEISHU_CONNECTION_APPLICATION.description} selected={connectionModalOpen} avatar={<span className="connection-context-logo" role="img" aria-label="飞书官方图标"><img alt="" src={FEISHU_CONNECTION_APPLICATION.icon} /></span>} marker={<StatusLight state="success" label="已连接" />} onClick={() => setConnectionModalOpen(true)} /> : <p className="context-list-empty">暂无已连接应用</p>}
+    </div> : <div className="system-navigation">{systemSections.map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={systemSection === item.id ? 'is-active' : ''} onClick={() => setSystemSection(item.id)}><Icon aria-hidden /><span>{item.label}</span><NavArrowRight aria-hidden /></button> })}</div>}
   </ContextPane>
 
-  const toolbarSupport = activeId === 'team' && teamView === 'directory' && selectedEmployee ? <StatusLight state={employeeStatusTone(selectedEmployee.status)} label={employeeStatusLabel(selectedEmployee.status)} breathing={employeeStatusBreathing(selectedEmployee.status)} /> : activeId === 'resources' && selectedResource ? <StatusLight state={selectedResource.available ? 'success' : 'danger'} label={selectedResource.available ? '可用' : '不可用'} /> : undefined
+  const toolbarSupport = activeId === 'team' && teamView === 'directory' && teamDirectoryKind === 'experts' && selectedEmployee ? <StatusLight state={employeeStatusTone(selectedEmployee.status)} label={employeeStatusLabel(selectedEmployee.status)} breathing={employeeStatusBreathing(selectedEmployee.status)} /> : activeId === 'resources' && selectedResource ? <StatusLight state={selectedResource.available ? 'success' : 'danger'} label={selectedResource.available ? '可用' : '不可用'} /> : undefined
   const toolbarTrailing = activeId === 'workbench'
     ? <>{runtimeStatus.state !== 'connected' && <button type="button" className={`runtime-status runtime-status--${runtimeStatus.state}`} onClick={reconnect} disabled={runtimeStatus.state === 'connecting'}><span className="status-dot" />{runtimeLabel}</button>}<IconButton label={matterSidebarCollapsed ? '展开事项边栏' : '折叠事项边栏'} icon={matterSidebarCollapsed ? NavArrowLeft : NavArrowRight} className={`matter-toolbar-toggle${matterSidebarCollapsed ? '' : ' is-active'}`} onClick={() => setMatterSidebarCollapsed((value) => !value)} /></>
     : activeId === 'resources'
@@ -839,8 +920,8 @@ export function App(): React.JSX.Element {
 
   return <ClientIconSystem><AppShell
     contextCollapsed={contextCollapsed}
-    toolbar={<Toolbar title={activeId === 'workbench' ? selectedConversation?.title ?? '消息' : activeId === 'team' ? teamView === 'recruitment' ? '招募员工' : selectedEmployee?.name ?? 'Agent 员工' : activeId === 'resources' ? selectedResource?.name ?? '能力目录' : activeId === 'connections' ? '连接' : systemSections.find((item) => item.id === systemSection)?.label ?? '系统'} icon={activeModule.icon} navigation={<IconButton label={contextCollapsed ? '展开左侧栏' : '折叠左侧栏'} icon={contextCollapsed ? NavArrowRight : NavArrowLeft} onClick={() => setContextCollapsed((value) => !value)} />} support={toolbarSupport} trailing={toolbarTrailing} />}
-    rail={<Rail active={activeId} items={mainRailModules.map((item) => item.id === 'workbench' && totalUnread > 0 ? { ...item, marker: String(totalUnread) } : item)} footerItems={footerRailModules} userProfile={profile} onProfile={() => { setSystemSection('profile'); setActiveId('settings') }} onNavigate={setActiveId} />}
+    toolbar={<Toolbar title={activeId === 'workbench' ? selectedConversation?.title ?? '消息' : activeId === 'team' ? teamView === 'recruitment' ? '招募员工' : teamDirectoryKind === 'groups' ? selectedExpertGroup?.name ?? '专家团' : selectedEmployee?.name ?? 'Agent 员工' : activeId === 'resources' ? selectedResource?.name ?? '能力目录' : activeId === 'connections' ? '连接' : systemSections.find((item) => item.id === systemSection)?.label ?? '系统'} icon={activeModule.icon} navigation={<IconButton label={contextCollapsed ? '展开左侧栏' : '折叠左侧栏'} icon={contextCollapsed ? NavArrowRight : NavArrowLeft} onClick={() => setContextCollapsed((value) => !value)} />} support={toolbarSupport} trailing={toolbarTrailing} />}
+    rail={<Rail active={activeId} items={mainRailModules.map((item) => item.id === 'workbench' && totalUnread > 0 ? { ...item, marker: String(totalUnread) } : item)} footerItems={footerRailModules} userProfile={profile} onProfile={() => { setConnectionModalOpen(false); setSystemSection('profile'); setActiveId('settings') }} onNavigate={(id) => { if (id !== 'connections') setConnectionModalOpen(false); setActiveId(id) }} />}
     context={context}
-  >{activeId === 'workbench' ? selectedConversationId ? <Workbench runtimeStatus={runtimeStatus} providerStatus={providerStatus} conversationId={selectedConversationId} user={userIdentity(profile.name, profile.avatarUrl)} supervisor={supervisorIdentity(supervisor)} matterSidebarCollapsed={matterSidebarCollapsed} onDataChanged={() => { void refreshConversationData() }} /> : <div className="runtime-empty-state"><h2>正在读取会话</h2></div> : activeId === 'team' ? teamView === 'recruitment' ? <RecruitmentCatalog employees={employees} /> : <TeamModule selectedEmployeeId={selectedEmployeeId} skills={resourceCatalog.skills} providerStatus={providerStatus} createRequest={employeeCreateRequest} editRequest={employeeEditRequest} onEmployeesChanged={(items) => { setEmployees(items); setSelectedEmployeeId((current) => current ?? items[0]?.id) }} onSelectEmployee={setSelectedEmployeeId} onEditEmployee={() => setEmployeeEditRequest((value) => value + 1)} /> : activeId === 'resources' ? <ResourceModule catalog={resourceCatalog} kind={resourceKind} selectedId={selectedResourceId} probing={probingResources} error={resourceError} onProbe={() => void probeResources()} onOpenEmployee={(employeeId) => { setSelectedEmployeeId(employeeId); setTeamView('directory'); setActiveId('team') }} /> : activeId === 'connections' ? <ConnectionsCatalog /> : <SystemModule section={systemSection} providerStatus={providerStatus} runtimeStatus={runtimeStatus} resourceCatalog={resourceCatalog} supervisor={supervisor} onReconnect={reconnect} onProbeResources={probeResources} onProfileChange={setProfile} onSupervisorChange={setSupervisor} onProviderStatusChange={setProviderStatus} />}</AppShell><ClientModal open={agentEntryOpen} title="新建 Agent" size="small" onClose={() => setAgentEntryOpen(false)}><div className="agent-entry-choice"><p>选择员工加入方式</p><div className="agent-entry-choice__options"><button type="button" onClick={() => { setAgentEntryOpen(false); setTeamView('recruitment') }}><span className="agent-entry-choice__icon"><Community aria-hidden /></span><span><strong>招募员工</strong><small>浏览员工库中的不同类型员工</small></span><NavArrowRight aria-hidden /></button><button type="button" onClick={() => { setAgentEntryOpen(false); setTeamView('directory'); setEmployeeCreateRequest((value) => value + 1) }}><span className="agent-entry-choice__icon"><UserPlus aria-hidden /></span><span><strong>创建员工</strong><small>自定义身份、提示词、模型与能力</small></span><NavArrowRight aria-hidden /></button></div></div></ClientModal><ClientModal open={resourceInfoOpen} title="能力目录信息" eyebrow={<span className="quiet-meta">只读目录</span>} size="medium" onClose={() => setResourceInfoOpen(false)}><div className="detail-browser-content"><div className="detail-browser-intro"><h3>Runtime 能力目录</h3><p>客户端只展示 Runtime 已注册的不可变 Skill 与 Tool 版本，不在本地复制或改写能力事实。</p></div><section><div className="content-section-title"><h3>当前目录</h3><span>{resourceCatalog.skills.length + resourceCatalog.tools.length} 项</span></div><div className="detail-data-list"><div className="detail-data-row"><span><strong>Skills</strong><small>结构化步骤与 Tool 依赖</small></span><em>{resourceCatalog.skills.length}</em></div><div className="detail-data-row"><span><strong>Tools</strong><small>副作用、权限与健康状态</small></span><em>{resourceCatalog.tools.length}</em></div><div className="detail-data-row"><span><strong>健康检查</strong><small>由 Runtime 数据源探测提供</small></span><em>{resourceCatalog.healthChecks.length}</em></div></div></section><div className="resource-boundary">运行中的事项始终使用已冻结的能力版本；目录更新不会静默覆盖历史执行事实。</div></div></ClientModal></ClientIconSystem>
+  >{activeId === 'workbench' ? selectedConversationId ? <Workbench runtimeStatus={runtimeStatus} providerStatus={providerStatus} conversationId={selectedConversationId} user={userIdentity(profile.name, profile.avatarUrl)} supervisor={supervisorIdentity(supervisor)} matterSidebarCollapsed={matterSidebarCollapsed} initialDraft={conversationDraftSeed?.conversationId === selectedConversationId ? conversationDraftSeed.text : undefined} onInitialDraftConsumed={() => setConversationDraftSeed(undefined)} onDataChanged={() => { void refreshConversationData() }} /> : <div className="runtime-empty-state"><h2>正在读取会话</h2></div> : activeId === 'team' ? teamView === 'recruitment' ? <RecruitmentCatalog employees={employees} expertGroups={expertGroups} skills={resourceCatalog.skills} initialKind={recruitmentKind} onEnterConversation={enterRecruitmentConversation} /> : teamDirectoryKind === 'groups' ? <ExpertGroupModule group={selectedExpertGroup} onGroupsChanged={(items) => { setExpertGroups(items); setSelectedExpertGroupId(items[0]?.id) }} /> : <TeamModule selectedEmployeeId={selectedEmployeeId} skills={resourceCatalog.skills} providerStatus={providerStatus} createRequest={employeeCreateRequest} editRequest={employeeEditRequest} onEmployeesChanged={(items) => { setEmployees(items); setSelectedEmployeeId((current) => current && items.some((employee) => employee.id === current) ? current : items[0]?.id) }} onSelectEmployee={setSelectedEmployeeId} onEditEmployee={() => setEmployeeEditRequest((value) => value + 1)} /> : activeId === 'resources' ? <ResourceModule catalog={resourceCatalog} kind={resourceKind} selectedId={selectedResourceId} loading={resourceCatalogLoading} probing={probingResources} error={resourceError} onProbe={() => void probeResources()} onOpenEmployee={(employeeId) => { setSelectedEmployeeId(employeeId); setTeamDirectoryKind('experts'); setTeamView('directory'); setActiveId('team') }} /> : activeId === 'connections' ? <ConnectionsCatalog feishuStatus={feishuStatus} loading={connectionStatusLoading} modalOpen={connectionModalOpen} onModalOpenChange={setConnectionModalOpen} onStatusChange={handleFeishuStatusChange} /> : <SystemModule section={systemSection} providerStatus={providerStatus} runtimeStatus={runtimeStatus} resourceCatalog={resourceCatalog} supervisor={supervisor} onReconnect={reconnect} onProbeResources={probeResources} onProfileChange={setProfile} onSupervisorChange={setSupervisor} onProviderStatusChange={setProviderStatus} />}</AppShell><ClientModal open={agentEntryOpen} title="招募" size="small" onClose={() => setAgentEntryOpen(false)}><div className="agent-entry-choice"><p>选择专家加入方式</p><div className="agent-entry-choice__options"><button type="button" onClick={() => { setAgentEntryOpen(false); setRecruitmentKind('experts'); setTeamView('recruitment') }}><span className="agent-entry-choice__icon"><Community aria-hidden /></span><span><strong>招募专家</strong><small>浏览专家与专家团候选目录</small></span><NavArrowRight aria-hidden /></button><button type="button" onClick={() => { setAgentEntryOpen(false); setTeamDirectoryKind('experts'); setTeamView('directory'); setEmployeeCreateRequest((value) => value + 1) }}><span className="agent-entry-choice__icon"><UserPlus aria-hidden /></span><span><strong>创建专家</strong><small>自定义身份、提示词、模型与能力</small></span><NavArrowRight aria-hidden /></button></div></div></ClientModal><ClientModal open={resourceInfoOpen} title="能力目录信息" eyebrow={<span className="quiet-meta">只读目录</span>} size="medium" onClose={() => setResourceInfoOpen(false)}><div className="detail-browser-content"><div className="detail-browser-intro"><h3>Runtime 能力目录</h3><p>客户端只展示 Runtime 已注册的不可变 Skill 与 Tool 版本，不在本地复制或改写能力事实。</p></div><section><div className="content-section-title"><h3>当前目录</h3><span>{resourceCatalog.skills.length + resourceCatalog.tools.length} 项</span></div><div className="detail-data-list"><div className="detail-data-row"><span><strong>Skills</strong><small>结构化步骤与 Tool 依赖</small></span><em>{resourceCatalog.skills.length}</em></div><div className="detail-data-row"><span><strong>Tools</strong><small>副作用、权限与健康状态</small></span><em>{resourceCatalog.tools.length}</em></div><div className="detail-data-row"><span><strong>健康检查</strong><small>由 Runtime 数据源探测提供</small></span><em>{resourceCatalog.healthChecks.length}</em></div></div></section><div className="resource-boundary">运行中的事项始终使用已冻结的能力版本；目录更新不会静默覆盖历史执行事实。</div></div></ClientModal></ClientIconSystem>
 }

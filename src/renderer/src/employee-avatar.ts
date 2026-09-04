@@ -1,6 +1,7 @@
 import networkIntelligenceAvatar from './assets/employee-avatars/network-intelligence.png'
 import tenderAnalystAvatar from './assets/employee-avatars/tender-analyst.png'
 import documentWriterAvatar from './assets/employee-avatars/document-writer.png'
+import feishuResearcherAvatar from './assets/employee-avatars/feishu-researcher.png'
 import supervisorAvatar from './assets/employee-avatars/supervisor.png'
 
 export function supervisorIdentity(configuration?: { name?: string; avatarDataUrl?: string }): { name: string; initials: string; color: string; avatarSrc: string } {
@@ -21,7 +22,8 @@ export function userIdentity(name: string, avatarSrc?: string | null): { name: s
 const employeeAvatars: Record<string, string> = {
   'employee.network-intelligence': networkIntelligenceAvatar,
   'employee.tender-analyst': tenderAnalystAvatar,
-  'employee.document-writer': documentWriterAvatar
+  'employee.document-writer': documentWriterAvatar,
+  'employee.feishu-researcher': feishuResearcherAvatar
 }
 
 export function employeeAvatarSrc({ employeeId, avatarDataUrl }: { employeeId?: string; avatarDataUrl?: string }): string | undefined {

@@ -1,4 +1,4 @@
-import type { AttachmentBridge, ConversationBridge, EmployeeBridge, MemoryBridge, ProviderBridge, ResourceBridge, RuntimeBridge, SupervisorBridge, TaskBridge, UsageBridge } from '../../shared/runtime-contract'
+import type { AttachmentBridge, ConversationBridge, EmployeeBridge, ExpertGroupBridge, MemoryBridge, ProviderBridge, ResourceBridge, RuntimeBridge, SupervisorBridge, TaskBridge, UsageBridge } from '../../shared/runtime-contract'
 import type { ConnectionBridge } from '../../shared/connection-contract'
 
 declare global {
@@ -10,6 +10,7 @@ declare global {
       attachment: AttachmentBridge
       supervisor: SupervisorBridge
       employee: EmployeeBridge
+      expertGroup: ExpertGroupBridge
       task: TaskBridge
       resource: ResourceBridge
       memory: MemoryBridge
