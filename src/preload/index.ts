@@ -76,6 +76,7 @@ const taskBridge: TaskBridge = Object.freeze({
   createDraft: (input: TaskDraftInputView) => ipcRenderer.invoke(TASK_IPC.createDraft, { input }),
   updateDraft: (draftId: string, changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds' | 'directories'>) => ipcRenderer.invoke(TASK_IPC.updateDraft, { draftId, changes }),
   start: (draftId: string) => ipcRenderer.invoke(TASK_IPC.start, { draftId }),
+  retry: (taskId: string) => ipcRenderer.invoke(TASK_IPC.retry, { taskId }),
   requestChange: (taskId: string, sourceMessageId: string, requestedDiff: Record<string, unknown>) => ipcRenderer.invoke(TASK_IPC.requestChange, { taskId, sourceMessageId, requestedDiff }),
   acceptChange: (changeRequestId: string, changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds' | 'directories'>) => ipcRenderer.invoke(TASK_IPC.acceptChange, { changeRequestId, changes }),
   rejectChange: (changeRequestId: string) => ipcRenderer.invoke(TASK_IPC.rejectChange, { changeRequestId }),

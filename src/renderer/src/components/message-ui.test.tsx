@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ChatMessage, MarkdownMessage, MatterRouteNote, MessageAttachmentGroup } from './message-ui'
+import { ChatContentBlock, ChatMessage, MarkdownMessage, MatterRouteNote, MessageAttachmentGroup, TimelineSummary } from './message-ui'
 
 describe('message UI contracts', () => {
   afterEach(() => vi.restoreAllMocks())
@@ -22,6 +22,12 @@ describe('message UI contracts', () => {
     fireEvent.click(screen.getByRole('button', { name: '更改' }))
     fireEvent.click(screen.getByRole('button', { name: '创建新事项草稿' }))
     expect(onCreateMatter).toHaveBeenCalledOnce()
+  })
+
+  it('does not offer a duplicate matter for a message that already created its own matter', () => {
+    render(<MatterRouteNote title="客户材料分析" mode="created" onOpenMatter={vi.fn()} onCreateMatter={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: '更改' }))
+    expect(screen.queryByRole('button', { name: '创建新事项草稿' })).not.toBeInTheDocument()
   })
 
   it('reuses one accessible attachment menu for open and reveal interactions', () => {
@@ -73,5 +79,30 @@ describe('message UI contracts', () => {
     expect(container.querySelector('.message-block')).toHaveClass('message-block--timeline', 'message-stream-item')
     expect(container.querySelector('.message-bubble__status')).toHaveTextContent('阶段完成')
     expect(container.querySelector('.message-block--progress')).toBeNull()
+  })
+
+  it('renders legacy markdown assignment summaries as regular plain timeline text', () => {
+    const { container } = render(<TimelineSummary>{'## 研究范围与结论摘要 **研究任务：** 交叉核验。 | 通道 | 结果 | |---|---| | agent-reach.search | 5 条 |'}</TimelineSummary>)
+    const summary = container.querySelector('.chat-content__summary')
+
+    expect(summary).toHaveTextContent('研究范围与结论摘要 研究任务： 交叉核验。；通道；结果；agent-reach.search；5 条')
+    expect(summary?.closest('.chat-content')).toHaveClass('chat-content--timeline')
+    expect(container.querySelector('h2')).toBeNull()
+  })
+
+  it('renders one structured chat content contract for timeline and delivery messages', () => {
+    const content = { schemaVersion: 1 as const, title: '公开信息核验完成', summary: '已形成可追溯结论。', metrics: [{ label: '来源', value: '11' }, { label: '结论', value: '5' }], detail: { label: '查看研究说明', content: '查询结果。\n冲突明细。\n\n补充结论。' } }
+    const { rerender } = render(<ChatContentBlock content={content} />)
+    expect(screen.getByText('公开信息核验完成')).toHaveClass('chat-content__title')
+    expect(screen.getByLabelText('内容概况')).toHaveTextContent('11来源5结论')
+    fireEvent.click(screen.getByRole('button', { name: /查看研究说明/ }))
+    const detailParagraphs = document.querySelectorAll('.chat-content__detail-body p')
+    expect(detailParagraphs).toHaveLength(2)
+    expect(detailParagraphs[0].textContent).toBe('查询结果。\n冲突明细。')
+    expect(detailParagraphs[1]).toHaveTextContent('补充结论。')
+    expect(screen.getByRole('button', { name: /收起详情/ })).toHaveAttribute('aria-expanded', 'true')
+
+    rerender(<ChatContentBlock content={content} variant="delivery" />)
+    expect(screen.getByText('公开信息核验完成').closest('.chat-content')).toHaveClass('chat-content--delivery')
   })
 })

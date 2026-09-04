@@ -1,3 +1,5 @@
+import type { ChatContentView } from '../shared/chat-content-contract'
+
 export const RUNTIME_SCHEMA_VERSION = 1 as const
 
 export type EntityType =
@@ -159,6 +161,8 @@ export interface BudgetSnapshot {
 
 export interface Task extends VersionedEntity {
   conversationId: string
+  /** Stable, presentation-safe matter name. Optional only for legacy persisted tasks. */
+  title?: string
   state: TaskState
   activeRevisionId?: string
   activeRunId?: string
@@ -166,6 +170,8 @@ export interface Task extends VersionedEntity {
 
 export interface ResourceScope {
   directories: string[]
+  /** Exact Runtime-managed source files granted for read-only analysis. */
+  files?: string[]
   toolVersionIds: string[]
   modelConfigIds: string[]
   memoryScopes: string[]
@@ -178,6 +184,8 @@ export interface TaskDraft extends VersionedEntity {
   conversationId: string
   sourceMessageIds: string[]
   attachments: MessageAttachmentReference[]
+  /** Stable, presentation-safe matter name. Optional only for legacy persisted drafts. */
+  title?: string
   goal: string
   acceptanceCriteria: string[]
   employeeVersionIds: string[]
@@ -230,12 +238,37 @@ export interface Assignment extends VersionedEntity {
   state: 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled'
   providerRequestId?: string
   output?: string
+  draftContent?: string
   summary?: string
+  presentation?: ChatContentView
   completedAt?: string
   toolActionIds?: string[]
   awaitingToolActionId?: string
   reworkOfAssignmentId?: string
   invalidToolProposalCount?: number
+  continuationCount?: number
+  continuationBoundaryLength?: number
+  contextEnvelope?: {
+    schemaVersion: 1
+    purpose: 'assignment_context'
+    manifestSha256: string
+    sourceCharacterCount: number
+    summary: string
+    summarySha256: string
+    sourceRefs: Array<{ handoffId: string; fromAssignmentId: string; sha256: string }>
+  }
+  sourceBatchState?: {
+    purpose: 'tender_analysis' | 'assignment_context'
+    phase: 'map' | 'reduce' | 'final'
+    round: number
+    manifestSha256: string
+    sourceCharacterCount: number
+    inputs: string[]
+    inputSha256s: string[]
+    nextIndex: number
+    outputs: string[]
+    sourceRefs?: Array<{ handoffId: string; fromAssignmentId: string; sha256: string }>
+  }
 }
 
 export interface Handoff extends VersionedEntity {
@@ -399,6 +432,7 @@ export interface Delivery extends VersionedEntity {
   evidenceIds: string[]
   acceptanceResults: Array<{ criterion: string; passed: boolean; evidenceIds: string[] }>
   unresolvedIssues: string[]
+  presentation?: ChatContentView
 }
 
 export interface RunGrant extends VersionedEntity {
@@ -425,7 +459,7 @@ export interface Checkpoint extends VersionedEntity {
   sequence: number
   assignmentId?: string
   workerThreadId: string
-  phase: 'created' | 'memory_loaded' | 'tool_waiting' | 'employee_completed' | 'deep_agents_safe_pause' | 'manager_review' | 'manager_rework' | 'delivery_committed' | 'shutdown_requested' | 'safe_paused'
+  phase: 'created' | 'memory_loaded' | 'provider_step' | 'tool_waiting' | 'source_batch' | 'employee_completed' | 'deep_agents_safe_pause' | 'manager_review' | 'manager_rework' | 'delivery_committed' | 'shutdown_requested' | 'safe_paused'
   nextNode?: 'employee' | 'manager' | 'delivery'
   committed: true
   unsettledToolActionIds: string[]

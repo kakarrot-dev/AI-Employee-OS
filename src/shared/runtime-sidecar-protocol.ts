@@ -43,6 +43,7 @@ export type RuntimeCommand =
   | { schemaVersion: 1; requestId: string; type: 'task.create_draft'; payload: { input: TaskDraftInput } }
   | { schemaVersion: 1; requestId: string; type: 'task.update_draft'; payload: { draftId: string; changes: Pick<TaskDraftInput, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds' | 'directories'> } }
   | { schemaVersion: 1; requestId: string; type: 'task.start'; payload: { draftId: string } }
+  | { schemaVersion: 1; requestId: string; type: 'task.retry'; payload: { taskId: string } }
   | { schemaVersion: 1; requestId: string; type: 'task.request_change'; payload: { taskId: string; sourceMessageId: string; requestedDiff: Record<string, unknown> } }
   | { schemaVersion: 1; requestId: string; type: 'task.accept_change'; payload: { changeRequestId: string; changes: Pick<TaskDraftInput, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds' | 'directories'> } }
   | { schemaVersion: 1; requestId: string; type: 'task.reject_change'; payload: { changeRequestId: string } }
@@ -86,7 +87,7 @@ export function parseRuntimeCommand(value: unknown): RuntimeCommand {
   const command = value as Partial<RuntimeCommand>
   if (command.schemaVersion !== SIDECAR_PROTOCOL_VERSION) throw new Error('unsupported_schema_version')
   if (typeof command.requestId !== 'string' || !command.requestId) throw new Error('invalid_request_id')
-  if (!['health', 'recover', 'shutdown.prepare', 'events.after', 'conversation.list', 'conversation.create', 'conversation.archive', 'conversation.send', 'conversation.history', 'conversation.cancel', 'supervisor.get', 'supervisor.update', 'employee.list', 'employee.capabilities', 'employee.detail', 'employee.create', 'employee.begin_edit', 'employee.save_draft', 'employee.test_case.add', 'employee.test.run', 'employee.test.confirm', 'employee.publish', 'employee.rollback', 'employee.disable', 'employee.archive', 'employee.restore', 'employee.delete', 'task.list', 'task.create_draft', 'task.update_draft', 'task.start', 'task.request_change', 'task.accept_change', 'task.reject_change', 'resource.list', 'resource.probe', 'usage.summary', 'tool.approve', 'tool.reject', 'tool.resolve_unknown', 'memory.status', 'memory.model.download', 'memory.list', 'memory.search', 'memory.update', 'memory.disable', 'memory.restore', 'memory.resolve_conflict', 'memory.delete', 'memory.queue.list', 'memory.queue.accept', 'memory.queue.dismiss', 'memory.embeddings.migrate', 'provider.event', 'provider.failed'].includes(String(command.type))) throw new Error('unknown_command')
+  if (!['health', 'recover', 'shutdown.prepare', 'events.after', 'conversation.list', 'conversation.create', 'conversation.archive', 'conversation.send', 'conversation.history', 'conversation.cancel', 'supervisor.get', 'supervisor.update', 'employee.list', 'employee.capabilities', 'employee.detail', 'employee.create', 'employee.begin_edit', 'employee.save_draft', 'employee.test_case.add', 'employee.test.run', 'employee.test.confirm', 'employee.publish', 'employee.rollback', 'employee.disable', 'employee.archive', 'employee.restore', 'employee.delete', 'task.list', 'task.create_draft', 'task.update_draft', 'task.start', 'task.retry', 'task.request_change', 'task.accept_change', 'task.reject_change', 'resource.list', 'resource.probe', 'usage.summary', 'tool.approve', 'tool.reject', 'tool.resolve_unknown', 'memory.status', 'memory.model.download', 'memory.list', 'memory.search', 'memory.update', 'memory.disable', 'memory.restore', 'memory.resolve_conflict', 'memory.delete', 'memory.queue.list', 'memory.queue.accept', 'memory.queue.dismiss', 'memory.embeddings.migrate', 'provider.event', 'provider.failed'].includes(String(command.type))) throw new Error('unknown_command')
   if (!command.payload || typeof command.payload !== 'object' || Array.isArray(command.payload)) throw new Error('invalid_payload')
   if (command.type === 'events.after') {
     const payload = command.payload as { sequence?: unknown; limit?: unknown }
@@ -121,6 +122,7 @@ export function parseRuntimeCommand(value: unknown): RuntimeCommand {
     if (command.type === 'task.create_draft') {
       if (!(command.payload as { input?: unknown }).input || typeof (command.payload as { input?: unknown }).input !== 'object') throw new Error('invalid_task_input')
     } else if ((command.type === 'task.update_draft' || command.type === 'task.start') && typeof (command.payload as { draftId?: unknown }).draftId !== 'string') throw new Error('invalid_task_draft_id')
+    else if (command.type === 'task.retry' && typeof (command.payload as { taskId?: unknown }).taskId !== 'string') throw new Error('invalid_task_id')
   } else if (String(command.type).startsWith('tool.')) {
     const payload = command.payload as { actionId?: unknown; outcome?: unknown; evidence?: unknown }
     if (typeof payload.actionId !== 'string') throw new Error('invalid_tool_action_id')

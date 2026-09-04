@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MemoryViewModel } from '../../shared/memory-contract'
-import { App, buildFriendlyTimeline, identityAwareConversationPreview, selectActiveTask } from './App'
+import { App, buildFriendlyTimeline, coalesceMatterCards, identityAwareConversationPreview, selectActiveTask } from './App'
 
 describe('App shell', () => {
   it('shows the latest terminal matter when no matter is still active', () => {
@@ -9,6 +9,29 @@ describe('App shell', () => {
     expect(selectActiveTask(completedTasks)?.id).toBe('latest-success')
     const withActiveTask = [{ id: 'latest-success', state: 'succeeded' }, { id: 'active', state: 'running' }] as unknown as Parameters<typeof selectActiveTask>[0]
     expect(selectActiveTask(withActiveTask)?.id).toBe('active')
+  })
+
+  it('projects one card per matter lifecycle and keeps the latest retry state', () => {
+    const failed = { id: 'task-1', taskId: 'task-1', draftId: 'draft-1', sourceMessageIds: ['message-1'], state: 'failed', createdAt: '2026-09-03T01:00:00Z', timeline: [] }
+    const retried = { ...failed, state: 'running', runId: 'run-retry', timeline: [{ phase: 'created', createdAt: '2026-09-03T01:01:00Z' }] }
+    const duplicateCreatedByLegacyRetry = { ...failed, id: 'task-duplicate', taskId: 'task-duplicate', draftId: 'draft-duplicate', state: 'succeeded', createdAt: '2026-09-03T01:02:00Z' }
+    const other = { id: 'task-2', taskId: 'task-2', draftId: 'draft-2', sourceMessageIds: ['message-2'], state: 'running', createdAt: '2026-09-03T01:03:00Z', timeline: [] }
+
+    const cards = coalesceMatterCards([duplicateCreatedByLegacyRetry, retried, failed, other] as unknown as Parameters<typeof coalesceMatterCards>[0])
+
+    expect(cards).toHaveLength(2)
+    expect(cards[0]).toMatchObject({ taskId: 'task-1', runId: 'run-retry', state: 'running' })
+  })
+
+  it('coalesces legacy duplicate cards when a repaired revision bridges their source messages', () => {
+    const original = { id: 'task-original', taskId: 'task-original', draftId: 'draft-original', sourceMessageIds: ['message-original'], state: 'failed', createdAt: '2026-09-03T01:00:00Z', timeline: [] }
+    const followup = { id: 'task-followup', taskId: 'task-followup', draftId: 'draft-followup', sourceMessageIds: ['message-followup'], state: 'failed', createdAt: '2026-09-03T01:01:00Z', timeline: [] }
+    const repaired = { ...followup, sourceMessageIds: ['message-followup', 'message-original'], state: 'running', runId: 'run-repaired', timeline: [{ phase: 'created', createdAt: '2026-09-03T01:02:00Z' }] }
+
+    const cards = coalesceMatterCards([original, followup, repaired] as unknown as Parameters<typeof coalesceMatterCards>[0])
+
+    expect(cards).toHaveLength(1)
+    expect(cards[0]).toMatchObject({ taskId: 'task-followup', runId: 'run-repaired', state: 'running' })
   })
 
   it('projects the current user and supervisor names into conversation previews', () => {
@@ -94,6 +117,7 @@ describe('App shell', () => {
         createDraft: vi.fn(),
         updateDraft: vi.fn(),
         start: vi.fn(),
+        retry: vi.fn(),
         requestChange: vi.fn(),
         acceptChange: vi.fn(),
         rejectChange: vi.fn(),
@@ -337,7 +361,7 @@ describe('App shell', () => {
     fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
     expect(await screen.findByText('客户需求.pdf')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '发送' }))
-    await waitFor(() => expect(window.aiEmployeeOS.conversation.send).toHaveBeenCalledWith('local-supervisor', '请分析这些客户招投标材料，并交给文档编写员形成可验收的响应文档。', ['/Users/kakarrot/Downloads'], ['attachment-1']))
+    await waitFor(() => expect(window.aiEmployeeOS.conversation.send).toHaveBeenCalledWith('local-supervisor', '请先阅读这些附件的实际内容，再根据我的目标选择合适的员工处理。', ['/Users/kakarrot/Downloads'], ['attachment-1']))
   })
 
   it('imports files dropped onto the composer through the managed attachment bridge', async () => {
@@ -585,7 +609,7 @@ describe('App shell', () => {
   it('renders real matter approval and delivery states and sends the decision through Runtime', async () => {
     const task = {
       id: 'task-view-1', conversationId: 'local-supervisor', createdAt: '2026-08-31T07:59:01Z', sourceMessageIds: ['message-1'], taskId: 'task-1', draftId: 'draft-1', state: 'needs_attention' as const,
-      goal: '生成市场研究报告', acceptanceCriteria: ['关键结论可追溯'], employeeVersionIds: ['employee-version.network-intelligence.v2'], directories: [], draftRevision: 1, frozenRevision: 1, runId: 'run-1',
+      title: '生成市场研究报告', goal: '生成市场研究报告', acceptanceCriteria: ['关键结论可追溯'], employeeVersionIds: ['employee-version.network-intelligence.v2'], directories: [], draftRevision: 1, frozenRevision: 1, runId: 'run-1',
       assignments: [{ id: 'assignment-1', sequence: 1, employeeId: 'employee.network-intelligence', employeeVersionId: 'employee-version.network-intelligence.v2', employeeName: '网络情报员', employeeRole: '公开信息调研', createdAt: '2026-08-31T07:59:02Z', completedAt: '2026-08-31T08:00:00Z', state: 'succeeded' as const, summary: '已完成调研并提交报告。' }],
       timeline: [{ phase: 'research', nextNode: 'approval', createdAt: '2026-08-31T08:00:00Z' }],
       delivery: { id: 'delivery-1', summary: '验收通过', result: '已完成调研并提交报告。', createdAt: '2026-08-31T08:00:01Z', acceptanceResults: [{ criterion: '关键结论可追溯', passed: true }], artifacts: [{ id: 'artifact-1', mediaType: 'text/markdown', relativePath: 'report.md', sha256: '1234567890abcdef' }], evidenceCount: 4, unresolvedIssues: [] },
@@ -595,7 +619,7 @@ describe('App shell', () => {
     }
     const previousTask = {
       ...task,
-      id: 'task-view-2', taskId: 'task-2', draftId: 'draft-2', runId: 'run-2', state: 'failed' as const, goal: '复核竞争对手信息', delivery: undefined,
+      id: 'task-view-2', sourceMessageIds: ['message-previous'], taskId: 'task-2', draftId: 'draft-2', runId: 'run-2', state: 'failed' as const, title: '复核竞争对手信息', goal: '复核竞争对手信息', delivery: undefined,
       assignments: [{ ...task.assignments[0], id: 'assignment-2', summary: '历史执行未完成。' }],
       timeline: [{ phase: 'failed', createdAt: '2026-08-31T07:58:00Z' }],
       toolActions: [], approvals: []
@@ -609,7 +633,8 @@ describe('App shell', () => {
     expect(screen.queryByRole('tab', { name: /事项/ })).not.toBeInTheDocument()
     expect(await screen.findAllByRole('button', { name: /^定位事项：/ })).toHaveLength(2)
     expect(screen.getAllByRole('button', { name: /^查看事项：/ })).toHaveLength(2)
-    expect(screen.getAllByRole('heading', { name: '生成市场研究报告', level: 3 })).toHaveLength(1)
+    expect(screen.queryByRole('heading', { name: '生成市场研究报告', level: 3 })).not.toBeInTheDocument()
+    expect(screen.getByText('交付结果已完成')).toHaveClass('chat-content__title')
     expect(document.querySelector('.runtime-matter-card')).not.toBeInTheDocument()
     expect(screen.getByText('已创建事项')).toBeInTheDocument()
     const currentMatterCard = screen.getByRole('button', { name: '查看事项：生成市场研究报告' })
@@ -626,13 +651,14 @@ describe('App shell', () => {
     expect(within(deliveryMessage as HTMLElement).getByText('总管')).toBeInTheDocument()
     expect(within(deliveryMessage as HTMLElement).getByText('已交付')).toBeInTheDocument()
     expect(document.querySelector('.delivery-card')).toBeNull()
-    expect(document.querySelector('.message-delivery__eyebrow')).toHaveTextContent('结果')
+    expect(document.querySelector('.message-delivery__eyebrow')).toBeNull()
     expect(screen.getByText('验收通过')).toBeInTheDocument()
     expect(screen.getByLabelText('交付概况')).toHaveTextContent('1/1完成要求4来源证据1交付文件')
     fireEvent.click(screen.getByRole('button', { name: '定位事项：生成市场研究报告' }))
     expect(screen.getByRole('button', { name: '查看事项：生成市场研究报告' })).toHaveFocus()
     fireEvent.click(screen.getByRole('button', { name: '查看事项：生成市场研究报告' }))
     expect(screen.getByRole('dialog', { name: '生成市场研究报告' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '事项目标' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '关闭' }))
     fireEvent.click(screen.getByRole('button', { name: '打开方式 report.md' }))
     fireEvent.click(screen.getByRole('menuitem', { name: /使用系统默认应用打开/ }))
@@ -647,10 +673,30 @@ describe('App shell', () => {
     expect(screen.queryByRole('button', { name: /^定位事项：/ })).not.toBeInTheDocument()
   })
 
+  it('shows acceptance results without repeating the execution timeline for a completed matter', async () => {
+    const task = {
+      id: 'task-complete', conversationId: 'local-supervisor', createdAt: '2026-09-03T01:00:00Z', sourceMessageIds: ['message-complete'], taskId: 'task-complete', draftId: 'draft-complete', state: 'succeeded' as const,
+      title: '客户材料分析报告', goal: '完整分析客户材料并形成可追溯的结构化报告', acceptanceCriteria: ['报告内容可追溯'], employeeVersionIds: ['employee-version.tender-analyst.v2'], directories: [], draftRevision: 1, frozenRevision: 1, runId: 'run-complete',
+      assignments: [], timeline: [{ phase: 'created', nextNode: 'employee', createdAt: '2026-09-03T01:00:01Z' }, { phase: 'delivered', nextNode: 'end', createdAt: '2026-09-03T01:01:00Z' }],
+      delivery: { id: 'delivery-complete', summary: '验收通过', createdAt: '2026-09-03T01:01:00Z', acceptanceResults: [{ criterion: '报告内容可追溯', passed: true }], artifacts: [], evidenceCount: 3, unresolvedIssues: [] },
+      researchBundles: [], toolActions: [], approvals: []
+    }
+    vi.mocked(window.aiEmployeeOS.conversation.history).mockResolvedValue([{ id: 'message-complete', role: 'user', content: '分析客户材料', createdAt: '2026-09-03T01:00:00Z' }])
+    vi.mocked(window.aiEmployeeOS.task.list).mockResolvedValue([task])
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: '查看事项：客户材料分析报告' }))
+    const dialog = screen.getByRole('dialog', { name: '客户材料分析报告' })
+
+    expect(within(dialog).getByRole('heading', { name: '验收结果' })).toBeInTheDocument()
+    expect(within(dialog).queryByRole('heading', { name: '执行进度' })).not.toBeInTheDocument()
+    expect(within(dialog).getByText('完整分析客户材料并形成可追溯的结构化报告')).toBeInTheDocument()
+  })
+
   it('shows joined employees and their live progress replies in the conversation timeline', async () => {
     const task = {
       id: 'task-live', conversationId: 'local-supervisor', createdAt: '2026-09-02T01:00:01Z', sourceMessageIds: ['message-live'], taskId: 'task-live', draftId: 'draft-live', state: 'running' as const,
-      goal: '调研学校新闻并整理文档', acceptanceCriteria: ['来源可追溯'], employeeVersionIds: ['employee-network', 'employee-writer'], directories: ['/tmp/reports'], draftRevision: 1, frozenRevision: 1, runId: 'run-live',
+      title: '学校新闻调研文档', goal: '调研学校新闻并整理文档', acceptanceCriteria: ['来源可追溯'], employeeVersionIds: ['employee-network', 'employee-writer'], directories: ['/tmp/reports'], draftRevision: 1, frozenRevision: 1, runId: 'run-live',
       assignments: [
         { id: 'assignment-network', sequence: 1, employeeVersionId: 'employee-network', employeeName: '网络情报员', employeeRole: '多源公开信息调研', createdAt: '2026-09-02T01:00:02Z', completedAt: '2026-09-02T01:05:00Z', state: 'succeeded' as const, summary: '已完成多源检索，并将来源交接给文档编写员。' },
         { id: 'assignment-writer', sequence: 2, employeeVersionId: 'employee-writer', employeeName: '文档编写员', employeeRole: '本机文档写入', createdAt: '2026-09-02T01:00:02Z', state: 'running' as const, summary: '正在整理 Markdown 结构和来源索引。' }
@@ -673,7 +719,7 @@ describe('App shell', () => {
   it('starts a legacy draft in the fixed Downloads directory without a picker', async () => {
     const draftTask = {
       id: 'draft-routed', conversationId: 'local-supervisor', draftId: 'draft-routed', state: 'draft' as const,
-      goal: '调研学校最新新闻并整理成文档', acceptanceCriteria: ['来源可追溯', '文件可回读'], employeeVersionIds: ['employee-version.network-intelligence.v1', 'employee-version.document-writer.v1'], directories: [], requiresDirectories: true, draftRevision: 1,
+      title: '学校新闻调研文档', goal: '调研学校最新新闻并整理成文档', acceptanceCriteria: ['来源可追溯', '文件可回读'], employeeVersionIds: ['employee-version.network-intelligence.v1', 'employee-version.document-writer.v1'], directories: [], requiresDirectories: true, draftRevision: 1,
       assignments: [], timeline: [], researchBundles: [], toolActions: [], approvals: []
     }
     vi.mocked(window.aiEmployeeOS.runtime.getStatus).mockResolvedValue({ state: 'connected', checkedAt: '2026-09-02T00:00:00Z', message: 'Runtime 已连接' })
@@ -695,7 +741,7 @@ describe('App shell', () => {
   it('does not offer stale Tool approval after a matter has failed', async () => {
     const failedTask = {
       id: 'task-failed', conversationId: 'local-supervisor', taskId: 'task-failed', draftId: 'draft-failed', state: 'failed' as const,
-      goal: '调研并生成文档', acceptanceCriteria: ['来源可追溯'], employeeVersionIds: ['employee-version.network-intelligence.v1'], directories: ['/tmp/reports'], draftRevision: 1, frozenRevision: 1, runId: 'run-failed',
+      title: '调研并生成文档', goal: '调研并生成文档', acceptanceCriteria: ['来源可追溯'], employeeVersionIds: ['employee-version.network-intelligence.v1'], directories: ['/tmp/reports'], draftRevision: 1, frozenRevision: 1, runId: 'run-failed',
       assignments: [{ id: 'assignment-failed', sequence: 1, employeeVersionId: 'employee-version.network-intelligence.v1', state: 'failed' as const }], timeline: [], researchBundles: [],
       toolActions: [{ id: 'action-stale', toolVersionId: 'agent-reach.search@network-intelligence/v1', state: 'pending' as const, parameters: { query: 'x' }, risk: 'low' as const, approvalId: 'approval-stale' }],
       approvals: [{ id: 'approval-stale', toolActionId: 'action-stale', decision: 'pending' as const }]
@@ -706,15 +752,51 @@ describe('App shell', () => {
       { id: 'employee-network', name: '网络情报员', status: 'active', activeVersionId: 'employee-version.network-intelligence.v2', capabilityVersionIds: ['capability.network-intelligence.v2'], activeCapabilityVersionIds: ['capability.network-intelligence.v2'] },
       { id: 'employee-writer', name: '文档编写员', status: 'active', activeVersionId: 'employee-version.document-writer.v2', draftVersionId: 'employee-version.document-writer.v3', capabilityVersionIds: [], activeCapabilityVersionIds: ['capability.local-document.v2'] }
     ])
-    const recreated = { ...failedTask, id: 'draft-recreated', draftId: 'draft-recreated', taskId: undefined, state: 'draft' as const, frozenRevision: undefined, runId: undefined, assignments: [], toolActions: [], approvals: [], requiresDirectories: true }
-    vi.mocked(window.aiEmployeeOS.task.createDraft).mockResolvedValue(recreated)
-    vi.mocked(window.aiEmployeeOS.task.start).mockResolvedValue({ ...recreated, taskId: 'task-recreated', state: 'running', frozenRevision: 1, runId: 'run-recreated' })
+    vi.mocked(window.aiEmployeeOS.task.retry).mockResolvedValue({ ...failedTask, state: 'running', runId: 'run-retried', assignments: [{ ...failedTask.assignments[0], id: 'assignment-retried', state: 'running' as const }], toolActions: [], approvals: [] })
     render(<App />)
-    expect(await screen.findByText('本次执行已失败，原有 Tool 审批已失效，不会继续调用外部工具。')).toBeInTheDocument()
+    const failedMatterCards = await screen.findAllByRole('button', { name: '查看事项：调研并生成文档' })
+    expect(failedMatterCards).toHaveLength(1)
+    expect(within(failedMatterCards[0]).getByText('执行失败')).toBeInTheDocument()
+    expect(await screen.findByText('本次执行已失败；未完成的只读 Tool 已安全终止，结果未知的写入操作需要先核验。')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '批准' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '重新创建事项草稿' }))
-    await waitFor(() => expect(window.aiEmployeeOS.task.createDraft).toHaveBeenCalledWith(expect.objectContaining({ directories: ['/Users/kakarrot/Downloads'], authorizationMode: 'full_access', employeeVersionIds: ['employee-version.network-intelligence.v2', 'employee-version.document-writer.v2'] })))
-    expect(window.aiEmployeeOS.task.start).toHaveBeenCalledWith('draft-recreated')
+    fireEvent.click(screen.getByRole('button', { name: '按原事项重试' }))
+    await waitFor(() => expect(window.aiEmployeeOS.task.retry).toHaveBeenCalledWith('task-failed'))
+    await waitFor(() => {
+      const retriedMatterCards = screen.getAllByRole('button', { name: '查看事项：调研并生成文档' })
+      expect(retriedMatterCards).toHaveLength(1)
+      expect(within(retriedMatterCards[0]).getByText('进行中')).toBeInTheDocument()
+    })
+    expect(window.aiEmployeeOS.task.createDraft).not.toHaveBeenCalled()
+  })
+
+  it('can retry a specifically selected failed matter from its detail instead of the latest matter', async () => {
+    const latest = { id: 'task-latest', conversationId: 'local-supervisor', taskId: 'task-latest', draftId: 'draft-latest', state: 'failed' as const, title: '错误的无附件事项', goal: '错误的无附件事项', acceptanceCriteria: ['网络结果'], employeeVersionIds: ['employee-version.network-intelligence.v2'], directories: ['/Users/kakarrot/Downloads'], draftRevision: 1, frozenRevision: 1, runId: 'run-latest', assignments: [], timeline: [], researchBundles: [], toolActions: [], approvals: [] }
+    const original = { ...latest, id: 'task-original', taskId: 'task-original', draftId: 'draft-original', title: '分析客户 DOCX', goal: '分析客户 DOCX', acceptanceCriteria: ['原文可追溯'], employeeVersionIds: ['employee-version.tender-analyst.v2', 'employee-version.document-writer.v2'], runId: 'run-original' }
+    vi.mocked(window.aiEmployeeOS.runtime.getStatus).mockResolvedValue({ state: 'connected', checkedAt: '2026-09-03T00:00:00Z', message: 'Runtime 已连接' })
+    vi.mocked(window.aiEmployeeOS.conversation.history).mockResolvedValue([{ id: 'message', role: 'user', content: '分析客户资料', createdAt: '2026-09-03T00:00:00Z' }])
+    vi.mocked(window.aiEmployeeOS.task.list).mockResolvedValue([latest, original])
+    vi.mocked(window.aiEmployeeOS.task.retry).mockResolvedValue({ ...original, state: 'running', runId: 'run-original-retry' })
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: '查看事项：分析客户 DOCX' }))
+    const dialog = screen.getByRole('dialog', { name: '分析客户 DOCX' })
+    fireEvent.click(within(dialog).getByRole('button', { name: '按该事项原内容重试' }))
+
+    await waitFor(() => expect(window.aiEmployeeOS.task.retry).toHaveBeenCalledWith('task-original'))
+    expect(window.aiEmployeeOS.task.retry).not.toHaveBeenCalledWith('task-latest')
+  })
+
+  it('does not expose internal IPC errors when a write result must be verified before retry', async () => {
+    const failedTask = { id: 'task-write-unknown', conversationId: 'local-supervisor', taskId: 'task-write-unknown', draftId: 'draft-write-unknown', state: 'failed' as const, title: '生成报告', goal: '生成报告', acceptanceCriteria: ['文件可验证'], employeeVersionIds: ['employee-version.document-writer.v2'], directories: ['/tmp/reports'], draftRevision: 1, frozenRevision: 1, runId: 'run-write-unknown', assignments: [], timeline: [], researchBundles: [], toolActions: [], approvals: [] }
+    vi.mocked(window.aiEmployeeOS.conversation.history).mockResolvedValue([{ id: 'message', role: 'user', content: '生成报告', createdAt: '2026-09-03T00:00:00Z' }])
+    vi.mocked(window.aiEmployeeOS.task.list).mockResolvedValue([failedTask])
+    vi.mocked(window.aiEmployeeOS.task.retry).mockRejectedValue(new Error("Error invoking remote method 'task:retry': Error: unsettled_tool_action"))
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: '按原事项重试' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('该事项存在结果未核实的写入操作，请先在事项详情中确认真实结果后再重试')
+    expect(screen.queryByText(/Error invoking remote method/)).not.toBeInTheDocument()
   })
 
   it('uses the prototype Skills and Tools directory backed by the Runtime catalog', async () => {
@@ -731,6 +813,37 @@ describe('App shell', () => {
     expect(screen.queryByRole('button', { name: 'MCP' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '能力目录信息' }))
     expect(screen.getByRole('dialog', { name: '能力目录信息' })).toHaveTextContent('2 项')
+  })
+
+  it('reloads employees and capabilities when Runtime becomes connected after startup', async () => {
+    let statusListener: Parameters<typeof window.aiEmployeeOS.runtime.onStatusChanged>[0] | undefined
+    const catalog = {
+      skills: [{ id: 'skill-after-connect', createdAt: '2026-09-03T00:00:00Z', name: '连接后恢复的 Skill', description: '由 Runtime 提供', version: 1, steps: ['读取事实'], toolVersionIds: ['tool-after-connect'], instructionsMarkdown: '# 连接后恢复的 Skill', instructionDigest: 'digest-after-connect', available: true }],
+      tools: [{ id: 'tool-after-connect', createdAt: '2026-09-03T00:00:00Z', name: '连接后恢复的 Tool', description: '由 Runtime 提供', version: 1, sideEffect: 'none' as const, risk: 'low' as const, networkOrigins: [], available: true, health: 'available' as const, credentialStatus: 'not_required' as const }],
+      mcps: [],
+      healthChecks: []
+    }
+    vi.mocked(window.aiEmployeeOS.runtime.getStatus).mockResolvedValue({ state: 'connecting', checkedAt: '2026-09-03T00:00:00Z', message: 'Runtime 正在启动' })
+    vi.mocked(window.aiEmployeeOS.runtime.onStatusChanged).mockImplementation((listener) => { statusListener = listener; return () => undefined })
+    vi.mocked(window.aiEmployeeOS.employee.list).mockRejectedValueOnce(new Error('runtime_not_ready')).mockResolvedValue([])
+    vi.mocked(window.aiEmployeeOS.resource.list).mockRejectedValueOnce(new Error('runtime_not_ready')).mockResolvedValue(catalog)
+
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: '能力' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('资源目录读取失败')
+    expect(screen.getByText('Runtime 连接成功后会自动重新读取能力目录。')).toBeInTheDocument()
+    await waitFor(() => expect(window.aiEmployeeOS.resource.list).toHaveBeenCalledTimes(1))
+    const employeeCallsBeforeConnect = vi.mocked(window.aiEmployeeOS.employee.list).mock.calls.length
+
+    act(() => statusListener?.({ state: 'connected', checkedAt: '2026-09-03T00:00:01Z', message: 'Runtime 已连接' }))
+
+    expect(await screen.findByRole('heading', { name: '连接后恢复的 Skill', level: 2 })).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(window.aiEmployeeOS.resource.list).toHaveBeenCalledTimes(2)
+    expect(window.aiEmployeeOS.employee.list).toHaveBeenCalledTimes(employeeCallsBeforeConnect + 1)
+    fireEvent.click(screen.getByRole('button', { name: 'Tools' }))
+    expect(await screen.findByRole('heading', { name: '连接后恢复的 Tool', level: 2 })).toBeInTheDocument()
   })
 
   it('keeps system theme, diagnostics and resource checks interactive', async () => {

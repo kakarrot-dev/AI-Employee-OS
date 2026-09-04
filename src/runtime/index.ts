@@ -17,6 +17,8 @@ import { MemoryService, type MemoryCategory, type MemoryStatus, type MemoryView 
 import { SupervisorRouter } from './supervisor-router'
 import { SupervisorService } from './supervisor-service'
 import { hasResearchCapability, hasTenderAnalysisCapability } from './builtin-contracts'
+import { createAttachmentContentInspector } from './attachment-content-inspector'
+import { nativeImageTextRecognizer } from './tender-document-runner'
 
 function databasePathFromArgs(): string {
   const argument = process.argv.find((value) => value.startsWith('--database='))
@@ -43,7 +45,8 @@ resources.seed()
 const employees = new EmployeeService(kernel)
 employees.seedCapabilities()
 employees.seedRequestedSpecialists()
-const toolGateway = new ToolGateway(kernel, resources, createToolRunner(requiredPathArgument('image-text-extractor')))
+const imageTextExtractorPath = requiredPathArgument('image-text-extractor')
+const toolGateway = new ToolGateway(kernel, resources, createToolRunner(imageTextExtractorPath))
 const research = new ManagedResearchService(kernel, toolGateway)
 const workerPython = requiredPathArgument('worker-python')
 const workerScript = requiredPathArgument('worker-script')
@@ -73,7 +76,7 @@ const tasks = new TaskService(kernel, employees, (request) => memory.search(requ
   const handoff = { schemaVersion: 1, type: 'ResearchHandoff', researchBundleId: bundle.id, contentHash: bundle.contentHash, question: bundle.question, claims: bundle.claims, conflicts: bundle.conflicts, informationGaps: bundle.informationGaps, sources: bundle.items.map((item, index) => ({ index, sourceType: item.sourceType, title: item.title, url: item.url, publishedAt: item.publishedAt, summary: item.summary, contentHash: item.contentHash, trust: item.trust, injectionSignals: item.injectionSignals })), researcherSynthesis: output }
   return { text: JSON.stringify(handoff), researchBundleId: bundle.id }
 }, (detail) => deliveryExporter.materialize(detail), () => supervisor.get())
-const supervisorRouter = new SupervisorRouter(employees, tasks, () => supervisor.get(), (request) => memory.search(request))
+const supervisorRouter = new SupervisorRouter(employees, tasks, () => supervisor.get(), (request) => memory.search(request), createAttachmentContentInspector(nativeImageTextRecognizer(imageTextExtractorPath)))
 
 function enqueueMemorySafely(input: Parameters<MemoryService['enqueueAsync']>[0]): void {
   void memory.enqueueAsync(input).catch(() => { /* memory processing must not fail the primary conversation or task */ })
@@ -186,7 +189,7 @@ parentPort.on('message', async (event) => {
       kernel.save({ entityType: 'Message', entity: userMessage, immutable: true }, 'message.created', { role: 'user' })
       const history = store.list<Message>('Message').filter((message) => message.conversationId === command.payload.conversationId && message.id !== userMessage.id)
       const routeInput = { requestId, conversationId: command.payload.conversationId, sourceMessageId: userMessage.id, text: command.payload.text, history, directories: command.payload.directories, attachments: command.payload.attachments }
-      const supervisorRequest = supervisorRouter.createRequest(routeInput)
+      const supervisorRequest = await supervisorRouter.createRequest(routeInput)
       pendingConversations.set(requestId, { conversationId: routeInput.conversationId, sourceMessageId: routeInput.sourceMessageId, assistantMessageId: randomUUID(), userText: routeInput.text, history, directories: [...routeInput.directories], attachments: routeInput.attachments.map((attachment) => ({ ...attachment })), text: '', provider: supervisorRequest.provider, modelId: supervisorRequest.modelId })
       emit({
         schemaVersion: SIDECAR_PROTOCOL_VERSION,
@@ -332,6 +335,12 @@ parentPort.on('message', async (event) => {
       respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: started })
       return
     }
+    if (command.type === 'task.retry') {
+      const retried = tasks.retryFailedTask(command.payload.taskId)
+      emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: retried.request.requestId, request: retried.request })
+      respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: retried })
+      return
+    }
     if (command.type === 'task.request_change') {
       const change = tasks.requestChange(command.payload.taskId, command.payload.sourceMessageId, command.payload.requestedDiff)
       respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true, changeRequestId: change.id } })
@@ -369,6 +378,12 @@ parentPort.on('message', async (event) => {
       } else {
         const taskResult = tasks.handleProviderFailure(command.payload.providerRequestId, command.payload.code)
         if (taskResult) {
+          if (taskResult.request) {
+            emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: taskResult.request.requestId, request: taskResult.request })
+            emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId: command.payload.providerRequestId, event: { type: 'progress', taskId: taskResult.detail.task!.id, runId: taskResult.detail.run?.id } })
+            respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
+            return
+          }
           const output = taskResult.detail.assignments.map((assignment) => assignment.output ?? '').filter(Boolean).join('\n')
           enqueueMemorySafely({ sourceType: 'task', sourceRef: `task:${taskResult.detail.task!.id}`, scopeType: 'task', scopeId: taskResult.detail.task!.id, content: `任务失败经验：${command.payload.code}\n${output}`.slice(0, 50_000) })
           emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId: command.payload.providerRequestId, event: { type: 'failed', taskId: taskResult.detail.task!.id, runId: taskResult.detail.run?.id } })
@@ -484,17 +499,22 @@ parentPort.on('message', async (event) => {
   }
 })
 
+tasks.reconcileFailedRunToolActions()
 parentPort.postMessage({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.ready', health: kernel.recover() })
 setTimeout(() => {
-  for (const detail of tasks.pendingHarnessHandoffs()) {
-    try {
-      const assignment = detail.assignments.at(-1)!
-      tasks.recordWorkerCheckpoint(detail.run!.id, assignment.id, validateDeepAgentHandoff(detail.run!.id, assignment.id, assignment.output ?? ''))
-    } catch (error) {
-      tasks.failRun(detail.run!.id, error instanceof Error ? error.message : 'deep_agents_worker_failed')
+  try {
+    for (const detail of tasks.pendingHarnessHandoffs()) {
+      try {
+        const assignment = detail.assignments.at(-1)!
+        tasks.recordWorkerCheckpoint(detail.run!.id, assignment.id, validateDeepAgentHandoff(detail.run!.id, assignment.id, assignment.output ?? ''))
+      } catch (error) {
+        tasks.failRun(detail.run!.id, error instanceof Error ? error.message : 'deep_agents_worker_failed')
+      }
     }
+    for (const request of tasks.recoverPendingRequests()) emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: request.requestId, request })
+  } catch (error) {
+    console.error('[startup-recovery]', error instanceof Error ? error.stack ?? error.message : String(error))
   }
-  for (const request of tasks.recoverPendingRequests()) emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: request.requestId, request })
 }, 0)
 
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {

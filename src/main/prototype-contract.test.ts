@@ -72,6 +72,12 @@ describe('macOS prototype visual contract', () => {
     const styles = source('prototypes/macos-client-v2/src/styles.css')
     expect(styles).toMatch(/\.prototype \{[\s\S]*?width: 100%;[\s\S]*?\}/)
     expect(styles).not.toMatch(/\.prototype \{[\s\S]*?width: min\(100%, var\(--layout-shell-max-width\)\);[\s\S]*?\}/)
+    expect(styles).toMatch(/\.toolbar__content \{[\s\S]*?width: 100%;[\s\S]*?\}/)
+    expect(styles).not.toMatch(/\.toolbar__content \{[\s\S]*?width: min\(100%, var\(--layout-workspace-content-max-width\)\);[\s\S]*?\}/)
+    expect(styles).toMatch(/\.workspace-center \{[\s\S]*?width: 100%;[\s\S]*?\}/)
+    expect(styles).not.toMatch(/\.workspace-center \{[\s\S]*?width: min\(100%, var\(--layout-workspace-content-max-width\)\);[\s\S]*?\}/)
+    expect(styles).toMatch(/\.message-canvas \{[\s\S]*?var\(--layout-message-content-max-width\)[\s\S]*?\}/)
+    expect(styles).toMatch(/\.composer__box \{[\s\S]*?var\(--layout-message-content-max-width\)[\s\S]*?\}/)
     expect(styles).toMatch(/\.detail-page--wide \.detail-canvas \{[\s\S]*?var\(--layout-workspace-content-max-width\)[\s\S]*?\}/)
   })
 

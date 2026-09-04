@@ -35,8 +35,7 @@ describe('provider adapters', () => {
     const events = []
     for await (const event of new DeepSeekAdapter(credentials, fetchMock).execute({ requestId: 'request-stream', provider: 'deepseek', modelId: 'deepseek-v4-pro', input: 'hello', maxOutputTokens: 32, stream: true })) events.push(event)
     expect(events).toEqual([
-      { type: 'output_delta', requestId: 'request-stream', delta: 'O' },
-      { type: 'output_delta', requestId: 'request-stream', delta: 'K' },
+      { type: 'output_delta', requestId: 'request-stream', delta: 'OK' },
       { type: 'usage', requestId: 'request-stream', inputTokens: 4, outputTokens: 2, totalTokens: 6, source: 'provider_actual' },
       { type: 'completed', requestId: 'request-stream', providerRequestId: 'response-stream' }
     ])
@@ -111,9 +110,8 @@ describe('provider adapters', () => {
     for await (const event of new DeepSeekAdapter(credentials, vi.fn().mockResolvedValue(new Response(sse, { status: 200 }))).execute({ requestId: 'request-limited', provider: 'deepseek', modelId: 'deepseek-v4-pro', input: 'hello', maxOutputTokens: 32, stream: true })) events.push(event)
     expect(events).toEqual([
       { type: 'output_delta', requestId: 'request-limited', delta: 'partial' },
-      { type: 'output_delta', requestId: 'request-limited', delta: '\n\n[输出因长度上限截断]' },
       { type: 'usage', requestId: 'request-limited', inputTokens: 4, outputTokens: 32, totalTokens: 36, source: 'provider_actual' },
-      { type: 'completed', requestId: 'request-limited', providerRequestId: 'response-limited' }
+      { type: 'completed', requestId: 'request-limited', providerRequestId: 'response-limited', incomplete: true }
     ])
   })
 

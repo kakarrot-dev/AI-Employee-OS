@@ -8,7 +8,7 @@ import type { ToolRunner } from './tool-gateway'
 
 const LAST30DAYS_SKILL = join(homedir(), '.codex/skills/last30days')
 
-interface CommandResult { status: number; stdout: string; stderr: string }
+export interface CommandResult { status: number; stdout: string; stderr: string }
 
 function commandEnvironment(): NodeJS.ProcessEnv {
   return {
@@ -20,11 +20,14 @@ function commandEnvironment(): NodeJS.ProcessEnv {
   }
 }
 
-function run(command: string, args: string[], signal: AbortSignal, timeoutMs: number): Promise<CommandResult> {
+export function runCommand(command: string, args: string[], signal: AbortSignal, timeoutMs: number): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { shell: false, env: commandEnvironment(), stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(command, args, { shell: false, detached: process.platform !== 'win32', env: commandEnvironment(), stdio: ['ignore', 'pipe', 'pipe'] })
     const stdout: Buffer[] = [], stderr: Buffer[] = []
     let bytes = 0
+    let settled = false
+    let forceKillTimer: NodeJS.Timeout | undefined
+    let fallbackTimer: NodeJS.Timeout | undefined
     const collect = (target: Buffer[], chunk: Buffer): void => {
       if (bytes >= 2_000_000) return
       const remaining = 2_000_000 - bytes
@@ -32,13 +35,33 @@ function run(command: string, args: string[], signal: AbortSignal, timeoutMs: nu
     }
     child.stdout.on('data', (chunk: Buffer) => collect(stdout, chunk))
     child.stderr.on('data', (chunk: Buffer) => collect(stderr, chunk))
-    const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs)
-    const abort = (): void => { child.kill('SIGTERM') }
+    const killTree = (signalName: NodeJS.Signals): void => {
+      try {
+        if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, signalName)
+        else child.kill(signalName)
+      } catch { child.kill(signalName) }
+    }
+    const finish = (result: CommandResult, error?: Error): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      if (forceKillTimer) clearTimeout(forceKillTimer)
+      if (fallbackTimer) clearTimeout(fallbackTimer)
+      signal.removeEventListener('abort', abort)
+      if (error) reject(error); else resolve(result)
+    }
+    const terminate = (reason: 'tool_process_timeout' | 'tool_process_aborted'): void => {
+      if (settled || forceKillTimer) return
+      killTree('SIGTERM')
+      forceKillTimer = setTimeout(() => killTree('SIGKILL'), 250)
+      fallbackTimer = setTimeout(() => finish({ status: 1, stdout: Buffer.concat(stdout).toString('utf8'), stderr: `${Buffer.concat(stderr).toString('utf8')}\n${reason}`.trim() }), 1_000)
+    }
+    const timer = setTimeout(() => terminate('tool_process_timeout'), timeoutMs)
+    const abort = (): void => terminate('tool_process_aborted')
     if (signal.aborted) abort(); else signal.addEventListener('abort', abort, { once: true })
-    child.once('error', reject)
+    child.once('error', (error) => finish({ status: 1, stdout: '', stderr: '' }, error))
     child.once('close', (status) => {
-      clearTimeout(timer); signal.removeEventListener('abort', abort)
-      resolve({ status: status ?? 1, stdout: Buffer.concat(stdout).toString('utf8'), stderr: Buffer.concat(stderr).toString('utf8') })
+      finish({ status: status ?? 1, stdout: Buffer.concat(stdout).toString('utf8'), stderr: Buffer.concat(stderr).toString('utf8') })
     })
   })
 }
@@ -101,7 +124,7 @@ async function runOpenCli(query: string, limit: number, signal: AbortSignal): Pr
   let success = 0
   for (const args of commands) {
     if (signal.aborted) break
-    const result = await run('opencli', args, signal, 15_000)
+    const result = await runCommand('opencli', args, signal, 15_000)
     if (result.status === 0) { success += 1; outputs.push(result.stdout) } else errors.push(`${args[0]}:${result.stderr.slice(0, 300)}`)
   }
   return { status: success > 0 ? 0 : 1, stdout: `[${outputs.map((value) => { try { return JSON.stringify(JSON.parse(value)) } catch { return JSON.stringify({ text: value }) } }).join(',')}]`, stderr: errors.join('\n') }
@@ -115,12 +138,12 @@ export const externalIntelligenceRunner: ToolRunner = async (tool: ToolVersion, 
   if (tool.id === 'agent-reach.search@network-intelligence/v1') {
     sourceType = 'agent_reach_web'; url = 'https://github.com/Panniantong/Agent-Reach'
     const expression = `exa.web_search_exa(query: ${JSON.stringify(query)}, numResults: ${limit})`
-    result = await run('mcporter', ['call', expression], context.signal, tool.timeoutMs)
+    result = await runCommand('mcporter', ['call', expression], context.signal, tool.timeoutMs)
   } else if (tool.id === 'last30days.research@network-intelligence/v1') {
     sourceType = 'last30days'; url = 'https://github.com/mvanhorn/last30days-skill'
     const temporary = mkdtempSync(join(tmpdir(), 'ai-employee-os-last30days-'))
     try {
-      result = await run('python3', [join(LAST30DAYS_SKILL, 'scripts/last30days.py'), query, '--quick', '--emit', 'json', '--json-profile', 'agent', '--no-browser-cookies', '--save-dir', temporary], context.signal, tool.timeoutMs)
+      result = await runCommand('python3', [join(LAST30DAYS_SKILL, 'scripts/last30days.py'), query, '--quick', '--emit', 'json', '--json-profile', 'agent', '--no-browser-cookies', '--save-dir', temporary], context.signal, tool.timeoutMs)
     } finally { rmSync(temporary, { recursive: true, force: true }) }
   } else if (tool.id === 'opencli.social-search@network-intelligence/v1') {
     sourceType = 'opencli_social'; url = 'https://github.com/jackwener/OpenCLI'

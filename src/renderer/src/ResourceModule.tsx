@@ -47,7 +47,7 @@ export function ResourceModule({ catalog = empty, kind = 'skills', selectedId, p
     return employeeDetails.filter(({ detail }) => [detail.active, detail.draft].some((version) => version?.capabilityVersionIds.some((id) => capabilityIds.has(id))))
   }, [employeeCapabilities, employeeDetails, selected])
 
-  if (!selected) return <DetailPage><div className="directory-empty"><h3>暂无 {kind === 'skills' ? 'Skill' : 'Tool'}</h3><p>Runtime 尚未提供该类型的版本化资源。</p></div></DetailPage>
+  if (!selected) return <DetailPage>{error && <p className="inline-error" role="alert">{error}</p>}<div className="directory-empty"><h3>暂无 {kind === 'skills' ? 'Skill' : 'Tool'}</h3><p>{error ? 'Runtime 连接成功后会自动重新读取能力目录。' : 'Runtime 尚未提供该类型的版本化资源。'}</p></div></DetailPage>
   const isSkill = 'steps' in selected
   const Icon = isSkill ? Sparks : Tools
   const sourceHealth = catalog.healthChecks.find((check) => check.adapterVersionId === selected.id)

@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Folder, NavArrowDown, NavArrowLeft, NavArrowRight, OpenNewWindow, Page, Sparks, Xmark } from 'iconoir-react'
 import { Button, Menu, MenuItem, MenuTrigger, Popover } from 'react-aria-components'
+import { legacyChatContent, type ChatContentView } from '../../../shared/chat-content-contract'
 import { Avatar, IconButton } from './client-ui'
 
 export interface MessageAttachment {
@@ -40,6 +41,22 @@ export function MarkdownMessage({ children, compact = false }: { children: strin
   }, [children, expanded])
 
   return <div className={`markdown-message${compact ? ' markdown-message--compact' : ''}`}><div ref={contentRef} className={`markdown-message__content${collapsible ? ' is-collapsible' : ''}${expanded ? ' is-expanded' : ''}`}><MarkdownContent>{children}</MarkdownContent></div>{(collapsible || expanded) && <Button className="message-expand-button" aria-expanded={expanded} onPress={() => setExpanded((value) => !value)}>{expanded ? '收起' : '展开全文'}<NavArrowDown aria-hidden width={14} height={14} className={expanded ? 'is-expanded' : ''} /></Button>}</div>
+}
+
+export function ChatContentBlock({ content, variant = 'timeline', children }: { content: ChatContentView; variant?: 'timeline' | 'delivery'; children?: ReactNode }): React.JSX.Element {
+  const [expanded, setExpanded] = useState(false)
+  const detailParagraphs = content.detail?.content.split(/\n{2,}/).map((paragraph) => paragraph.trim()).filter(Boolean) ?? []
+  return <div className={`chat-content chat-content--${variant}`}>
+    <strong className="chat-content__title">{content.title}</strong>
+    <p className="chat-content__summary">{content.summary}</p>
+    {content.metrics && content.metrics.length > 0 && <dl className="chat-content__metrics" aria-label={variant === 'delivery' ? '交付概况' : '内容概况'}>{content.metrics.map((item) => <div key={`${item.label}:${item.value}`}><dd>{item.value}</dd><dt>{item.label}</dt></div>)}</dl>}
+    {content.detail && <div className="chat-content__detail"><Button className="message-expand-button" aria-expanded={expanded} onPress={() => setExpanded((value) => !value)}>{expanded ? '收起详情' : content.detail.label}<NavArrowDown aria-hidden width={14} height={14} className={expanded ? 'is-expanded' : ''} /></Button>{expanded && <div className="chat-content__detail-body">{detailParagraphs.map((paragraph, index) => <p key={`${index}:${paragraph}`}>{paragraph}</p>)}</div>}</div>}
+    {children}
+  </div>
+}
+
+export function TimelineSummary({ content, children, fallbackTitle }: { content?: ChatContentView; children?: string; fallbackTitle?: string }): React.JSX.Element {
+  return <ChatContentBlock content={content ?? legacyChatContent(children ?? '', fallbackTitle)} />
 }
 
 export interface ChatMessageProps {
@@ -125,7 +142,7 @@ export function MatterTeamAvatars({ team }: { team: MatterParticipant[] }): Reac
 
 export function MatterRouteNote({ title, mode, busy = false, onOpenMatter, onCreateMatter, onRequestChange }: { title: string; mode: 'created' | 'linked'; busy?: boolean; onOpenMatter: () => void; onCreateMatter: () => void; onRequestChange?: () => void }): React.JSX.Element {
   const [editing, setEditing] = useState(false)
-  return <div className="matter-route-note message-stream-item"><span title={title}><Sparks aria-hidden width={14} height={14} />{mode === 'created' ? '已创建事项' : '已归入已有事项'}</span><Button className="matter-route-note__change" aria-expanded={editing} onPress={() => setEditing((value) => !value)}>更改</Button>{editing && <div className="matter-route-note__options" role="group" aria-label="更改消息归类"><Button onPress={() => { setEditing(false); onOpenMatter() }}>查看当前事项</Button>{onRequestChange && <Button isDisabled={busy} onPress={() => { setEditing(false); onRequestChange() }}>将最新消息作为变更请求</Button>}<Button isDisabled={busy} onPress={() => { setEditing(false); onCreateMatter() }}>创建新事项草稿</Button></div>}</div>
+  return <div className="matter-route-note message-stream-item"><span title={title}><Sparks aria-hidden width={14} height={14} />{mode === 'created' ? '已创建事项' : '已归入已有事项'}</span><Button className="matter-route-note__change" aria-expanded={editing} onPress={() => setEditing((value) => !value)}>更改</Button>{editing && <div className="matter-route-note__options" role="group" aria-label="更改消息归类"><Button onPress={() => { setEditing(false); onOpenMatter() }}>查看当前事项</Button>{onRequestChange && <Button isDisabled={busy} onPress={() => { setEditing(false); onRequestChange() }}>将最新消息作为变更请求</Button>}{mode === 'linked' && <Button isDisabled={busy} onPress={() => { setEditing(false); onCreateMatter() }}>创建新事项草稿</Button>}</div>}</div>
 }
 
 export function fileSizeLabel(bytes: number): string {

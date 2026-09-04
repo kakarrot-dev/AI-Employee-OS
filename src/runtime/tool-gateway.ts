@@ -9,9 +9,10 @@ export interface ToolProposal {
   toolVersionId: string
   parameters: Record<string, unknown>
   parameterSources: ToolAction['parameterSources']
+  idempotencyScope?: string
 }
 
-export type ToolRunner = (tool: ToolVersion, parameters: Record<string, unknown>, context: { actionId: string; signal: AbortSignal; grantedDirectories?: string[] }) => Promise<Record<string, unknown>>
+export type ToolRunner = (tool: ToolVersion, parameters: Record<string, unknown>, context: { actionId: string; signal: AbortSignal; grantedDirectories?: string[]; grantedFiles?: string[] }) => Promise<Record<string, unknown>>
 
 const injectionPatterns = [
   /ignore\s+(all\s+)?previous\s+instructions?/i,
@@ -59,7 +60,7 @@ export class ToolGateway {
 
   async propose(proposal: ToolProposal): Promise<ToolAction> {
     const { run, grant, assignment, tool } = this.validateProposal(proposal)
-    const idempotencyKey = createHash('sha256').update(canonical({ runId: run.id, assignmentId: assignment.id, toolVersionId: tool.id, parameters: proposal.parameters })).digest('hex')
+    const idempotencyKey = createHash('sha256').update(canonical({ runId: run.id, assignmentId: assignment.id, toolVersionId: tool.id, parameters: proposal.parameters, idempotencyScope: proposal.idempotencyScope ?? 'default' })).digest('hex')
     const existing = this.kernel.store.list<ToolAction>('ToolAction').find((action) => action.idempotencyKey === idempotencyKey)
     if (existing) return existing
     const now = new Date().toISOString()
@@ -121,7 +122,7 @@ export class ToolGateway {
     const timer = setTimeout(() => controller.abort('timeout'), action.timeoutMs)
     try {
       const grant = this.requireGrantForAction(action)
-      const result = await this.runner(tool, structuredClone(action.parameters), { actionId: action.id, signal: controller.signal, grantedDirectories: [...grant.resourceScope.directories] })
+      const result = await this.runner(tool, structuredClone(action.parameters), { actionId: action.id, signal: controller.signal, grantedDirectories: [...grant.resourceScope.directories], grantedFiles: [...(grant.resourceScope.files ?? [])] })
       if (controller.signal.aborted) throw new Error('tool_timeout')
       const completed: ToolAction = { ...running, state: 'succeeded', completedAt: new Date().toISOString(), result, resultVerified: true }
       this.kernel.save({ entityType: 'ToolAction', entity: completed, immutable: false }, 'tool_action.succeeded', {})

@@ -57,7 +57,6 @@ const requiredUsages = [
   'min-height: var(--layout-window-min-height);',
   'grid-template-columns: calc(var(--layout-rail-width) + var(--layout-context-width)) minmax(0, 1fr);',
   'grid-template-columns: var(--layout-rail-width) var(--layout-context-width) minmax(var(--layout-workspace-min-width), 1fr);',
-  'width: min(100%, var(--layout-workspace-content-max-width));',
   'width: min(100%, var(--layout-message-content-max-width));',
   'width: min(100%, var(--layout-message-stream-item-max-width));',
   'padding: var(--layout-detail-summary-padding);',
@@ -170,8 +169,23 @@ if ((cssPixels('--layout-message-stream-item-max-width') ?? Infinity) > (cssPixe
 const modalContentRule = styles.match(/\.modal-content\s*\{([^}]*)\}/s)?.[1] ?? ''
 const modalMainRule = styles.match(/\.modal-content__main\s*\{([^}]*)\}/s)?.[1] ?? ''
 const prototypeRule = styles.match(/\.prototype\s*\{([^}]*)\}/s)?.[1] ?? ''
+const toolbarContentRule = cssRule(styles, '.toolbar__content')
+const workspaceCenterRule = cssRule(styles, '.workspace-center')
+const messageCanvasRule = cssRule(styles, '.message-canvas')
+const wideDetailCanvasRule = cssRule(styles, '.detail-page--wide .detail-canvas')
 if (!/width:\s*100%/.test(prototypeRule) || /width:\s*min\(100%,\s*var\(--layout-shell-max-width\)\)/.test(prototypeRule)) {
   errors.push('应用主壳层必须跟随窗口完整宽度，不得再受固定最大宽度截断')
+}
+for (const [selector, rule] of [['.toolbar__content', toolbarContentRule], ['.workspace-center', workspaceCenterRule]]) {
+  if (!/width:\s*100%/.test(rule) || rule.includes('var(--layout-workspace-content-max-width)')) {
+    errors.push(`${selector} 必须填满语义工作区；最大宽度只能约束内部正文，不得截断窗口骨架`)
+  }
+}
+if (!messageCanvasRule.includes('var(--layout-message-content-max-width)')) {
+  errors.push('对话正文必须保留独立最大宽度，避免宽屏阅读行长失控')
+}
+if (!wideDetailCanvasRule.includes('var(--layout-workspace-content-max-width)')) {
+  errors.push('宽版详情内容必须保留独立最大宽度，避免卡片和表单无限拉伸')
 }
 if (!/height:\s*100%/.test(prototypeRule) || /height:\s*min\(100%,\s*var\(--layout-shell-max-height\)\)/.test(prototypeRule)) {
   errors.push('应用主壳层必须跟随窗口完整高度，不得再受固定最大高度截断')

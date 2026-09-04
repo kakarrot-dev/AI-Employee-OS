@@ -33,9 +33,8 @@ import { RecruitmentCatalog } from './RecruitmentCatalog'
 import type { ResourceCatalogView } from '../../shared/resource-contract'
 import { DEFAULT_SUPERVISOR_CONFIG, type SupervisorConfigInput } from '../../shared/supervisor-contract'
 import { AppShell, Avatar, ClientModal, ContextPane, DetailListMark, DetailNote, DetailSectionHeader, DetailState, DetailSummaryPanel, IconButton, ListRow, PersonAvatar, Rail, SearchBox, SectionHeader, StatusLight, SummaryList, SummaryListItem, Toolbar, type ClientIcon, type DetailTone, type PersonIdentity } from './components/client-ui'
-import { ChatMessage, MarkdownMessage, MatterRouteNote, MatterTeamAvatars, MessageAttachmentGroup, fileDetail } from './components/message-ui'
+import { ChatContentBlock, ChatMessage, MarkdownMessage, MatterRouteNote, MatterTeamAvatars, MessageAttachmentGroup, TimelineSummary, fileDetail } from './components/message-ui'
 import { readClientProfile, SystemModule, systemSections, type ClientProfile, type SystemSectionId } from './SystemModule'
-import { hasLocalDocumentCapability, hasResearchCapability } from '../../shared/capability-contract'
 import { formatClientTimestamp } from './client-time'
 
 type ModuleId = 'workbench' | 'team' | 'resources' | 'settings'
@@ -198,12 +197,43 @@ function artifactTypeLabel(mediaType: string): string {
   return '交付文件'
 }
 
+function artifactDisplayName(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
+}
+
 function assignmentStateLabel(state: TaskDetailView['assignments'][number]['state']): string {
   return ({ pending: '待开始', running: '处理中', succeeded: '已完成', failed: '未完成', cancelled: '已取消' })[state]
 }
 
 function taskUpdatedAt(task: TaskDetailView): string {
   return task.delivery?.createdAt ?? task.timeline.at(-1)?.createdAt ?? task.createdAt ?? new Date(0).toISOString()
+}
+
+export function coalesceMatterCards(tasks: TaskDetailView[]): TaskDetailView[] {
+  const groups: Array<{ sources: Set<string>; tasks: TaskDetailView[] }> = []
+  for (const task of tasks) {
+    const sources = new Set(task.sourceMessageIds ?? [])
+    const matching = groups.filter((group) => sources.size > 0 && [...sources].some((source) => group.sources.has(source)))
+    if (matching.length === 0) {
+      groups.push({ sources, tasks: [task] })
+      continue
+    }
+    const primary = matching[0]
+    primary.tasks.push(task)
+    for (const source of sources) primary.sources.add(source)
+    for (const group of matching.slice(1)) {
+      for (const source of group.sources) primary.sources.add(source)
+      primary.tasks.push(...group.tasks)
+      groups.splice(groups.indexOf(group), 1)
+    }
+  }
+  const isActive = (task: TaskDetailView): boolean => !['succeeded', 'failed', 'cancelled'].includes(task.state)
+  return groups.map((group) => [...group.tasks].sort((left, right) => {
+    if (isActive(left) !== isActive(right)) return isActive(left) ? -1 : 1
+    const updated = Date.parse(taskUpdatedAt(right)) - Date.parse(taskUpdatedAt(left))
+    if (updated !== 0) return updated
+    return Date.parse(right.createdAt ?? new Date(0).toISOString()) - Date.parse(left.createdAt ?? new Date(0).toISOString())
+  })[0])
 }
 
 export function selectActiveTask(tasks: TaskDetailView[]): TaskDetailView | undefined {
@@ -241,12 +271,13 @@ function EmployeeProgressMessage({ task, assignment }: { task: TaskDetailView; a
     : assignment.state === 'succeeded' ? assignment.reworkOfAssignmentId ? '返工完成' : '阶段完成'
       : assignment.state === 'failed' ? '执行失败' : '已取消'
   const statusState = assignment.state === 'succeeded' ? 'success' : assignment.state === 'failed' ? 'danger' : assignment.state === 'cancelled' ? 'muted' : waitingAction ? 'waiting' : 'active'
+  const fallbackTitle = assignment.state === 'succeeded' ? '阶段工作已完成' : assignment.state === 'failed' ? '阶段执行未完成' : assignment.state === 'cancelled' ? '阶段执行已取消' : waitingAction ? '等待授权后继续' : '阶段工作进行中'
   const content = assignment.summary?.trim() || (waitingAction
     ? `我已提交 ${waitingAction.toolVersionId} 的调用申请，等待你确认后继续。`
     : assignment.state === 'running' ? `我已接手“${task.goal}”，正在执行当前阶段。`
       : assignment.state === 'failed' ? '当前阶段未能完成，详细失败原因已交给总管处理。'
         : '当前阶段已取消。')
-  return <ChatMessage source="agent" variant="timeline" name={name} initials={name.trim().slice(0, 1)} color={employeeColors[(assignment.sequence - 1) % employeeColors.length]} avatarSrc={employeeAvatarSrc({ employeeId: assignment.employeeId, avatarDataUrl: assignment.avatarDataUrl })} time={formatClientTimestamp(assignment.completedAt ?? assignment.createdAt ?? task.createdAt ?? new Date().toISOString())} status={<StatusLight state={statusState} label={status} breathing={assignment.state === 'running' && !waitingAction} />}><MarkdownMessage compact>{content}</MarkdownMessage></ChatMessage>
+  return <ChatMessage source="agent" variant="timeline" name={name} initials={name.trim().slice(0, 1)} color={employeeColors[(assignment.sequence - 1) % employeeColors.length]} avatarSrc={employeeAvatarSrc({ employeeId: assignment.employeeId, avatarDataUrl: assignment.avatarDataUrl })} time={formatClientTimestamp(assignment.completedAt ?? assignment.createdAt ?? task.createdAt ?? new Date().toISOString())} status={<StatusLight state={statusState} label={status} breathing={assignment.state === 'running' && !waitingAction} />}><TimelineSummary content={assignment.content} fallbackTitle={fallbackTitle}>{content}</TimelineSummary></ChatMessage>
 }
 
 function ManagerProgressEvent({ task, supervisor }: { task: TaskDetailView; supervisor: PersonIdentity }): React.JSX.Element | null {
@@ -279,24 +310,34 @@ function DeliveryMessage({ task, supervisor, onOpen, onOpenArtifact, onRevealArt
   if (!delivery) return null
   const passed = delivery.acceptanceResults.filter((item) => item.passed).length
   const completed = passed === delivery.acceptanceResults.length
-  const resultAlreadyShown = Boolean(delivery.result?.trim()) && task.assignments.some((assignment) => assignment.summary?.trim() === delivery.result?.trim())
+  const content = delivery.content ?? {
+    schemaVersion: 1 as const,
+    title: completed ? '交付结果已完成' : '交付结果需要处理',
+    summary: delivery.summary?.trim() || (completed ? '员工结果已经通过验收，交付文件与来源证据均已保存。' : '部分完成要求尚未通过，请查看完整验收记录。'),
+    metrics: [
+      { label: '完成要求', value: `${passed}/${delivery.acceptanceResults.length}` },
+      { label: '来源证据', value: String(delivery.evidenceCount) },
+      { label: '交付文件', value: String(delivery.artifacts.length) }
+    ],
+    ...(delivery.unresolvedIssues.length ? { detail: { label: '查看未决问题', content: delivery.unresolvedIssues.join('；') } } : {})
+  }
   return <ChatMessage source="agent" variant="timeline" name={supervisor.name} initials={supervisor.initials} color={supervisor.color} avatarSrc={supervisor.avatarSrc ?? undefined} time={formatClientTimestamp(delivery.createdAt ?? task.timeline.at(-1)?.createdAt ?? new Date().toISOString())} status={<StatusLight state={completed ? 'success' : 'waiting'} label={completed ? '已交付' : '部分通过'} />}>
-    <div className="message-delivery"><span className="message-delivery__eyebrow">结果</span><h3>{task.goal}</h3>{delivery.summary && <p className="message-delivery__summary">{delivery.summary}</p>}{delivery.result && !resultAlreadyShown && <div className="message-delivery__result"><MarkdownMessage compact>{delivery.result}</MarkdownMessage></div>}
-      <div className="message-delivery__verification" aria-label="交付概况">{delivery.acceptanceResults.length > 0 && <span><strong>{passed}/{delivery.acceptanceResults.length}</strong><small>完成要求</small></span>}<span><strong>{delivery.evidenceCount}</strong><small>来源证据</small></span><span><strong>{delivery.artifacts.length}</strong><small>交付文件</small></span></div>
-      <MessageAttachmentGroup source="agent" embedded attachments={delivery.artifacts.map((artifact) => ({ id: artifact.id, name: artifact.relativePath, detail: `${artifactTypeLabel(artifact.mediaType)} · 完整性校验已记录` }))} onOpen={onOpenArtifact} onReveal={onRevealArtifact} />
+    <ChatContentBlock content={content} variant="delivery">
+      <MessageAttachmentGroup source="agent" embedded attachments={delivery.artifacts.map((artifact) => ({ id: artifact.id, name: artifactDisplayName(artifact.relativePath), detail: `${artifactTypeLabel(artifact.mediaType)} · 完整性校验已记录` }))} onOpen={onOpenArtifact} onReveal={onRevealArtifact} />
       <button type="button" className="text-action" onClick={onOpen}>查看完整验收记录 <NavArrowRight aria-hidden width={14} height={14} /></button>
-    </div>
+    </ChatContentBlock>
   </ChatMessage>
 }
 
-function MatterDetailModal({ task, onClose }: { task?: TaskDetailView; onClose: () => void }): React.JSX.Element {
+function MatterDetailModal({ task, retrying, onRetry, onClose }: { task?: TaskDetailView; retrying: boolean; onRetry: (task: TaskDetailView) => void; onClose: () => void }): React.JSX.Element {
   if (!task) return <ClientModal open={false} title="事项详情" size="medium" onClose={onClose}><div /></ClientModal>
   const summary = taskSummary(task)
   const milestones = buildFriendlyTimeline(task)
   const acceptanceResults = task.delivery?.acceptanceResults ?? task.acceptanceCriteria.map((criterion) => ({ criterion, passed: task.state === 'succeeded' }))
   const passedCount = acceptanceResults.filter((item) => item.passed).length
   const summaryTone = task.state === 'succeeded' ? 'success' : task.state === 'failed' || task.state === 'needs_attention' ? 'danger' : task.state === 'running' ? 'active' : 'waiting'
-  return <ClientModal open title={task.goal} eyebrow={<StatusLight state={summaryTone} label={taskStateLabel(task.state)} breathing={task.state === 'running'} />} size="medium" onClose={onClose}><div className="matter-detail-content detail-modal-content">
+  const showExecutionProgress = task.state !== 'succeeded'
+  return <ClientModal open title={task.title} eyebrow={<StatusLight state={summaryTone} label={taskStateLabel(task.state)} breathing={task.state === 'running'} />} size="medium" onClose={onClose}><div className="matter-detail-content detail-modal-content">
     <DetailSummaryPanel
       icon={task.state === 'succeeded' ? <ShieldCheck aria-hidden width={22} height={22} /> : <InfoCircle aria-hidden width={22} height={22} />}
       title={summary.title}
@@ -309,15 +350,20 @@ function MatterDetailModal({ task, onClose }: { task?: TaskDetailView; onClose: 
       ] : []}
     />
 
-    <section>
-      <DetailSectionHeader title="完成要求" description="任务完成时需要满足以下要求" meta={`${passedCount}/${acceptanceResults.length} 已通过`} />
-      <SummaryList emptyMessage="当前事项没有设置完成要求。" variant="outlined">{acceptanceResults.map((item) => <SummaryListItem key={item.criterion} leading={<DetailListMark tone={item.passed ? 'success' : task.delivery ? 'danger' : 'waiting'}>{item.passed ? <Check aria-hidden width={15} height={15} /> : <InfoCircle aria-hidden width={15} height={15} />}</DetailListMark>} title={item.criterion} trailing={<DetailState tone={item.passed ? 'success' : task.delivery ? 'danger' : 'waiting'}>{item.passed ? '已通过' : task.delivery ? '未通过' : '待完成'}</DetailState>} />)}</SummaryList>
+    <section className="matter-detail-goal">
+      <DetailSectionHeader title="事项目标" description="执行与验收仍以完整目标为准" />
+      <p>{task.goal}</p>
     </section>
 
     <section>
+      <DetailSectionHeader title={task.delivery ? '验收结果' : '完成要求'} description={task.delivery ? '逐项核对最终交付是否满足事项目标' : '任务完成时需要满足以下要求'} meta={`${passedCount}/${acceptanceResults.length} 已通过`} />
+      <SummaryList emptyMessage="当前事项没有设置完成要求。" variant="outlined">{acceptanceResults.map((item) => <SummaryListItem key={item.criterion} leading={<DetailListMark tone={item.passed ? 'success' : task.delivery ? 'danger' : 'waiting'}>{item.passed ? <Check aria-hidden width={15} height={15} /> : <InfoCircle aria-hidden width={15} height={15} />}</DetailListMark>} title={item.criterion} trailing={<DetailState tone={item.passed ? 'success' : task.delivery ? 'danger' : 'waiting'}>{item.passed ? '已通过' : task.delivery ? '未通过' : '待完成'}</DetailState>} />)}</SummaryList>
+    </section>
+
+    {showExecutionProgress && <section>
       <DetailSectionHeader title="执行进度" description="仅展示用户需要了解的关键阶段" meta={`${milestones.length} 个阶段`} />
       {milestones.length ? <div className="matter-progress-list">{milestones.map((item) => <div className={`matter-progress-item matter-progress-item--${item.state}`} key={item.key}><span className="matter-progress-item__marker">{item.state === 'done' ? <Check aria-hidden width={14} height={14} /> : null}</span><div><div className="matter-progress-item__title"><strong>{item.title}</strong><time>{formatClientTimestamp(item.createdAt)}</time></div><p>{item.description}</p></div></div>)}</div> : <p className="empty-state">任务尚未开始，开始后会在这里显示进度。</p>}
-    </section>
+    </section>}
 
     <section>
       <DetailSectionHeader title="参与员工" description="负责完成本次任务的临时团队" meta={`${task.assignments.length} 位`} />
@@ -330,6 +376,7 @@ function MatterDetailModal({ task, onClose }: { task?: TaskDetailView; onClose: 
       <DetailNote icon={<ShieldCheck aria-hidden width={16} height={16} />} tone="success">已保存 {task.delivery.evidenceCount} 条来源证据，可用于核对结果。</DetailNote>
       {task.delivery.unresolvedIssues.length > 0 && <div className="boundary-note">仍需注意：{task.delivery.unresolvedIssues.join('；')}</div>}
     </section>}
+    {(task.state === 'failed' || task.state === 'succeeded') && <div className="detail-actions"><button type="button" className="button button--primary" disabled={retrying} onClick={() => onRetry(task)}>{retrying ? '正在重新执行' : task.state === 'failed' ? '按该事项原内容重试' : '按该事项原内容重新执行'}</button></div>}
   </div></ClientModal>
 }
 
@@ -337,9 +384,9 @@ function MatterEvent({ task, onOpen, onAnchor }: { task: TaskDetailView; onOpen:
   const summary = taskSummary(task)
   const tone = taskStateTone(task.state)
   return (
-    <button ref={onAnchor} type="button" className="matter-event message-stream-item" aria-label={`查看事项：${task.goal}`} onClick={onOpen}>
-      <span className="matter-event__body"><strong>{task.goal}</strong><span>{summary.description}</span></span>
-      <span className="matter-event__meta"><span className={`matter-event__state matter-event__state--${tone}`}><i aria-hidden />{taskStateLabel(task.state)}</span><span className="matter-event__time"><time>{formatClientTimestamp(taskUpdatedAt(task))}</time><NavArrowRight aria-hidden width={16} height={16} /></span></span>
+    <button ref={onAnchor} type="button" className="matter-event message-stream-item" aria-label={`查看事项：${task.title}`} onClick={onOpen}>
+      <span className="matter-event__body"><strong>{task.title}</strong><span>{summary.description}</span></span>
+      <span className="matter-event__meta"><span className={`matter-event__state matter-event__state--${tone}`} aria-live="polite"><i aria-hidden />{taskStateLabel(task.state)}</span><span className="matter-event__time"><time>{formatClientTimestamp(taskUpdatedAt(task))}</time><NavArrowRight aria-hidden width={16} height={16} /></span></span>
     </button>
   )
 }
@@ -348,7 +395,7 @@ function MatterSidebar({ tasks, collapsed, onLocate }: { tasks: TaskDetailView[]
   const orderedTasks = [...tasks].sort((left, right) => new Date(taskUpdatedAt(right)).getTime() - new Date(taskUpdatedAt(left)).getTime())
   return (
     <aside className={`matter-sidebar${collapsed ? ' is-collapsed' : ''}`} aria-label="当前会话事项">
-      {!collapsed && <><div className="matter-sidebar__header"><span><strong>事项</strong><small>{tasks.length}</small></span></div><div className="matter-sidebar__list">{orderedTasks.map((task) => <button type="button" className="matter-sidebar__item" key={task.id} aria-label={`定位事项：${task.goal}`} onClick={() => onLocate(task)}><span className={`matter-sidebar__status matter-sidebar__status--${task.state}`} aria-hidden /><span><strong>{task.goal}</strong><small>{taskStateLabel(task.state)} · {formatClientTimestamp(taskUpdatedAt(task))}</small></span></button>)}{tasks.length === 0 && <p className="matter-sidebar__empty">当前会话暂无事项</p>}</div></>}
+      {!collapsed && <><div className="matter-sidebar__header"><span><strong>事项</strong><small>{tasks.length}</small></span></div><div className="matter-sidebar__list">{orderedTasks.map((task) => <button type="button" className="matter-sidebar__item" key={task.id} aria-label={`定位事项：${task.title}`} onClick={() => onLocate(task)}><span className={`matter-sidebar__status matter-sidebar__status--${task.state}`} aria-hidden /><span><strong>{task.title}</strong><small>{taskStateLabel(task.state)} · {formatClientTimestamp(taskUpdatedAt(task))}</small></span></button>)}{tasks.length === 0 && <p className="matter-sidebar__empty">当前会话暂无事项</p>}</div></>}
     </aside>
   )
 }
@@ -408,14 +455,15 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
     return () => { mounted = false; unsubscribe(); unsubscribeTask(); unsubscribeEmployee() }
   }, [conversationId])
 
-  const conversationTasks = tasks.filter((task) => task.conversationId === conversationId)
+  const conversationTasks = coalesceMatterCards(tasks.filter((task) => task.conversationId === conversationId))
   const activeTask = selectActiveTask(conversationTasks)
   const latestUserMessage = [...messages].reverse().find((message) => message.role === 'user')
+  const latestChangeMessage = activeTask ? [...messages].reverse().find((message) => message.role === 'user' && !(activeTask.sourceMessageIds ?? []).includes(message.id)) : undefined
   const activeRouteMode = activeTask && latestUserMessage && activeTask.sourceMessageIds?.length ? activeTask.sourceMessageIds.includes(latestUserMessage.id) ? 'created' : 'linked' : 'created'
 
   const submit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
-    const text = draft.trim() || (draftAttachments.length ? '请分析这些客户招投标材料，并交给文档编写员形成可验收的响应文档。' : '')
+    const text = draft.trim() || (draftAttachments.length ? '请先阅读这些附件的实际内容，再根据我的目标选择合适的员工处理。' : '')
     if ((!text && !draftAttachments.length) || sending || runtimeStatus.state !== 'connected') return
     setDraft('')
     setError(undefined)
@@ -476,24 +524,36 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
 
   const createTaskDraft = async (): Promise<void> => {
     const source = [...messages].reverse().find((message) => message.role === 'user')
-    if (!source) return
+    if (!source || !activeTask) return
     setTaskBusy(true); setError(undefined)
     try {
-      const activeEmployees = (await window.aiEmployeeOS.employee.list()).filter((item) => isActiveEmployeeStatus(item.status) && item.activeVersionId)
-      if (!activeEmployees.length) throw new Error('没有可工作的已发布员工，请先在团队中创建并测试员工')
-      const network = activeEmployees.find((item) => hasResearchCapability(item.activeCapabilityVersionIds))
-      const writer = activeEmployees.find((item) => hasLocalDocumentCapability(item.activeCapabilityVersionIds))
-      const employeeVersionIds = [network?.activeVersionId, writer?.activeVersionId].filter((id): id is string => Boolean(id))
-      if (!employeeVersionIds.length) employeeVersionIds.push(activeEmployees[0].activeVersionId!)
       const directories = authorizedDirectories.length ? authorizedDirectories : [await window.aiEmployeeOS.task.outputDirectory()]
-      const created = await window.aiEmployeeOS.task.createDraft({ conversationId, sourceMessageIds: [source.id], goal: source.content, acceptanceCriteria: ['网络结论保留来源与信息缺口', '目标文档已在授权目录内写入或编辑并可回读验证'], employeeVersionIds, directories, authorizationMode: 'full_access' })
+      const created = await window.aiEmployeeOS.task.createDraft({ conversationId, sourceMessageIds: [source.id], goal: source.content, acceptanceCriteria: activeTask.acceptanceCriteria, employeeVersionIds: activeTask.employeeVersionIds, directories, authorizationMode: 'full_access' })
       const value = created.requiresDirectories && created.directories.length === 0 ? created : await window.aiEmployeeOS.task.start(created.draftId)
       setTasks((current) => [value, ...current]); onDataChanged()
     } catch (reason) { setError(reason instanceof Error ? reason.message : '任务草稿创建失败') } finally { setTaskBusy(false) }
   }
 
+  const retryTask = async (task = activeTask): Promise<void> => {
+    if (!task?.taskId || !['failed', 'succeeded'].includes(task.state)) return
+    setTaskBusy(true); setError(undefined)
+    try {
+      const retried = await window.aiEmployeeOS.task.retry(task.taskId)
+      setTasks((current) => current.map((item) => item.taskId === retried.taskId ? retried : item))
+      setSelectedMatter((current) => current?.taskId === retried.taskId ? retried : current)
+      onDataChanged()
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : ''
+      setError(message.includes('retry_requires_external_write_review') || message.includes('unsettled_tool_action')
+        ? '该事项存在结果未核实的写入操作，请先在事项详情中确认真实结果后再重试'
+        : '事项重试失败，请稍后重试')
+    } finally {
+      setTaskBusy(false)
+    }
+  }
+
   const requestTaskChange = async (): Promise<void> => {
-    const source = [...messages].reverse().find((message) => message.role === 'user')
+    const source = latestChangeMessage
     if (!activeTask?.taskId || !source) return
     setTaskBusy(true); setError(undefined)
     try { await window.aiEmployeeOS.task.requestChange(activeTask.taskId, source.id, { goal: source.content }); setTasks(await window.aiEmployeeOS.task.list()) } catch (reason) { setError(reason instanceof Error ? reason.message : '变更请求创建失败') } finally { setTaskBusy(false) }
@@ -560,9 +620,9 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
           )}
 
           {activeTask ? (
-            <><MatterRouteNote title={activeTask.goal} mode={activeRouteMode} busy={taskBusy} onOpenMatter={() => setSelectedMatter(activeTask)} onCreateMatter={() => void createTaskDraft()} onRequestChange={activeTask.state === 'running' && !activeTask.pendingChange ? () => void requestTaskChange() : undefined} />{conversationTasks.map((task) => <MatterEvent key={task.id} task={task} onOpen={() => setSelectedMatter(task)} onAnchor={(element) => { if (element) matterAnchors.current.set(task.id, element); else matterAnchors.current.delete(task.id) }} />)}<TaskWorkTimeline task={activeTask} supervisor={supervisor} />
+            <><MatterRouteNote title={activeTask.title} mode={activeRouteMode} busy={taskBusy} onOpenMatter={() => setSelectedMatter(activeTask)} onCreateMatter={() => void createTaskDraft()} onRequestChange={activeTask.state === 'running' && !activeTask.pendingChange && latestChangeMessage ? () => void requestTaskChange() : undefined} />{conversationTasks.map((task) => <MatterEvent key={task.id} task={task} onOpen={() => setSelectedMatter(task)} onAnchor={(element) => { if (element) matterAnchors.current.set(task.id, element); else matterAnchors.current.delete(task.id) }} />)}<TaskWorkTimeline task={activeTask} supervisor={supervisor} />
               {activeTask.pendingChange && <div className="change-card message-stream-item"><strong>待处理变更</strong><p>{String(activeTask.pendingChange.requestedDiff.goal ?? '需求已变化')}</p>{activeTask.state === 'needs_attention' ? <div><button type="button" onClick={() => void decideTaskChange(false)} disabled={taskBusy}>保持原事项</button><button type="button" onClick={() => void decideTaskChange(true)} disabled={taskBusy}>接受并启动新 Revision</button></div> : <small>将在当前节点完成并提交 Checkpoint 后暂停</small>}</div>}
-              {activeTask.state === 'failed' && <section className="runtime-route-note message-stream-item"><Page aria-hidden width={16} height={16} /><span>本次执行已失败，原有 Tool 审批已失效，不会继续调用外部工具。</span><button type="button" onClick={() => void createTaskDraft()} disabled={taskBusy}>{taskBusy ? '正在创建' : '重新创建事项草稿'}</button></section>}
+              {activeTask.state === 'failed' && <section className="runtime-route-note message-stream-item"><Page aria-hidden width={16} height={16} /><span>本次执行已失败；未完成的只读 Tool 已安全终止，结果未知的写入操作需要先核验。</span><button type="button" onClick={() => void retryTask()} disabled={taskBusy}>{taskBusy ? '正在重试' : '按原事项重试'}</button></section>}
               {activeTask.state === 'draft' && <section className="runtime-route-note message-stream-item"><Page aria-hidden width={16} height={16} /><span>{activeTask.requiresDirectories && activeTask.directories.length === 0 ? '该事项尚未绑定固定下载目录。' : '事项已生成，Runtime 正在自动启动员工。'}</span>{activeTask.requiresDirectories && activeTask.directories.length === 0 && <button type="button" onClick={() => void startDraftInOutputDirectory()} disabled={taskBusy}>{taskBusy ? '正在启动' : '使用下载文件夹并开始'}</button>}</section>}
               <ToolApprovalCard task={activeTask} onDecision={(actionId, decision) => void decideTool(actionId, decision)} onOpen={() => setSelectedMatter(activeTask)} /><DeliveryMessage task={activeTask} supervisor={supervisor} onOpen={() => setSelectedMatter(activeTask)} onOpenArtifact={(artifactId) => void performArtifactAction(activeTask.id, artifactId, 'open')} onRevealArtifact={(artifactId) => void performArtifactAction(activeTask.id, artifactId, 'reveal')} />{activeTask.toolActions.some((item) => item.state === 'result_unknown') && <div className="boundary-note message-stream-item">存在结果未知的 Tool Action。需要在 Runtime 记录真实外部结果后才能继续，客户端不会猜测成功或失败。</div>}</>
           ) : null}
@@ -574,7 +634,7 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
           {draftAttachments.length > 0 && <div className="composer-attachment-tray"><MessageAttachmentGroup source="user" attachments={draftAttachments.map((attachment) => ({ id: attachment.id, name: attachment.name, detail: fileDetail(attachment) }))} onRemove={(id) => setDraftAttachments((items) => items.filter((attachment) => attachment.id !== id))} /></div>}
           <textarea id="supervisor-input" aria-label="发送消息" rows={2} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`发送给${supervisor.name}，补充问题或事项信息`} disabled={runtimeStatus.state !== 'connected' || sending} />
           <div className="composer__toolbar">
-            <div className="composer__group"><button type="button" className="attachment-upload-button icon-button" aria-label="添加附件" title="选择 Word、PowerPoint、Excel、PDF 或图片客户文件" onClick={() => void selectAttachments()}><Plus aria-hidden width={19} height={19} /></button><button type="button" className="composer__control" aria-expanded={composerPanel === 'access'} aria-controls="composer-access-panel" onClick={() => setComposerPanel((panel) => panel === 'access' ? null : 'access')}><ShieldCheck aria-hidden width={17} height={17} /><span>受控访问</span></button></div>
+            <div className="composer__group"><button type="button" className="attachment-upload-button icon-button" aria-label="添加附件" title="选择 Word、PowerPoint、Excel、PDF 或图片附件" onClick={() => void selectAttachments()}><Plus aria-hidden width={19} height={19} /></button><button type="button" className="composer__control" aria-expanded={composerPanel === 'access'} aria-controls="composer-access-panel" onClick={() => setComposerPanel((panel) => panel === 'access' ? null : 'access')}><ShieldCheck aria-hidden width={17} height={17} /><span>受控访问</span></button></div>
             <div className="composer__group">
               <button type="button" className="composer__control" aria-expanded={composerPanel === 'model'} aria-controls="composer-model-panel" onClick={() => setComposerPanel((panel) => panel === 'model' ? null : 'model')}><Sparks aria-hidden width={17} height={17} /><span>deepseek-v4-pro</span><NavArrowDown aria-hidden width={15} height={15} /></button>
               <IconButton label="语音输入" icon={Microphone} onClick={() => setComposerPanel((panel) => panel === 'voice' ? null : 'voice')} />
@@ -589,7 +649,7 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
       </div>
       <MatterSidebar tasks={conversationTasks} collapsed={matterSidebarCollapsed} onLocate={locateMatter} />
       </div>
-      <MatterDetailModal task={selectedMatter} onClose={() => setSelectedMatter(undefined)} />
+      <MatterDetailModal task={selectedMatter} retrying={taskBusy} onRetry={(task) => void retryTask(task)} onClose={() => setSelectedMatter(undefined)} />
     </div>
   )
 }
@@ -644,19 +704,41 @@ export function App(): React.JSX.Element {
     setSelectedConversationId(created.id)
   }
 
+  const refreshRuntimeCatalogs = async (mounted: () => boolean): Promise<void> => {
+    const [employeeResult, resourceResult] = await Promise.allSettled([
+      window.aiEmployeeOS.employee.list(),
+      window.aiEmployeeOS.resource.list()
+    ])
+    if (!mounted()) return
+    if (employeeResult.status === 'fulfilled') {
+      setEmployees(employeeResult.value)
+      setSelectedEmployeeId((current) => current && employeeResult.value.some((employee) => employee.id === current) ? current : employeeResult.value[0]?.id)
+    }
+    if (resourceResult.status === 'fulfilled') {
+      const catalog = resourceResult.value
+      setResourceCatalog(catalog)
+      setSelectedResourceId((current) => current && [...catalog.skills, ...catalog.tools].some((resource) => resource.id === current) ? current : catalog.skills[0]?.id ?? catalog.tools[0]?.id)
+      setResourceError(undefined)
+    } else {
+      setResourceError('资源目录读取失败')
+    }
+  }
+
   useEffect(() => {
     let mounted = true
-    window.aiEmployeeOS.runtime.getStatus().then((status) => {
-      if (mounted) setRuntimeStatus(status)
-    })
+    const handleRuntimeStatus = (status: RuntimeStatus): void => {
+      if (!mounted) return
+      setRuntimeStatus(status)
+      if (status.state === 'connected') void refreshRuntimeCatalogs(() => mounted)
+    }
+    window.aiEmployeeOS.runtime.getStatus().then(handleRuntimeStatus)
     window.aiEmployeeOS.provider.getStatus().then((status) => {
       if (mounted) setProviderStatus(status)
     })
     window.aiEmployeeOS.supervisor.get().then((value) => { if (mounted) setSupervisor({ name: value.name, avatarDataUrl: value.avatarDataUrl, systemPrompt: value.systemPrompt, modelId: value.modelId, memoryScopes: [...value.memoryScopes] }) }).catch(() => undefined)
     refreshConversationData().catch(() => undefined)
-    window.aiEmployeeOS.employee.list().then((items) => { if (!mounted) return; setEmployees(items); setSelectedEmployeeId(items[0]?.id) }).catch(() => undefined)
-    window.aiEmployeeOS.resource.list().then((catalog) => { if (!mounted) return; setResourceCatalog(catalog); setSelectedResourceId(catalog.skills[0]?.id) }).catch(() => setResourceError('资源目录读取失败'))
-    const unsubscribe = window.aiEmployeeOS.runtime.onStatusChanged(setRuntimeStatus)
+    void refreshRuntimeCatalogs(() => mounted)
+    const unsubscribe = window.aiEmployeeOS.runtime.onStatusChanged(handleRuntimeStatus)
     return () => {
       mounted = false
       unsubscribe()

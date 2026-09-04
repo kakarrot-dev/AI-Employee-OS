@@ -6,6 +6,8 @@ import type { Conversation, Message, MessageAttachmentReference } from '../runti
 import type { MemoryCategoryView, MemoryScopeTypeView, MemoryStatusView, MemoryViewModel } from '../shared/memory-contract'
 import type { FormalTaskDetail } from '../runtime/task-service'
 import { projectTaskState } from '../runtime/state-machines'
+import { projectAssignmentChatContent, projectDeliveryChatContent } from '../runtime/chat-content-projector'
+import { normalizeMatterTitle } from '../shared/task-contract'
 import { ProviderSupervisor, type ProviderSupervisorEvent } from './provider-supervisor'
 import { RuntimeSupervisor, type RuntimeSupervisorEvent } from './runtime-supervisor'
 import { createWindowOptions, isTrustedRendererUrl } from './window-security'
@@ -13,6 +15,7 @@ import { bundledRuntimePaths, initializeBundledModel } from './bundled-runtime'
 import { maintainDiagnostics, writeLocalDiagnostic } from './storage-policy'
 import { resolveArtifactFilePath } from './artifact-file-actions'
 import { hasLocalDocumentCapability, hasTenderAnalysisCapability } from '../shared/capability-contract'
+import { isChatContentView } from '../shared/chat-content-contract'
 import { AttachmentImportService, SUPPORTED_ATTACHMENT_EXTENSIONS } from './attachment-import'
 
 app.enableSandbox()
@@ -96,7 +99,6 @@ function toTaskView(detail: FormalTaskDetail): TaskDetailView {
   const identities = new Map(detail.employeeIdentities.map((identity) => [identity.id, identity]))
   const review = [...detail.checkpoints].reverse().find((checkpoint) => checkpoint.phase === 'manager_review')
   const reviewResult = review?.payload.result && typeof review.payload.result === 'object' && !Array.isArray(review.payload.result) ? review.payload.result as { summary?: unknown } : undefined
-  const finalOutput = [...detail.assignments].reverse().find((assignment) => assignment.state === 'succeeded' && assignment.output?.trim())?.output?.trim()
   const deliverySummary = typeof reviewResult?.summary === 'string' && reviewResult.summary.trim() ? reviewResult.summary.trim() : undefined
   return {
     id: detail.task?.id ?? detail.draft.id,
@@ -106,6 +108,7 @@ function toTaskView(detail: FormalTaskDetail): TaskDetailView {
     taskId: detail.task?.id,
     draftId: detail.draft.id,
     state,
+    title: normalizeMatterTitle(detail.task?.title ?? detail.draft.title, detail.draft.goal),
     goal: detail.draft.goal,
     acceptanceCriteria: detail.draft.acceptanceCriteria,
     employeeVersionIds: detail.draft.employeeVersionIds,
@@ -114,9 +117,24 @@ function toTaskView(detail: FormalTaskDetail): TaskDetailView {
     draftRevision: detail.draft.revision,
     frozenRevision: detail.revision?.revision,
     runId: detail.run?.id,
-    assignments: detail.assignments.map(({ id, sequence, employeeVersionId, state: assignmentState, summary, createdAt, completedAt, reworkOfAssignmentId }) => { const version = versions.get(employeeVersionId); const employeeId = version?.employeeId; const identity = employeeId ? identities.get(employeeId) : undefined; return { id, sequence, employeeId, employeeVersionId, employeeName: identity?.name ?? version?.name, employeeRole: version?.role, avatarDataUrl: identity?.avatarDataUrl ?? version?.avatarDataUrl, createdAt, completedAt, reworkOfAssignmentId, state: assignmentState, summary } }),
+    assignments: detail.assignments.map((assignment) => {
+      const { id, sequence, employeeVersionId, state: assignmentState, summary, createdAt, completedAt, reworkOfAssignmentId } = assignment
+      const version = versions.get(employeeVersionId)
+      const employeeId = version?.employeeId
+      const identity = employeeId ? identities.get(employeeId) : undefined
+      const content = isChatContentView(assignment.presentation) ? assignment.presentation : ((assignment.summary?.trim() || ['succeeded', 'failed', 'cancelled'].includes(assignment.state)) ? projectAssignmentChatContent({
+        assignment,
+        actions: detail.toolActions.filter((action) => action.assignmentId === assignment.id),
+        researchBundle: detail.researchBundles.find((bundle) => bundle.assignmentId === assignment.id)
+      }) : undefined)
+      return { id, sequence, employeeId, employeeVersionId, employeeName: identity?.name ?? version?.name, employeeRole: version?.role, avatarDataUrl: identity?.avatarDataUrl ?? version?.avatarDataUrl, createdAt, completedAt, reworkOfAssignmentId, state: assignmentState, content, summary }
+    }),
     timeline: detail.checkpoints.map(({ phase, assignmentId, nextNode, createdAt, payload }) => ({ phase, assignmentId, nextNode, createdAt, ...(phase === 'memory_loaded' ? { memoryRefs: (payload.recallReasons as Array<{ id: string; reason: string }> | undefined) ?? [] } : {}) })),
-    delivery: detail.delivery ? { id: detail.delivery.id, summary: deliverySummary, result: finalOutput, createdAt: detail.delivery.createdAt, acceptanceResults: detail.delivery.acceptanceResults.map(({ criterion, passed }) => ({ criterion, passed })), artifacts: detail.artifacts.map(({ id, mediaType, relativePath, sha256 }) => ({ id, mediaType, relativePath, sha256 })), evidenceCount: detail.evidence.length, unresolvedIssues: detail.delivery.unresolvedIssues } : undefined,
+    delivery: detail.delivery ? (() => {
+      const acceptanceResults = detail.delivery.acceptanceResults.map(({ criterion, passed }) => ({ criterion, passed }))
+      const content = isChatContentView(detail.delivery!.presentation) ? detail.delivery!.presentation : projectDeliveryChatContent({ summary: deliverySummary, acceptanceResults, artifactCount: detail.artifacts.length, artifactNames: detail.artifacts.map((artifact) => artifact.relativePath), evidenceCount: detail.evidence.length, unresolvedIssues: detail.delivery!.unresolvedIssues })
+      return { id: detail.delivery!.id, content, summary: content.summary, createdAt: detail.delivery!.createdAt, acceptanceResults, artifacts: detail.artifacts.map(({ id, mediaType, relativePath, sha256 }) => ({ id, mediaType, relativePath, sha256 })), evidenceCount: detail.evidence.length, unresolvedIssues: detail.delivery!.unresolvedIssues }
+    })() : undefined,
     researchBundles: detail.researchBundles.map(({ id, contentHash, items, claims, conflicts, informationGaps }) => ({ id, contentHash, sourceCount: items.length, claimCount: claims.length, conflicts, informationGaps })),
     pendingChange: detail.changeRequests.find((change) => change.decision === 'pending') ? (() => { const change = detail.changeRequests.find((item) => item.decision === 'pending')!; return { id: change.id, sourceMessageId: change.sourceMessageId, requestedDiff: change.requestedDiff } })() : undefined,
     toolActions: detail.toolActions.map(({ id, assignmentId, createdAt, completedAt, toolVersionId, state: actionState, parameters, risk, approvalId, failureCode }) => ({ id, assignmentId, createdAt, completedAt, toolVersionId, state: actionState, parameters, risk, approvalId, failureCode })),
@@ -220,7 +238,7 @@ function registerRuntimeIpc(): void {
     assertTrustedSender(event.senderFrame?.url)
     if (!mainWindow) throw new Error('window_unavailable')
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: '选择客户招投标资料',
+      title: '选择要分析的附件',
       properties: ['openFile', 'multiSelections'],
       filters: [{ name: 'Word、PowerPoint、Excel、PDF、图片', extensions: SUPPORTED_ATTACHMENT_EXTENSIONS }]
     })
@@ -327,6 +345,7 @@ function registerRuntimeIpc(): void {
   ipcMain.handle(TASK_IPC.createDraft, async (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); const input = (value as { input: TaskDraftInputView }).input; return toTaskView(await runtimeSupervisor.taskCreateDraft({ ...input, directories: fixedOutputDirectories() })) })
   ipcMain.handle(TASK_IPC.updateDraft, async (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); const draftId = (value as { draftId?: unknown }).draftId; if (typeof draftId !== 'string') throw new Error('invalid_task_draft_id'); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); const changes = (value as { changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds'> }).changes; return toTaskView(await runtimeSupervisor.taskUpdateDraft(draftId, { ...changes, directories: fixedOutputDirectories() })) })
   ipcMain.handle(TASK_IPC.start, async (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); const draftId = (value as { draftId?: unknown }).draftId; if (typeof draftId !== 'string') throw new Error('invalid_task_draft_id'); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return toTaskView(await runtimeSupervisor.taskStart(draftId)) })
+  ipcMain.handle(TASK_IPC.retry, async (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); const taskId = (value as { taskId?: unknown }).taskId; if (typeof taskId !== 'string') throw new Error('invalid_task_id'); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return toTaskView(await runtimeSupervisor.taskRetry(taskId)) })
   ipcMain.handle(TASK_IPC.requestChange, (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); const { taskId, sourceMessageId, requestedDiff } = value as { taskId?: unknown; sourceMessageId?: unknown; requestedDiff?: unknown }; if (typeof taskId !== 'string' || typeof sourceMessageId !== 'string' || !requestedDiff || typeof requestedDiff !== 'object') throw new Error('invalid_change_request'); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.taskRequestChange(taskId, sourceMessageId, requestedDiff as Record<string, unknown>) })
   ipcMain.handle(TASK_IPC.acceptChange, async (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); const changeRequestId = (value as { changeRequestId?: unknown }).changeRequestId; if (typeof changeRequestId !== 'string') throw new Error('invalid_change_request_id'); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); const changes = (value as { changes: Pick<TaskDraftInputView, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds'> }).changes; return toTaskView(await runtimeSupervisor.taskAcceptChange(changeRequestId, { ...changes, directories: fixedOutputDirectories() })) })
   ipcMain.handle(TASK_IPC.rejectChange, async (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); const changeRequestId = (value as { changeRequestId?: unknown }).changeRequestId; if (typeof changeRequestId !== 'string') throw new Error('invalid_change_request_id'); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return toTaskView(await runtimeSupervisor.taskRejectChange(changeRequestId)) })

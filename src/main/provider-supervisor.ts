@@ -16,6 +16,8 @@ interface PendingExecution {
   resolve: () => void
   reject: (error: Error) => void
   timer: NodeJS.Timeout
+  deadlineTimer?: NodeJS.Timeout
+  idleMs: number
 }
 
 export type ProviderSupervisorEvent =
@@ -77,11 +79,16 @@ export class ProviderSupervisor {
   execute(request: ProviderRequest, onEvent: (event: ProviderEvent) => Promise<void>): Promise<void> {
     if (!this.child) return Promise.reject(new Error('provider_not_started'))
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.executions.delete(request.requestId)
+      const idleMs = request.executionTimeouts?.idleMs ?? 120_000
+      const firstEventMs = request.stream ? request.executionTimeouts?.firstEventMs ?? idleMs : idleMs
+      const deadlineAt = request.executionTimeouts?.deadlineAt ? Date.parse(request.executionTimeouts.deadlineAt) : undefined
+      if (deadlineAt !== undefined && (!Number.isFinite(deadlineAt) || deadlineAt <= Date.now())) {
         reject(new Error('provider_execution_timeout'))
-      }, 120_000)
-      this.executions.set(request.requestId, { onEvent, chain: Promise.resolve(), resolve, reject, timer })
+        return
+      }
+      const timer = setTimeout(() => this.timeoutExecution(request.requestId), firstEventMs)
+      const deadlineTimer = deadlineAt === undefined ? undefined : setTimeout(() => this.timeoutExecution(request.requestId), deadlineAt - Date.now())
+      this.executions.set(request.requestId, { onEvent, chain: Promise.resolve(), resolve, reject, timer, deadlineTimer, idleMs })
       this.child!.postMessage({ schemaVersion: PROVIDER_PROTOCOL_VERSION, requestId: request.requestId, type: 'execute', payload: request } satisfies ProviderCommand)
     })
   }
@@ -97,7 +104,7 @@ export class ProviderSupervisor {
     }
     this.pending.clear()
     for (const execution of this.executions.values()) {
-      clearTimeout(execution.timer)
+      this.clearExecutionTimers(execution)
       execution.reject(new Error('provider_stopped'))
     }
     this.executions.clear()
@@ -117,15 +124,17 @@ export class ProviderSupervisor {
     if (providerEvent.schemaVersion === PROVIDER_PROTOCOL_VERSION && providerEvent.type === 'provider.event' && typeof providerEvent.requestId === 'string' && providerEvent.event) {
       const execution = this.executions.get(providerEvent.requestId)
       if (!execution) return
+      clearTimeout(execution.timer)
+      if (providerEvent.event.type !== 'completed') execution.timer = setTimeout(() => this.timeoutExecution(providerEvent.requestId!), execution.idleMs)
       execution.chain = execution.chain.then(() => execution.onEvent(providerEvent.event!))
       void execution.chain.catch(() => undefined)
       if (providerEvent.event.type === 'completed') {
         void execution.chain.then(() => {
-          clearTimeout(execution.timer)
+          this.clearExecutionTimers(execution)
           this.executions.delete(providerEvent.requestId!)
           execution.resolve()
         }).catch((error) => {
-          clearTimeout(execution.timer)
+          this.clearExecutionTimers(execution)
           this.executions.delete(providerEvent.requestId!)
           execution.reject(error instanceof Error ? error : new Error('provider_event_rejected'))
         })
@@ -137,7 +146,7 @@ export class ProviderSupervisor {
     const execution = this.executions.get(response.requestId)
     if (execution) {
       if (!response.ok) {
-        clearTimeout(execution.timer)
+        this.clearExecutionTimers(execution)
         this.executions.delete(response.requestId)
         execution.reject(new Error((response as Extract<ProviderMessage, { type: 'provider.response'; ok: false }>).error.code))
       }
@@ -157,9 +166,23 @@ export class ProviderSupervisor {
     this.readyPromise = null
     this.onEvent({ type: 'stopped', reason: `provider_exit:${code ?? 'signal'}` })
     for (const execution of this.executions.values()) {
-      clearTimeout(execution.timer)
+      this.clearExecutionTimers(execution)
       execution.reject(new Error(`provider_exit:${code ?? 'signal'}`))
     }
     this.executions.clear()
+  }
+
+  private clearExecutionTimers(execution: PendingExecution): void {
+    clearTimeout(execution.timer)
+    if (execution.deadlineTimer) clearTimeout(execution.deadlineTimer)
+  }
+
+  private timeoutExecution(requestId: string): void {
+    const execution = this.executions.get(requestId)
+    if (!execution) return
+    this.clearExecutionTimers(execution)
+    this.executions.delete(requestId)
+    void this.cancel(requestId).catch(() => undefined)
+    execution.reject(new Error('provider_execution_timeout'))
   }
 }

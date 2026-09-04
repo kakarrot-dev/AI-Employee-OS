@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import JSZip from 'jszip'
@@ -75,6 +75,29 @@ describe('tender document runner', () => {
     const allowed = workspace(), outside = workspace()
     const path = join(outside, '客户需求.docx')
     writeFileSync(path, await officeFixture({ 'word/document.xml': '<w:document><w:body><w:p><w:r><w:t>需求</w:t></w:r></w:p></w:body></w:document>' }))
-    await expect(extractTenderDocuments([path], [allowed])).rejects.toThrow('path_outside_authorized_directories')
+    await expect(extractTenderDocuments([path], [allowed])).rejects.toThrow('path_outside_authorized_scope')
+  })
+
+  it('reads an exact Runtime-managed attachment without granting its directory', async () => {
+    const managed = mkdtempSync(join(tmpdir(), 'ai-employee-os-managed-source-')); directories.push(managed)
+    const path = join(managed, '客户需求.docx')
+    writeFileSync(path, await officeFixture({ 'word/document.xml': '<w:document><w:body><w:p><w:r><w:t>客户工作流需求</w:t></w:r></w:p></w:body></w:document>' }))
+
+    const documents = await extractTenderDocuments([path], [], undefined, [path])
+
+    expect(documents[0]).toMatchObject({ path: realpathSync(path), format: 'word', truncated: false })
+    expect(documents[0].sections[0]).toMatchObject({ locator: '段落 1', text: '客户工作流需求' })
+  })
+
+  it('keeps a single customer document above the former 32,000-character ceiling intact', async () => {
+    const root = workspace()
+    const path = join(root, '长篇招标文件.docx')
+    const text = '标段技术参数'.repeat(5_000)
+    writeFileSync(path, await officeFixture({ 'word/document.xml': `<w:document><w:body><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:body></w:document>` }))
+
+    const [document] = await extractTenderDocuments([path], [root])
+
+    expect(document.truncated).toBe(false)
+    expect(document.sections[0].text).toBe(text)
   })
 })

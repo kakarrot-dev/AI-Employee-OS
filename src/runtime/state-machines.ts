@@ -55,6 +55,7 @@ function isSubset(next: string[], current: string[]): boolean {
 
 function scopeDoesNotExpand(next: ResourceScope, current: ResourceScope): boolean {
   return isSubset(next.directories, current.directories)
+    && isSubset(next.files ?? [], current.files ?? [])
     && isSubset(next.toolVersionIds, current.toolVersionIds)
     && isSubset(next.modelConfigIds, current.modelConfigIds)
     && isSubset(next.memoryScopes, current.memoryScopes)

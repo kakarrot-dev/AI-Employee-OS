@@ -414,6 +414,13 @@ export class EmployeeService {
     return version
   }
 
+  activeVersionFor(versionId: string): EmployeeVersion {
+    const version = this.requireVersion(versionId)
+    const employee = this.requireEmployee(version.employeeId)
+    if (!employee.activeVersionId) throw new Error('employee_version_not_available')
+    return this.assertVersionUsable(employee.activeVersionId)
+  }
+
   private status(employee: Employee): EmployeeUiStatus {
     if (employee.archived) return 'archived'
     if (employee.disabled) return 'disabled'

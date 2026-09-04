@@ -23,6 +23,11 @@ export interface ProviderRequest {
   proposalTool?: ProposalToolDefinition
   toolChoice?: 'auto' | 'required' | 'none'
   mediaParameters?: Record<string, string | number | boolean>
+  executionTimeouts?: {
+    firstEventMs: number
+    idleMs: number
+    deadlineAt?: string
+  }
 }
 
 export type ProviderEvent =
@@ -31,7 +36,7 @@ export type ProviderEvent =
   | { type: 'tool_proposal'; requestId: string; callId: string; name: string; arguments: unknown }
   | { type: 'media_result'; requestId: string; modality: 'image' | 'video'; content: string; attachments: unknown[] }
   | { type: 'usage'; requestId: string; inputTokens: number; outputTokens: number; totalTokens: number; source: 'provider_actual' }
-  | { type: 'completed'; requestId: string; providerRequestId?: string }
+  | { type: 'completed'; requestId: string; providerRequestId?: string; incomplete?: boolean }
 
 export interface ProviderFailure {
   code: 'authentication_failed' | 'model_not_found' | 'rate_limited' | 'insufficient_balance' | 'timeout' | 'cancelled' | 'upstream_unavailable' | 'invalid_response' | 'request_rejected'

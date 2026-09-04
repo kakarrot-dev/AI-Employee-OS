@@ -59,7 +59,7 @@ export class RuntimeSupervisor {
     this.child = child
     child.on('message', (message) => this.handleMessage(message))
     child.on('exit', (code) => this.handleExit(child, code))
-    child.stderr?.on('data', () => undefined)
+    child.stderr?.on('data', (chunk) => process.stderr.write(`[runtime] ${String(chunk)}`))
     return this.readyPromise
   }
 
@@ -74,7 +74,7 @@ export class RuntimeSupervisor {
 
   sendConversation(conversationId: string, messageId: string, text: string, directories: string[] = [], attachments: MessageAttachmentReference[] = []): Promise<{ accepted: true; requestId: string }> {
     const requestId = randomUUID()
-    return this.request<{ accepted: true }>({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, type: 'conversation.send', payload: { conversationId, messageId, text, directories, attachments } }, 5000).then((result) => ({ ...result, requestId }))
+    return this.request<{ accepted: true }>({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, type: 'conversation.send', payload: { conversationId, messageId, text, directories, attachments } }, attachments.length ? 35_000 : 5000).then((result) => ({ ...result, requestId }))
   }
 
   conversationHistory(conversationId: string): Promise<Message[]> {
@@ -119,6 +119,7 @@ export class RuntimeSupervisor {
   taskCreateDraft(input: TaskDraftInput): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.create_draft', payload: { input } }) }
   taskUpdateDraft(draftId: string, changes: Pick<TaskDraftInput, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds' | 'directories'>): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.update_draft', payload: { draftId, changes } }) }
   taskStart(draftId: string): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.start', payload: { draftId } }, 5000) }
+  taskRetry(taskId: string): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.retry', payload: { taskId } }, 5000) }
   taskRequestChange(taskId: string, sourceMessageId: string, requestedDiff: Record<string, unknown>): Promise<{ accepted: true; changeRequestId: string }> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.request_change', payload: { taskId, sourceMessageId, requestedDiff } }) as Promise<{ accepted: true; changeRequestId: string }> }
   taskAcceptChange(changeRequestId: string, changes: Pick<TaskDraftInput, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds' | 'directories'>): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.accept_change', payload: { changeRequestId, changes } }, 5000) }
   taskRejectChange(changeRequestId: string): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.reject_change', payload: { changeRequestId } }, 5000) }

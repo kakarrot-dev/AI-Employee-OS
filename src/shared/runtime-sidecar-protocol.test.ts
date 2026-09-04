@@ -26,5 +26,6 @@ describe('runtime sidecar protocol', () => {
     expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '9', type: 'usage.summary', payload: {} })).toMatchObject({ type: 'usage.summary' })
     expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '10', type: 'memory.queue.accept', payload: { id: 'queue-1' } })).toMatchObject({ type: 'memory.queue.accept' })
     expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '11', type: 'memory.queue.dismiss', payload: { id: 'queue-1' } })).toMatchObject({ type: 'memory.queue.dismiss' })
+    expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '12', type: 'task.retry', payload: { taskId: 'task-1' } })).toMatchObject({ type: 'task.retry', payload: { taskId: 'task-1' } })
   })
 })

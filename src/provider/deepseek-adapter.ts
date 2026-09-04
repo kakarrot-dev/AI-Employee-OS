@@ -96,6 +96,7 @@ export class DeepSeekAdapter {
     let buffer = ''
     let completed = false
     let producedOutput = false
+    let outputBuffer = ''
     while (true) {
       const { value, done } = await reader.read()
       if (done) break
@@ -107,31 +108,41 @@ export class DeepSeekAdapter {
         const data = frame.split('\n').filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trim()).join('\n')
         if (!eventName || !data) continue
         const payload = JSON.parse(data) as Record<string, any>
-        if (eventName === 'response.output_text.delta' && typeof payload.delta === 'string') { producedOutput = true; yield { type: 'output_delta', requestId: request.requestId, delta: payload.delta } }
+        if (eventName === 'response.output_text.delta' && typeof payload.delta === 'string') {
+          producedOutput = true
+          outputBuffer += payload.delta
+          if (outputBuffer.length >= 256) {
+            yield { type: 'output_delta', requestId: request.requestId, delta: outputBuffer }
+            outputBuffer = ''
+          }
+        }
         if (eventName === 'response.function_call_arguments.done') {
+          if (outputBuffer) { yield { type: 'output_delta', requestId: request.requestId, delta: outputBuffer }; outputBuffer = '' }
           const name = typeof payload.name === 'string' ? payload.name : request.proposalTool?.name
           if (!name) throw new Error('invalid_response')
           producedOutput = true
           yield { type: 'tool_proposal', requestId: request.requestId, callId: String(payload.item_id ?? payload.call_id), name, arguments: parseToolArguments(payload.arguments ?? '{}') }
         }
         if (eventName === 'response.completed') {
+          if (outputBuffer) { yield { type: 'output_delta', requestId: request.requestId, delta: outputBuffer }; outputBuffer = '' }
           completed = true
           const usage = payload.response?.usage
           if (usage) yield { type: 'usage', requestId: request.requestId, inputTokens: Number(usage.input_tokens ?? 0), outputTokens: Number(usage.output_tokens ?? 0), totalTokens: Number(usage.total_tokens ?? 0), source: 'provider_actual' }
           yield { type: 'completed', requestId: request.requestId, providerRequestId: payload.response?.id }
         }
         if (eventName === 'response.incomplete') {
+          if (outputBuffer) { yield { type: 'output_delta', requestId: request.requestId, delta: outputBuffer }; outputBuffer = '' }
           const reason = payload.response?.incomplete_details?.reason
           if (reason !== 'max_output_tokens' || !producedOutput) throw new Error('invalid_response')
           completed = true
-          if (!request.proposalTool) yield { type: 'output_delta', requestId: request.requestId, delta: '\n\n[输出因长度上限截断]' }
           const usage = payload.response?.usage
           if (usage) yield { type: 'usage', requestId: request.requestId, inputTokens: Number(usage.input_tokens ?? 0), outputTokens: Number(usage.output_tokens ?? 0), totalTokens: Number(usage.total_tokens ?? 0), source: 'provider_actual' }
-          yield { type: 'completed', requestId: request.requestId, providerRequestId: payload.response?.id }
+          yield { type: 'completed', requestId: request.requestId, providerRequestId: payload.response?.id, incomplete: true }
         }
         if (eventName === 'response.failed') throw new Error('invalid_response')
       }
     }
+    if (outputBuffer) yield { type: 'output_delta', requestId: request.requestId, delta: outputBuffer }
     if (!completed) throw new Error('invalid_response')
   }
 
