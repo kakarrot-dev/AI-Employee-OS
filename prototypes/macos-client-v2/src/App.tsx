@@ -757,7 +757,7 @@ function MessagesPage({ conversationId, userProfile, onOpenMatter, onOpenDetail 
           {draftAttachments.length > 0 && <div className="composer-attachment-tray"><MessageAttachmentGroup attachments={draftAttachments} source="user" embedded onRemove={removeAttachment} /></div>}
           <textarea aria-label="发送消息" rows={2} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="发送给总管，补充问题或事项信息" />
           <div className="composer__toolbar">
-            <div className="composer__group"><AttachmentUploadButton onFiles={addAttachments} /><Button className="composer__control"><ShieldCheck aria-hidden width={17} height={17} /><span>受控访问</span></Button></div>
+            <div className="composer__group"><AttachmentUploadButton onFiles={addAttachments} /></div>
             <div className="composer__group"><Button className="composer__control"><Sparks aria-hidden width={17} height={17} /><span>deepseek-v4-pro</span><NavArrowDown aria-hidden width={15} height={15} /></Button><IconButton label="语音输入" icon={Microphone} /><Button type="submit" aria-label="发送" className="composer__send" isDisabled={!draft.trim() && !draftAttachments.length}><ArrowUp aria-hidden width={19} height={19} /></Button></div>
           </div>
         </div>

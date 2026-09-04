@@ -7,7 +7,6 @@ import {
   Eye,
   Group,
   InfoCircle,
-  Key,
   Microphone,
   NavArrowDown,
   NavArrowLeft,
@@ -33,13 +32,13 @@ import { RecruitmentCatalog } from './RecruitmentCatalog'
 import type { ResourceCatalogView } from '../../shared/resource-contract'
 import { DEFAULT_SUPERVISOR_CONFIG, type SupervisorConfigInput } from '../../shared/supervisor-contract'
 import { AppShell, Avatar, ClientModal, ContextPane, DetailListMark, DetailNote, DetailSectionHeader, DetailState, DetailSummaryPanel, IconButton, ListRow, PersonAvatar, Rail, SearchBox, SectionHeader, StatusLight, SummaryList, SummaryListItem, Toolbar, type ClientIcon, type DetailTone, type PersonIdentity } from './components/client-ui'
-import { ChatContentBlock, ChatMessage, MarkdownMessage, MatterRouteNote, MatterTeamAvatars, MessageAttachmentGroup, TimelineSummary, fileDetail } from './components/message-ui'
+import { AgentActivityMessage, ChatContentBlock, ChatMessage, MarkdownMessage, MatterRouteNote, MatterTeamAvatars, MessageAttachmentGroup, StreamingMarkdownMessage, TimelineSummary, fileDetail } from './components/message-ui'
 import { readClientProfile, SystemModule, systemSections, type ClientProfile, type SystemSectionId } from './SystemModule'
 import { formatClientTimestamp } from './client-time'
 
 type ModuleId = 'workbench' | 'team' | 'resources' | 'settings'
 type ConversationFilter = 'all' | 'attention' | 'unread'
-type ComposerPanel = 'access' | 'model' | 'voice' | null
+type ComposerPanel = 'model' | 'voice' | null
 type TeamView = 'directory' | 'recruitment'
 
 function attachmentImportErrorMessage(reason: unknown): string {
@@ -126,7 +125,7 @@ function terminalMilestone(task: TaskDetailView): Omit<FriendlyMilestone, 'state
   if (task.state === 'succeeded') return { key: 'delivery-committed', title: '交付结果已保存', description: '任务结果、交付文件和验收记录均已保存。', createdAt }
   if (task.state === 'failed') return { key: 'task-failed', title: '本次执行未完成', description: '执行遇到问题，未能完成全部要求。', createdAt }
   if (task.state === 'cancelled') return { key: 'task-cancelled', title: '任务已取消', description: '本次任务已停止，不会继续执行。', createdAt }
-  if (task.state === 'needs_attention') return { key: 'task-attention', title: '等待你处理', description: '需要你确认操作或补充信息后才能继续。', createdAt }
+  if (task.state === 'needs_attention') return { key: 'task-attention', title: '需要处理', description: '请查看待处理变更或结果核验信息，系统会同步最新状态。', createdAt }
   if (task.state === 'pending') return { key: 'task-pending', title: '等待开始', description: '任务已准备好，正在等待员工开始处理。', createdAt }
   if (task.state === 'running' && task.timeline.length === 0) return { key: 'task-running', title: '员工正在处理', description: '员工正在按完成要求推进任务。', createdAt }
   return undefined
@@ -150,7 +149,7 @@ export function buildFriendlyTimeline(task: TaskDetailView): FriendlyMilestone[]
     const copies: Record<string, Omit<FriendlyMilestone, 'state'>> = {
       created: { key: 'created', title: '任务已创建', description: '已确认任务目标和完成要求。', createdAt: item.createdAt },
       memory_loaded: { key: 'prepared', title: '工作资料已准备', description: '已准备本次工作需要的上下文和资料。', createdAt: item.createdAt },
-      tool_waiting: { key: 'tool-waiting', title: '等待操作确认', description: '有一项操作需要确认后才能继续。', createdAt: item.createdAt },
+      tool_waiting: { key: 'tool-waiting', title: '工具步骤等待处理', description: '该工具步骤没有自动完成，请以事项当前状态为准。', createdAt: item.createdAt },
       employee_completed: { key: `employee-completed-${item.assignmentId ?? index}`, title: `${employee}已完成`, description: assignment?.employeeRole ? `${assignment.employeeRole}的工作已完成，结果已交给下一阶段。` : '负责的工作已完成，结果已交给下一阶段。', createdAt: item.createdAt },
       deep_agents_safe_pause: { key: 'progress-saved', title: '执行进度已保存', description: '当前进度已安全保存，可以继续执行。', createdAt: item.createdAt },
       manager_review: { key: 'manager-review', title: '结果已检查', description: '总管已按完成要求检查员工提交的结果。', createdAt: item.createdAt },
@@ -181,7 +180,7 @@ function taskSummary(task: TaskDetailView): { title: string; description: string
   const evidence = task.delivery?.evidenceCount ?? 0
   if (task.state === 'succeeded') return { title: '所有完成要求均已通过', description: task.delivery ? `员工已完成处理，${artifacts} 个交付文件和 ${evidence} 条来源证据已保存。` : '员工已完成处理，任务结果已经保存。' }
   if (task.state === 'failed') return { title: '本次执行没有完成', description: '执行过程中遇到问题，请查看未解决事项后重新处理。' }
-  if (task.state === 'needs_attention') return { title: '需要你处理后才能继续', description: '请确认待处理操作或补充所需信息，员工随后会继续执行。' }
+  if (task.state === 'needs_attention') return { title: '当前步骤需要处理', description: '请查看待处理变更或结果核验信息；状态变化后页面会自动更新。' }
   if (task.state === 'cancelled') return { title: '本次任务已取消', description: '任务已经停止，当前记录会继续保留。' }
   if (task.state === 'draft') return { title: '任务内容等待确认', description: '确认目标和完成要求后，员工才会开始执行。' }
   if (task.state === 'pending') return { title: '任务即将开始', description: '目标和完成要求已确认，正在等待员工开始处理。' }
@@ -246,11 +245,12 @@ export function identityAwareConversationPreview(conversation: ConversationSumma
   return `${name}：${conversation.lastMessageContent}`
 }
 
-function MessageBlock({ message, user, supervisor }: { message: ConversationMessageView; user: PersonIdentity; supervisor: PersonIdentity }): React.JSX.Element {
+function MessageBlock({ message, user, supervisor, streamingActive = false }: { message: ConversationMessageView; user: PersonIdentity; supervisor: PersonIdentity; streamingActive?: boolean }): React.JSX.Element {
   const isUser = message.role === 'user'
   const identity = isUser ? user : supervisor
   const attachments = message.attachments?.map((attachment) => ({ id: attachment.id, name: attachment.name, detail: fileDetail(attachment) })) ?? []
-  return <ChatMessage source={isUser ? 'user' : 'agent'} name={identity.name} initials={identity.initials} color={identity.color} avatarSrc={identity.avatarSrc ?? undefined} time={formatClientTimestamp(message.createdAt)}><MarkdownMessage>{message.content}</MarkdownMessage>{attachments.length > 0 && <MessageAttachmentGroup source={isUser ? 'user' : 'agent'} embedded attachments={attachments} onOpen={(id) => void window.aiEmployeeOS.attachment.open(id)} onReveal={(id) => void window.aiEmployeeOS.attachment.reveal(id)} />}</ChatMessage>
+  const isStreamingReply = !isUser && message.id.startsWith('stream:')
+  return <ChatMessage source={isUser ? 'user' : 'agent'} name={identity.name} initials={identity.initials} color={identity.color} avatarSrc={identity.avatarSrc ?? undefined} time={formatClientTimestamp(message.createdAt)}>{isStreamingReply ? <StreamingMarkdownMessage active={streamingActive}>{message.content}</StreamingMarkdownMessage> : <MarkdownMessage>{message.content}</MarkdownMessage>}{attachments.length > 0 && <MessageAttachmentGroup source={isUser ? 'user' : 'agent'} embedded attachments={attachments} onOpen={(id) => void window.aiEmployeeOS.attachment.open(id)} onReveal={(id) => void window.aiEmployeeOS.attachment.reveal(id)} />}</ChatMessage>
 }
 
 const employeeColors = ['#9ebd79', '#d7b36a', '#85a9c7', '#bc91b1']
@@ -265,15 +265,15 @@ function TeamJoinedEvent({ task }: { task: TaskDetailView }): React.JSX.Element 
 function EmployeeProgressMessage({ task, assignment }: { task: TaskDetailView; assignment: TaskDetailView['assignments'][number] }): React.JSX.Element | null {
   if (assignment.state === 'pending') return null
   const name = assignment.employeeName ?? `员工 ${assignment.sequence}`
-  const waitingAction = task.toolActions.find((action) => action.assignmentId === assignment.id && ['pending', 'blocked', 'result_unknown'].includes(action.state))
+  const waitingAction = task.toolActions.find((action) => action.assignmentId === assignment.id && ['blocked', 'result_unknown'].includes(action.state))
   const status = assignment.state === 'running'
-    ? waitingAction ? '等待授权' : assignment.reworkOfAssignmentId ? '正在返工' : '正在执行'
+    ? waitingAction ? '需要处理' : assignment.reworkOfAssignmentId ? '正在返工' : '正在执行'
     : assignment.state === 'succeeded' ? assignment.reworkOfAssignmentId ? '返工完成' : '阶段完成'
       : assignment.state === 'failed' ? '执行失败' : '已取消'
   const statusState = assignment.state === 'succeeded' ? 'success' : assignment.state === 'failed' ? 'danger' : assignment.state === 'cancelled' ? 'muted' : waitingAction ? 'waiting' : 'active'
-  const fallbackTitle = assignment.state === 'succeeded' ? '阶段工作已完成' : assignment.state === 'failed' ? '阶段执行未完成' : assignment.state === 'cancelled' ? '阶段执行已取消' : waitingAction ? '等待授权后继续' : '阶段工作进行中'
+  const fallbackTitle = assignment.state === 'succeeded' ? '阶段工作已完成' : assignment.state === 'failed' ? '阶段执行未完成' : assignment.state === 'cancelled' ? '阶段执行已取消' : waitingAction ? '阶段需要处理' : '阶段工作进行中'
   const content = assignment.summary?.trim() || (waitingAction
-    ? `我已提交 ${waitingAction.toolVersionId} 的调用申请，等待你确认后继续。`
+    ? `工具操作 ${waitingAction.toolVersionId} 未能自动收敛，需要核验实际结果。`
     : assignment.state === 'running' ? `我已接手“${task.goal}”，正在执行当前阶段。`
       : assignment.state === 'failed' ? '当前阶段未能完成，详细失败原因已交给总管处理。'
         : '当前阶段已取消。')
@@ -291,18 +291,6 @@ function ManagerProgressEvent({ task, supervisor }: { task: TaskDetailView; supe
 function TaskWorkTimeline({ task, supervisor }: { task: TaskDetailView; supervisor: PersonIdentity }): React.JSX.Element | null {
   if (!task.assignments.length) return null
   return <div className="task-work-timeline" aria-label="员工工作时间线"><TeamJoinedEvent task={task} />{task.assignments.map((assignment) => <EmployeeProgressMessage key={assignment.id} task={task} assignment={assignment} />)}<ManagerProgressEvent task={task} supervisor={supervisor} /></div>
-}
-
-function ToolApprovalCard({ task, onDecision, onOpen }: { task: TaskDetailView; onDecision: (actionId: string, decision: 'approve' | 'reject') => void; onOpen: () => void }): React.JSX.Element | null {
-  if (task.state === 'failed' || task.state === 'cancelled') return null
-  const approval = task.approvals.find((item) => item.decision === 'pending') ?? task.approvals.at(-1)
-  if (!approval) return null
-  const action = task.toolActions.find((item) => item.id === approval.toolActionId)
-  const resolved = approval.decision !== 'pending'
-  return <article className={`approval-card message-stream-item${resolved ? ' is-resolved' : ''}`}>
-    <div><Key aria-hidden width={19} height={19} /><p>{resolved ? `你已${approval.decision === 'approved' ? '批准' : '拒绝'} ${action?.toolVersionId ?? '这项工具操作'}。` : `总管需要你确认 ${action?.toolVersionId ?? '工具操作'}；风险等级为 ${action?.risk ?? '未知'}，只在当前事项授权范围内生效。`}</p><IconButton label="查看审批详情" icon={Eye} onClick={onOpen} /></div>
-    {!resolved && action && <div className="approval-actions"><button type="button" className="button button--quiet" onClick={() => onDecision(action.id, 'reject')}>拒绝</button><button type="button" className="button button--primary" onClick={() => onDecision(action.id, 'approve')}>批准</button></div>}
-  </article>
 }
 
 function DeliveryMessage({ task, supervisor, onOpen, onOpenArtifact, onRevealArtifact }: { task: TaskDetailView; supervisor: PersonIdentity; onOpen: () => void; onOpenArtifact: (artifactId: string) => void; onRevealArtifact: (artifactId: string) => void }): React.JSX.Element | null {
@@ -404,12 +392,13 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
   const [messages, setMessages] = useState<ConversationMessageView[]>([])
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+  const [pendingResponseStartedAt, setPendingResponseStartedAt] = useState<string>()
   const [activeRequestId, setActiveRequestId] = useState<string>()
   const [cancelling, setCancelling] = useState(false)
   const [error, setError] = useState<string>()
   const [tasks, setTasks] = useState<TaskDetailView[]>([])
   const [taskBusy, setTaskBusy] = useState(false)
-  const [selectedMatter, setSelectedMatter] = useState<TaskDetailView>()
+  const [selectedMatterId, setSelectedMatterId] = useState<string>()
   const [composerPanel, setComposerPanel] = useState<ComposerPanel>(null)
   const [draftAttachments, setDraftAttachments] = useState<AttachmentView[]>([])
   const [isFileDragging, setIsFileDragging] = useState(false)
@@ -418,19 +407,28 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
 
   useEffect(() => {
     let mounted = true
+    let refreshingTasks = false
     const receiveTasks = (items: TaskDetailView[]): void => {
       if (!mounted) return
       setTasks(items)
     }
     setMessages([])
-    setSelectedMatter(undefined)
+    setPendingResponseStartedAt(undefined)
+    setActiveRequestId(undefined)
+    setSelectedMatterId(undefined)
     setComposerPanel(null)
     setDraftAttachments([])
     window.aiEmployeeOS.task.outputDirectory().then((directory) => { if (mounted) setAuthorizedDirectories([directory]) }).catch(() => { if (mounted) setError('下载目录读取失败') })
     window.aiEmployeeOS.conversation.history(conversationId).then((history) => { if (mounted) setMessages(history) }).catch(() => { if (mounted) setError('历史对话读取失败') })
+    const refreshTasks = (): void => {
+      if (refreshingTasks) return
+      refreshingTasks = true
+      window.aiEmployeeOS.task.list().then(receiveTasks).catch(() => { /* 下一轮或 Runtime 事件会继续同步 */ }).finally(() => { refreshingTasks = false })
+    }
     window.aiEmployeeOS.task.list().then(receiveTasks).catch(() => { if (mounted) setError('任务投影读取失败') })
     const unsubscribe = window.aiEmployeeOS.conversation.onEvent((event) => {
       if (event.type === 'output_delta') {
+        setActiveRequestId(event.requestId)
         setMessages((current) => {
           const id = `stream:${event.requestId}`
           const existing = current.find((message) => message.id === id)
@@ -439,24 +437,30 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
         })
       } else if (event.type === 'completed') {
         setSending(false)
+        setPendingResponseStartedAt(undefined)
         setActiveRequestId(undefined)
         setCancelling(false)
         window.aiEmployeeOS.task.list().then(receiveTasks).catch(() => { if (mounted) setError('事项草稿读取失败') })
         onDataChanged()
       } else if (event.type === 'failed') {
         setSending(false)
+        setPendingResponseStartedAt(undefined)
         setActiveRequestId(undefined)
         setCancelling(false)
         setError(`模型请求失败：${event.code}`)
       }
     })
-    const unsubscribeTask = window.aiEmployeeOS.task.onEvent(() => { window.aiEmployeeOS.task.list().then(receiveTasks) })
+    const unsubscribeTask = window.aiEmployeeOS.task.onEvent(refreshTasks)
     const unsubscribeEmployee = window.aiEmployeeOS.employee.onEvent(() => { window.aiEmployeeOS.task.list().then(receiveTasks) })
-    return () => { mounted = false; unsubscribe(); unsubscribeTask(); unsubscribeEmployee() }
+    const refreshTimer = window.setInterval(refreshTasks, 2_000)
+    const refreshOnFocus = (): void => refreshTasks()
+    window.addEventListener('focus', refreshOnFocus)
+    return () => { mounted = false; window.clearInterval(refreshTimer); window.removeEventListener('focus', refreshOnFocus); unsubscribe(); unsubscribeTask(); unsubscribeEmployee() }
   }, [conversationId])
 
   const conversationTasks = coalesceMatterCards(tasks.filter((task) => task.conversationId === conversationId))
   const activeTask = selectActiveTask(conversationTasks)
+  const selectedMatter = selectedMatterId ? tasks.find((task) => task.id === selectedMatterId) : undefined
   const latestUserMessage = [...messages].reverse().find((message) => message.role === 'user')
   const latestChangeMessage = activeTask ? [...messages].reverse().find((message) => message.role === 'user' && !(activeTask.sourceMessageIds ?? []).includes(message.id)) : undefined
   const activeRouteMode = activeTask && latestUserMessage && activeTask.sourceMessageIds?.length ? activeTask.sourceMessageIds.includes(latestUserMessage.id) ? 'created' : 'linked' : 'created'
@@ -468,6 +472,8 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
     setDraft('')
     setError(undefined)
     setSending(true)
+    setPendingResponseStartedAt(new Date().toISOString())
+    setActiveRequestId(undefined)
     const optimisticId = `local:${Date.now()}`
     const attachments = [...draftAttachments]
     setMessages((current) => [...current, { id: optimisticId, role: 'user', content: text, createdAt: new Date().toISOString(), attachments }])
@@ -480,8 +486,15 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
       onDataChanged()
     } catch {
       setSending(false)
+      setPendingResponseStartedAt(undefined)
       setError('消息未进入 Runtime')
     }
+  }
+
+  const handleComposerKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing || event.keyCode === 229) return
+    event.preventDefault()
+    event.currentTarget.form?.requestSubmit()
   }
 
   const selectAttachments = async (): Promise<void> => {
@@ -540,7 +553,7 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
     try {
       const retried = await window.aiEmployeeOS.task.retry(task.taskId)
       setTasks((current) => current.map((item) => item.taskId === retried.taskId ? retried : item))
-      setSelectedMatter((current) => current?.taskId === retried.taskId ? retried : current)
+      if (selectedMatterId === retried.taskId || selectedMatterId === retried.id) setSelectedMatterId(retried.id)
       onDataChanged()
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : ''
@@ -566,14 +579,6 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
       const value = accepted ? await window.aiEmployeeOS.task.acceptChange(activeTask.pendingChange.id, { goal: String(activeTask.pendingChange.requestedDiff.goal ?? activeTask.goal), acceptanceCriteria: activeTask.acceptanceCriteria, employeeVersionIds: activeTask.employeeVersionIds, directories: activeTask.directories }) : await window.aiEmployeeOS.task.rejectChange(activeTask.pendingChange.id)
       setTasks((current) => current.map((item) => item.id === value.id ? value : item))
     } catch (reason) { setError(reason instanceof Error ? reason.message : '变更决策失败') } finally { setTaskBusy(false) }
-  }
-
-  const decideTool = async (actionId: string, decision: 'approve' | 'reject'): Promise<void> => {
-    setTaskBusy(true); setError(undefined)
-    try {
-      const value = decision === 'approve' ? await window.aiEmployeeOS.task.approveTool(actionId) : await window.aiEmployeeOS.task.rejectTool(actionId)
-      setTasks((current) => current.map((item) => item.id === value.id ? value : item))
-    } catch (reason) { setError(reason instanceof Error ? reason.message : '审批决定未进入 Runtime') } finally { setTaskBusy(false) }
   }
 
   const performArtifactAction = async (taskId: string, artifactId: string, action: 'open' | 'reveal'): Promise<void> => {
@@ -603,6 +608,10 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
     target.focus({ preventScroll: true })
   }
 
+  const activeStreamMessageId = activeRequestId ? `stream:${activeRequestId}` : undefined
+  const hasActiveStreamMessage = activeStreamMessageId ? messages.some((message) => message.id === activeStreamMessageId) : false
+  const showSupervisorThinking = sending && !hasActiveStreamMessage && Boolean(pendingResponseStartedAt)
+
   return (
     <div className="workspace-page message-page">
       <div className={`conversation-workspace${matterSidebarCollapsed ? ' is-sidebar-collapsed' : ''}`}>
@@ -616,15 +625,15 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
               <p>描述目标。{supervisor.name}会先判断是直接回答、归入已有事项，还是创建新事项。</p>
             </div>
           ) : (
-            <div className="runtime-message-list" aria-live="polite"><div className="date-divider"><span>今天</span></div>{messages.map((message) => <MessageBlock key={message.id} message={message} user={user} supervisor={supervisor} />)}</div>
+            <div className="runtime-message-list" aria-live="polite"><div className="date-divider"><span>今天</span></div>{messages.map((message) => <MessageBlock key={message.id} message={message} user={user} supervisor={supervisor} streamingActive={sending && message.id === activeStreamMessageId} />)}{showSupervisorThinking && pendingResponseStartedAt && <AgentActivityMessage activity={{ state: 'thinking', agent: { name: supervisor.name, initials: supervisor.initials, color: supervisor.color, avatarSrc: supervisor.avatarSrc ?? undefined }, time: formatClientTimestamp(pendingResponseStartedAt) }} />}</div>
           )}
 
           {activeTask ? (
-            <><MatterRouteNote title={activeTask.title} mode={activeRouteMode} busy={taskBusy} onOpenMatter={() => setSelectedMatter(activeTask)} onCreateMatter={() => void createTaskDraft()} onRequestChange={activeTask.state === 'running' && !activeTask.pendingChange && latestChangeMessage ? () => void requestTaskChange() : undefined} />{conversationTasks.map((task) => <MatterEvent key={task.id} task={task} onOpen={() => setSelectedMatter(task)} onAnchor={(element) => { if (element) matterAnchors.current.set(task.id, element); else matterAnchors.current.delete(task.id) }} />)}<TaskWorkTimeline task={activeTask} supervisor={supervisor} />
+            <><MatterRouteNote title={activeTask.title} mode={activeRouteMode} busy={taskBusy} onOpenMatter={() => setSelectedMatterId(activeTask.id)} onCreateMatter={() => void createTaskDraft()} onRequestChange={activeTask.state === 'running' && !activeTask.pendingChange && latestChangeMessage ? () => void requestTaskChange() : undefined} />{conversationTasks.map((task) => <MatterEvent key={task.id} task={task} onOpen={() => setSelectedMatterId(task.id)} onAnchor={(element) => { if (element) matterAnchors.current.set(task.id, element); else matterAnchors.current.delete(task.id) }} />)}<TaskWorkTimeline task={activeTask} supervisor={supervisor} />
               {activeTask.pendingChange && <div className="change-card message-stream-item"><strong>待处理变更</strong><p>{String(activeTask.pendingChange.requestedDiff.goal ?? '需求已变化')}</p>{activeTask.state === 'needs_attention' ? <div><button type="button" onClick={() => void decideTaskChange(false)} disabled={taskBusy}>保持原事项</button><button type="button" onClick={() => void decideTaskChange(true)} disabled={taskBusy}>接受并启动新 Revision</button></div> : <small>将在当前节点完成并提交 Checkpoint 后暂停</small>}</div>}
               {activeTask.state === 'failed' && <section className="runtime-route-note message-stream-item"><Page aria-hidden width={16} height={16} /><span>本次执行已失败；未完成的只读 Tool 已安全终止，结果未知的写入操作需要先核验。</span><button type="button" onClick={() => void retryTask()} disabled={taskBusy}>{taskBusy ? '正在重试' : '按原事项重试'}</button></section>}
               {activeTask.state === 'draft' && <section className="runtime-route-note message-stream-item"><Page aria-hidden width={16} height={16} /><span>{activeTask.requiresDirectories && activeTask.directories.length === 0 ? '该事项尚未绑定固定下载目录。' : '事项已生成，Runtime 正在自动启动员工。'}</span>{activeTask.requiresDirectories && activeTask.directories.length === 0 && <button type="button" onClick={() => void startDraftInOutputDirectory()} disabled={taskBusy}>{taskBusy ? '正在启动' : '使用下载文件夹并开始'}</button>}</section>}
-              <ToolApprovalCard task={activeTask} onDecision={(actionId, decision) => void decideTool(actionId, decision)} onOpen={() => setSelectedMatter(activeTask)} /><DeliveryMessage task={activeTask} supervisor={supervisor} onOpen={() => setSelectedMatter(activeTask)} onOpenArtifact={(artifactId) => void performArtifactAction(activeTask.id, artifactId, 'open')} onRevealArtifact={(artifactId) => void performArtifactAction(activeTask.id, artifactId, 'reveal')} />{activeTask.toolActions.some((item) => item.state === 'result_unknown') && <div className="boundary-note message-stream-item">存在结果未知的 Tool Action。需要在 Runtime 记录真实外部结果后才能继续，客户端不会猜测成功或失败。</div>}</>
+              <DeliveryMessage task={activeTask} supervisor={supervisor} onOpen={() => setSelectedMatterId(activeTask.id)} onOpenArtifact={(artifactId) => void performArtifactAction(activeTask.id, artifactId, 'open')} onRevealArtifact={(artifactId) => void performArtifactAction(activeTask.id, artifactId, 'reveal')} />{activeTask.toolActions.some((item) => item.state === 'result_unknown') && <div className="boundary-note message-stream-item">存在结果未知的 Tool Action。需要在 Runtime 记录真实外部结果后才能继续，客户端不会猜测成功或失败。</div>}</>
           ) : null}
         </div>
       </div>
@@ -632,9 +641,9 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
         <div className={`composer__box${isFileDragging ? ' is-file-dragging' : ''}`}>
           {isFileDragging && <div className="composer-drop-zone" role="status"><Page aria-hidden width={22} height={22} /><span><strong>松开以上传文件</strong><small>Word、PowerPoint、Excel、PDF 或图片</small></span></div>}
           {draftAttachments.length > 0 && <div className="composer-attachment-tray"><MessageAttachmentGroup source="user" attachments={draftAttachments.map((attachment) => ({ id: attachment.id, name: attachment.name, detail: fileDetail(attachment) }))} onRemove={(id) => setDraftAttachments((items) => items.filter((attachment) => attachment.id !== id))} /></div>}
-          <textarea id="supervisor-input" aria-label="发送消息" rows={2} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={`发送给${supervisor.name}，补充问题或事项信息`} disabled={runtimeStatus.state !== 'connected' || sending} />
+          <textarea id="supervisor-input" aria-label="发送消息" rows={2} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder={`发送给${supervisor.name}，补充问题或事项信息`} disabled={runtimeStatus.state !== 'connected' || sending} />
           <div className="composer__toolbar">
-            <div className="composer__group"><button type="button" className="attachment-upload-button icon-button" aria-label="添加附件" title="选择 Word、PowerPoint、Excel、PDF 或图片附件" onClick={() => void selectAttachments()}><Plus aria-hidden width={19} height={19} /></button><button type="button" className="composer__control" aria-expanded={composerPanel === 'access'} aria-controls="composer-access-panel" onClick={() => setComposerPanel((panel) => panel === 'access' ? null : 'access')}><ShieldCheck aria-hidden width={17} height={17} /><span>受控访问</span></button></div>
+            <div className="composer__group"><button type="button" className="attachment-upload-button icon-button" aria-label="添加附件" title="选择 Word、PowerPoint、Excel、PDF 或图片附件" onClick={() => void selectAttachments()}><Plus aria-hidden width={19} height={19} /></button></div>
             <div className="composer__group">
               <button type="button" className="composer__control" aria-expanded={composerPanel === 'model'} aria-controls="composer-model-panel" onClick={() => setComposerPanel((panel) => panel === 'model' ? null : 'model')}><Sparks aria-hidden width={17} height={17} /><span>deepseek-v4-pro</span><NavArrowDown aria-hidden width={15} height={15} /></button>
               <IconButton label="语音输入" icon={Microphone} onClick={() => setComposerPanel((panel) => panel === 'voice' ? null : 'voice')} />
@@ -642,14 +651,14 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
               <button type="submit" aria-label="发送" className="composer__send" disabled={(!draft.trim() && !draftAttachments.length) || sending || runtimeStatus.state !== 'connected'}><ArrowUp aria-hidden width={19} height={19} /></button>
             </div>
           </div>
-          {composerPanel && <div className={`composer-popover composer-popover--${composerPanel}`} id={`composer-${composerPanel}-panel`} role="dialog" aria-label={composerPanel === 'access' ? '受控访问说明' : composerPanel === 'model' ? '当前会话模型' : '语音输入说明'}>{composerPanel === 'access' ? <><strong>受控访问</strong><p>文档员工固定在系统下载文件夹中创建和编辑交付物；越界、敏感参数和未声明 Tool 仍会被 Runtime 阻止。</p>{authorizedDirectories.length ? <div className="composer-popover__options">{authorizedDirectories.map((directory) => <div className="composer-popover__option" key={directory}><span><b>{directory.split('/').at(-1)}</b><small>{directory}</small></span><Check aria-hidden width={16} height={16} /></div>)}</div> : <StatusLight state="muted" label="正在读取下载目录" />}</> : composerPanel === 'model' ? <><strong>当前会话模型</strong><div className="composer-popover__options">{providerStatus.models.filter((model) => model.modality === 'text').map((model) => <button type="button" key={`${model.provider}:${model.modelId}`} className={model.modelId === 'deepseek-v4-pro' ? 'is-active' : ''} onClick={() => setComposerPanel(null)}><span><b>{model.modelId}</b><small>{model.provider} · {model.verification === 'verified' ? '已验证' : '未验证'}</small></span>{model.modelId === 'deepseek-v4-pro' && <Check aria-hidden width={16} height={16} />}</button>)}</div><p>模型由当前 Runtime 会话固定；此处展示真实可用状态，不会静默切换。</p></> : <><strong>语音输入</strong><p>客户端尚未接入 macOS 麦克风权限与转写 Bridge，因此不会请求权限或伪造录音。入口交互已保留。</p><StatusLight state="muted" label="暂未开放" /></>}</div>}
+          {composerPanel && <div className={`composer-popover composer-popover--${composerPanel}`} id={`composer-${composerPanel}-panel`} role="dialog" aria-label={composerPanel === 'model' ? '当前会话模型' : '语音输入说明'}>{composerPanel === 'model' ? <><strong>当前会话模型</strong><div className="composer-popover__options">{providerStatus.models.filter((model) => model.modality === 'text').map((model) => <button type="button" key={`${model.provider}:${model.modelId}`} className={model.modelId === 'deepseek-v4-pro' ? 'is-active' : ''} onClick={() => setComposerPanel(null)}><span><b>{model.modelId}</b><small>{model.provider} · {model.verification === 'verified' ? '已验证' : '未验证'}</small></span>{model.modelId === 'deepseek-v4-pro' && <Check aria-hidden width={16} height={16} />}</button>)}</div><p>模型由当前 Runtime 会话固定；此处展示真实可用状态，不会静默切换。</p></> : <><strong>语音输入</strong><p>客户端尚未接入 macOS 麦克风权限与转写 Bridge，因此不会请求权限或伪造录音。入口交互已保留。</p><StatusLight state="muted" label="暂未开放" /></>}</div>}
         </div>
         {error && <small className="composer-error" role="alert">{error}</small>}
       </form>
       </div>
       <MatterSidebar tasks={conversationTasks} collapsed={matterSidebarCollapsed} onLocate={locateMatter} />
       </div>
-      <MatterDetailModal task={selectedMatter} retrying={taskBusy} onRetry={(task) => void retryTask(task)} onClose={() => setSelectedMatter(undefined)} />
+      <MatterDetailModal task={selectedMatter} retrying={taskBusy} onRetry={(task) => void retryTask(task)} onClose={() => setSelectedMatterId(undefined)} />
     </div>
   )
 }
@@ -683,6 +692,8 @@ export function App(): React.JSX.Element {
   const [resourceInfoOpen, setResourceInfoOpen] = useState(false)
   const [contextCollapsed, setContextCollapsed] = useState(false)
   const [matterSidebarCollapsed, setMatterSidebarCollapsed] = useState(false)
+  const resourceCatalogRef = useRef<ResourceCatalogView>(emptyResourceCatalog)
+  const runtimeCatalogRefreshRef = useRef<Promise<void> | null>(null)
   const activeModule = useMemo(() => modules.find((module) => module.id === activeId)!, [activeId])
   const selectedConversation = conversations.find((conversation) => conversation.id === selectedConversationId)
   const selectedEmployee = employees.find((employee) => employee.id === selectedEmployeeId)
@@ -704,24 +715,31 @@ export function App(): React.JSX.Element {
     setSelectedConversationId(created.id)
   }
 
-  const refreshRuntimeCatalogs = async (mounted: () => boolean): Promise<void> => {
-    const [employeeResult, resourceResult] = await Promise.allSettled([
+  const refreshRuntimeCatalogs = (mounted: () => boolean): Promise<void> => {
+    if (runtimeCatalogRefreshRef.current) return runtimeCatalogRefreshRef.current
+    const refresh = Promise.allSettled([
       window.aiEmployeeOS.employee.list(),
       window.aiEmployeeOS.resource.list()
-    ])
-    if (!mounted()) return
-    if (employeeResult.status === 'fulfilled') {
-      setEmployees(employeeResult.value)
-      setSelectedEmployeeId((current) => current && employeeResult.value.some((employee) => employee.id === current) ? current : employeeResult.value[0]?.id)
-    }
-    if (resourceResult.status === 'fulfilled') {
-      const catalog = resourceResult.value
-      setResourceCatalog(catalog)
-      setSelectedResourceId((current) => current && [...catalog.skills, ...catalog.tools].some((resource) => resource.id === current) ? current : catalog.skills[0]?.id ?? catalog.tools[0]?.id)
-      setResourceError(undefined)
-    } else {
-      setResourceError('资源目录读取失败')
-    }
+    ]).then(([employeeResult, resourceResult]) => {
+      if (!mounted()) return
+      if (employeeResult.status === 'fulfilled') {
+        setEmployees(employeeResult.value)
+        setSelectedEmployeeId((current) => current && employeeResult.value.some((employee) => employee.id === current) ? current : employeeResult.value[0]?.id)
+      }
+      if (resourceResult.status === 'fulfilled') {
+        const catalog = resourceResult.value
+        resourceCatalogRef.current = catalog
+        setResourceCatalog(catalog)
+        setSelectedResourceId((current) => current && [...catalog.skills, ...catalog.tools].some((resource) => resource.id === current) ? current : catalog.skills[0]?.id ?? catalog.tools[0]?.id)
+        setResourceError(undefined)
+      } else if (resourceCatalogRef.current.skills.length === 0 && resourceCatalogRef.current.tools.length === 0) {
+        setResourceError('资源目录读取失败')
+      }
+    }).finally(() => {
+      if (runtimeCatalogRefreshRef.current === refresh) runtimeCatalogRefreshRef.current = null
+    })
+    runtimeCatalogRefreshRef.current = refresh
+    return refresh
   }
 
   useEffect(() => {
@@ -737,7 +755,6 @@ export function App(): React.JSX.Element {
     })
     window.aiEmployeeOS.supervisor.get().then((value) => { if (mounted) setSupervisor({ name: value.name, avatarDataUrl: value.avatarDataUrl, systemPrompt: value.systemPrompt, modelId: value.modelId, memoryScopes: [...value.memoryScopes] }) }).catch(() => undefined)
     refreshConversationData().catch(() => undefined)
-    void refreshRuntimeCatalogs(() => mounted)
     const unsubscribe = window.aiEmployeeOS.runtime.onStatusChanged(handleRuntimeStatus)
     return () => {
       mounted = false
@@ -785,7 +802,11 @@ export function App(): React.JSX.Element {
 
   const probeResources = async (): Promise<void> => {
     setProbingResources(true); setResourceError(undefined)
-    try { setResourceCatalog(await window.aiEmployeeOS.resource.probe()) } catch { setResourceError('数据源健康检查失败') } finally { setProbingResources(false) }
+    try {
+      const catalog = await window.aiEmployeeOS.resource.probe()
+      resourceCatalogRef.current = catalog
+      setResourceCatalog(catalog)
+    } catch { setResourceError('数据源健康检查失败') } finally { setProbingResources(false) }
   }
 
   const visibleConversations = conversations.filter((conversation) => {

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ChatContentBlock, ChatMessage, MarkdownMessage, MatterRouteNote, MessageAttachmentGroup, TimelineSummary } from './message-ui'
+import { AgentActivityMessage, ChatContentBlock, ChatMessage, MarkdownMessage, MatterRouteNote, MessageAttachmentGroup, TimelineSummary } from './message-ui'
 
 describe('message UI contracts', () => {
   afterEach(() => vi.restoreAllMocks())
@@ -79,6 +79,15 @@ describe('message UI contracts', () => {
     expect(container.querySelector('.message-block')).toHaveClass('message-block--timeline', 'message-stream-item')
     expect(container.querySelector('.message-bubble__status')).toHaveTextContent('阶段完成')
     expect(container.querySelector('.message-block--progress')).toBeNull()
+  })
+
+  it('renders any agent activity through one accessible bubbleless contract', () => {
+    const { container } = render(<AgentActivityMessage activity={{ state: 'thinking', agent: { name: '网络情报员', initials: '网', color: '#9ebd79' }, time: '12:50' }} />)
+
+    expect(screen.getByRole('status', { name: '网络情报员 思考中' })).toHaveTextContent('思考中')
+    expect(container.querySelector('.message-author')).toHaveTextContent('网络情报员12:50')
+    expect(container.querySelector('.message-bubble')).toBeNull()
+    expect(container.querySelector('.agent-activity')).toHaveAttribute('data-state', 'thinking')
   })
 
   it('renders legacy markdown assignment summaries as regular plain timeline text', () => {

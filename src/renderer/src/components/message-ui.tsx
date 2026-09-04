@@ -20,6 +20,25 @@ export interface MatterParticipant {
   src?: string
 }
 
+export interface AgentMessageIdentity {
+  name: string
+  initials: string
+  color: string
+  avatarSrc?: string
+}
+
+export type AgentActivityState = 'thinking'
+
+export interface AgentActivityMessageContract {
+  state: AgentActivityState
+  agent: AgentMessageIdentity
+  time: string
+}
+
+function reducedMotionRequested(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
 export function MarkdownContent({ children, className = '' }: { children: string; className?: string }): React.JSX.Element {
   return <div className={`markdown-rendered${className ? ` ${className}` : ''}`}><ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown></div>
 }
@@ -59,20 +78,61 @@ export function TimelineSummary({ content, children, fallbackTitle }: { content?
   return <ChatContentBlock content={content ?? legacyChatContent(children ?? '', fallbackTitle)} />
 }
 
-export interface ChatMessageProps {
+export interface ChatMessageProps extends AgentMessageIdentity {
   source: 'user' | 'agent'
-  name: string
-  initials: string
-  color: string
   time: string
-  avatarSrc?: string
   variant?: 'message' | 'timeline'
   status?: ReactNode
+  surface?: 'bubble' | 'none'
   children: ReactNode
 }
 
-export function ChatMessage({ source, name, initials, color, time, avatarSrc, variant = 'message', status, children }: ChatMessageProps): React.JSX.Element {
-  return <article className={`message-block message-block--${source}${variant === 'timeline' ? ' message-block--timeline message-stream-item' : ''}`}><Avatar label={name} initials={initials} color={color} size="small" src={avatarSrc} /><div className="message-block__stack"><div className="message-author"><strong>{name}</strong><time>{time}</time></div><div className="message-bubble">{status && <div className="message-bubble__status">{status}</div>}{children}</div></div></article>
+export function ChatMessage({ source, name, initials, color, time, avatarSrc, variant = 'message', status, surface = 'bubble', children }: ChatMessageProps): React.JSX.Element {
+  return <article className={`message-block message-block--${source}${variant === 'timeline' ? ' message-block--timeline message-stream-item' : ''}`}><Avatar label={name} initials={initials} color={color} size="small" src={avatarSrc} /><div className="message-block__stack"><div className="message-author"><strong>{name}</strong><time>{time}</time></div>{surface === 'none' ? children : <div className="message-bubble">{status && <div className="message-bubble__status">{status}</div>}{children}</div>}</div></article>
+}
+
+const agentActivityLabels: Record<AgentActivityState, string> = {
+  thinking: '思考中'
+}
+
+export function AgentActivityMessage({ activity, autoReveal = true }: { activity: AgentActivityMessageContract; autoReveal?: boolean }): React.JSX.Element {
+  const statusRef = useRef<HTMLDivElement>(null)
+  const label = agentActivityLabels[activity.state]
+
+  useEffect(() => {
+    if (!autoReveal) return
+    statusRef.current?.closest('.message-block')?.scrollIntoView?.({ behavior: reducedMotionRequested() ? 'auto' : 'smooth', block: 'nearest' })
+  }, [autoReveal])
+
+  return <ChatMessage source="agent" {...activity.agent} time={activity.time} surface="none">
+    <div ref={statusRef} className="agent-activity" data-state={activity.state} role="status" aria-label={`${activity.agent.name} ${label}`}>
+      <span className="agent-activity__text" aria-hidden="true">{Array.from(label).map((character, index) => <span key={`${character}:${index}`} style={{ animationDelay: `${index * 110}ms` }}>{character}</span>)}</span>
+    </div>
+  </ChatMessage>
+}
+
+export function StreamingMarkdownMessage({ children, active }: { children: string; active: boolean }): React.JSX.Element {
+  const characters = Array.from(children)
+  const reduceMotion = reducedMotionRequested()
+  const [visibleCount, setVisibleCount] = useState(() => reduceMotion ? characters.length : 0)
+
+  useEffect(() => {
+    if (reduceMotion) {
+      setVisibleCount(characters.length)
+      return
+    }
+    if (visibleCount >= characters.length) return
+    const remaining = characters.length - visibleCount
+    const step = remaining > 160 ? 5 : remaining > 64 ? 3 : remaining > 24 ? 2 : 1
+    const timer = window.setTimeout(() => setVisibleCount((count) => Math.min(characters.length, count + step)), visibleCount === 0 ? 0 : 18)
+    return () => window.clearTimeout(timer)
+  }, [characters.length, reduceMotion, visibleCount])
+
+  const isWriting = !reduceMotion && (active || visibleCount < characters.length)
+  const visibleContent = characters.slice(0, visibleCount).join('')
+  return <div className={`streaming-response${isWriting ? ' is-writing' : ''}`} aria-live={isWriting ? 'polite' : undefined} aria-label={isWriting ? children : undefined}>
+    {isWriting ? <div aria-hidden="true"><MarkdownContent>{visibleContent}</MarkdownContent></div> : <MarkdownMessage>{children}</MarkdownMessage>}
+  </div>
 }
 
 export function AttachmentOpenMenu({ attachment, onOpen, onReveal }: { attachment: MessageAttachment; onOpen?: (id: string) => void; onReveal?: (id: string) => void }): React.JSX.Element {
