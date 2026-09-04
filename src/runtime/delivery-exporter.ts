@@ -4,7 +4,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { Artifact, EmployeeVersion, Evidence, ResearchBundle, ToolAction } from './domain'
 import type { FormalTaskDetail } from './task-service'
 import { RuntimeKernel } from './kernel'
-import { hasResearchCapability, hasTenderAnalysisCapability } from './builtin-contracts'
+import { hasFeishuDocumentCapability, hasResearchCapability, hasTenderAnalysisCapability } from './builtin-contracts'
+import { FEISHU_DOCUMENT_TOOL_IDS } from '../shared/connection-contract'
 
 export interface DeliveryMaterialization { artifactIds: string[]; evidenceIds: string[]; unresolvedIssues: string[] }
 
@@ -41,14 +42,28 @@ export class DeliveryExporter {
       return [{ schemaVersion: 1, id: randomUUID(), createdAt: timestamp, runId: detail.run!.id, version: 1, sourceType: `customer_${document.format}`, sourceRef: document.path, capturedAt: action.completedAt ?? timestamp, sha256: document.sha256 }]
     }))
     for (const item of tenderEvidence) this.kernel.save({ entityType: 'Evidence', entity: item, immutable: true }, 'evidence.customer_attachment_committed', { sourceType: item.sourceType, sourceRef: item.sourceRef, sha256: item.sha256 })
+    const feishuEvidence = this.kernel.store.list<ToolAction>('ToolAction').filter((action) => action.runId === detail.run?.id && action.state === 'succeeded' && action.resultVerified === true).flatMap((action): Evidence[] => {
+      if (action.toolVersionId === FEISHU_DOCUMENT_TOOL_IDS.search && typeof action.result?.responseSha256 === 'string' && typeof action.result?.query === 'string') {
+        return [{ schemaVersion: 1, id: randomUUID(), createdAt: timestamp, runId: detail.run!.id, version: 1, sourceType: 'feishu_document_search', sourceRef: `feishu:search:${sha256(action.result.query)}`, capturedAt: action.completedAt ?? timestamp, sha256: action.result.responseSha256 }]
+      }
+      if (action.toolVersionId === FEISHU_DOCUMENT_TOOL_IDS.read && typeof action.result?.contentSha256 === 'string' && typeof action.result?.documentId === 'string') {
+        return [{ schemaVersion: 1, id: randomUUID(), createdAt: timestamp, runId: detail.run!.id, version: 1, sourceType: 'feishu_docx', sourceRef: `feishu:docx:${action.result.documentId}`, capturedAt: action.completedAt ?? timestamp, sha256: action.result.contentSha256 }]
+      }
+      if (action.toolVersionId === FEISHU_DOCUMENT_TOOL_IDS.wikiCount && typeof action.result?.enumerationSha256 === 'string' && action.result?.scope === 'accessible_wiki_spaces') {
+        return [{ schemaVersion: 1, id: randomUUID(), createdAt: timestamp, runId: detail.run!.id, version: 1, sourceType: 'feishu_wiki_enumeration', sourceRef: 'feishu:wiki:accessible-spaces', capturedAt: action.completedAt ?? timestamp, sha256: action.result.enumerationSha256 }]
+      }
+      return []
+    })
+    for (const item of feishuEvidence) this.kernel.save({ entityType: 'Evidence', entity: item, immutable: true }, 'evidence.feishu_document_committed', { sourceType: item.sourceType, sourceRef: item.sourceRef, sha256: item.sha256 })
     if (!bundle) {
       const researchExpected = detail.assignments.some((assignment) => hasResearchCapability(this.kernel.store.get<EmployeeVersion>('EmployeeVersion', assignment.employeeVersionId)?.capabilityVersionIds ?? []))
       const tenderExpected = detail.assignments.some((assignment) => hasTenderAnalysisCapability(this.kernel.store.get<EmployeeVersion>('EmployeeVersion', assignment.employeeVersionId)?.capabilityVersionIds ?? []))
-      const unresolvedIssues = researchExpected ? ['没有可导出的 ResearchBundle'] : tenderExpected && tenderEvidence.length === 0 ? ['没有可导出的客户源文件证据'] : fileArtifacts.length || tenderEvidence.length ? tenderWarnings : ['没有经过 Runtime 验证的文档写入或编辑结果']
-      return { artifactIds: fileArtifacts.map((artifact) => artifact.id), evidenceIds: tenderEvidence.map((item) => item.id), unresolvedIssues }
+      const feishuExpected = detail.assignments.some((assignment) => hasFeishuDocumentCapability(this.kernel.store.get<EmployeeVersion>('EmployeeVersion', assignment.employeeVersionId)?.capabilityVersionIds ?? []))
+      const unresolvedIssues = researchExpected ? ['没有可导出的 ResearchBundle'] : tenderExpected && tenderEvidence.length === 0 ? ['没有可导出的客户源文件证据'] : feishuExpected && feishuEvidence.length === 0 ? ['没有可导出的飞书文档证据'] : fileArtifacts.length || tenderEvidence.length || feishuEvidence.length ? tenderWarnings : ['没有经过 Runtime 验证的文档写入或编辑结果']
+      return { artifactIds: fileArtifacts.map((artifact) => artifact.id), evidenceIds: [...tenderEvidence, ...feishuEvidence].map((item) => item.id), unresolvedIssues }
     }
-    const evidence: Evidence[] = [...tenderEvidence, ...bundle.items.map((item) => ({ schemaVersion: 1 as const, id: randomUUID(), createdAt: timestamp, runId: detail.run!.id, version: 1, sourceType: item.sourceType, sourceRef: item.url, capturedAt: item.fetchedAt, sha256: item.contentHash }))]
-    for (const item of evidence.slice(tenderEvidence.length)) this.kernel.save({ entityType: 'Evidence', entity: item, immutable: true }, 'evidence.committed', { sourceType: item.sourceType, sourceRef: item.sourceRef })
+    const evidence: Evidence[] = [...tenderEvidence, ...feishuEvidence, ...bundle.items.map((item) => ({ schemaVersion: 1 as const, id: randomUUID(), createdAt: timestamp, runId: detail.run!.id, version: 1, sourceType: item.sourceType, sourceRef: item.url, capturedAt: item.fetchedAt, sha256: item.contentHash }))]
+    for (const item of evidence.slice(tenderEvidence.length + feishuEvidence.length)) this.kernel.save({ entityType: 'Evidence', entity: item, immutable: true }, 'evidence.committed', { sourceType: item.sourceType, sourceRef: item.sourceRef })
     if (fileArtifacts.length) return { artifactIds: fileArtifacts.map((artifact) => artifact.id), evidenceIds: evidence.map((item) => item.id), unresolvedIssues: [...tenderWarnings, ...bundle.informationGaps] }
     const finalOutput = detail.assignments.at(-1)?.output?.trim() || '未生成分析报告正文。'
     const sourceLines = bundle.items.map((item, index) => `${index + 1}. [${item.title}](${item.url}) · ${item.sourceType} · ${item.contentHash}`)

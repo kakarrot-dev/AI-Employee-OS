@@ -55,6 +55,28 @@ export function toPlainTimelineSummary(value: string, maxLength = 280): string {
   return characters.length > limit ? `${characters.slice(0, limit).join('').trimEnd()}…` : plain
 }
 
+/**
+ * Keeps lightweight Markdown for user-facing result copy while normalizing the
+ * model's formatting. Audit payloads and file references are rendered by their
+ * own UI contracts, so images, raw HTML and code fences do not belong here.
+ */
+export function toResultMarkdown(value: string, maxLength = 600): string {
+  const markdown = value
+    .replaceAll('\r\n', '\n')
+    .replace(/^[ \t]*```[^\n]*$/gm, '')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/<\/?[a-z][^>]*>/gi, ' ')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .join('\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  const characters = [...markdown]
+  const limit = Math.max(1, Math.floor(maxLength))
+  return characters.length > limit ? `${characters.slice(0, limit).join('').trimEnd()}…` : markdown
+}
+
 export function toPlainChatDetail(value: string, maxLength = 1_200): string {
   const lines = value
     .replaceAll('\r\n', '\n')

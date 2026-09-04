@@ -11,6 +11,8 @@ describe('runtime sidecar protocol', () => {
     expect(() => parseRuntimeCommand({ schemaVersion: 1, requestId: '1', type: 'memory.list', payload: { scopeType: 'organization' } })).toThrow('invalid_memory_filters')
     expect(() => parseRuntimeCommand({ schemaVersion: 1, requestId: '1', type: 'memory.update', payload: { id: 'm1', changes: { secret: 'x' } } })).toThrow('invalid_memory_update')
     expect(() => parseRuntimeCommand({ schemaVersion: 1, requestId: '1', type: 'conversation.send', payload: { conversationId: 'c', messageId: 'm', text: '写文档', directories: ['relative'] } })).toThrow('invalid_conversation_directories')
+    expect(() => parseRuntimeCommand({ schemaVersion: 1, requestId: '1', type: 'expert_group.archive', payload: {} })).toThrow('invalid_expert_group_id')
+    expect(() => parseRuntimeCommand({ schemaVersion: 1, requestId: '1', type: 'connection.feishu.status', payload: { status: { provider: 'feishu', state: 'connected', checkedAt: '2026-09-04T10:00:00.000Z', scopes: [], accessToken: 'must-not-cross-boundary' } } })).toThrow('invalid_feishu_status')
   })
 
   it('accepts a bounded event cursor request', () => {
@@ -27,5 +29,9 @@ describe('runtime sidecar protocol', () => {
     expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '10', type: 'memory.queue.accept', payload: { id: 'queue-1' } })).toMatchObject({ type: 'memory.queue.accept' })
     expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '11', type: 'memory.queue.dismiss', payload: { id: 'queue-1' } })).toMatchObject({ type: 'memory.queue.dismiss' })
     expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '12', type: 'task.retry', payload: { taskId: 'task-1' } })).toMatchObject({ type: 'task.retry', payload: { taskId: 'task-1' } })
+    expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '13', type: 'expert_group.list', payload: {} })).toMatchObject({ type: 'expert_group.list' })
+    expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '14', type: 'expert_group.archive', payload: { groupId: 'expert-group.customer-solution' } })).toMatchObject({ type: 'expert_group.archive' })
+    expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '15', type: 'connection.feishu.status', payload: { status: { provider: 'feishu', state: 'connected', checkedAt: '2026-09-04T10:00:00.000Z', scopes: ['search:docs:read', 'docx:document:readonly'] } } })).toMatchObject({ type: 'connection.feishu.status' })
+    expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '16', type: 'feishu.result', payload: { toolRequestId: 'tool-request-1', result: { status: 'succeeded' } } })).toMatchObject({ type: 'feishu.result' })
   })
 })

@@ -9,7 +9,9 @@ import type { MemoryCategory, MemoryHealth, MemoryQueueItem, MemoryScopeType, Me
 import type { ProviderEvent, ProviderRequest } from '../provider/contract'
 import type { SupervisorConfigInput, SupervisorConfigView } from '../shared/supervisor-contract'
 import type { UsageSummaryView } from '../shared/usage-contract'
+import type { ExpertGroupView } from '../shared/expert-group-contract'
 import { SIDECAR_PROTOCOL_VERSION, type RuntimeCommand, type RuntimeOutboundEvent, type RuntimeReadyEvent, type RuntimeResponse } from '../shared/runtime-sidecar-protocol'
+import type { FeishuConnectionStatus, FeishuDocumentToolId } from '../shared/connection-contract'
 
 interface PendingRequest {
   resolve: (result: unknown) => void
@@ -41,7 +43,8 @@ export class RuntimeSupervisor {
     private readonly onProviderCancel?: (providerRequestId: string) => Promise<{ cancelled: boolean }>,
     private readonly onConversationEvent?: (requestId: string, event: ProviderEvent | { type: 'failed'; requestId: string; code: string }) => void,
     private readonly onEmployeeEvent?: (event: { type: 'test_progress' | 'test_completed' | 'test_failed'; employeeId: string; testRunId: string; code?: string }) => void,
-    private readonly onTaskEvent?: (event: { type: 'progress' | 'assignment_completed' | 'delivery_completed' | 'needs_attention' | 'failed'; taskId: string; runId?: string }) => void
+    private readonly onTaskEvent?: (event: { type: 'progress' | 'assignment_completed' | 'delivery_completed' | 'needs_attention' | 'failed'; taskId: string; runId?: string }) => void,
+    private readonly onFeishuExecute?: (toolVersionId: FeishuDocumentToolId, parameters: Record<string, unknown>) => Promise<Record<string, unknown>>
   ) {}
 
   start(): Promise<RuntimeHealth> {
@@ -115,6 +118,8 @@ export class RuntimeSupervisor {
   employeeArchive(employeeId: string): Promise<EmployeeDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'employee.archive', payload: { employeeId } }) }
   employeeRestore(employeeId: string): Promise<EmployeeDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'employee.restore', payload: { employeeId } }) }
   employeeDeleteDraft(employeeId: string): Promise<{ accepted: true }> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'employee.delete', payload: { employeeId } }) }
+  expertGroupList(): Promise<ExpertGroupView[]> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'expert_group.list', payload: {} }) }
+  expertGroupArchive(groupId: string): Promise<ExpertGroupView> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'expert_group.archive', payload: { groupId } }) }
   taskList(): Promise<FormalTaskDetail[]> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.list', payload: {} }) }
   taskCreateDraft(input: TaskDraftInput): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.create_draft', payload: { input } }) }
   taskUpdateDraft(draftId: string, changes: Pick<TaskDraftInput, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds' | 'directories'>): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.update_draft', payload: { draftId, changes } }) }
@@ -125,6 +130,7 @@ export class RuntimeSupervisor {
   taskRejectChange(changeRequestId: string): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.reject_change', payload: { changeRequestId } }, 5000) }
   resourceList(): Promise<ResourceCatalog> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'resource.list', payload: {} }) }
   resourceProbe(): Promise<ResourceCatalog> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'resource.probe', payload: {} }, 35_000) }
+  updateFeishuStatus(status: FeishuConnectionStatus): Promise<ResourceCatalog> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'connection.feishu.status', payload: { status } }, 5000) }
   usageSummary(): Promise<UsageSummaryView> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'usage.summary', payload: {} }) }
   toolApprove(actionId: string): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'tool.approve', payload: { actionId } }, 135_000) }
   toolReject(actionId: string): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'tool.reject', payload: { actionId } }, 5000) }
@@ -219,6 +225,16 @@ export class RuntimeSupervisor {
       this.onTaskEvent?.(outbound.event)
       return
     }
+    if (outbound.schemaVersion === SIDECAR_PROTOCOL_VERSION && outbound.type === 'runtime.feishu.execute' && typeof outbound.requestId === 'string' && typeof outbound.toolVersionId === 'string' && outbound.parameters && typeof outbound.parameters === 'object') {
+      if (!this.onFeishuExecute) {
+        void this.sendFeishuFailure(outbound.requestId, 'feishu_runner_unavailable')
+        return
+      }
+      void this.onFeishuExecute(outbound.toolVersionId, outbound.parameters)
+        .then((result) => this.sendFeishuResult(outbound.requestId!, result))
+        .catch((error) => this.sendFeishuFailure(outbound.requestId!, error instanceof Error ? error.message : 'feishu_tool_failed'))
+      return
+    }
     const response = message as Partial<RuntimeResponse>
     if (response.schemaVersion !== SIDECAR_PROTOCOL_VERSION || typeof response.requestId !== 'string') return
     const pending = this.pending.get(response.requestId)
@@ -258,5 +274,13 @@ export class RuntimeSupervisor {
 
   private async sendProviderFailure(providerRequestId: string, code: string): Promise<void> {
     await this.request<{ accepted: true }>({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId: randomUUID(), type: 'provider.failed', payload: { providerRequestId, code: code.split(':')[0] } }, 5000)
+  }
+
+  private async sendFeishuResult(toolRequestId: string, result: Record<string, unknown>): Promise<void> {
+    await this.request<{ accepted: true }>({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId: randomUUID(), type: 'feishu.result', payload: { toolRequestId, result } }, 5000)
+  }
+
+  private async sendFeishuFailure(toolRequestId: string, code: string): Promise<void> {
+    await this.request<{ accepted: true }>({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId: randomUUID(), type: 'feishu.failed', payload: { toolRequestId, code: code.split(':')[0] } }, 5000)
   }
 }

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { Approval, Assignment, Run, RunGrant, ToolAction, ToolVersion } from './domain'
 import { RuntimeKernel } from './kernel'
 import { ResourceService } from './resource-service'
+import { FEISHU_DOCUMENT_TOOL_IDS } from '../shared/connection-contract'
 
 export interface ToolProposal {
   runId: string
@@ -147,6 +148,7 @@ export class ToolGateway {
     const tool = this.resources.tool(proposal.toolVersionId)
     if (!grant.resourceScope.toolVersionIds.includes(tool.id)) throw new Error('tool_outside_run_grant')
     this.validateParameters(tool, proposal.parameters, proposal.parameterSources)
+    if (tool.id === FEISHU_DOCUMENT_TOOL_IDS.read) this.validateFeishuReadProvenance(assignment, proposal.parameters)
     return { run, grant, assignment, tool }
   }
 
@@ -154,8 +156,12 @@ export class ToolGateway {
     const keys = Object.keys(parameters)
     if (!keys.length || keys.some((key) => !sources[key])) throw new Error('parameter_source_required')
     for (const source of Object.values(sources)) if (!source || !['task_input', 'trusted_runtime', 'model_output', 'untrusted_external_content'].includes(source.kind) || typeof source.sourceRef !== 'string' || source.sourceRef.length < 1 || source.sourceRef.length > 512) throw new Error('invalid_parameter_source')
-    if (tool.id.startsWith('github.repositories.search') || tool.id.startsWith('agent-reach.') || tool.id.startsWith('last30days.') || tool.id.startsWith('opencli.')) {
+    if (tool.id.startsWith('github.repositories.search') || tool.id.startsWith('agent-reach.') || tool.id.startsWith('last30days.') || tool.id.startsWith('opencli.') || tool.id === FEISHU_DOCUMENT_TOOL_IDS.search) {
       if (keys.some((key) => !['query', 'limit'].includes(key)) || typeof parameters.query !== 'string' || parameters.query.length < 1 || parameters.query.length > 256) throw new Error('invalid_tool_parameters')
+    } else if (tool.id === FEISHU_DOCUMENT_TOOL_IDS.read) {
+      if (keys.length !== 1 || typeof parameters.documentId !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(parameters.documentId)) throw new Error('invalid_tool_parameters')
+    } else if (tool.id === FEISHU_DOCUMENT_TOOL_IDS.wikiCount) {
+      if (keys.length !== 1 || parameters.scope !== 'accessible_wiki_spaces') throw new Error('invalid_tool_parameters')
     } else if (tool.id.startsWith('rss.read')) {
       if (keys.some((key) => !['url', 'limit'].includes(key)) || typeof parameters.url !== 'string' || parameters.url.length > 2048) throw new Error('invalid_tool_parameters')
     } else if (tool.id === 'document.read@local-document/v1') {
@@ -168,6 +174,14 @@ export class ToolGateway {
       if (keys.length !== 1 || !Array.isArray(parameters.paths) || parameters.paths.length < 1 || parameters.paths.length > 8 || new Set(parameters.paths).size !== parameters.paths.length || parameters.paths.some((path) => typeof path !== 'string')) throw new Error('invalid_tool_parameters')
     }
     if (parameters.limit !== undefined && (!Number.isSafeInteger(parameters.limit) || Number(parameters.limit) < 1 || Number(parameters.limit) > 10)) throw new Error('invalid_tool_parameters')
+  }
+
+  private validateFeishuReadProvenance(assignment: Assignment, parameters: Record<string, unknown>): void {
+    const documentId = parameters.documentId
+    const found = (assignment.toolActionIds ?? [])
+      .map((id) => this.kernel.store.get<ToolAction>('ToolAction', id))
+      .some((action) => action?.toolVersionId === FEISHU_DOCUMENT_TOOL_IDS.search && action.state === 'succeeded' && action.resultVerified === true && Array.isArray(action.result?.items) && action.result.items.some((item) => item && typeof item === 'object' && (item as Record<string, unknown>).documentId === documentId))
+    if (!found) throw new Error('feishu_document_not_from_search')
   }
 
   private blockReason(action: ToolAction): string | undefined {

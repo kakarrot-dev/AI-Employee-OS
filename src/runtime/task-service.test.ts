@@ -9,6 +9,7 @@ import { TaskService, type AssignmentHandoffProjection } from './task-service'
 import { ResourceService } from './resource-service'
 import { ToolGateway } from './tool-gateway'
 import { localDocumentRunner } from './local-document-runner'
+import { FEISHU_DOCUMENT_TOOL_IDS } from '../shared/connection-contract'
 
 const directories: string[] = []
 
@@ -26,7 +27,7 @@ function setup(): { employees: EmployeeService; tasks: TaskService; store: Runti
 }
 
 function managerReview(criteriaCount: number, approved: boolean, summary: string, returnToAssignmentSequence?: number): Record<string, unknown> {
-  return { approved, summary, criteria: Array.from({ length: criteriaCount }, (_, criterionIndex) => ({ criterionIndex, passed: approved, reason: approved ? 'Runtime 证据满足该项标准' : summary, evidenceTypes: ['employee_output'] })), ...(returnToAssignmentSequence ? { returnToAssignmentSequence } : {}) }
+  return { approved, summary, criteria: Array.from({ length: criteriaCount }, (_, criterionIndex) => ({ criterionIndex, passed: approved, reason: approved ? 'Runtime 证据满足该项标准' : summary, evidenceTypes: ['employee_output'] })), deliveryResult: { resultType: 'text', headline: '交付结果', summary: approved ? '已交付满足任务目标的文本结果。' : '当前结果尚未满足任务目标。', keyResults: [], limitations: [] }, ...(returnToAssignmentSequence ? { returnToAssignmentSequence } : {}) }
 }
 
 function completeEmployeeTest(employees: EmployeeService, candidateRequestId: string) {
@@ -183,14 +184,13 @@ describe('TaskService', () => {
     expect(completed.detail.assignments[0].output).toContain('TenderRequirementHandoffFragment 1/1')
     expect(completed.detail.checkpoints.some((checkpoint) => checkpoint.phase === 'source_batch' && checkpoint.payload.deterministicFragmentAssembly === true)).toBe(true)
     expect(completed.detail.assignments[0]).toMatchObject({
-      summary: '已完成源文件解析和内部需求交接；源文件正文不在会话中重复展示。',
+      summary: '已从 **1 个文件**中整理出 **1 个有效内容片段**，客户要求已完成归纳。',
       presentation: {
         schemaVersion: 1,
-        title: '客户材料解析完成',
-        metrics: [{ label: '源文件', value: '1' }, { label: '可追溯片段', value: '1' }],
-        detail: { label: '查看分析说明', content: expect.stringContaining('TenderRequirementHandoffFragment') }
+        title: '客户材料分析结果'
       }
     })
+    expect(completed.detail.assignments[0].presentation).not.toHaveProperty('detail')
     expect(completed.request?.input).not.toContain('这是不应在会话时间线中重写的客户原文')
     const review = tasks.beginManagerReview(started.run!.id)
     expect(review.input).toContain('完整 Manifest 和 source_batch 检查点')
@@ -246,11 +246,14 @@ describe('TaskService', () => {
 
     expect(finalTurn.request?.input).toContain('网络检索已由上游情报员工完成并通过 Handoff 提供')
     expect(finalTurn.request?.input).toContain('不得重复申请已执行或不在此列表中的 Tool')
+    expect(finalTurn.request?.input).toContain('文件名与操作入口由文件卡片展示')
+    expect(finalTurn.request?.input).not.toContain('直接输出完成摘要、路径和 SHA-256')
     expect(finalTurn.request).toMatchObject({ toolChoice: 'auto', proposalTool: { parameters: { properties: { toolVersionId: { enum: ['document.edit@local-document/v1'] } } } } })
     expect(() => tasks.toolProposalContext(finalTurn.request!.requestId, { ...readEvent, requestId: finalTurn.request!.requestId, callId: 'duplicate-read' })).toThrow('tool_not_available_for_assignment')
     tasks.recordInvalidToolProposal(finalTurn.request!.requestId, 'tool_not_available_for_assignment')
     const completed = tasks.handleProviderEvent(finalTurn.request!.requestId, { type: 'completed', requestId: finalTurn.request!.requestId })!
     expect(completed).toMatchObject({ event: 'assignment_completed', detail: { assignments: [{ state: 'succeeded', invalidToolProposalCount: 1 }] } })
+    expect(completed.detail.assignments[0].presentation).toEqual({ schemaVersion: 1, title: '文件已生成', summary: '已生成 **report.md**，可在最终交付区直接打开。' })
     const managerRequest = tasks.beginManagerReview(started.run!.id)
     expect(managerRequest.input).toContain('Runtime Tool 证据中的 succeeded、resultVerified、path、content、bytes 和 sha256 是系统事实')
     expect(managerRequest.input).toContain('verified-hash')
@@ -393,7 +396,8 @@ describe('TaskService', () => {
     const delivered = tasks.handleProviderEvent(managerRequest.requestId, { type: 'completed', requestId: managerRequest.requestId })!
     expect(delivered).toMatchObject({ event: 'delivery_completed', detail: { task: { state: 'succeeded' }, run: { state: 'succeeded' }, delivery: { unresolvedIssues: [] } } })
     expect(delivered.detail.delivery?.acceptanceResults).toEqual([{ criterion: '包含完成状态', passed: true, evidenceIds: [] }])
-    expect(delivered.detail.delivery?.presentation).toEqual({ schemaVersion: 1, title: '交付结果已完成', summary: '验收通过', metrics: [{ label: '完成要求', value: '1/1' }, { label: '来源证据', value: '0' }, { label: '交付文件', value: '0' }], detail: undefined })
+    expect(delivered.detail.delivery?.result).toMatchObject({ schemaVersion: 1, resultType: 'text', headline: '交付结果', summary: '已交付满足任务目标的文本结果。' })
+    expect(delivered.detail.delivery?.presentation).toEqual({ schemaVersion: 1, title: '交付结果', summary: '已交付满足任务目标的文本结果。', metrics: undefined, detail: undefined })
     expect(store.list('BudgetLedgerEntry')).toHaveLength(1)
     expect(() => store.deleteMutable('TaskRevision', started.revision!.id, { schemaVersion: 1, eventId: 'tamper', occurredAt: new Date().toISOString(), eventType: 'tamper', aggregateType: 'TaskRevision', aggregateId: started.revision!.id, payload: {} })).toThrow('immutable_entity_cannot_change')
     const rerun = tasks.retryFailedTask(started.task!.id)
@@ -404,7 +408,7 @@ describe('TaskService', () => {
     store.close()
   })
 
-  it('stores a plain-text timeline summary for markdown employee output', () => {
+  it('stores only non-technical result copy for markdown employee output', () => {
     const { employees, tasks, store } = setup()
     const employeeVersionId = publishEmployee(employees)
     const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'plain-timeline-summary', sourceMessageIds: ['message'], goal: '生成研究摘要', acceptanceCriteria: ['摘要可读'], employeeVersionIds: [employeeVersionId] }).draft.id)
@@ -413,8 +417,8 @@ describe('TaskService', () => {
     tasks.handleProviderEvent(started.request.requestId, { type: 'output_delta', requestId: started.request.requestId, delta: markdown })
     const completed = tasks.handleProviderEvent(started.request.requestId, { type: 'completed', requestId: started.request.requestId })!
 
-    expect(completed.detail.assignments[0].summary).toBe('研究范围与结论摘要 研究任务： 交叉核验客户背景。 通道；查询；结果 agent-reach.search；郑州工商学院；5 条')
-    expect(completed.detail.assignments[0].summary).not.toMatch(/[#*|]/)
+    expect(completed.detail.assignments[0].summary).toBe('交叉核验客户背景。')
+    expect(completed.detail.assignments[0].summary).not.toMatch(/agent-reach|通道|Tool|Runtime|[#*|]/)
     expect(completed.detail.assignments[0].presentation).toMatchObject({ schemaVersion: 1, title: '阶段工作已完成', summary: completed.detail.assignments[0].summary })
     store.close()
   })
@@ -962,6 +966,81 @@ describe('TaskService', () => {
     expect(finalTurn.request?.input).toContain('rss.read@research-source/v1')
     tasks.handleProviderEvent(finalTurn.request!.requestId, { type: 'output_delta', requestId: finalTurn.request!.requestId, delta: '包含两类来源的结论' })
     expect(tasks.handleProviderEvent(finalTurn.request!.requestId, { type: 'completed', requestId: finalTurn.request!.requestId })?.event).toBe('assignment_completed')
+    store.close()
+  })
+
+  it('runs the Feishu specialist through search then same-assignment document read', async () => {
+    const { employees, tasks, store, kernel, resources } = setup()
+    resources.updateFeishuConnection({ provider: 'feishu', state: 'connected', checkedAt: new Date().toISOString(), scopes: ['offline_access', 'search:docs:read', 'docx:document:readonly', 'wiki:wiki:readonly'] })
+    employees.seedRequestedSpecialists()
+    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'feishu-docs', sourceMessageIds: ['message'], goal: '从飞书项目周报提炼风险', acceptanceCriteria: ['列出风险与依据'], employeeVersionIds: ['employee-version.feishu-researcher.v2'], authorizationMode: 'full_access' }).draft.id)
+    expect(started.revision?.acceptanceCriteria).toContain('飞书文档结论保留所用查询、文档 ID、内容 SHA-256、截断状态与未覆盖边界')
+    expect(started.request.proposalTool?.parameters.properties).toMatchObject({ toolVersionId: { enum: [FEISHU_DOCUMENT_TOOL_IDS.search] } })
+    const gateway = new ToolGateway(kernel, resources, async (tool) => tool.id === FEISHU_DOCUMENT_TOOL_IDS.search
+      ? { status: 'succeeded', query: '项目周报', items: [{ documentId: 'doccnDocument123', documentType: 'docx', title: '项目周报' }], responseSha256: 'a'.repeat(64), trust: 'untrusted_external_content' }
+      : { status: 'succeeded', documentId: 'doccnDocument123', content: '风险：交付延期。', contentSha256: 'b'.repeat(64), truncated: false, trust: 'untrusted_external_content' })
+
+    const searchContext = tasks.toolProposalContext(started.request.requestId, { type: 'tool_proposal', requestId: started.request.requestId, callId: 'search', name: 'propose_tool_action', arguments: { toolVersionId: FEISHU_DOCUMENT_TOOL_IDS.search, parameters: { query: '项目周报' } } })
+    const search = await gateway.propose(searchContext)
+    tasks.attachToolAction(searchContext.assignmentId, search.id)
+    const readTurn = tasks.handleProviderEvent(started.request.requestId, { type: 'completed', requestId: started.request.requestId })!
+    expect(readTurn.request?.proposalTool?.parameters.properties).toMatchObject({ toolVersionId: { enum: [FEISHU_DOCUMENT_TOOL_IDS.read] } })
+
+    const readContext = tasks.toolProposalContext(readTurn.request!.requestId, { type: 'tool_proposal', requestId: readTurn.request!.requestId, callId: 'read', name: 'propose_tool_action', arguments: { toolVersionId: FEISHU_DOCUMENT_TOOL_IDS.read, parameters: { documentId: 'doccnDocument123' } } })
+    expect(readContext.parameterSources.documentId).toMatchObject({ kind: 'untrusted_external_content', sourceRef: `tool_action:${search.id}:result.items.documentId` })
+    const read = await gateway.propose(readContext)
+    tasks.attachToolAction(readContext.assignmentId, read.id)
+    const finalTurn = tasks.handleProviderEvent(readTurn.request!.requestId, { type: 'completed', requestId: readTurn.request!.requestId })!
+    expect(finalTurn.request).toMatchObject({ toolChoice: 'none' })
+    tasks.handleProviderEvent(finalTurn.request!.requestId, { type: 'output_delta', requestId: finalTurn.request!.requestId, delta: '结论：存在交付延期风险。来源：项目周报，doccnDocument123，SHA-256 已保留。' })
+    expect(tasks.handleProviderEvent(finalTurn.request!.requestId, { type: 'completed', requestId: finalTurn.request!.requestId })?.event).toBe('assignment_completed')
+    store.close()
+  })
+
+  it('uses the Wiki enumeration tool instead of keyword search for a knowledge-base count', async () => {
+    const { employees, tasks, store, kernel, resources } = setup()
+    resources.updateFeishuConnection({ provider: 'feishu', state: 'connected', checkedAt: new Date().toISOString(), scopes: ['offline_access', 'search:docs:read', 'docx:document:readonly', 'wiki:wiki:readonly'] })
+    employees.seedRequestedSpecialists()
+    const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'feishu-wiki-count', sourceMessageIds: ['message'], goal: '看下我的飞书知识库里有几篇文档', acceptanceCriteria: ['统计全部可访问知识库文档数量并提供来源证据'], employeeVersionIds: ['employee-version.feishu-researcher.v2'], authorizationMode: 'full_access' }).draft.id)
+    expect(started.revision?.acceptanceCriteria).toContain('飞书知识库统计保留枚举范围、空间与文档数量、文档引用 ID、枚举 SHA-256、截断状态与未覆盖边界；不要求读取正文或提供内容 SHA-256')
+    expect(started.revision?.acceptanceCriteria.some((criterion) => criterion.includes('内容 SHA-256') && !criterion.includes('不要求读取正文'))).toBe(false)
+    expect(started.request.proposalTool?.parameters.properties).toMatchObject({ toolVersionId: { enum: [FEISHU_DOCUMENT_TOOL_IDS.wikiCount] } })
+
+    const gateway = new ToolGateway(kernel, resources, async () => ({ status: 'succeeded', scope: 'accessible_wiki_spaces', coverage: 'all_accessible_wiki_spaces_excluding_my_document_library', spaceCount: 1, totalDocuments: 2, spaces: [{ spaceId: 'space-1', documentCount: 2, enumerationSha256: 'a'.repeat(64) }], documentRefs: [{ spaceId: 'space-1', nodeToken: 'node-1', documentType: 'docx', documentId: 'doc-1' }, { spaceId: 'space-1', nodeToken: 'node-2', documentType: 'sheet', documentId: 'sheet-1' }], enumerationSha256: 'b'.repeat(64), responseSha256: 'c'.repeat(64), truncated: false }))
+    const context = tasks.toolProposalContext(started.request.requestId, { type: 'tool_proposal', requestId: started.request.requestId, callId: 'count', name: 'propose_tool_action', arguments: { toolVersionId: FEISHU_DOCUMENT_TOOL_IDS.wikiCount, parameters: { scope: 'accessible_wiki_spaces' } } })
+    expect(context.parameterSources.scope).toMatchObject({ kind: 'trusted_runtime' })
+    const action = await gateway.propose(context)
+    tasks.attachToolAction(context.assignmentId, action.id)
+    const finalTurn = tasks.handleProviderEvent(started.request.requestId, { type: 'completed', requestId: started.request.requestId })!
+    expect(finalTurn.request).toMatchObject({ toolChoice: 'none' })
+    expect(finalTurn.request?.input).toContain('"totalDocuments":2')
+    expect(finalTurn.request?.input).toContain('用户可见摘要不得写思考、计划、执行过程')
+    tasks.handleProviderEvent(finalTurn.request!.requestId, { type: 'output_delta', requestId: finalTurn.request!.requestId, delta: '当前可访问的 1 个知识库包含 2 篇去重文档；不包含我的文档库。来源 ID 与枚举 SHA-256 已保留。' })
+    const assignmentDone = tasks.handleProviderEvent(finalTurn.request!.requestId, { type: 'completed', requestId: finalTurn.request!.requestId })!
+    expect(assignmentDone.event).toBe('assignment_completed')
+    const deliveryTasks = new TaskService(kernel, employees, () => [], ({ output }) => ({ parts: [{ kind: 'text', mediaType: 'text/plain', text: output }] }), () => ({ artifactIds: [], evidenceIds: ['evidence-feishu-count'], unresolvedIssues: [] }))
+    const managerRequest = deliveryTasks.beginManagerReview(started.run!.id)
+    expect(managerRequest.input).toContain('[用户可见交付正文契约]')
+    expect(managerRequest.input).toContain('keyResults 只保留用户关心的业务结果指标')
+    const criteria = assignmentDone.detail.revision!.acceptanceCriteria.map((_, criterionIndex) => ({ criterionIndex, passed: true, reason: 'Runtime Tool 证据满足该项标准', evidenceTypes: ['tool_result'] }))
+    deliveryTasks.handleProviderEvent(managerRequest.requestId, { type: 'structured_result', requestId: managerRequest.requestId, value: {
+      approved: true,
+      summary: '知识库计数与 Runtime 证据一致。',
+      criteria,
+      deliveryResult: {
+        resultType: 'metric',
+        headline: '当前可访问飞书知识库共有 2 篇文档',
+        summary: '当前用户可访问的 1 个飞书知识库空间中共有 2 篇去重文档，枚举未截断。',
+        keyResults: [
+          { label: '文档总数', value: '2 篇', unit: '', sourceIds: [action.id] },
+          { label: '知识库空间数', value: '1', unit: '个', sourceIds: [action.id] },
+          { label: '枚举截断状态', value: 'false（未截断）', unit: '', sourceIds: [action.id] }
+        ],
+        limitations: ['不包含我的文档库。']
+      }
+    } })
+    const delivered = deliveryTasks.handleProviderEvent(managerRequest.requestId, { type: 'completed', requestId: managerRequest.requestId })!
+    expect(delivered).toMatchObject({ event: 'delivery_completed', detail: { task: { state: 'succeeded' }, delivery: { result: { summary: '当前用户可访问的 1 个飞书知识库空间中共有 2 篇去重文档，枚举未截断。', keyResults: [{ label: '文档总数', value: '2 篇' }, { label: '知识库空间数', value: '1', unit: '个' }, { label: '枚举截断状态', value: 'false（未截断）' }] } } } })
     store.close()
   })
 

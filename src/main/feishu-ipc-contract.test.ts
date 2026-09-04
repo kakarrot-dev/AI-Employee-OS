@@ -9,7 +9,7 @@ describe('Feishu IPC security boundary', () => {
     const main = source('src/main/index.ts')
     const preload = source('src/preload/index.ts')
     const rendererTypes = source('src/renderer/src/env.d.ts')
-    for (const operation of ['getFeishuStatus', 'connectFeishu', 'disconnectFeishu']) {
+    for (const operation of ['getFeishuStatus', 'openFeishuDeveloperConsole', 'connectFeishu', 'cancelFeishuAuthorization', 'disconnectFeishu']) {
       expect(main).toContain(`CONNECTION_IPC.${operation}`)
       expect(preload).toContain(`CONNECTION_IPC.${operation}`)
     }

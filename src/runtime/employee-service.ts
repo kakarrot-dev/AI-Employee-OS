@@ -4,7 +4,7 @@ import type { AllowedModelId } from '../provider/models'
 import { normalizeEmployeeDraft, validateEmployeeDraft, type EmployeeDetail, type EmployeeDraftInput, type EmployeeSummary, type EmployeeUiStatus } from '../shared/employee-contract'
 import type { AgentCapabilityVersion, Assignment, Employee, EmployeeVersion, MCPVersion, SandboxTestRun, SkillVersion, SourceHealthCheck, TestCase, ToolVersion } from './domain'
 import { RuntimeKernel } from './kernel'
-import { DOCUMENT_EMPLOYEE_PROMPT, LEGACY_DOCUMENT_EMPLOYEE_PROMPT, LEGACY_NETWORK_EMPLOYEE_PROMPT, NETWORK_EMPLOYEE_PROMPT, TENDER_ANALYST_PROMPT } from './builtin-contracts'
+import { DOCUMENT_EMPLOYEE_PROMPT, FEISHU_RESEARCHER_PROMPT, LEGACY_DOCUMENT_EMPLOYEE_PROMPT, LEGACY_NETWORK_EMPLOYEE_PROMPT, NETWORK_EMPLOYEE_PROMPT, TENDER_ANALYST_PROMPT } from './builtin-contracts'
 
 export interface TestStartResult {
   request: ProviderRequest
@@ -106,6 +106,27 @@ const BUILT_IN_CAPABILITIES: AgentCapabilityVersion[] = [
       { kind: 'Tool', versionId: 'document.edit@local-document/v1', available: true },
       { kind: 'MCP', versionId: 'mcp.local-document-runner.v1', available: true }
     ]
+  },
+  {
+    schemaVersion: 1,
+    id: 'capability.feishu-documents.v2',
+    createdAt: '2026-09-04T00:00:00.000Z',
+    name: '飞书文档读取',
+    description: '以当前连接用户身份搜索并只读获取其有权访问的飞书新版文档。',
+    version: 2,
+    skillVersionIds: ['skill.feishu-document-reading.v2'],
+    toolVersionIds: ['feishu.documents.search@feishu-documents/v1', 'feishu.documents.read@feishu-documents/v1', 'feishu.wiki.count@feishu-wiki/v1'],
+    mcpVersionIds: ['mcp.feishu-documents.v1', 'mcp.feishu-wiki.v1'],
+    requiredModelIds: ['deepseek-v4-pro', 'claude-sonnet-4.6'],
+    permissionRequirements: ['feishu.documents.search', 'feishu.documents.read', 'feishu.wiki.read'],
+    dependencies: [
+      { kind: 'Skill', versionId: 'skill.feishu-document-reading.v2', available: true },
+      { kind: 'Tool', versionId: 'feishu.documents.search@feishu-documents/v1', available: false, reason: '等待飞书连接状态' },
+      { kind: 'Tool', versionId: 'feishu.documents.read@feishu-documents/v1', available: false, reason: '等待飞书连接状态' },
+      { kind: 'Tool', versionId: 'feishu.wiki.count@feishu-wiki/v1', available: false, reason: '等待飞书连接状态' },
+      { kind: 'MCP', versionId: 'mcp.feishu-documents.v1', available: false, reason: '等待飞书连接状态' },
+      { kind: 'MCP', versionId: 'mcp.feishu-wiki.v1', available: false, reason: '等待飞书连接状态' }
+    ]
   }
 ]
 
@@ -135,6 +156,15 @@ const SPECIALIST_EMPLOYEES: Array<{ employee: Employee; version: EmployeeVersion
       description: '将用户要求和已核验 Handoff 转化为结构清晰、证据可追溯、文件可回读的交付物；不访问网络。',
       systemPrompt: DOCUMENT_EMPLOYEE_PROMPT,
       modelId: 'deepseek-v4-pro', capabilityVersionIds: ['capability.local-document.v2'], memoryScopes: ['employee', 'task'], testRunIds: [], publishedAt: '2026-09-02T00:00:00.000Z'
+    }
+  },
+  {
+    employee: { schemaVersion: 1, id: 'employee.feishu-researcher', createdAt: '2026-09-04T00:00:00.000Z', name: '飞书资料员', activeVersionId: 'employee-version.feishu-researcher.v2', disabled: false, archived: false },
+    version: {
+      schemaVersion: 1, id: 'employee-version.feishu-researcher.v2', createdAt: '2026-09-04T00:00:00.000Z', employeeId: 'employee.feishu-researcher', version: 2, state: 'active', name: '飞书资料员', role: '飞书知识库统计、内部文档检索与证据交接',
+      description: '使用当前用户已授权的飞书知识库枚举、文档搜索与纯文本读取能力，形成带来源 ID、Hash 和覆盖边界的内部资料结果；不执行任何写操作。',
+      systemPrompt: FEISHU_RESEARCHER_PROMPT,
+      modelId: 'deepseek-v4-pro', capabilityVersionIds: ['capability.feishu-documents.v2'], memoryScopes: ['employee', 'task'], testRunIds: [], publishedAt: '2026-09-04T00:00:00.000Z'
     }
   }
 ]
@@ -529,10 +559,17 @@ export class EmployeeService {
         if (dependency.kind === 'Tool') {
           const resource = this.kernel.store.get<ToolVersion>('ToolVersion', dependency.versionId)
           const check = this.kernel.store.list<SourceHealthCheck>('SourceHealthCheck').filter((value) => value.adapterVersionId === dependency.versionId).sort((left, right) => Date.parse(right.checkedAt) - Date.parse(left.checkedAt))[0]
-          const available = Boolean(resource?.available && resource.health !== 'unavailable' && (!check || check.status === 'available'))
-          return { ...dependency, available, reason: check && check.status !== 'available' ? check.failureCode ?? '数据源健康检查未通过' : resource?.reason ?? (resource ? undefined : 'Tool 未安装') }
+          const available = Boolean(resource?.available && resource.health !== 'unavailable' && (check ? check.status === 'available' && check.credentialStatus !== 'missing' : resource.credentialStatus !== 'missing'))
+          return { ...dependency, available, reason: available ? undefined : check?.failureCode ?? resource?.reason ?? (resource ? '数据源不可用' : 'Tool 未安装') }
         }
-        if (dependency.kind === 'MCP') { const resource = this.kernel.store.get<MCPVersion>('MCPVersion', dependency.versionId); return { ...dependency, available: Boolean(resource?.available && resource.health !== 'unavailable' && resource.credentialStatus !== 'missing'), reason: resource?.reason ?? (resource ? undefined : 'MCP 未安装') } }
+        if (dependency.kind === 'MCP') {
+          const resource = this.kernel.store.get<MCPVersion>('MCPVersion', dependency.versionId)
+          const checks = resource?.toolVersionIds.map((toolId) => this.kernel.store.list<SourceHealthCheck>('SourceHealthCheck').filter((value) => value.adapterVersionId === toolId).sort((left, right) => Date.parse(right.checkedAt) - Date.parse(left.checkedAt))[0]).filter((value): value is SourceHealthCheck => Boolean(value)) ?? []
+          const dynamicAvailable = checks.length === (resource?.toolVersionIds.length ?? 0) && checks.every((check) => check.status === 'available' && check.credentialStatus !== 'missing')
+          const available = Boolean(resource?.available && resource.health !== 'unavailable' && (resource.credentialStatus !== 'missing' || dynamicAvailable))
+          const failed = checks.find((check) => check.status !== 'available' || check.credentialStatus === 'missing')
+          return { ...dependency, available, reason: available ? undefined : failed?.failureCode ?? resource?.reason ?? (resource ? 'MCP 不可用' : 'MCP 未安装') }
+        }
         const resource = this.kernel.store.get<SkillVersion>('SkillVersion', dependency.versionId)
         return { ...dependency, available: Boolean(resource?.available), reason: resource?.reason ?? (resource ? undefined : 'Skill 未安装') }
       })

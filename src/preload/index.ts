@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import { ATTACHMENT_IPC, CONVERSATION_IPC, EMPLOYEE_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, SUPERVISOR_IPC, TASK_IPC, USAGE_IPC, type AttachmentBridge, type ConversationBridge, type ConversationStreamEvent, type EmployeeBridge, type EmployeeDraftInput, type EmployeeEvent, type MemoryBridge, type ProviderBridge, type ResourceBridge, type RuntimeBridge, type RuntimeStatus, type SupervisorBridge, type SupervisorConfigInput, type TaskBridge, type TaskDraftInputView, type TaskEvent, type UsageBridge } from '../shared/runtime-contract'
+import { ATTACHMENT_IPC, CONVERSATION_IPC, EMPLOYEE_IPC, EXPERT_GROUP_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, SUPERVISOR_IPC, TASK_IPC, USAGE_IPC, type AttachmentBridge, type ConversationBridge, type ConversationStreamEvent, type EmployeeBridge, type EmployeeDraftInput, type EmployeeEvent, type ExpertGroupBridge, type MemoryBridge, type ProviderBridge, type ResourceBridge, type RuntimeBridge, type RuntimeStatus, type SupervisorBridge, type SupervisorConfigInput, type TaskBridge, type TaskDraftInputView, type TaskEvent, type UsageBridge } from '../shared/runtime-contract'
 import type { MemoryCategoryView, MemoryScopeTypeView, MemoryStatusView, MemoryViewModel } from '../shared/memory-contract'
 import type { MemorySearchResultView } from '../shared/memory-contract'
 import { CONNECTION_IPC, type ConnectionBridge, type FeishuConnectionInput } from '../shared/connection-contract'
@@ -69,6 +69,11 @@ const employeeBridge: EmployeeBridge = Object.freeze({
   }
 })
 
+const expertGroupBridge: ExpertGroupBridge = Object.freeze({
+  list: () => ipcRenderer.invoke(EXPERT_GROUP_IPC.list),
+  archive: (groupId: string) => ipcRenderer.invoke(EXPERT_GROUP_IPC.archive, { groupId })
+})
+
 const taskBridge: TaskBridge = Object.freeze({
   list: () => ipcRenderer.invoke(TASK_IPC.list),
   outputDirectory: () => ipcRenderer.invoke(TASK_IPC.outputDirectory),
@@ -103,8 +108,10 @@ const usageBridge: UsageBridge = Object.freeze({ summary: () => ipcRenderer.invo
 
 const connectionBridge: ConnectionBridge = Object.freeze({
   getFeishuStatus: () => ipcRenderer.invoke(CONNECTION_IPC.getFeishuStatus),
+  openFeishuDeveloperConsole: (appId: string) => ipcRenderer.invoke(CONNECTION_IPC.openFeishuDeveloperConsole, { appId }),
   connectFeishu: (input: FeishuConnectionInput) => ipcRenderer.invoke(CONNECTION_IPC.connectFeishu, input),
+  cancelFeishuAuthorization: () => ipcRenderer.invoke(CONNECTION_IPC.cancelFeishuAuthorization),
   disconnectFeishu: () => ipcRenderer.invoke(CONNECTION_IPC.disconnectFeishu)
 })
 
-contextBridge.exposeInMainWorld('aiEmployeeOS', Object.freeze({ runtime: runtimeBridge, provider: providerBridge, conversation: conversationBridge, attachment: attachmentBridge, supervisor: supervisorBridge, employee: employeeBridge, task: taskBridge, resource: resourceBridge, memory: memoryBridge, usage: usageBridge, connection: connectionBridge }))
+contextBridge.exposeInMainWorld('aiEmployeeOS', Object.freeze({ runtime: runtimeBridge, provider: providerBridge, conversation: conversationBridge, attachment: attachmentBridge, supervisor: supervisorBridge, employee: employeeBridge, expertGroup: expertGroupBridge, task: taskBridge, resource: resourceBridge, memory: memoryBridge, usage: usageBridge, connection: connectionBridge }))

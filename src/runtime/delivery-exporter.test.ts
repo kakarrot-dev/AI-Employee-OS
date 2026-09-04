@@ -8,6 +8,7 @@ import type { ResearchBundle } from './domain'
 import { RuntimeKernel } from './kernel'
 import { RuntimeStore } from './store'
 import type { FormalTaskDetail } from './task-service'
+import { FEISHU_DOCUMENT_TOOL_IDS } from '../shared/connection-contract'
 
 const directories: string[] = []
 afterEach(() => { while (directories.length) rmSync(directories.pop()!, { recursive: true, force: true }) })
@@ -35,6 +36,28 @@ describe('DeliveryExporter', () => {
     expect(first.artifactIds).toHaveLength(2); expect(first.evidenceIds).toHaveLength(1)
     expect(second.artifactIds).toHaveLength(2); expect(new Set([...first.artifactIds, ...second.artifactIds]).size).toBe(4)
     expect(store.list('Artifact')).toHaveLength(4); expect(store.list('Evidence')).toHaveLength(2)
+    store.close()
+  })
+
+  it('commits Feishu search and document hashes as evidence without exporting source content', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ai-employee-os-feishu-export-')); directories.push(directory)
+    const store = new RuntimeStore(join(directory, 'control.sqlite3'))
+    const kernel = new RuntimeKernel(store)
+    const timestamp = new Date().toISOString()
+    kernel.save({ entityType: 'EmployeeVersion', entity: { schemaVersion: 1, id: 'employee-version.feishu-researcher.v1', createdAt: timestamp, employeeId: 'employee.feishu-researcher', version: 1, state: 'active', name: '飞书资料员', description: '', systemPrompt: '', modelId: 'deepseek-v4-pro', capabilityVersionIds: ['capability.feishu-documents.v1'], memoryScopes: [], testRunIds: [], publishedAt: timestamp }, immutable: true }, 'seed', {})
+    kernel.save({ entityType: 'ToolAction', entity: { schemaVersion: 1, id: 'search', createdAt: timestamp, runId: 'run-feishu', assignmentId: 'assignment-feishu', toolVersionId: FEISHU_DOCUMENT_TOOL_IDS.search, idempotencyKey: 'search', state: 'succeeded', parameters: { query: '项目周报' }, parameterSources: { query: { kind: 'task_input', sourceRef: 'task' } }, risk: 'low', sideEffect: 'external_read', timeoutMs: 15_000, completedAt: timestamp, resultVerified: true, result: { query: '项目周报', items: [{ documentId: 'doccnDocument123' }], responseSha256: 'a'.repeat(64) } }, immutable: false }, 'seed', {})
+    kernel.save({ entityType: 'ToolAction', entity: { schemaVersion: 1, id: 'read', createdAt: timestamp, runId: 'run-feishu', assignmentId: 'assignment-feishu', toolVersionId: FEISHU_DOCUMENT_TOOL_IDS.read, idempotencyKey: 'read', state: 'succeeded', parameters: { documentId: 'doccnDocument123' }, parameterSources: { documentId: { kind: 'untrusted_external_content', sourceRef: 'tool:search' } }, risk: 'low', sideEffect: 'external_read', timeoutMs: 15_000, completedAt: timestamp, resultVerified: true, result: { documentId: 'doccnDocument123', content: '内部正文不应被导出', contentSha256: 'b'.repeat(64), truncated: false } }, immutable: false }, 'seed', {})
+    const detail = { run: { id: 'run-feishu' }, assignments: [{ id: 'assignment-feishu', employeeVersionId: 'employee-version.feishu-researcher.v1', output: '结论' }] } as FormalTaskDetail
+
+    const result = new DeliveryExporter(kernel, join(directory, 'exports')).materialize(detail)
+
+    expect(result).toMatchObject({ artifactIds: [], unresolvedIssues: [] })
+    expect(result.evidenceIds).toHaveLength(2)
+    expect(store.list<any>('Evidence').map((item) => ({ sourceType: item.sourceType, sourceRef: item.sourceRef, sha256: item.sha256 }))).toEqual(expect.arrayContaining([
+      { sourceType: 'feishu_document_search', sourceRef: expect.stringMatching(/^feishu:search:[a-f0-9]{64}$/), sha256: 'a'.repeat(64) },
+      { sourceType: 'feishu_docx', sourceRef: 'feishu:docx:doccnDocument123', sha256: 'b'.repeat(64) }
+    ]))
+    expect(readdirSync(join(directory, 'exports'))).toEqual([])
     store.close()
   })
 })

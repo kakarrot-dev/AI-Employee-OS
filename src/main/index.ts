@@ -1,7 +1,7 @@
 import { dirname, isAbsolute, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron'
-import { ATTACHMENT_IPC, CONVERSATION_IPC, EMPLOYEE_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, SUPERVISOR_IPC, TASK_IPC, USAGE_IPC, type ConversationStreamEvent, type ConversationSummaryView, type EmployeeDraftInput, type EmployeeEvent, type ProviderStatus, type RuntimeStatus, type SupervisorConfigInput, type TaskDetailView, type TaskDraftInputView, type TaskEvent } from '../shared/runtime-contract'
+import { ATTACHMENT_IPC, CONVERSATION_IPC, EMPLOYEE_IPC, EXPERT_GROUP_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, SUPERVISOR_IPC, TASK_IPC, USAGE_IPC, type ConversationStreamEvent, type ConversationSummaryView, type EmployeeDraftInput, type EmployeeEvent, type ProviderStatus, type RuntimeStatus, type SupervisorConfigInput, type TaskDetailView, type TaskDraftInputView, type TaskEvent } from '../shared/runtime-contract'
 import type { Conversation, Message, MessageAttachmentReference } from '../runtime/domain'
 import type { MemoryCategoryView, MemoryScopeTypeView, MemoryStatusView, MemoryViewModel } from '../shared/memory-contract'
 import type { FormalTaskDetail } from '../runtime/task-service'
@@ -16,6 +16,7 @@ import { maintainDiagnostics, writeLocalDiagnostic } from './storage-policy'
 import { resolveArtifactFilePath } from './artifact-file-actions'
 import { hasLocalDocumentCapability, hasTenderAnalysisCapability } from '../shared/capability-contract'
 import { isChatContentView } from '../shared/chat-content-contract'
+import { isDeliveryResultContract } from '../shared/delivery-result-contract'
 import { AttachmentImportService, SUPPORTED_ATTACHMENT_EXTENSIONS } from './attachment-import'
 import { CONNECTION_IPC } from '../shared/connection-contract'
 import { FeishuConnectionService, MacOSKeychainFeishuCredentialStore } from './feishu-connection'
@@ -30,6 +31,11 @@ let mainWindow: BrowserWindow | null = null
 let runtimeSupervisor: RuntimeSupervisor | null = null
 let providerSupervisor: ProviderSupervisor | null = null
 let feishuConnection: FeishuConnectionService | null = null
+
+async function syncFeishuRuntimeStatus(status: Awaited<ReturnType<FeishuConnectionService['getStatus']>>): Promise<void> {
+  if (!runtimeSupervisor) return
+  try { await runtimeSupervisor.updateFeishuStatus(status) } catch (error) { writeLocalDiagnostic(app.getPath('userData'), 'connection.feishu_runtime_sync_failed', error) }
+}
 let runtimeStatus: RuntimeStatus = {
   state: 'connecting',
   checkedAt: new Date().toISOString(),
@@ -120,22 +126,28 @@ function toTaskView(detail: FormalTaskDetail): TaskDetailView {
     draftRevision: detail.draft.revision,
     frozenRevision: detail.revision?.revision,
     runId: detail.run?.id,
+    runStartedAt: detail.run?.createdAt,
+    runCompletedAt: detail.run && ['succeeded', 'failed', 'cancelled'].includes(detail.run.state)
+      ? detail.delivery?.createdAt ?? detail.checkpoints.at(-1)?.createdAt ?? detail.assignments.map((assignment) => assignment.completedAt).filter((value): value is string => Boolean(value)).sort().at(-1)
+      : undefined,
     assignments: detail.assignments.map((assignment) => {
       const { id, sequence, employeeVersionId, state: assignmentState, summary, createdAt, completedAt, reworkOfAssignmentId } = assignment
       const version = versions.get(employeeVersionId)
       const employeeId = version?.employeeId
       const identity = employeeId ? identities.get(employeeId) : undefined
-      const content = isChatContentView(assignment.presentation) ? assignment.presentation : ((assignment.summary?.trim() || ['succeeded', 'failed', 'cancelled'].includes(assignment.state)) ? projectAssignmentChatContent({
+      const content = (assignment.summary?.trim() || ['succeeded', 'failed', 'cancelled'].includes(assignment.state)) ? projectAssignmentChatContent({
         assignment,
         actions: detail.toolActions.filter((action) => action.assignmentId === assignment.id),
         researchBundle: detail.researchBundles.find((bundle) => bundle.assignmentId === assignment.id)
-      }) : undefined)
-      return { id, sequence, employeeId, employeeVersionId, employeeName: identity?.name ?? version?.name, employeeRole: version?.role, avatarDataUrl: identity?.avatarDataUrl ?? version?.avatarDataUrl, createdAt, completedAt, reworkOfAssignmentId, state: assignmentState, content, summary }
+      }) : undefined
+      return { id, sequence, employeeId, employeeVersionId, employeeName: identity?.name ?? version?.name, employeeRole: version?.role, avatarDataUrl: identity?.avatarDataUrl ?? version?.avatarDataUrl, createdAt, completedAt, reworkOfAssignmentId, state: assignmentState, content, summary: content?.summary ?? summary }
     }),
     timeline: detail.checkpoints.map(({ phase, assignmentId, nextNode, createdAt, payload }) => ({ phase, assignmentId, nextNode, createdAt, ...(phase === 'memory_loaded' ? { memoryRefs: (payload.recallReasons as Array<{ id: string; reason: string }> | undefined) ?? [] } : {}) })),
     delivery: detail.delivery ? (() => {
       const acceptanceResults = detail.delivery.acceptanceResults.map(({ criterion, passed }) => ({ criterion, passed }))
-      const content = isChatContentView(detail.delivery!.presentation) ? detail.delivery!.presentation : projectDeliveryChatContent({ summary: deliverySummary, acceptanceResults, artifactCount: detail.artifacts.length, artifactNames: detail.artifacts.map((artifact) => artifact.relativePath), evidenceCount: detail.evidence.length, unresolvedIssues: detail.delivery!.unresolvedIssues })
+      const storedContent = isChatContentView(detail.delivery!.presentation) ? detail.delivery!.presentation : undefined
+      const result = isDeliveryResultContract(detail.delivery!.result) ? detail.delivery!.result : undefined
+      const content = projectDeliveryChatContent({ result, summary: deliverySummary ?? storedContent?.summary, legacySummaries: [...detail.assignments].reverse().flatMap((assignment) => [assignment.summary, assignment.output].filter((value): value is string => Boolean(value?.trim()))), acceptanceResults, artifactCount: detail.artifacts.length, artifactNames: detail.artifacts.map((artifact) => artifact.relativePath), evidenceCount: detail.evidence.length, unresolvedIssues: detail.delivery!.unresolvedIssues })
       return { id: detail.delivery!.id, content, summary: content.summary, createdAt: detail.delivery!.createdAt, acceptanceResults, artifacts: detail.artifacts.map(({ id, mediaType, relativePath, sha256 }) => ({ id, mediaType, relativePath, sha256 })), evidenceCount: detail.evidence.length, unresolvedIssues: detail.delivery!.unresolvedIssues }
     })() : undefined,
     researchBundles: detail.researchBundles.map(({ id, contentHash, items, claims, conflicts, informationGaps }) => ({ id, contentHash, sourceCount: items.length, claimCount: claims.length, conflicts, informationGaps })),
@@ -217,19 +229,39 @@ function registerRuntimeIpc(): void {
   ipcMain.handle(CONNECTION_IPC.getFeishuStatus, async (event) => {
     assertTrustedSender(event.senderFrame?.url)
     if (!feishuConnection) throw new Error('feishu_connection_unavailable')
-    return feishuConnection.getStatus()
+    const status = await feishuConnection.getStatus()
+    await syncFeishuRuntimeStatus(status)
+    return status
+  })
+
+  ipcMain.handle(CONNECTION_IPC.openFeishuDeveloperConsole, async (event, value: unknown) => {
+    assertTrustedSender(event.senderFrame?.url)
+    if (!feishuConnection) throw new Error('feishu_connection_unavailable')
+    await feishuConnection.openDeveloperConsole(value)
   })
 
   ipcMain.handle(CONNECTION_IPC.connectFeishu, async (event, value: unknown) => {
     assertTrustedSender(event.senderFrame?.url)
     if (!feishuConnection) throw new Error('feishu_connection_unavailable')
-    return feishuConnection.connect(value)
+    const status = await feishuConnection.connect(value)
+    await syncFeishuRuntimeStatus(status)
+    return status
+  })
+
+  ipcMain.handle(CONNECTION_IPC.cancelFeishuAuthorization, async (event) => {
+    assertTrustedSender(event.senderFrame?.url)
+    if (!feishuConnection) throw new Error('feishu_connection_unavailable')
+    const status = feishuConnection.cancelAuthorization()
+    await syncFeishuRuntimeStatus(status)
+    return status
   })
 
   ipcMain.handle(CONNECTION_IPC.disconnectFeishu, async (event) => {
     assertTrustedSender(event.senderFrame?.url)
     if (!feishuConnection) throw new Error('feishu_connection_unavailable')
-    return feishuConnection.disconnect()
+    const status = await feishuConnection.disconnect()
+    await syncFeishuRuntimeStatus(status)
+    return status
   })
 
   ipcMain.handle(CONVERSATION_IPC.list, async (event) => {
@@ -339,6 +371,8 @@ function registerRuntimeIpc(): void {
   ipcMain.handle(EMPLOYEE_IPC.archive, (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.employeeArchive(employeeIdFrom(value)) })
   ipcMain.handle(EMPLOYEE_IPC.restore, (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.employeeRestore(employeeIdFrom(value)) })
   ipcMain.handle(EMPLOYEE_IPC.deleteDraft, (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.employeeDeleteDraft(employeeIdFrom(value)) })
+  ipcMain.handle(EXPERT_GROUP_IPC.list, (event) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.expertGroupList() })
+  ipcMain.handle(EXPERT_GROUP_IPC.archive, (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); const groupId = (value as { groupId?: unknown })?.groupId; if (typeof groupId !== 'string' || groupId.length < 1 || groupId.length > 128) throw new Error('invalid_expert_group_id'); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.expertGroupArchive(groupId) })
   ipcMain.handle(TASK_IPC.list, async (event) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return (await runtimeSupervisor.taskList()).map(toTaskView) })
   ipcMain.handle(TASK_IPC.outputDirectory, (event) => { assertTrustedSender(event.senderFrame?.url); return app.getPath('downloads') })
   const artifactFileFrom = async (value: unknown): Promise<string> => {
@@ -480,10 +514,15 @@ app.whenReady().then(async () => {
     },
     (_requestId, event) => mainWindow?.webContents.send(CONVERSATION_IPC.event, event as ConversationStreamEvent),
     (event) => mainWindow?.webContents.send(EMPLOYEE_IPC.event, event as EmployeeEvent),
-    (event) => mainWindow?.webContents.send(TASK_IPC.event, event as TaskEvent)
+    (event) => mainWindow?.webContents.send(TASK_IPC.event, event as TaskEvent),
+    (toolVersionId, parameters) => {
+      if (!feishuConnection) return Promise.reject(new Error('feishu_connection_unavailable'))
+      return feishuConnection.executeDocumentTool(toolVersionId, parameters)
+    }
   )
   try {
     await runtimeSupervisor.start()
+    await syncFeishuRuntimeStatus(await feishuConnection.getStatus())
   } catch {
     publishRuntimeStatus({ state: 'disconnected', checkedAt: new Date().toISOString(), message: 'Runtime 启动失败' })
   }

@@ -7,6 +7,7 @@ import { SIDECAR_PROTOCOL_VERSION, parseRuntimeCommand, type RuntimeOutboundEven
 import type { BudgetLedgerEntry, Conversation, Message, MessageAttachmentReference, Run, RunGrant, ToolAction } from './domain'
 import { summarizeUsage } from './usage-service'
 import { EmployeeService } from './employee-service'
+import { ExpertGroupService } from './expert-group-service'
 import { TaskService } from './task-service'
 import { ResourceService } from './resource-service'
 import { ToolGateway } from './tool-gateway'
@@ -20,6 +21,8 @@ import { hasResearchCapability, hasTenderAnalysisCapability } from './builtin-co
 import { createAttachmentContentInspector } from './attachment-content-inspector'
 import { nativeImageTextRecognizer } from './tender-document-runner'
 import { normalizeHandoffJsonValue } from './handoff-contract'
+import { FEISHU_DOCUMENT_TOOL_IDS, type FeishuDocumentToolId } from '../shared/connection-contract'
+import type { ToolRunner } from './tool-gateway'
 
 function databasePathFromArgs(): string {
   const argument = process.argv.find((value) => value.startsWith('--database='))
@@ -46,8 +49,24 @@ resources.seed()
 const employees = new EmployeeService(kernel)
 employees.seedCapabilities()
 employees.seedRequestedSpecialists()
+const expertGroups = new ExpertGroupService(kernel, employees)
+expertGroups.seed()
 const imageTextExtractorPath = requiredPathArgument('image-text-extractor')
-const toolGateway = new ToolGateway(kernel, resources, createToolRunner(imageTextExtractorPath))
+const pendingFeishuTools = new Map<string, { resolve: (result: Record<string, unknown>) => void; reject: (error: Error) => void; detachAbort: () => void }>()
+const feishuRunner: ToolRunner = async (tool, parameters, context) => {
+  if (!Object.values(FEISHU_DOCUMENT_TOOL_IDS).includes(tool.id as FeishuDocumentToolId)) throw new Error('unsupported_feishu_tool')
+  const requestId = randomUUID()
+  return new Promise<Record<string, unknown>>((resolve, reject) => {
+    const onAbort = (): void => {
+      pendingFeishuTools.delete(requestId)
+      reject(new Error('tool_timeout'))
+    }
+    context.signal.addEventListener('abort', onAbort, { once: true })
+    pendingFeishuTools.set(requestId, { resolve, reject, detachAbort: () => context.signal.removeEventListener('abort', onAbort) })
+    emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.feishu.execute', requestId, toolVersionId: tool.id as FeishuDocumentToolId, parameters: structuredClone(parameters) })
+  })
+}
+const toolGateway = new ToolGateway(kernel, resources, createToolRunner(imageTextExtractorPath, feishuRunner))
 const research = new ManagedResearchService(kernel, toolGateway)
 const workerPython = requiredPathArgument('worker-python')
 const workerScript = requiredPathArgument('worker-script')
@@ -77,7 +96,7 @@ const tasks = new TaskService(kernel, employees, (request) => memory.search(requ
   const handoff = { schemaVersion: 1, type: 'ResearchHandoff', researchBundleId: bundle.id, contentHash: bundle.contentHash, question: bundle.question, claims: bundle.claims, conflicts: bundle.conflicts, informationGaps: bundle.informationGaps, sources: bundle.items.map((item, index) => ({ index, sourceType: item.sourceType, title: item.title, url: item.url, publishedAt: item.publishedAt, summary: item.summary, contentHash: item.contentHash, trust: item.trust, injectionSignals: item.injectionSignals })), researcherSynthesis: output }
   return { parts: [{ kind: 'data', name: '网络调研交接', mediaType: 'application/json', schemaId: 'ai-employee-os/ResearchHandoff/v1', value: normalizeHandoffJsonValue(handoff) }], researchBundleId: bundle.id }
 }, (detail) => deliveryExporter.materialize(detail), () => supervisor.get())
-const supervisorRouter = new SupervisorRouter(employees, tasks, () => supervisor.get(), (request) => memory.search(request), createAttachmentContentInspector(nativeImageTextRecognizer(imageTextExtractorPath)))
+const supervisorRouter = new SupervisorRouter(employees, tasks, () => supervisor.get(), (request) => memory.search(request), createAttachmentContentInspector(nativeImageTextRecognizer(imageTextExtractorPath)), expertGroups)
 
 function enqueueMemorySafely(input: Parameters<MemoryService['enqueueAsync']>[0]): void {
   void memory.enqueueAsync(input).catch(() => { /* memory processing must not fail the primary conversation or task */ })
@@ -129,6 +148,21 @@ parentPort.on('message', async (event) => {
   try {
     const command = parseRuntimeCommand(event.data)
     requestId = command.requestId
+    if (command.type === 'connection.feishu.status') {
+      respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: resources.updateFeishuConnection(command.payload.status) })
+      return
+    }
+    if (command.type === 'feishu.result' || command.type === 'feishu.failed') {
+      const pending = pendingFeishuTools.get(command.payload.toolRequestId)
+      if (pending) {
+        pendingFeishuTools.delete(command.payload.toolRequestId)
+        pending.detachAbort()
+        if (command.type === 'feishu.result') pending.resolve(command.payload.result)
+        else pending.reject(new Error(command.payload.code))
+      }
+      respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
+      return
+    }
     if (command.type === 'health') {
       respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: kernel.health() })
       return
@@ -258,7 +292,9 @@ parentPort.on('message', async (event) => {
       return
     }
     if (command.type === 'employee.archive') {
-      respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: employees.archive(command.payload.employeeId) })
+      const result = employees.archive(command.payload.employeeId)
+      expertGroups.archiveContainingEmployee(command.payload.employeeId)
+      respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result })
       return
     }
     if (command.type === 'employee.restore') {
@@ -268,6 +304,14 @@ parentPort.on('message', async (event) => {
     if (command.type === 'employee.delete') {
       employees.deleteDraftEmployee(command.payload.employeeId)
       respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
+      return
+    }
+    if (command.type === 'expert_group.list') {
+      respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: expertGroups.list() })
+      return
+    }
+    if (command.type === 'expert_group.archive') {
+      respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: expertGroups.archive(command.payload.groupId) })
       return
     }
     if (command.type === 'task.list') {

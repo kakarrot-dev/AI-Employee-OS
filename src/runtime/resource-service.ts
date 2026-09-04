@@ -4,6 +4,7 @@ import { RuntimeKernel } from './kernel'
 import { managedResearchRunner } from './managed-research-runner'
 import { probeExternalIntelligenceTool } from './external-intelligence-runner'
 import { BUILT_IN_SKILLS } from './builtin-contracts'
+import { FEISHU_DOCUMENT_SCOPES, FEISHU_DOCUMENT_TOOL_IDS, type FeishuConnectionStatus } from '../shared/connection-contract'
 
 export interface ResourceCatalog {
   skills: SkillVersion[]
@@ -50,9 +51,38 @@ const tenderDocumentMcp: MCPVersion = {
   credentialRequirement: 'none', credentialStatus: 'not_required', health: 'available', available: true
 }
 
-const builtInMcps = [managedResearchMcp, externalIntelligenceMcp, localDocumentMcp, tenderDocumentMcp]
+const feishuDocumentsMcp: MCPVersion = {
+  schemaVersion: 1, id: 'mcp.feishu-documents.v1', createdAt: '2026-09-04T00:00:00.000Z', name: '飞书文档只读连接',
+  description: '凭证仅由 Main Process 从 macOS Keychain 读取；Runtime 只能请求搜索和读取新版文档纯文本。', version: 1,
+  transport: 'built_in_runner', toolVersionIds: [FEISHU_DOCUMENT_TOOL_IDS.search, FEISHU_DOCUMENT_TOOL_IDS.read],
+  credentialRequirement: 'required', credentialStatus: 'missing', health: 'degraded', available: true
+}
+
+const feishuWikiMcp: MCPVersion = {
+  schemaVersion: 1, id: 'mcp.feishu-wiki.v1', createdAt: '2026-09-04T00:00:00.000Z', name: '飞书知识库只读连接',
+  description: '凭证仅由 Main Process 从 macOS Keychain 读取；Runtime 只能枚举当前用户可访问的知识库空间与节点并生成可核验统计。', version: 1,
+  transport: 'built_in_runner', toolVersionIds: [FEISHU_DOCUMENT_TOOL_IDS.wikiCount],
+  credentialRequirement: 'required', credentialStatus: 'missing', health: 'degraded', available: true
+}
+
+const builtInMcps = [managedResearchMcp, externalIntelligenceMcp, localDocumentMcp, tenderDocumentMcp, feishuDocumentsMcp, feishuWikiMcp]
 
 const builtInTools: ToolVersion[] = [
+  {
+    schemaVersion: 1, id: FEISHU_DOCUMENT_TOOL_IDS.search, createdAt: '2026-09-04T00:00:00.000Z', name: '搜索飞书文档', description: '以当前连接用户身份搜索其可访问的飞书文档，只返回标题、类型和文档 ID。', version: 1,
+    source: 'mcp', mcpVersionId: feishuDocumentsMcp.id, inputSchema: { type: 'object', required: ['query'], properties: { query: { type: 'string', minLength: 1, maxLength: 256 }, limit: { type: 'integer', minimum: 1, maximum: 10 } }, additionalProperties: false },
+    sideEffect: 'external_read', risk: 'low', timeoutMs: 30_000, networkOrigins: ['https://open.feishu.cn'], available: true, health: 'degraded', credentialStatus: 'missing', reason: '等待飞书连接状态'
+  },
+  {
+    schemaVersion: 1, id: FEISHU_DOCUMENT_TOOL_IDS.read, createdAt: '2026-09-04T00:00:00.000Z', name: '读取飞书新版文档', description: '读取同一任务搜索结果中的一个飞书新版文档纯文本，并返回内容 Hash 与截断状态。', version: 1,
+    source: 'mcp', mcpVersionId: feishuDocumentsMcp.id, inputSchema: { type: 'object', required: ['documentId'], properties: { documentId: { type: 'string', minLength: 8, maxLength: 128, pattern: '^[A-Za-z0-9_-]+$' } }, additionalProperties: false },
+    sideEffect: 'external_read', risk: 'low', timeoutMs: 30_000, networkOrigins: ['https://open.feishu.cn'], available: true, health: 'degraded', credentialStatus: 'missing', reason: '等待飞书连接状态'
+  },
+  {
+    schemaVersion: 1, id: FEISHU_DOCUMENT_TOOL_IDS.wikiCount, createdAt: '2026-09-04T00:00:00.000Z', name: '统计飞书知识库文档', description: '枚举当前连接用户可访问的全部飞书知识库空间与节点，按实际文档资源去重统计并返回来源 ID 与 Hash。', version: 1,
+    source: 'mcp', mcpVersionId: feishuWikiMcp.id, inputSchema: { type: 'object', required: ['scope'], properties: { scope: { type: 'string', enum: ['accessible_wiki_spaces'] } }, additionalProperties: false },
+    sideEffect: 'external_read', risk: 'low', timeoutMs: 120_000, networkOrigins: ['https://open.feishu.cn'], available: true, health: 'degraded', credentialStatus: 'missing', reason: '等待飞书连接状态'
+  },
   {
     schemaVersion: 1,
     id: 'github.repositories.search@research-source/v1',
@@ -134,13 +164,14 @@ export class ResourceService {
     const healthByTool = new Map(healthChecks.map((check) => [check.adapterVersionId, check]))
     const tools = this.kernel.store.list<ToolVersion>('ToolVersion').map((tool) => {
       const check = healthByTool.get(tool.id)
-      return check ? { ...tool, health: check.status, available: tool.available && check.status === 'available', reason: check.status === 'available' ? undefined : check.failureCode ?? '数据源健康检查未通过' } : tool
+      return check ? { ...tool, health: check.status, credentialStatus: check.credentialStatus, available: tool.available && check.status === 'available', reason: check.status === 'available' ? undefined : check.failureCode ?? '数据源健康检查未通过' } : tool
     })
     const toolById = new Map(tools.map((tool) => [tool.id, tool]))
     const mcps = this.kernel.store.list<MCPVersion>('MCPVersion').map((mcp) => {
       const dependencies = mcp.toolVersionIds.map((id) => toolById.get(id))
       const available = mcp.available && dependencies.every((tool) => tool?.available)
-      return { ...mcp, available, health: available ? mcp.health : 'degraded' as const, reason: available ? undefined : '至少一个数据源不可用' }
+      const credentialStatus = dependencies.some((tool) => tool?.credentialStatus === 'missing') ? 'missing' as const : mcp.credentialStatus === 'not_required' ? 'not_required' as const : 'configured' as const
+      return { ...mcp, available, health: available ? 'available' as const : 'degraded' as const, credentialStatus, reason: available ? undefined : '至少一个数据源不可用' }
     })
     const latestSkills = new Map<string, SkillVersion>()
     for (const skill of this.kernel.store.list<SkillVersion>('SkillVersion')) {
@@ -181,9 +212,23 @@ export class ResourceService {
     return results
   }
 
+  updateFeishuConnection(status: FeishuConnectionStatus): ResourceCatalog {
+    const granted = new Set(status.scopes)
+    const scopesReady = FEISHU_DOCUMENT_SCOPES.every((scope) => granted.has(scope))
+    const available = status.state === 'connected' && scopesReady
+    const credentialStatus: SourceHealthCheck['credentialStatus'] = status.state === 'not_connected' ? 'missing' : 'configured'
+    const failureCode = available ? undefined : status.state === 'reauthorization_required' || !scopesReady ? 'feishu_reauthorization_required' : status.state === 'error' ? 'feishu_connection_error' : 'feishu_not_connected'
+    const checkedAt = status.checkedAt || new Date().toISOString()
+    for (const adapterVersionId of Object.values(FEISHU_DOCUMENT_TOOL_IDS)) {
+      const check: SourceHealthCheck = { schemaVersion: 1, id: randomUUID(), createdAt: checkedAt, adapterVersionId, status: available ? 'available' : 'unavailable', credentialStatus, latencyMs: 0, checkedAt, failureCode }
+      this.kernel.save({ entityType: 'SourceHealthCheck', entity: check, immutable: true }, 'resource.connection_status_updated', { adapterVersionId, status: check.status, credentialStatus, failureCode })
+    }
+    return this.list()
+  }
+
   tool(id: string): ToolVersion {
-    const tool = this.kernel.store.get<ToolVersion>('ToolVersion', id)
-    if (!tool || !tool.available || tool.health === 'unavailable') throw new Error('tool_unavailable')
+    const tool = this.list().tools.find((value) => value.id === id)
+    if (!tool || !tool.available || tool.health === 'unavailable' || tool.credentialStatus === 'missing') throw new Error('tool_unavailable')
     return tool
   }
 

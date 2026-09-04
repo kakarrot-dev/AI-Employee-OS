@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { EmployeeService } from './employee-service'
+import { ExpertGroupService } from './expert-group-service'
 import { RuntimeKernel } from './kernel'
 import { ResourceService } from './resource-service'
 import { RuntimeStore } from './store'
@@ -22,7 +23,9 @@ function setup(): { router: SupervisorRouter; tasks: TaskService; store: Runtime
   employees.seedCapabilities()
   employees.seedRequestedSpecialists()
   const tasks = new TaskService(kernel, employees)
-  return { router: new SupervisorRouter(employees, tasks), tasks, store }
+  const expertGroups = new ExpertGroupService(kernel, employees)
+  expertGroups.seed()
+  return { router: new SupervisorRouter(employees, tasks, undefined, undefined, undefined, expertGroups), tasks, store }
 }
 
 afterEach(() => { while (directories.length) rmSync(directories.pop()!, { recursive: true, force: true }) })
@@ -36,6 +39,9 @@ describe('SupervisorRouter', () => {
     expect(request.input).toContain('title 是事项短名称')
     expect(request.input).toContain('employee-version.network-intelligence.v2')
     expect(request.input).toContain('employee-version.document-writer.v2')
+    expect(request.input).toContain('availableExpertGroups')
+    expect(request.input).toContain('售前分析专家团')
+    expect(request.input).toContain('"memberVersionIds":["employee-version.tender-analyst.v2","employee-version.network-intelligence.v2","employee-version.document-writer.v2"]')
     const ids = ((request.outputSchema!.schema.properties as Record<string, any>).employeeVersionIds.items.enum as string[])
     expect(ids.sort()).toEqual(['employee-version.document-writer.v2', 'employee-version.network-intelligence.v2', 'employee-version.tender-analyst.v2'])
     expect(request.outputSchema!.schema.required).toContain('title')
@@ -185,6 +191,30 @@ describe('SupervisorRouter', () => {
     })
     expect(result).toEqual({ mode: 'direct_answer', response: '这是一个无需工具即可回答的概念。', missingInputs: [] })
     expect(store.list('TaskDraft')).toHaveLength(0)
+    store.close()
+  })
+
+  it('canonicalizes schema filler that is irrelevant to a direct answer', () => {
+    const { router, store } = setup()
+    const result = router.applyDecision({ requestId: 'route-direct-filler', conversationId: 'conversation-direct-filler', sourceMessageId: 'message-direct-filler', text: '解释概念', history: [], directories: [], attachments: [] }, {
+      mode: 'direct_answer', response: '这是一个无需工具即可回答的概念。', targetTaskId: 'model-filled-task', title: '模型填充值', goal: '模型填充值', acceptanceCriteria: ['模型填充值'], employeeVersionIds: ['employee-version.network-intelligence.v2'], missingInputs: ['task_clarification']
+    })
+
+    expect(result).toEqual({ mode: 'direct_answer', response: '这是一个无需工具即可回答的概念。', missingInputs: [] })
+    expect(store.list('TaskDraft')).toHaveLength(0)
+    store.close()
+  })
+
+  it('accepts an empty model response for a task route because Runtime owns the user-visible status', () => {
+    const { router, store } = setup()
+    const result = router.applyDecision({ requestId: 'route-empty-task-response', conversationId: 'conversation-empty-task-response', sourceMessageId: 'message-empty-task-response', text: '搜索近期行业新闻', history: [], directories: [], attachments: [] }, {
+      mode: 'create_task', response: '', targetTaskId: 'model-filled-task', title: '近期行业新闻调研', goal: '搜索近期行业新闻', acceptanceCriteria: ['来源可追溯'], employeeVersionIds: ['employee-version.network-intelligence.v2'], missingInputs: []
+    })
+
+    expect(result.mode).toBe('create_task')
+    expect(result.response).toContain('已加入工作并开始执行')
+    expect(result.task?.draft.title).toBe('近期行业新闻调研')
+    expect(store.list('TaskDraft')).toHaveLength(1)
     store.close()
   })
 

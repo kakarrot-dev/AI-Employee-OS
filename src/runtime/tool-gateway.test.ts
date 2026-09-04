@@ -10,6 +10,7 @@ import { ResourceService } from './resource-service'
 import { RuntimeStore } from './store'
 import { ToolGateway, type ToolRunner } from './tool-gateway'
 import { externalIntelligenceRunner } from './external-intelligence-runner'
+import { FEISHU_DOCUMENT_TOOL_IDS } from '../shared/connection-contract'
 
 const directories: string[] = []
 
@@ -78,6 +79,24 @@ describe('ToolGateway', () => {
     expect(() => gateway.resolveUnknown(unknown.id, 'succeeded', {})).toThrow('manual_evidence_required')
     expect(gateway.resolveUnknown(unknown.id, 'succeeded', { receipt: 'verified-outside-system' }).state).toBe('succeeded')
     expect(resources.list().tools.some((value) => value.id === tool.id)).toBe(true); store.close()
+  })
+
+  it('allows reading only a document returned by the same assignment search', async () => {
+    const runner = vi.fn<ToolRunner>().mockImplementation(async (tool) => tool.id === FEISHU_DOCUMENT_TOOL_IDS.search
+      ? { status: 'succeeded', query: '项目周报', items: [{ documentId: 'doccnDocument123', documentType: 'docx', title: '项目周报' }], responseSha256: 'a'.repeat(64) }
+      : { status: 'succeeded', documentId: 'doccnDocument123', content: '正文', contentSha256: 'b'.repeat(64), truncated: false })
+    const { kernel, resources, gateway, store } = setup('full_access', runner, Object.values(FEISHU_DOCUMENT_TOOL_IDS))
+    resources.updateFeishuConnection({ provider: 'feishu', state: 'connected', checkedAt: new Date().toISOString(), scopes: ['search:docs:read', 'docx:document:readonly', 'wiki:wiki:readonly'] })
+
+    await expect(gateway.propose({ runId: 'run-1', assignmentId: 'assignment-1', toolVersionId: FEISHU_DOCUMENT_TOOL_IDS.read, parameters: { documentId: 'doccnDocument123' }, parameterSources: { documentId: { kind: 'model_output', sourceRef: 'proposal' } } })).rejects.toThrow('feishu_document_not_from_search')
+    const search = await gateway.propose({ runId: 'run-1', assignmentId: 'assignment-1', toolVersionId: FEISHU_DOCUMENT_TOOL_IDS.search, parameters: { query: '项目周报' }, parameterSources: { query: { kind: 'task_input', sourceRef: 'task:task-1' } } })
+    const assignment = store.get<Assignment>('Assignment', 'assignment-1')!
+    kernel.save({ entityType: 'Assignment', entity: { ...assignment, toolActionIds: [search.id] }, immutable: false }, 'test.search_attached', {})
+    const read = await gateway.propose({ runId: 'run-1', assignmentId: 'assignment-1', toolVersionId: FEISHU_DOCUMENT_TOOL_IDS.read, parameters: { documentId: 'doccnDocument123' }, parameterSources: { documentId: { kind: 'untrusted_external_content', sourceRef: `tool:${search.id}` } } })
+
+    expect(read).toMatchObject({ state: 'succeeded', resultVerified: true, result: { contentSha256: 'b'.repeat(64) } })
+    expect(runner).toHaveBeenCalledTimes(2)
+    store.close()
   })
 
   it('creates a two-source ResearchBundle with provenance and untrusted content markers', async () => {

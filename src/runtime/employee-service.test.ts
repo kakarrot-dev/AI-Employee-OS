@@ -61,13 +61,28 @@ describe('EmployeeService', () => {
     const { service, store } = setup()
     service.seedRequestedSpecialists(); service.seedRequestedSpecialists()
     const installed = service.list().filter((employee) => employee.id.startsWith('employee.'))
-    expect(installed).toHaveLength(3)
+    expect(installed).toHaveLength(4)
     expect(installed.find((employee) => employee.id === 'employee.network-intelligence')).toMatchObject({ name: '网络情报员', status: 'active', capabilityVersionIds: ['capability.network-intelligence.v2'], activeCapabilityVersionIds: ['capability.network-intelligence.v2'] })
     expect(installed.find((employee) => employee.id === 'employee.document-writer')).toMatchObject({ name: '文档编写员', status: 'active', capabilityVersionIds: ['capability.local-document.v2'], activeCapabilityVersionIds: ['capability.local-document.v2'] })
     expect(installed.find((employee) => employee.id === 'employee.tender-analyst')).toMatchObject({ name: '招投标分析员', status: 'active', capabilityVersionIds: ['capability.tender-analysis.v2'], activeCapabilityVersionIds: ['capability.tender-analysis.v2'] })
+    expect(installed.find((employee) => employee.id === 'employee.feishu-researcher')).toMatchObject({ name: '飞书资料员', status: 'active', capabilityVersionIds: ['capability.feishu-documents.v2'], activeCapabilityVersionIds: ['capability.feishu-documents.v2'] })
     expect(service.detail('employee.network-intelligence').active?.systemPrompt).toContain('主张与来源的对应关系')
     expect(service.detail('employee.document-writer').active?.systemPrompt).toContain('逐条核对验收标准')
     expect(service.detail('employee.tender-analyst').active?.systemPrompt).toContain('需求矩阵')
+    expect(service.detail('employee.feishu-researcher').active?.systemPrompt).toContain('不得发送消息')
+    store.close()
+  })
+
+  it('makes the Feishu specialist callable only while the read-only connection dependencies are available', () => {
+    const { service, kernel, store } = setup()
+    service.seedRequestedSpecialists()
+    expect(() => service.assertVersionUsable('employee-version.feishu-researcher.v2')).toThrow('capability_dependency_unavailable')
+
+    new ResourceService(kernel).updateFeishuConnection({ provider: 'feishu', state: 'connected', checkedAt: '2026-09-04T10:00:00.000Z', scopes: ['offline_access', 'search:docs:read', 'docx:document:readonly', 'wiki:wiki:readonly'] })
+    expect(service.assertVersionUsable('employee-version.feishu-researcher.v2')).toMatchObject({ name: '飞书资料员' })
+
+    new ResourceService(kernel).updateFeishuConnection({ provider: 'feishu', state: 'reauthorization_required', checkedAt: '2026-09-04T10:05:00.000Z', scopes: ['offline_access'] })
+    expect(() => service.assertVersionUsable('employee-version.feishu-researcher.v2')).toThrow('capability_dependency_unavailable')
     store.close()
   })
 

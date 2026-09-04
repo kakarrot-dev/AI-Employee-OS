@@ -84,7 +84,7 @@ describe('Phase 8 deterministic acceptance', () => {
     tasks.handleProviderEvent(researchDone.request!.requestId, { type: 'output_delta', requestId: researchDone.request!.requestId, delta: '# Deep Agents 生态调研\n\n## 结论\n\n结论基于交接中的两个来源。' })
     expect(tasks.handleProviderEvent(researchDone.request!.requestId, { type: 'completed', requestId: researchDone.request!.requestId })?.event).toBe('assignment_completed')
     const review = tasks.beginManagerReview(started.run!.id)
-    tasks.handleProviderEvent(review.requestId, { type: 'structured_result', requestId: review.requestId, value: { approved: true, summary: '验收通过', criteria: [0, 1, 2].map((criterionIndex) => ({ criterionIndex, passed: true, reason: 'Runtime 证据满足该项标准', evidenceTypes: ['research_bundle', 'handoff', 'employee_output'] })) } })
+    tasks.handleProviderEvent(review.requestId, { type: 'structured_result', requestId: review.requestId, value: { approved: true, summary: '验收通过', criteria: [0, 1, 2].map((criterionIndex) => ({ criterionIndex, passed: true, reason: 'Runtime 证据满足该项标准', evidenceTypes: ['research_bundle', 'handoff', 'employee_output'] })), deliveryResult: { resultType: 'file', headline: 'Deep Agents 生态调研', summary: '已生成包含两类来源核验结论的 Deep Agents 生态调研报告。', keyResults: [], limitations: [] } } })
     const delivered = tasks.handleProviderEvent(review.requestId, { type: 'completed', requestId: review.requestId })!
 
     expect(delivered.event).toBe('delivery_completed')

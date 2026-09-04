@@ -15,6 +15,11 @@ export const TENDER_ANALYSIS_CAPABILITY_IDS = new Set([
   'capability.tender-analysis.v2'
 ])
 
+export const FEISHU_DOCUMENT_CAPABILITY_IDS = new Set([
+  'capability.feishu-documents.v1',
+  'capability.feishu-documents.v2'
+])
+
 export function hasResearchCapability(ids: readonly string[]): boolean {
   return ids.some((id) => RESEARCH_CAPABILITY_IDS.has(id))
 }
@@ -25,4 +30,8 @@ export function hasLocalDocumentCapability(ids: readonly string[]): boolean {
 
 export function hasTenderAnalysisCapability(ids: readonly string[]): boolean {
   return ids.some((id) => TENDER_ANALYSIS_CAPABILITY_IDS.has(id))
+}
+
+export function hasFeishuDocumentCapability(ids: readonly string[]): boolean {
+  return ids.some((id) => FEISHU_DOCUMENT_CAPABILITY_IDS.has(id))
 }

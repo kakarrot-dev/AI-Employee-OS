@@ -4,6 +4,7 @@ import type { ResourceCatalogView } from './resource-contract'
 import type { MemoryCategoryView, MemoryHealthView, MemoryQueueItemView, MemoryScopeTypeView, MemorySearchResultView, MemoryStatusView, MemoryViewModel } from './memory-contract'
 import type { SupervisorConfigInput, SupervisorConfigView } from './supervisor-contract'
 import type { UsageSummaryView } from './usage-contract'
+import type { ExpertGroupView } from './expert-group-contract'
 
 export const RUNTIME_IPC = {
   getStatus: 'runtime:get-status',
@@ -58,6 +59,11 @@ export const EMPLOYEE_IPC = {
   event: 'employee:event'
 } as const
 
+export const EXPERT_GROUP_IPC = {
+  list: 'expert-group:list',
+  archive: 'expert-group:archive'
+} as const
+
 export const TASK_IPC = { list: 'task:list', outputDirectory: 'task:output-directory', openArtifact: 'task:open-artifact', revealArtifact: 'task:reveal-artifact', createDraft: 'task:create-draft', updateDraft: 'task:update-draft', start: 'task:start', retry: 'task:retry', requestChange: 'task:request-change', acceptChange: 'task:accept-change', rejectChange: 'task:reject-change', approveTool: 'task:approve-tool', rejectTool: 'task:reject-tool', resolveTool: 'task:resolve-tool', event: 'task:event' } as const
 
 export const RESOURCE_IPC = { list: 'resource:list', probe: 'resource:probe' } as const
@@ -84,6 +90,11 @@ export interface RuntimeBridge {
   getStatus(): Promise<RuntimeStatus>
   reconnect(): Promise<RuntimeStatus>
   onStatusChanged(listener: (status: RuntimeStatus) => void): () => void
+}
+
+export interface ExpertGroupBridge {
+  list(): Promise<ExpertGroupView[]>
+  archive(groupId: string): Promise<ExpertGroupView>
 }
 
 export interface ProviderModelStatus {
