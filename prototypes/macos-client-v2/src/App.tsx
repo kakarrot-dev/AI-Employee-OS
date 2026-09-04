@@ -19,6 +19,7 @@ import {
   HardDrive,
   InfoCircle,
   Key,
+  Link,
   Microphone,
   NavArrowDown,
   NavArrowLeft,
@@ -35,8 +36,7 @@ import {
   Tools,
   Trash,
   WarningTriangle,
-  Xmark,
-  IconoirProvider
+  Xmark
 } from 'iconoir-react'
 import {
   Button,
@@ -57,10 +57,23 @@ import {
 } from 'react-aria-components'
 import networkIntelligenceAvatar from '../../../src/renderer/src/assets/employee-avatars/network-intelligence.png'
 import documentWriterAvatar from '../../../src/renderer/src/assets/employee-avatars/document-writer.png'
+import { ClientIconSystem } from '../../../src/renderer/src/components/client-icon-system'
 import supervisorAvatar from '../../../src/renderer/src/assets/employee-avatars/supervisor.png'
+import githubConnectionIcon from '../../../src/renderer/src/assets/connections/github.svg'
+import feishuConnectionIcon from '../../../src/renderer/src/assets/connections/feishu.svg'
+import teamsConnectionIcon from '../../../src/renderer/src/assets/connections/teams.svg'
+import notionConnectionIcon from '../../../src/renderer/src/assets/connections/notion.svg'
+import dingtalkConnectionIcon from '../../../src/renderer/src/assets/connections/dingtalk.svg'
+import wecomConnectionIcon from '../../../src/renderer/src/assets/connections/wecom.svg'
+import wechatConnectionIcon from '../../../src/renderer/src/assets/connections/wechat.svg'
+import yuqueConnectionIcon from '../../../src/renderer/src/assets/connections/yuque.svg'
+import wpsConnectionIcon from '../../../src/renderer/src/assets/connections/wps.svg'
+import baiduNetdiskConnectionIcon from '../../../src/renderer/src/assets/connections/baidu-netdisk.svg'
+import giteeConnectionIcon from '../../../src/renderer/src/assets/connections/gitee.svg'
+import alibabaCloudConnectionIcon from '../../../src/renderer/src/assets/connections/alibaba-cloud.svg'
 import { EMPLOYEE_FIELD_LIMITS } from '../../../src/shared/employee-contract'
 
-type PageId = 'messages' | 'contacts' | 'capabilities' | 'system'
+type PageId = 'messages' | 'contacts' | 'capabilities' | 'connections' | 'system'
 type ThemeMode = 'system' | 'light' | 'dark'
 type MessageView = 'conversation' | 'matter'
 type ConversationMatterId = 'market-entry' | 'publication-pack'
@@ -338,7 +351,8 @@ const capabilities: Capability[] = [
 const navItems: Array<{ id: PageId; label: string; icon: IconComponent }> = [
   { id: 'messages', label: '消息', icon: ChatBubble },
   { id: 'contacts', label: '通讯录', icon: Group },
-  { id: 'capabilities', label: '能力', icon: Sparks }
+  { id: 'capabilities', label: '能力', icon: Sparks },
+  { id: 'connections', label: '连接', icon: Link }
 ]
 
 const systemSections = [
@@ -355,7 +369,7 @@ const systemSections = [
 function IconButton({ label, icon: Icon, onPress, isDisabled, className = '' }: { label: string; icon: IconComponent; onPress?: () => void; isDisabled?: boolean; className?: string }): React.JSX.Element {
   return (
     <TooltipTrigger delay={450}>
-      <Button aria-label={label} className={`icon-button ${className}`} onPress={onPress} isDisabled={isDisabled}><Icon aria-hidden width={19} height={19} /></Button>
+      <Button aria-label={label} className={`icon-button ${className}`} onPress={onPress} isDisabled={isDisabled}><Icon aria-hidden /></Button>
       <Tooltip className="app-tooltip" placement="bottom">{label}</Tooltip>
     </TooltipTrigger>
   )
@@ -376,7 +390,7 @@ function SectionHeader({ title, action }: { title: string; action?: ReactNode })
 function SearchBox({ placeholder, value, onChange }: { placeholder: string; value: string; onChange: (value: string) => void }): React.JSX.Element {
   return (
     <TextField aria-label={placeholder} value={value} onChange={onChange} className="search-box">
-      <Search aria-hidden width={17} height={17} />
+      <Search aria-hidden />
       <Input placeholder={placeholder} />
     </TextField>
   )
@@ -398,7 +412,7 @@ function SelectionCatalog({ label, placeholder, query, result, empty, onQuery, c
 }
 
 function SelectionOption({ title, description, meta, status, tone, selected, leading, onSelect }: { title: string; description: string; meta: string; status: string; tone: StatusTone; selected: boolean; leading: ReactNode; onSelect: () => void }): React.JSX.Element {
-  return <Button className={`selection-option${selected ? ' is-selected' : ''}`} aria-pressed={selected} onPress={onSelect}><span className="selection-option__leading">{leading}</span><span className="selection-option__body"><span className="selection-option__title"><strong>{title}</strong><em>{meta}</em></span><small>{description}</small><span className="selection-option__status"><StatusLight tone={tone} label={status} /></span></span><span className="selection-option__indicator" aria-hidden="true">{selected && <Check width={17} height={17} />}</span></Button>
+  return <Button className={`selection-option${selected ? ' is-selected' : ''}`} aria-pressed={selected} onPress={onSelect}><span className="selection-option__leading">{leading}</span><span className="selection-option__body"><span className="selection-option__title"><strong>{title}</strong><em>{meta}</em></span><small>{description}</small><span className="selection-option__status"><StatusLight tone={tone} label={status} /></span></span><span className="selection-option__indicator" aria-hidden="true">{selected && <Check />}</span></Button>
 }
 
 function ModelCapabilityPicker({ model, assignedCapabilities, onModel, onCapabilities }: { model: string; assignedCapabilities: string[]; onModel: (value: string) => void; onCapabilities: (value: string[]) => void }): React.JSX.Element {
@@ -410,8 +424,8 @@ function ModelCapabilityPicker({ model, assignedCapabilities, onModel, onCapabil
     .sort((left, right) => Number(assignedCapabilities.includes(right.name)) - Number(assignedCapabilities.includes(left.name)) || left.name.localeCompare(right.name, 'zh-CN'))
 
   return <div className="model-capability-selection">
-    <section className="selection-config-section"><div className="selection-config-section__heading"><div><h3>运行模型</h3><p>从候选模型中选择一个作为当前员工的主模型。</p></div><span>单选 · 当前 {model}</span></div><SelectionCatalog label="模型搜索结果" placeholder="搜索模型或 Provider" query={modelQuery} result={`${models.length} 个模型`} empty="没有匹配的模型。" onQuery={setModelQuery}>{models.map((item) => <SelectionOption key={item.id} title={item.id} description={item.description} meta={`${item.provider} · 文本模型`} status={item.status} tone={item.tone} selected={model === item.id} leading={<Brain aria-hidden width={19} height={19} />} onSelect={() => onModel(item.id)} />)}</SelectionCatalog></section>
-    <section className="selection-config-section"><div className="selection-config-section__heading"><div><h3>Agent 能力</h3><p>可多选。已选能力优先显示，相关 Tool 与权限会随能力配置派生。</p></div><span>多选 · 已选 {assignedCapabilities.length} 项</span></div><SelectionCatalog label="能力搜索结果" placeholder="搜索能力、说明或权限" query={capabilityQuery} result={`${skillCapabilities.length} / ${capabilities.filter((item) => item.kind === 'skill').length} 项`} empty="没有匹配的能力。" onQuery={setCapabilityQuery}>{skillCapabilities.map((item) => { const selected = assignedCapabilities.includes(item.name); return <SelectionOption key={item.id} title={item.name} description={item.summary} meta={`v${item.version} · ${item.category}`} status={item.status} tone={item.tone} selected={selected} leading={<Sparks aria-hidden width={19} height={19} />} onSelect={() => onCapabilities(selected ? assignedCapabilities.filter((name) => name !== item.name) : [...assignedCapabilities, item.name])} /> })}</SelectionCatalog></section>
+    <section className="selection-config-section"><div className="selection-config-section__heading"><div><h3>运行模型</h3><p>从候选模型中选择一个作为当前员工的主模型。</p></div><span>单选 · 当前 {model}</span></div><SelectionCatalog label="模型搜索结果" placeholder="搜索模型或 Provider" query={modelQuery} result={`${models.length} 个模型`} empty="没有匹配的模型。" onQuery={setModelQuery}>{models.map((item) => <SelectionOption key={item.id} title={item.id} description={item.description} meta={`${item.provider} · 文本模型`} status={item.status} tone={item.tone} selected={model === item.id} leading={<Brain aria-hidden />} onSelect={() => onModel(item.id)} />)}</SelectionCatalog></section>
+    <section className="selection-config-section"><div className="selection-config-section__heading"><div><h3>Agent 能力</h3><p>可多选。已选能力优先显示，相关 Tool 与权限会随能力配置派生。</p></div><span>多选 · 已选 {assignedCapabilities.length} 项</span></div><SelectionCatalog label="能力搜索结果" placeholder="搜索能力、说明或权限" query={capabilityQuery} result={`${skillCapabilities.length} / ${capabilities.filter((item) => item.kind === 'skill').length} 项`} empty="没有匹配的能力。" onQuery={setCapabilityQuery}>{skillCapabilities.map((item) => { const selected = assignedCapabilities.includes(item.name); return <SelectionOption key={item.id} title={item.name} description={item.summary} meta={`v${item.version} · ${item.category}`} status={item.status} tone={item.tone} selected={selected} leading={<Sparks aria-hidden />} onSelect={() => onCapabilities(selected ? assignedCapabilities.filter((name) => name !== item.name) : [...assignedCapabilities, item.name])} /> })}</SelectionCatalog></section>
   </div>
 }
 
@@ -437,13 +451,25 @@ function ProfileValueTags({ items }: { items: Array<{ label: string; value: Reac
   return <ul className="profile-value-tags" aria-label="基本资料">{items.map((item) => <li key={item.label} aria-label={`${item.label}：${item.accessibleValue}`}>{item.value}</li>)}</ul>
 }
 
-function SummaryCardGrid({ children, emptyMessage }: { children: ReactNode; emptyMessage: string }): React.JSX.Element {
+function SummaryCardGrid({ children, emptyMessage, label }: { children: ReactNode; emptyMessage: string; label?: string }): React.JSX.Element {
   const items = React.Children.toArray(children)
-  return <div className="summary-card-grid">{items.length ? items : <p className="summary-card-grid__empty">{emptyMessage}</p>}</div>
+  return <div className="summary-card-grid" aria-label={label} role={label ? 'list' : undefined}>{items.length ? items : <p className="summary-card-grid__empty">{emptyMessage}</p>}</div>
 }
 
-function SummaryCard({ title, description, leading }: { title: ReactNode; description?: ReactNode; leading?: ReactNode }): React.JSX.Element {
-  return <article className="summary-card">{leading && <span className="summary-card__leading">{leading}</span>}<span className="summary-card__body"><strong>{title}</strong>{description && <small>{description}</small>}</span></article>
+function SummaryCard({ title, description, leading, trailing, tone = 'default' }: { title: ReactNode; description?: ReactNode; leading?: ReactNode; trailing?: ReactNode; tone?: 'default' | 'success' | 'muted' }): React.JSX.Element {
+  return <article className={`summary-card summary-card--${tone}${leading ? ' has-leading' : ''}${trailing ? ' has-trailing' : ''}`}>{leading && <span className="summary-card__leading">{leading}</span>}<span className="summary-card__body"><strong>{title}</strong>{description && <small>{description}</small>}</span>{trailing && <span className="summary-card__trailing">{trailing}</span>}</article>
+}
+
+function DetailSummaryPanel({ icon, title, description, metrics }: { icon: ReactNode; title: string; description: string; metrics: Array<{ label: string; value: ReactNode }> }): React.JSX.Element {
+  return <div className="detail-summary-panel detail-summary-panel--muted"><div className="detail-summary-panel__intro"><span className="detail-summary-panel__icon">{icon}</span><div className="detail-summary-panel__copy"><h3>{title}</h3><p>{description}</p></div></div><div className="detail-metric-group" aria-label="概况指标">{metrics.map((metric) => <span className="detail-metric-group__item" key={metric.label}><strong>{metric.value}</strong><small>{metric.label}</small></span>)}</div></div>
+}
+
+function DetailSectionHeader({ title, description, meta }: { title: string; description: string; meta: ReactNode }): React.JSX.Element {
+  return <div className="detail-section-header"><div><h3>{title}</h3><p>{description}</p></div><span className="detail-section-header__meta">{meta}</span></div>
+}
+
+function DetailState({ children, tone = 'muted' }: { children: ReactNode; tone?: StatusTone }): React.JSX.Element {
+  return <span className={`detail-state detail-state--${tone}`}>{children}</span>
 }
 
 function ConversationRow({ conversation, selected, onPress, onDelete }: { conversation: Conversation; selected: boolean; onPress: () => void; onDelete: () => void }): React.JSX.Element {
@@ -458,18 +484,18 @@ function ConversationRow({ conversation, selected, onPress, onDelete }: { conver
 function AttachmentOpenMenu({ attachment }: { attachment: MessageAttachment }): React.JSX.Element {
   return <MenuTrigger>
     <Button className="attachment-open-trigger" aria-label={`打开方式 ${attachment.name}`}>
-      <OpenNewWindow aria-hidden width={16} height={16} />
+      <OpenNewWindow aria-hidden />
       <span>打开方式</span>
-      <NavArrowDown aria-hidden width={14} height={14} className="attachment-open-trigger__chevron" />
+      <NavArrowDown aria-hidden className="attachment-open-trigger__chevron" />
     </Button>
     <Popover className="attachment-open-popover" placement="bottom end" offset={6}>
       <Menu className="attachment-open-menu" aria-label={`${attachment.name} 的打开方式`}>
         <MenuItem id="open" className="attachment-open-menu__item">
-          <span className="attachment-open-menu__icon"><OpenNewWindow aria-hidden width={17} height={17} /></span>
+          <span className="attachment-open-menu__icon"><OpenNewWindow aria-hidden /></span>
           <span className="attachment-open-menu__copy"><strong>使用系统默认应用打开</strong><small>使用 macOS 关联的应用</small></span>
         </MenuItem>
         <MenuItem id="reveal" className="attachment-open-menu__item">
-          <span className="attachment-open-menu__icon"><Folder aria-hidden width={17} height={17} /></span>
+          <span className="attachment-open-menu__icon"><Folder aria-hidden /></span>
           <span className="attachment-open-menu__copy"><strong>打开所在文件夹</strong><small>在 Finder 中定位此文件</small></span>
         </MenuItem>
       </Menu>
@@ -511,9 +537,9 @@ function MessageAttachmentGroup({ attachments, source, embedded = false, onRemov
 
   return (
     <div className={`message-attachments message-attachments--${source} message-attachments--${multiple ? 'multiple' : 'single'}${embedded ? ' message-attachments--embedded' : ''}${isTimelineCarousel ? ' message-attachments--carousel' : ''}`}>
-      {multiple && <div className="message-attachments__header"><span>{source === 'agent' ? <Sparks aria-hidden width={16} height={16} /> : <Page aria-hidden width={16} height={16} />}{attachments.length} 个附件</span>{isTimelineCarousel && (carouselState.canPrevious || carouselState.canNext) && <span className="attachment-carousel-navigation"><small>{carouselState.current} / {attachments.length}</small><IconButton label="查看上一份附件" icon={NavArrowLeft} onPress={() => moveCarousel(-1)} isDisabled={!carouselState.canPrevious} /><IconButton label="查看下一份附件" icon={NavArrowRight} onPress={() => moveCarousel(1)} isDisabled={!carouselState.canNext} /></span>}</div>}
+      {multiple && <div className="message-attachments__header"><span>{source === 'agent' ? <Sparks aria-hidden /> : <Page aria-hidden />}{attachments.length} 个附件</span>{isTimelineCarousel && (carouselState.canPrevious || carouselState.canNext) && <span className="attachment-carousel-navigation"><small>{carouselState.current} / {attachments.length}</small><IconButton label="查看上一份附件" icon={NavArrowLeft} onPress={() => moveCarousel(-1)} isDisabled={!carouselState.canPrevious} /><IconButton label="查看下一份附件" icon={NavArrowRight} onPress={() => moveCarousel(1)} isDisabled={!carouselState.canNext} /></span>}</div>}
       <div className="message-attachments__rows" ref={rowsRef} onScroll={isTimelineCarousel ? updateCarouselState : undefined}>
-        {attachments.map((attachment) => <div className="message-attachment-row" key={attachment.id}><span className="message-attachment-row__icon"><Page aria-hidden width={18} height={18} /></span><span className="message-attachment-row__body"><strong title={attachment.name}>{attachment.name}</strong><small>{attachment.detail}</small></span>{onRemove ? <IconButton label={`移除 ${attachment.name}`} icon={Xmark} onPress={() => onRemove(attachment.id)} /> : source === 'agent' ? <span className="message-attachment-row__actions"><AttachmentOpenMenu attachment={attachment} /></span> : <IconButton label={`打开 ${attachment.name}`} icon={NavArrowRight} />}</div>)}
+        {attachments.map((attachment) => <div className="message-attachment-row" key={attachment.id}><span className="message-attachment-row__icon"><Page aria-hidden /></span><span className="message-attachment-row__body"><strong title={attachment.name}>{attachment.name}</strong><small>{attachment.detail}</small></span>{onRemove ? <IconButton label={`移除 ${attachment.name}`} icon={Xmark} onPress={() => onRemove(attachment.id)} /> : source === 'agent' ? <span className="message-attachment-row__actions"><AttachmentOpenMenu attachment={attachment} /></span> : <IconButton label={`打开 ${attachment.name}`} icon={NavArrowRight} />}</div>)}
       </div>
     </div>
   )
@@ -538,7 +564,7 @@ function MarkdownMessage({ children }: { children: string }): React.JSX.Element 
     return () => { observer.disconnect(); cancelAnimationFrame(frame) }
   }, [children, expanded])
 
-  return <div className="markdown-message"><div ref={contentRef} className={`markdown-message__content${collapsible ? ' is-collapsible' : ''}${expanded ? ' is-expanded' : ''}`}><MarkdownContent>{children}</MarkdownContent></div>{(collapsible || expanded) && <Button className="message-expand-button" aria-expanded={expanded} onPress={() => setExpanded((value) => !value)}>{expanded ? '收起' : '展开全文'}<NavArrowDown aria-hidden width={14} height={14} className={expanded ? 'is-expanded' : ''} /></Button>}</div>
+  return <div className="markdown-message"><div ref={contentRef} className={`markdown-message__content${collapsible ? ' is-collapsible' : ''}${expanded ? ' is-expanded' : ''}`}><MarkdownContent>{children}</MarkdownContent></div>{(collapsible || expanded) && <Button className="message-expand-button" aria-expanded={expanded} onPress={() => setExpanded((value) => !value)}>{expanded ? '收起' : '展开全文'}<NavArrowDown aria-hidden className={expanded ? 'is-expanded' : ''} /></Button>}</div>
 }
 
 function MatterTeamAvatars({ team }: { team: MatterParticipant[] }): React.JSX.Element {
@@ -551,7 +577,7 @@ function MatterRouteNote({ title, mode }: { title: string; mode: 'created' | 'li
   const choose = (nextRoute: string): void => { setRoute(nextRoute); setEditing(false) }
   return (
     <div className="matter-route-note message-stream-item">
-      <span title={title}><Sparks aria-hidden width={14} height={14} />{route}</span>
+      <span title={title}><Sparks aria-hidden />{route}</span>
       <Button className="matter-route-note__change" onPress={() => setEditing((value) => !value)}>更改</Button>
       {editing && <div className="matter-route-note__options" role="group" aria-label="更改消息归类"><Button onPress={() => choose('已归入已有事项')}>归入当前事项</Button><Button onPress={() => choose('已创建事项')}>创建新事项</Button><Button onPress={() => choose('总管直接回答，不创建事项')}>直接回答</Button></div>}
     </div>
@@ -559,7 +585,7 @@ function MatterRouteNote({ title, mode }: { title: string; mode: 'created' | 'li
 }
 
 function MatterEvent({ matter, title, description, time, onOpen }: { matter: ConversationMatter; title: string; description: string; time: string; onOpen: () => void }): React.JSX.Element {
-  return <Button className="matter-event message-stream-item" aria-label={`查看事项：${matter.title}`} onPress={onOpen}><span className="matter-event__body"><small>目标</small><strong>{matter.title}</strong><span>{description}</span></span><span className="matter-event__meta"><span>{title}</span><time>{time}</time><NavArrowRight aria-hidden width={15} height={15} /></span></Button>
+  return <Button className="matter-event message-stream-item" aria-label={`查看事项：${matter.title}`} onPress={onOpen}><span className="matter-event__body"><small>目标</small><strong>{matter.title}</strong><span>{description}</span></span><span className="matter-event__meta"><span>{title}</span><time>{time}</time><NavArrowRight aria-hidden /></span></Button>
 }
 
 function ChatMessage({ source, name, initials, color, time, avatarSrc, variant = 'message', status, children }: { source: 'user' | 'agent'; name: string; initials: string; color: string; time: string; avatarSrc?: string | null; variant?: 'message' | 'timeline'; status?: ReactNode; children: ReactNode }): React.JSX.Element {
@@ -567,7 +593,7 @@ function ChatMessage({ source, name, initials, color, time, avatarSrc, variant =
 }
 
 function AttachmentUploadButton({ onFiles }: { onFiles: (files: File[]) => void }): React.JSX.Element {
-  return <label className="attachment-upload-button" title="添加附件"><input type="file" multiple aria-label="添加附件" onChange={(event) => { onFiles(Array.from(event.currentTarget.files ?? [])); event.currentTarget.value = '' }} /><span className="icon-button" aria-hidden="true"><Plus width={19} height={19} /></span></label>
+  return <label className="attachment-upload-button" title="添加附件"><input type="file" multiple aria-label="添加附件" onChange={(event) => { onFiles(Array.from(event.currentTarget.files ?? [])); event.currentTarget.value = '' }} /><span className="icon-button" aria-hidden="true"><Plus /></span></label>
 }
 
 function fileSizeLabel(bytes: number): string {
@@ -583,9 +609,9 @@ function fileDetail(file: File): string {
 
 function Toolbar({ title, support, trailing }: { title: string; support?: ReactNode; trailing?: ReactNode }): React.JSX.Element {
   return (
-    <header className="toolbar" aria-label="窗口拖拽区">
-      <div className="window-controls-safe-area" aria-hidden="true" />
-      <div className="toolbar__workspace"><div className="toolbar__content"><div className="toolbar__identity"><h1>{title}</h1>{support}</div>{trailing && <div className="toolbar__trailing">{trailing}</div>}</div></div>
+    <header className="toolbar" aria-label="窗口拖拽区" data-layout-contract="application-toolbar">
+      <div className="window-controls-safe-area" data-toolbar-zone="navigation" aria-hidden="true" />
+      <div className="toolbar__workspace" data-toolbar-zone="workspace"><div className="toolbar__content"><div className="toolbar__identity" data-toolbar-zone="identity"><h1>{title}</h1>{support}</div>{trailing && <div className="toolbar__trailing" data-toolbar-zone="actions">{trailing}</div>}</div></div>
     </header>
   )
 }
@@ -610,7 +636,7 @@ function Rail({ active, userProfile, onNavigate, onProfile }: { active: PageId; 
 function RailButton({ label, icon: Icon, active, onPress, marker }: { id: PageId; label: string; icon: IconComponent; active: boolean; onPress: () => void; marker?: string }): React.JSX.Element {
   return (
     <TooltipTrigger delay={350}>
-      <Button aria-label={label} className={`rail-button${active ? ' is-active' : ''}`} onPress={onPress}><Icon aria-hidden width={22} height={22} />{marker && <span className="rail-button__marker">{marker}</span>}</Button>
+      <Button aria-label={label} className={`rail-button${active ? ' is-active' : ''}`} onPress={onPress}><Icon aria-hidden />{marker && <span className="rail-button__marker">{marker}</span>}</Button>
       <Tooltip className="app-tooltip" placement="right">{label}</Tooltip>
     </TooltipTrigger>
   )
@@ -631,10 +657,9 @@ function ContextPane({ page, agentItems, selectedConversation, onConversation, s
   onSystemSection: (id: string) => void
 }): React.JSX.Element {
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState('all')
   const [capabilityFilter, setCapabilityFilter] = useState<'skill' | 'tool'>('skill')
   const [deletedConversationIds, setDeletedConversationIds] = useState<string[]>([])
-  const pageTitle = { messages: '消息', contacts: '通讯录', capabilities: '能力', system: '系统' }[page]
+  const pageTitle = { messages: '消息', contacts: '通讯录', capabilities: '能力', connections: '连接', system: '系统' }[page]
   const filteredConversations = conversations.filter((item) => !deletedConversationIds.includes(item.id) && (item.title.includes(query) || item.preview.includes(query)))
   const filteredAgents = agentItems.filter((item) => item.name.includes(query) || item.role.includes(query))
   const filteredCapabilities = capabilities.filter((item) => item.name.includes(query) || item.summary.includes(query))
@@ -649,21 +674,28 @@ function ContextPane({ page, agentItems, selectedConversation, onConversation, s
     setDeletedConversationIds((items) => [...items, id])
     if (selectedConversation === id && nextConversation) onConversation(nextConversation.id)
   }
+  const contextAction = page === 'messages'
+    ? <IconButton label="新建会话" icon={Plus} />
+    : page === 'contacts'
+      ? <IconButton label="新建 Agent" icon={Plus} onPress={onCreateAgent} />
+      : page === 'capabilities'
+        ? <IconButton label="能力目录信息" icon={InfoCircle} onPress={() => onOpenDetail('capability-info')} />
+        : undefined
 
   return (
     <aside className="context-pane">
-      <SectionHeader title={pageTitle} action={page !== 'system' ? <IconButton label={page === 'messages' ? '新建会话' : page === 'contacts' ? '新建 Agent' : '能力目录信息'} icon={page === 'capabilities' ? InfoCircle : Plus} onPress={page === 'contacts' ? onCreateAgent : page === 'capabilities' ? () => onOpenDetail('capability-info') : undefined} /> : undefined} />
-      {page !== 'system' && <SearchBox placeholder={page === 'messages' ? '搜索会话' : page === 'contacts' ? '搜索 Agent' : '搜索能力'} value={query} onChange={setQuery} />}
+      <SectionHeader title={pageTitle} action={contextAction} />
+      {page !== 'system' && page !== 'connections' && <SearchBox placeholder={page === 'messages' ? '搜索会话' : page === 'contacts' ? '搜索 Agent' : '搜索能力'} value={query} onChange={setQuery} />}
       {page === 'messages' && <>
-        <div className="filter-row" aria-label="消息筛选">{[['all', '全部'], ['attention', '待处理'], ['unread', '未读']].map(([id, label]) => <Button key={id} className={filter === id ? 'is-active' : ''} onPress={() => setFilter(id)}>{label}</Button>)}</div>
-        <div className="context-scroll">{filteredConversations.filter((item) => filter === 'all' || (filter === 'attention' ? item.attention : item.unread)).map((item) => <ConversationRow key={item.id} conversation={item} selected={selectedConversation === item.id} onPress={() => onConversation(item.id)} onDelete={() => deleteConversation(item.id)} />)}</div>
+        <div className="context-scroll">{filteredConversations.map((item) => <ConversationRow key={item.id} conversation={item} selected={selectedConversation === item.id} onPress={() => onConversation(item.id)} onDelete={() => deleteConversation(item.id)} />)}</div>
       </>}
       {page === 'contacts' && <div className="context-scroll context-scroll--flush">{filteredAgents.map((item) => <ListRow key={item.id} selected={selectedAgent === item.id} avatar={<Avatar label={item.name} initials={item.initials} color={item.color} size="small" src={item.avatarUrl ?? employeeAvatarForName(item.name)} />} title={item.name} subtitle={item.role} meta="" marker={<StatusLight tone={item.tone} label={item.status} breathing={item.tone === 'active' || item.tone === 'waiting'} />} onPress={() => onAgent(item.id)} />)}</div>}
       {page === 'capabilities' && <>
         <div className="filter-row capability-kind-switch">{([['skill', 'Skills'], ['tool', 'Tools']] as const).map(([id, label]) => <Button key={id} className={capabilityFilter === id ? 'is-active' : ''} onPress={() => { setCapabilityFilter(id); onCapability(capabilities.find((item) => item.kind === id)?.id ?? selectedCapability) }}>{label}</Button>)}</div>
         <div className="context-scroll context-scroll--flush">{visibleCapabilities.map((item) => <ListRow key={item.id} selected={selectedCapability === item.id} title={item.name} subtitle={item.category} marker={<StatusLight tone={item.tone} label={item.status} />} onPress={() => onCapability(item.id)} />)}</div>
       </>}
-      {page === 'system' && <div className="system-navigation">{systemSections.map((item) => { const Icon = item.icon; return <Button key={item.id} className={systemSection === item.id ? 'is-active' : ''} onPress={() => onSystemSection(item.id)}><Icon aria-hidden width={18} height={18} /><span>{item.label}</span><NavArrowRight aria-hidden width={15} height={15} /></Button> })}</div>}
+      {page === 'connections' && <div className="context-scroll context-scroll--flush" />}
+      {page === 'system' && <div className="system-navigation">{systemSections.map((item) => { const Icon = item.icon; return <Button key={item.id} className={systemSection === item.id ? 'is-active' : ''} onPress={() => onSystemSection(item.id)}><Icon aria-hidden /><span>{item.label}</span><NavArrowRight aria-hidden /></Button> })}</div>}
     </aside>
   )
 }
@@ -685,7 +717,7 @@ function MatterIndexView({ onOpenMatter }: { onOpenMatter: (matterId: Conversati
           if (!matters.length) return null
           return <section className="matter-index-section" key={group.id}><div className="matter-index-section__heading"><h3>{group.label}</h3><span>{group.description}</span></div><div className="matter-index-list">{[...matters].reverse().map((matter) => <Button className="matter-index-card" key={matter.id} onPress={() => onOpenMatter(matter.id)}>
             <div className="card-heading"><StatusLight tone={matter.tone} label={matter.status} breathing={matter.group === 'attention' || matter.group === 'active'} /><span>{matter.updatedAt}</span></div>
-            <div className="matter-index-card__body"><span><strong>{matter.title}</strong><small>{matter.description}</small></span><NavArrowRight aria-hidden width={17} height={17} /></div>
+            <div className="matter-index-card__body"><span><strong>{matter.title}</strong><small>{matter.description}</small></span><NavArrowRight aria-hidden /></div>
             <div className="matter-index-card__footer"><MatterTeamAvatars team={matter.team} /><span>{matter.progress}</span><span>{matter.output}</span></div>
           </Button>)}</div></section>
         })}
@@ -710,8 +742,8 @@ function MessagesPage({ conversationId, userProfile, onOpenMatter, onOpenDetail 
   return (
     <div className="workspace-page message-page">
       {hasMatters && <div className="topic-bar" role="tablist" aria-label="会话内容视图">
-        <button type="button" role="tab" aria-selected={activeView === 'conversation'} className={activeView === 'conversation' ? 'is-active' : ''} onClick={() => setActiveView('conversation')}><ChatBubble aria-hidden width={16} height={16} />对话</button>
-        <button type="button" role="tab" aria-selected={activeView === 'matter'} className={activeView === 'matter' ? 'is-active' : ''} onClick={() => setActiveView('matter')}><Page aria-hidden width={16} height={16} />事项<span className="topic-bar__count">{conversationMatters.length}</span></button>
+        <button type="button" role="tab" aria-selected={activeView === 'conversation'} className={activeView === 'conversation' ? 'is-active' : ''} onClick={() => setActiveView('conversation')}><ChatBubble aria-hidden />对话</button>
+        <button type="button" role="tab" aria-selected={activeView === 'matter'} className={activeView === 'matter' ? 'is-active' : ''} onClick={() => setActiveView('matter')}><Page aria-hidden />事项<span className="topic-bar__count">{conversationMatters.length}</span></button>
       </div>}
       {activeView === 'conversation' ? <>
       <div className="message-scroll" role="tabpanel" aria-label="对话">
@@ -741,13 +773,13 @@ function MessagesPage({ conversationId, userProfile, onOpenMatter, onOpenDetail 
           <MatterRouteNote title="东南亚 SaaS 市场进入研究" mode="created" />
           <ChatMessage source="agent" name="总管" initials="总" color="#aebd83" avatarSrc={supervisorAvatar} time="13:41"><MarkdownMessage>已明确**目标和验收标准**。我会组织网络情报员收集并核验来源，再由文档编写员整理成可评审报告。</MarkdownMessage></ChatMessage>
           <MatterEvent matter={conversationMatters[0]} title="临时团队已组建" description="网络情报员、文档编写员开始执行" time="13:42" onOpen={() => onOpenMatter('market-entry')} />
-          <article className="approval-card is-resolved message-stream-item"><div><Key aria-hidden width={19} height={19} /><p>你已批准网络情报员在当前事项中只读访问 GitHub 公开仓库。</p><IconButton label="查看审批详情" icon={Eye} onPress={() => onOpenDetail('approval-detail')} /></div></article>
-          <ChatMessage source="agent" variant="timeline" name="总管" initials="总" color="#aebd83" avatarSrc={supervisorAvatar} time="14:32" status={<StatusLight tone="success" label="已交付" />}><div className="message-delivery"><span className="message-delivery__eyebrow">结果</span><h3>东南亚 SaaS 市场进入研究报告</h3><p className="message-delivery__summary">六个主要市场已覆盖，竞争格局和进入风险均有来源支持。</p><div className="message-delivery__verification" aria-label="交付概况"><span><strong>2/2</strong><small>完成要求</small></span><span><strong>20</strong><small>来源证据</small></span><span><strong>2</strong><small>交付文件</small></span></div><MessageAttachmentGroup attachments={generatedAttachments} source="agent" embedded /><Button className="text-action" onPress={() => onOpenDetail('delivery-evidence')}>查看完整验收记录 <NavArrowRight aria-hidden width={14} height={14} /></Button></div></ChatMessage>
+          <article className="approval-card is-resolved message-stream-item"><div><Key aria-hidden /><p>你已批准网络情报员在当前事项中只读访问 GitHub 公开仓库。</p><IconButton label="查看审批详情" icon={Eye} onPress={() => onOpenDetail('approval-detail')} /></div></article>
+          <ChatMessage source="agent" variant="timeline" name="总管" initials="总" color="#aebd83" avatarSrc={supervisorAvatar} time="14:32" status={<StatusLight tone="success" label="已交付" />}><div className="message-delivery"><span className="message-delivery__eyebrow">结果</span><h3>东南亚 SaaS 市场进入研究报告</h3><p className="message-delivery__summary">六个主要市场已覆盖，竞争格局和进入风险均有来源支持。</p><div className="message-delivery__verification" aria-label="交付概况"><span><strong>2/2</strong><small>完成要求</small></span><span><strong>20</strong><small>来源证据</small></span><span><strong>2</strong><small>交付文件</small></span></div><MessageAttachmentGroup attachments={generatedAttachments} source="agent" embedded /><Button className="text-action" onPress={() => onOpenDetail('delivery-evidence')}>查看完整验收记录 <NavArrowRight aria-hidden /></Button></div></ChatMessage>
           <ChatMessage source="user" name={userProfile.name.trim() || '本地用户'} initials={userProfile.name.trim().slice(0, 1) || '用'} color="#d9c5a6" avatarSrc={userProfile.avatarUrl} time="15:05"><MarkdownMessage>基于刚才通过验收的报告，再整理一套**官网发布稿、管理层摘要和视觉方案**。</MarkdownMessage></ChatMessage>
           <MatterRouteNote title="市场报告发布包" mode="created" />
           <ChatMessage source="agent" name="总管" initials="总" color="#aebd83" avatarSrc={supervisorAvatar} time="15:06"><MarkdownMessage>这是新的交付目标。我已创建关联事项，由**文档编写员**负责整理，**网络情报员**补充来源核验；上一事项的团队不会自动延续。</MarkdownMessage></ChatMessage>
           <MatterEvent matter={conversationMatters[1]} title="临时团队已组建" description="文档编写员、网络情报员开始执行" time="15:08" onOpen={() => onOpenMatter('publication-pack')} />
-          <article className="approval-card message-stream-item"><div><Key aria-hidden width={19} height={19} /><p>总管需要你确认发布物料的视觉方向，确认后临时团队将继续制作。</p><IconButton label="查看事项详情" icon={Eye} onPress={() => onOpenMatter('publication-pack')} /></div><div className="approval-actions"><Button className="button button--quiet">提出修改</Button><Button className="button button--primary">确认方向</Button></div></article>
+          <article className="approval-card message-stream-item"><div><Key aria-hidden /><p>总管需要你确认发布物料的视觉方向，确认后临时团队将继续制作。</p><IconButton label="查看事项详情" icon={Eye} onPress={() => onOpenMatter('publication-pack')} /></div><div className="approval-actions"><Button className="button button--quiet">提出修改</Button><Button className="button button--primary">确认方向</Button></div></article>
           </>}
           {localMessages.map((message, index) => <ChatMessage source="user" name={userProfile.name.trim() || '本地用户'} initials={userProfile.name.trim().slice(0, 1) || '用'} color="#d9c5a6" avatarSrc={userProfile.avatarUrl} time="刚刚" key={`${message.text}-${index}`}><MarkdownMessage>{message.text || '已添加附件'}</MarkdownMessage><MessageAttachmentGroup attachments={message.attachments} source="user" /></ChatMessage>)}
         </div>
@@ -758,7 +790,7 @@ function MessagesPage({ conversationId, userProfile, onOpenMatter, onOpenDetail 
           <textarea aria-label="发送消息" rows={2} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="发送给总管，补充问题或事项信息" />
           <div className="composer__toolbar">
             <div className="composer__group"><AttachmentUploadButton onFiles={addAttachments} /></div>
-            <div className="composer__group"><Button className="composer__control"><Sparks aria-hidden width={17} height={17} /><span>deepseek-v4-pro</span><NavArrowDown aria-hidden width={15} height={15} /></Button><IconButton label="语音输入" icon={Microphone} /><Button type="submit" aria-label="发送" className="composer__send" isDisabled={!draft.trim() && !draftAttachments.length}><ArrowUp aria-hidden width={19} height={19} /></Button></div>
+            <div className="composer__group"><Button className="composer__control"><Sparks aria-hidden /><span>deepseek-v4-pro</span><NavArrowDown aria-hidden /></Button><IconButton label="语音输入" icon={Microphone} /><Button type="submit" aria-label="发送" className="composer__send" isDisabled={!draft.trim() && !draftAttachments.length}><ArrowUp aria-hidden /></Button></div>
           </div>
         </div>
       </form>
@@ -774,7 +806,7 @@ function ContactPage({ agent }: { agent: Agent }): React.JSX.Element {
       <div className="detail-canvas">
         <ProfileSummary agent={agent} />
         <ProfileValueTags items={[{ label: '工作状态', accessibleValue: agent.status, value: <StatusLight tone={agent.tone} label={agent.status} breathing={agent.tone === 'active' || agent.tone === 'waiting'} /> }, { label: '加入时间', accessibleValue: agent.joinedAt ?? '2026 年 8 月 14 日', value: agent.joinedAt ?? '2026 年 8 月 14 日' }, { label: '运行模型', accessibleValue: agent.model ?? 'deepseek-v4-pro', value: agent.model ?? 'deepseek-v4-pro' }, { label: '配置版本', accessibleValue: 'v1', value: 'v1' }]} />
-        <section className="plain-section"><div className="content-section-title"><h3>能力摘要</h3><span>{assignedSkills.length} 项 Skill</span></div><SummaryCardGrid emptyMessage="尚未绑定 Skill。">{assignedSkills.map((skill) => <SummaryCard key={skill.id} leading={<Sparks aria-hidden width={18} height={18} />} title={skill.name} description={skill.summary} />)}</SummaryCardGrid></section>
+        <section className="plain-section"><div className="content-section-title"><h3>能力摘要</h3><span>{assignedSkills.length} 项 Skill</span></div><SummaryCardGrid emptyMessage="尚未绑定 Skill。">{assignedSkills.map((skill) => <SummaryCard key={skill.id} leading={<Sparks aria-hidden />} title={skill.name} description={skill.summary} />)}</SummaryCardGrid></section>
       </div>
     </div>
   )
@@ -786,19 +818,69 @@ function CapabilityPage({ capability, onAgent, onOpenDetail }: { capability: Cap
   return (
     <div className="workspace-page detail-page">
       <div className="detail-canvas">
-        <section className="capability-intro"><div className="capability-mark"><MarkIcon aria-hidden width={29} height={29} /></div><div><span className="capability-category">{capability.category} · v{capability.version}</span><h2>{capability.name}</h2><p>{capability.summary}</p></div></section>
+        <section className="capability-intro"><div className="capability-mark"><MarkIcon aria-hidden /></div><div><span className="capability-category">{capability.category} · v{capability.version}</span><h2>{capability.name}</h2><p>{capability.summary}</p></div></section>
         {isSkill && capability.skillMarkdown && <section className="plain-section skill-document"><div className="content-section-title"><h3>SKILL.md</h3><span>完整文档 · v{capability.version}</span></div><MarkdownContent className="skill-document__markdown">{capability.skillMarkdown}</MarkdownContent></section>}
         <section className="plain-section"><h3>{isSkill ? '适用任务' : '可用于'}</h3><div className="use-case-list">{capability.useCases.map((item) => <span key={item}>{item}</span>)}</div></section>
         <section className="plain-section"><h3>{isSkill ? '执行与依赖' : '调用关系'}</h3><div className="dependency-groups">{isSkill ? <><DependencyGroup icon={Brain} title="执行步骤" items={capability.skills} /><DependencyGroup icon={Tools} title="Tools" items={capability.tools} /></> : <><DependencyGroup icon={Sparks} title="关联 Skills" items={capability.skills} /><DependencyGroup icon={Database} title="连接与运行" items={capability.tools} /></>}<DependencyGroup icon={ShieldCheck} title="权限" items={capability.permissions} /></div></section>
-        <section className="plain-section"><div className="content-section-title"><h3>已绑定 Agent</h3><span>{capability.agents.length} 位</span></div>{capability.agents.map((name) => <Button className="linked-agent" key={name} onPress={onAgent}><Avatar label={name} initials={name.slice(0, 1)} color="#b8c982" size="small" src={employeeAvatarForName(name)} /><span><strong>{name}</strong><small>查看员工资料</small></span><NavArrowRight aria-hidden width={16} height={16} /></Button>)}</section>
-        <Button className="advanced-disclosure" onPress={() => onOpenDetail('capability-info')}>高级信息 <NavArrowRight aria-hidden width={14} height={14} /></Button>
+        <section className="plain-section"><div className="content-section-title"><h3>已绑定 Agent</h3><span>{capability.agents.length} 位</span></div>{capability.agents.map((name) => <Button className="linked-agent" key={name} onPress={onAgent}><Avatar label={name} initials={name.slice(0, 1)} color="#b8c982" size="small" src={employeeAvatarForName(name)} /><span><strong>{name}</strong><small>查看员工资料</small></span><NavArrowRight aria-hidden /></Button>)}</section>
+        <Button className="advanced-disclosure" onPress={() => onOpenDetail('capability-info')}>高级信息 <NavArrowRight aria-hidden /></Button>
       </div>
     </div>
   )
 }
 
+const connectionCategories = [
+  {
+    id: 'collaboration',
+    name: '协作沟通',
+    description: '连接团队消息、组织协同与客户触达渠道。',
+    applications: [
+      { id: 'feishu', name: '飞书', description: '消息、文档、日历与组织协作。', icon: feishuConnectionIcon },
+      { id: 'teams', name: 'Microsoft Teams', description: '团队消息、会议与协作空间。', icon: teamsConnectionIcon },
+      { id: 'dingtalk', name: '钉钉', description: '组织通讯、消息、审批与协同办公。', icon: dingtalkConnectionIcon },
+      { id: 'wecom', name: '企业微信', description: '企业内部协作与客户连接。', icon: wecomConnectionIcon },
+      { id: 'wechat', name: '微信', description: '消息触达与客户沟通渠道。', icon: wechatConnectionIcon }
+    ]
+  },
+  {
+    id: 'knowledge',
+    name: '知识与文件',
+    description: '连接知识库、在线文档与企业文件空间。',
+    applications: [
+      { id: 'notion', name: 'Notion', description: '知识库、文档与工作流协作。', icon: notionConnectionIcon },
+      { id: 'yuque', name: '语雀', description: '团队知识库、文档与结构化知识管理。', icon: yuqueConnectionIcon },
+      { id: 'wps', name: 'WPS Office', description: '文档、表格、演示与云端协作。', icon: wpsConnectionIcon },
+      { id: 'baidu-netdisk', name: '百度网盘', description: '云端文件存储、同步与共享。', icon: baiduNetdiskConnectionIcon }
+    ]
+  },
+  {
+    id: 'development',
+    name: '研发与云服务',
+    description: '连接代码协作平台与云端基础设施。',
+    applications: [
+      { id: 'github', name: 'GitHub', description: '代码仓库、Issue、Pull Request 与 CI 协作。', icon: githubConnectionIcon },
+      { id: 'gitee', name: 'Gitee', description: '代码托管、协作开发与 DevOps。', icon: giteeConnectionIcon },
+      { id: 'alibaba-cloud', name: '阿里云', description: '云计算资源、数据服务与企业基础设施。', icon: alibabaCloudConnectionIcon }
+    ]
+  }
+]
+
+const connectionApplications = connectionCategories.flatMap((category) => category.applications)
+
+function ConnectionsPage(): React.JSX.Element {
+  return <div className="workspace-page detail-page detail-page--wide connections-page"><div className="detail-canvas"><section className="recruitment-catalog connections-catalog" aria-label="连接" data-source="static">
+    <DetailSummaryPanel icon={<Link aria-hidden />} title="外部系统与应用" description="当前版本静态展示可连接应用目录，所有应用均为默认未连接状态。" metrics={[{ label: '应用总数', value: connectionApplications.length }, { label: '应用类型', value: connectionCategories.length }, { label: '已连接', value: 0 }]} />
+    <div className="recruitment-catalog__categories">{connectionCategories.map((category) => <section className="recruitment-category" aria-label={category.name} key={category.id}>
+      <DetailSectionHeader title={category.name} description={category.description} meta={`${category.applications.length} 个`} />
+      <SummaryCardGrid emptyMessage="暂无已连接应用" label={`${category.name}应用`}>
+        {category.applications.map((application) => <div className="recruitment-card connection-card" role="listitem" key={application.id}><SummaryCard leading={<span className="connection-logo" role="img" aria-label={`${application.name} 官方图标`}><img alt="" src={application.icon} /></span>} title={application.name} description={application.description} tone="muted" trailing={<DetailState tone="muted">未连接</DetailState>} /></div>)}
+      </SummaryCardGrid>
+    </section>)}</div>
+  </section></div></div>
+}
+
 function DependencyGroup({ icon: Icon, title, items }: { icon: IconComponent; title: string; items: string[] }): React.JSX.Element {
-  return <div><div className="dependency-groups__title"><Icon aria-hidden width={18} height={18} /><span>{title}</span></div>{items.map((item) => <p key={item}><Check aria-hidden width={15} height={15} />{item}</p>)}</div>
+  return <div><div className="dependency-groups__title"><Icon aria-hidden /><span>{title}</span></div>{items.map((item) => <p key={item}><Check aria-hidden />{item}</p>)}</div>
 }
 
 function SystemPage({ section, theme, onTheme, userProfile, onUserProfile, supervisorPrompt, onSupervisorPrompt, onOpenDetail }: { section: string; theme: ThemeMode; onTheme: (theme: ThemeMode) => void; userProfile: UserProfile; onUserProfile: (profile: UserProfile) => void; supervisorPrompt: string; onSupervisorPrompt: (prompt: string) => void; onOpenDetail: (view: DetailView) => void }): React.JSX.Element {
@@ -830,11 +912,11 @@ function ProfileSettings({ profile, onProfile }: { profile: UserProfile; onProfi
     reader.onload = () => update('avatarUrl', typeof reader.result === 'string' ? reader.result : null)
     reader.readAsDataURL(file)
   }
-  return <SettingsBlock title="身份"><div className="employee-identity-editor"><div className="employee-avatar-setting"><label className="avatar-upload"><input type="file" accept="image/png,image/jpeg,image/webp" aria-label="从本地上传个人头像" onChange={(event) => changeAvatar(event.currentTarget.files?.[0] ?? null)} /><Avatar label={profile.name || '本地用户'} initials={profile.name.trim().slice(0, 1) || '用'} color="#d7b36a" size="large" src={profile.avatarUrl} /><span className="avatar-upload__affordance" aria-hidden="true"><EditPencil width={16} height={16} /></span></label></div><TextField value={profile.name} onChange={(value) => update('name', value)} className="form-field"><Label>名称</Label><Input maxLength={20} aria-label="个人名称" /></TextField></div></SettingsBlock>
+  return <SettingsBlock title="身份"><div className="employee-identity-editor"><div className="employee-avatar-setting"><label className="avatar-upload"><input type="file" accept="image/png,image/jpeg,image/webp" aria-label="从本地上传个人头像" onChange={(event) => changeAvatar(event.currentTarget.files?.[0] ?? null)} /><Avatar label={profile.name || '本地用户'} initials={profile.name.trim().slice(0, 1) || '用'} color="#d7b36a" size="large" src={profile.avatarUrl} /><span className="avatar-upload__affordance" aria-hidden="true"><EditPencil /></span></label></div><TextField value={profile.name} onChange={(value) => update('name', value)} className="form-field"><Label>名称</Label><Input maxLength={20} aria-label="个人名称" /></TextField></div></SettingsBlock>
 }
 
 function GeneralSettings({ theme, onTheme }: { theme: ThemeMode; onTheme: (theme: ThemeMode) => void }): React.JSX.Element {
-  return <><SettingsBlock title="外观" description="主题变化会立即应用到整个客户端。"><div className="theme-choice">{([['system', Settings, '跟随系统'], ['light', SunLight, '浅色'], ['dark', HalfMoon, '深色']] as const).map(([id, Icon, label]) => <Button key={id} className={theme === id ? 'is-active' : ''} onPress={() => onTheme(id)}><Icon aria-hidden width={20} height={20} /><span>{label}</span>{theme === id && <Check aria-hidden width={17} height={17} />}</Button>)}</div></SettingsBlock><SettingsBlock title="启动"><SettingRow title="启动时恢复上次会话" description="保留会话选择、滚动位置和未发送草稿"><input type="checkbox" defaultChecked aria-label="启动时恢复上次会话" /></SettingRow><SettingRow title="允许 macOS 通知" description="通知只是提醒，业务记录仍保存在原会话"><input type="checkbox" defaultChecked aria-label="允许 macOS 通知" /></SettingRow></SettingsBlock></>
+  return <><SettingsBlock title="外观" description="主题变化会立即应用到整个客户端。"><div className="theme-choice">{([['system', Settings, '跟随系统'], ['light', SunLight, '浅色'], ['dark', HalfMoon, '深色']] as const).map(([id, Icon, label]) => <Button key={id} className={theme === id ? 'is-active' : ''} onPress={() => onTheme(id)}><Icon aria-hidden /><span>{label}</span>{theme === id && <Check aria-hidden />}</Button>)}</div></SettingsBlock><SettingsBlock title="启动"><SettingRow title="启动时恢复上次会话" description="保留会话选择、滚动位置和未发送草稿"><input type="checkbox" defaultChecked aria-label="启动时恢复上次会话" /></SettingRow><SettingRow title="允许 macOS 通知" description="通知只是提醒，业务记录仍保存在原会话"><input type="checkbox" defaultChecked aria-label="允许 macOS 通知" /></SettingRow></SettingsBlock></>
 }
 
 function SupervisorSettings({ prompt, onPrompt }: { prompt: string; onPrompt: (prompt: string) => void }): React.JSX.Element {
@@ -858,7 +940,7 @@ function ProviderRow({ name, status, tone, detail, actionLabel = '配置', onCon
 }
 
 function ResourceSettings(): React.JSX.Element {
-  return <><SettingsBlock title="默认权限"><div className="permission-choice"><Button className="is-active"><Check aria-hidden width={17} height={17} /><span><strong>平衡</strong><small>读取操作自动执行，其他操作需要确认</small></span></Button><Button><span><strong>每次询问</strong><small>所有操作都需要确认</small></span></Button></div></SettingsBlock><SettingsBlock title="资源状态"><ProviderRow name="GitHub Repository Search" status="可用" tone="success" /><ProviderRow name="RSS Reader" status="可用" tone="success" /><ProviderRow name="Image Generation" status="不可用" tone="danger" detail="缺少 Poe 连接凭证" /></SettingsBlock></>
+  return <><SettingsBlock title="默认权限"><div className="permission-choice"><Button className="is-active"><Check aria-hidden /><span><strong>平衡</strong><small>读取操作自动执行，其他操作需要确认</small></span></Button><Button><span><strong>每次询问</strong><small>所有操作都需要确认</small></span></Button></div></SettingsBlock><SettingsBlock title="资源状态"><ProviderRow name="GitHub Repository Search" status="可用" tone="success" /><ProviderRow name="RSS Reader" status="可用" tone="success" /><ProviderRow name="Image Generation" status="不可用" tone="danger" detail="缺少 Poe 连接凭证" /></SettingsBlock></>
 }
 
 function MemorySettings({ onOpenDetail }: { onOpenDetail: (view: DetailView) => void }): React.JSX.Element {
@@ -868,7 +950,7 @@ function MemorySettings({ onOpenDetail }: { onOpenDetail: (view: DetailView) => 
     { title: '任务交付需要保留来源与验收证据', meta: '全局规则，来源：任务复盘', tone: 'success' as const, status: '有效' },
     { title: '旧版页面结构与当前导航存在冲突', meta: '任务经验，等待用户处理', tone: 'waiting' as const, status: '冲突' }
   ].filter((item) => item.title.includes(query) || item.meta.includes(query))
-  return <><SettingsBlock title="本地记忆"><div className="memory-summary"><div><strong>38</strong><span>有效记忆</span></div><div><strong>6</strong><span>等待处理</span></div><div><strong>24.8 MB</strong><span>本地占用</span></div></div><SearchBox placeholder="搜索记忆内容" value={query} onChange={setQuery} /></SettingsBlock><SettingsBlock title="最近记忆"><div className="memory-rows">{rows.map((item) => <Button key={item.title}><span><strong>{item.title}</strong><small>{item.meta}</small></span><StatusLight tone={item.tone} label={item.status} breathing={item.tone === 'waiting'} /></Button>)}</div></SettingsBlock><Button className="text-action" onPress={() => onOpenDetail('memory-governance')}>查看和治理全部记忆 <NavArrowRight aria-hidden width={14} height={14} /></Button></>
+  return <><SettingsBlock title="本地记忆"><div className="memory-summary"><div><strong>38</strong><span>有效记忆</span></div><div><strong>6</strong><span>等待处理</span></div><div><strong>24.8 MB</strong><span>本地占用</span></div></div><SearchBox placeholder="搜索记忆内容" value={query} onChange={setQuery} /></SettingsBlock><SettingsBlock title="最近记忆"><div className="memory-rows">{rows.map((item) => <Button key={item.title}><span><strong>{item.title}</strong><small>{item.meta}</small></span><StatusLight tone={item.tone} label={item.status} breathing={item.tone === 'waiting'} /></Button>)}</div></SettingsBlock><Button className="text-action" onPress={() => onOpenDetail('memory-governance')}>查看和治理全部记忆 <NavArrowRight aria-hidden /></Button></>
 }
 
 function UsageSettings(): React.JSX.Element {
@@ -876,7 +958,7 @@ function UsageSettings(): React.JSX.Element {
 }
 
 function AboutSettings({ onOpenDetail }: { onOpenDetail: (view: DetailView) => void }): React.JSX.Element {
-  return <><SettingsBlock title="应用"><SettingRow title="AI Employee OS"><span>0.1.0</span></SettingRow><SettingRow title="本地服务"><StatusLight tone="success" label="已连接" /></SettingRow><SettingRow title="本地数据"><StatusLight tone="success" label="正常" /></SettingRow></SettingsBlock><SettingsBlock title="诊断"><SettingRow title="检查本地服务"><Button className="button button--quiet"><Refresh aria-hidden width={16} height={16} />检查</Button></SettingRow><SettingRow title="导出诊断信息" description="不包含连接凭证和记忆正文"><Button className="button button--quiet">导出</Button></SettingRow></SettingsBlock><Button className="advanced-disclosure" onPress={() => onOpenDetail('about-advanced')}>查看高级信息 <NavArrowRight aria-hidden width={14} height={14} /></Button></>
+  return <><SettingsBlock title="应用"><SettingRow title="AI Employee OS"><span>0.1.0</span></SettingRow><SettingRow title="本地服务"><StatusLight tone="success" label="已连接" /></SettingRow><SettingRow title="本地数据"><StatusLight tone="success" label="正常" /></SettingRow></SettingsBlock><SettingsBlock title="诊断"><SettingRow title="检查本地服务"><Button className="button button--quiet"><Refresh aria-hidden />检查</Button></SettingRow><SettingRow title="导出诊断信息" description="不包含连接凭证和记忆正文"><Button className="button button--quiet">导出</Button></SettingRow></SettingsBlock><Button className="advanced-disclosure" onPress={() => onOpenDetail('about-advanced')}>查看高级信息 <NavArrowRight aria-hidden /></Button></>
 }
 
 function SettingRow({ title, description, children }: { title: string; description?: string; children: ReactNode }): React.JSX.Element {
@@ -913,10 +995,10 @@ function CreateAgentModal({ isOpen, onClose, onCreate }: { isOpen: boolean; onCl
 
   return <ModalOverlay isOpen={isOpen} onOpenChange={(open) => !open && onClose()} isDismissable className="modal-overlay"><Modal className="app-modal app-modal--large"><Dialog className="modal-dialog" aria-label="新建 Agent 员工">
     <div className="modal-header"><div><Heading slot="title">新建 Agent 员工</Heading><span className="quiet-meta">第 {step + 1} / 3 步</span></div><IconButton label="关闭" icon={Xmark} onPress={onClose} /></div>
-    <div className="modal-layout"><nav className="modal-navigation create-agent-navigation">{steps.map(([id, Icon, label], index) => <Button key={id} className={step === index ? 'is-active' : ''} onPress={() => index <= step && setStep(index as 0 | 1 | 2)}><Icon aria-hidden width={17} height={17} /><span>{label}</span>{index < step && <Check aria-hidden width={15} height={15} />}</Button>)}</nav>
+    <div className="modal-layout"><nav className="modal-navigation create-agent-navigation">{steps.map(([id, Icon, label], index) => <Button key={id} className={step === index ? 'is-active' : ''} onPress={() => index <= step && setStep(index as 0 | 1 | 2)}><Icon aria-hidden /><span>{label}</span>{index < step && <Check aria-hidden />}</Button>)}</nav>
       <div className="modal-content modal-content--with-footer"><div className="modal-content__main">
-        {step === 0 && <div className="form-section"><Heading>基本资料</Heading><div className="avatar-editor"><label className="avatar-upload"><input type="file" accept="image/png,image/jpeg,image/webp" aria-label="从本地上传新员工头像" onChange={(event) => changeAvatar(event.currentTarget.files?.[0] ?? null)} /><Avatar label={name || '新员工'} initials={name.trim().slice(0, 1) || '新'} color="#c5b8e3" size="large" src={avatarUrl} /><span className="avatar-upload__affordance" aria-hidden="true"><EditPencil width={16} height={16} /></span></label></div><TextField value={name} onChange={setName} className="form-field"><Label>名称</Label><Input maxLength={EMPLOYEE_FIELD_LIMITS.name.max} placeholder="例如：用户研究员" /></TextField><TextField value={role} onChange={setRole} className="form-field"><Label>职责</Label><Input maxLength={EMPLOYEE_FIELD_LIMITS.role.max} placeholder="例如：用户访谈与洞察分析" /></TextField><TextField value={description} onChange={setDescription} className="form-field"><Label>职责说明</Label><TextArea rows={4} maxLength={EMPLOYEE_FIELD_LIMITS.description.max} placeholder="说明这个 Agent 负责什么，以及不负责什么。" /></TextField></div>}
-        {step === 1 && <div className="form-section"><Heading>提示词</Heading><TextField value={prompt} onChange={setPrompt} className="form-field form-field--prompt"><Label>System Prompt</Label><TextArea rows={14} maxLength={EMPLOYEE_FIELD_LIMITS.systemPrompt.max} placeholder="定义角色、工作方法、输出要求和边界。" /></TextField><div className="prompt-layers"><p><ShieldCheck aria-hidden width={17} height={17} /><span><strong>平台安全层</strong><small>系统内置，只读</small></span></p><p><Brain aria-hidden width={17} height={17} /><span><strong>运行上下文层</strong><small>任务开始时按最小范围注入</small></span></p></div></div>}
+        {step === 0 && <div className="form-section"><Heading>基本资料</Heading><div className="avatar-editor"><label className="avatar-upload"><input type="file" accept="image/png,image/jpeg,image/webp" aria-label="从本地上传新员工头像" onChange={(event) => changeAvatar(event.currentTarget.files?.[0] ?? null)} /><Avatar label={name || '新员工'} initials={name.trim().slice(0, 1) || '新'} color="#c5b8e3" size="large" src={avatarUrl} /><span className="avatar-upload__affordance" aria-hidden="true"><EditPencil /></span></label></div><TextField value={name} onChange={setName} className="form-field"><Label>名称</Label><Input maxLength={EMPLOYEE_FIELD_LIMITS.name.max} placeholder="例如：用户研究员" /></TextField><TextField value={role} onChange={setRole} className="form-field"><Label>职责</Label><Input maxLength={EMPLOYEE_FIELD_LIMITS.role.max} placeholder="例如：用户访谈与洞察分析" /></TextField><TextField value={description} onChange={setDescription} className="form-field"><Label>职责说明</Label><TextArea rows={4} maxLength={EMPLOYEE_FIELD_LIMITS.description.max} placeholder="说明这个 Agent 负责什么，以及不负责什么。" /></TextField></div>}
+        {step === 1 && <div className="form-section"><Heading>提示词</Heading><TextField value={prompt} onChange={setPrompt} className="form-field form-field--prompt"><Label>System Prompt</Label><TextArea rows={14} maxLength={EMPLOYEE_FIELD_LIMITS.systemPrompt.max} placeholder="定义角色、工作方法、输出要求和边界。" /></TextField><div className="prompt-layers"><p><ShieldCheck aria-hidden /><span><strong>平台安全层</strong><small>系统内置，只读</small></span></p><p><Brain aria-hidden /><span><strong>运行上下文层</strong><small>任务开始时按最小范围注入</small></span></p></div></div>}
         {step === 2 && <div className="form-section"><Heading>模型与能力</Heading><ModelCapabilityPicker model={model} assignedCapabilities={assignedCapabilities} onModel={setModel} onCapabilities={setAssignedCapabilities} /></div>}
       </div><div className="create-agent-actions"><div><Button className="button button--quiet" onPress={step === 0 ? onClose : () => setStep((step - 1) as 0 | 1)}>{step === 0 ? '取消' : '上一步'}</Button><Button className="button button--primary" isDisabled={!canContinue} onPress={advance}>{step === 2 ? '创建员工' : '继续'}</Button></div></div></div>
     </div>
@@ -938,7 +1020,7 @@ function AgentSettingsModal({ agent, isOpen, onClose, onDelete }: { agent: Agent
 
   return <ModalOverlay isOpen={isOpen} onOpenChange={(open) => !open && onClose()} isDismissable className="modal-overlay"><Modal className="app-modal app-modal--large"><Dialog className="modal-dialog" aria-label="Agent 设置">
     <div className="modal-header"><div className="modal-identity employee-modal-identity"><Avatar label={name} initials={name.slice(0, 1)} color={agent.color} size="medium" src={avatarUrl} /><strong>{name}</strong><StatusLight tone={agent.tone} label={agent.status} breathing={agent.tone === 'active' || agent.tone === 'waiting'} /></div><div className="modal-header__actions"><IconButton label="删除 Agent" icon={Trash} className="modal-delete-button" onPress={onDelete} /></div><IconButton label="关闭" icon={Xmark} onPress={onClose} /></div>
-    <div className="modal-layout"><nav className="modal-navigation">{sections.map(([id, Icon, label]) => <Button key={id} className={section === id ? 'is-active' : ''} onPress={() => setSection(id)}><Icon aria-hidden width={17} height={17} /><span>{label}</span></Button>)}</nav>
+    <div className="modal-layout"><nav className="modal-navigation">{sections.map(([id, Icon, label]) => <Button key={id} className={section === id ? 'is-active' : ''} onPress={() => setSection(id)}><Icon aria-hidden /><span>{label}</span></Button>)}</nav>
       <div className="modal-content"><div className="modal-content__main"><AgentFormSection section={section} name={name} description={description} prompt={prompt} model={model} capabilities={assignedCapabilities} avatarUrl={avatarUrl} onAvatar={changeAvatar} onName={setName} onDescription={setDescription} onPrompt={setPrompt} onModel={setModel} onCapabilities={setAssignedCapabilities} /></div></div>
     </div>
   </Dialog></Modal></ModalOverlay>
@@ -947,9 +1029,9 @@ function AgentSettingsModal({ agent, isOpen, onClose, onDelete }: { agent: Agent
 const UserIcon = Group
 
 function AgentFormSection({ section, name, description, prompt, model, capabilities: assignedCapabilities, avatarUrl, onAvatar, onName, onDescription, onPrompt, onModel, onCapabilities }: { section: string; name: string; description: string; prompt: string; model: string; capabilities: string[]; avatarUrl: string | null; onAvatar: (file: File | null) => void; onName: (value: string) => void; onDescription: (value: string) => void; onPrompt: (value: string) => void; onModel: (value: string) => void; onCapabilities: (value: string[]) => void }): React.JSX.Element {
-  if (section === 'basic') return <div className="form-section"><Heading>基本资料</Heading><div className="avatar-editor"><label className="avatar-upload"><input type="file" accept="image/png,image/jpeg,image/webp" aria-label="从本地上传头像" onChange={(event) => onAvatar(event.currentTarget.files?.[0] ?? null)} /><Avatar label={name} initials={name.slice(0, 1)} color="#b8c982" size="large" src={avatarUrl} /><span className="avatar-upload__affordance" aria-hidden="true"><EditPencil width={16} height={16} /></span></label></div><TextField value={name} onChange={onName} className="form-field"><Label>名称</Label><Input maxLength={EMPLOYEE_FIELD_LIMITS.name.max} /></TextField><TextField value={description} onChange={onDescription} className="form-field"><Label>职责说明</Label><TextArea rows={4} maxLength={EMPLOYEE_FIELD_LIMITS.description.max} /></TextField></div>
-  if (section === 'prompt') return <div className="form-section"><Heading>提示词</Heading><TextField value={prompt} onChange={onPrompt} className="form-field form-field--prompt"><Label>System Prompt</Label><TextArea rows={13} maxLength={EMPLOYEE_FIELD_LIMITS.systemPrompt.max} /></TextField><div className="prompt-layers"><p><ShieldCheck aria-hidden width={17} height={17} /><span><strong>平台安全层</strong><small>系统内置，只读</small></span></p><p><Brain aria-hidden width={17} height={17} /><span><strong>运行上下文层</strong><small>任务启动时按最小范围注入</small></span></p></div></div>
-  if (section === 'model') return <div className="form-section"><Heading>模型与能力</Heading><ModelCapabilityPicker model={model} assignedCapabilities={assignedCapabilities} onModel={onModel} onCapabilities={onCapabilities} /><div className="derived-tools"><h3>派生资源</h3><p><Tools aria-hidden width={17} height={17} />由已绑定 Skill 解析 Tool 与 MCP</p><p><ShieldCheck aria-hidden width={17} height={17} />运行时仍与任务授权取交集</p></div></div>
+  if (section === 'basic') return <div className="form-section"><Heading>基本资料</Heading><div className="avatar-editor"><label className="avatar-upload"><input type="file" accept="image/png,image/jpeg,image/webp" aria-label="从本地上传头像" onChange={(event) => onAvatar(event.currentTarget.files?.[0] ?? null)} /><Avatar label={name} initials={name.slice(0, 1)} color="#b8c982" size="large" src={avatarUrl} /><span className="avatar-upload__affordance" aria-hidden="true"><EditPencil /></span></label></div><TextField value={name} onChange={onName} className="form-field"><Label>名称</Label><Input maxLength={EMPLOYEE_FIELD_LIMITS.name.max} /></TextField><TextField value={description} onChange={onDescription} className="form-field"><Label>职责说明</Label><TextArea rows={4} maxLength={EMPLOYEE_FIELD_LIMITS.description.max} /></TextField></div>
+  if (section === 'prompt') return <div className="form-section"><Heading>提示词</Heading><TextField value={prompt} onChange={onPrompt} className="form-field form-field--prompt"><Label>System Prompt</Label><TextArea rows={13} maxLength={EMPLOYEE_FIELD_LIMITS.systemPrompt.max} /></TextField><div className="prompt-layers"><p><ShieldCheck aria-hidden /><span><strong>平台安全层</strong><small>系统内置，只读</small></span></p><p><Brain aria-hidden /><span><strong>运行上下文层</strong><small>任务启动时按最小范围注入</small></span></p></div></div>
+  if (section === 'model') return <div className="form-section"><Heading>模型与能力</Heading><ModelCapabilityPicker model={model} assignedCapabilities={assignedCapabilities} onModel={onModel} onCapabilities={onCapabilities} /><div className="derived-tools"><h3>派生资源</h3><p><Tools aria-hidden />由已绑定 Skill 解析 Tool 与 MCP</p><p><ShieldCheck aria-hidden />运行时仍与任务授权取交集</p></div></div>
   return <div className="form-section"><Heading>记忆</Heading><p>正式运行时仍会与任务 RunGrant 取交集。</p><div className="choice-stack"><label><input type="checkbox" defaultChecked /><span><strong>员工记忆</strong><small>保留该员工的长期工作偏好和经验</small></span></label><label><input type="checkbox" defaultChecked /><span><strong>任务记忆</strong><small>只读取当前任务明确允许的上下文</small></span></label><label><input type="checkbox" /><span><strong>全局记忆</strong><small>读取用户确认的全局偏好与规则</small></span></label></div></div>
 }
 
@@ -981,15 +1063,15 @@ function DetailModal({ view, capability, onClose }: { view: DetailView; capabili
 }
 
 function MatterDetailModal({ matter, isOpen, onClose, onOpenDetail }: { matter: ConversationMatter; isOpen: boolean; onClose: () => void; onOpenDetail: (view: DetailView) => void }): React.JSX.Element {
-  return <ModalOverlay isOpen={isOpen} onOpenChange={(open) => !open && onClose()} isDismissable className="modal-overlay"><Modal className="app-modal app-modal--medium"><Dialog className="modal-dialog" aria-label="事项详情"><div className="modal-header"><div><Heading slot="title">{matter.title}</Heading><StatusLight tone={matter.tone} label={matter.status} breathing={matter.group === 'attention' || matter.group === 'active'} /></div><IconButton label="关闭" icon={Xmark} onPress={onClose} /></div><div className="matter-detail-content"><section><h3>当前阶段</h3><p>{matter.description} 当前进度 {matter.progress}，下一步：{matter.nextStep}。</p></section><section><h3>执行时间线</h3><div className="timeline">{matter.timeline.map((item) => <TimelineItem key={item.title} state={item.state} title={item.title} meta={item.meta} />)}</div></section><section><h3>当前临时团队</h3><div className="participant-list">{matter.team.map((item) => <span key={item.name}><Avatar label={item.name} initials={item.initials} color={item.color} size="small" src={employeeAvatarForName(item.name)} />{item.name}</span>)}</div></section><Button className="advanced-disclosure" onPress={() => onOpenDetail('runtime-advanced')}>查看高级 Runtime 信息 <NavArrowRight aria-hidden width={14} height={14} /></Button></div></Dialog></Modal></ModalOverlay>
+  return <ModalOverlay isOpen={isOpen} onOpenChange={(open) => !open && onClose()} isDismissable className="modal-overlay"><Modal className="app-modal app-modal--medium"><Dialog className="modal-dialog" aria-label="事项详情"><div className="modal-header"><div><Heading slot="title">{matter.title}</Heading><StatusLight tone={matter.tone} label={matter.status} breathing={matter.group === 'attention' || matter.group === 'active'} /></div><IconButton label="关闭" icon={Xmark} onPress={onClose} /></div><div className="matter-detail-content"><section><h3>当前阶段</h3><p>{matter.description} 当前进度 {matter.progress}，下一步：{matter.nextStep}。</p></section><section><h3>执行时间线</h3><div className="timeline">{matter.timeline.map((item) => <TimelineItem key={item.title} state={item.state} title={item.title} meta={item.meta} />)}</div></section><section><h3>当前临时团队</h3><div className="participant-list">{matter.team.map((item) => <span key={item.name}><Avatar label={item.name} initials={item.initials} color={item.color} size="small" src={employeeAvatarForName(item.name)} />{item.name}</span>)}</div></section><Button className="advanced-disclosure" onPress={() => onOpenDetail('runtime-advanced')}>查看高级 Runtime 信息 <NavArrowRight aria-hidden /></Button></div></Dialog></Modal></ModalOverlay>
 }
 
 function TimelineItem({ state, title, meta }: { state: TimelineState; title: string; meta: string }): React.JSX.Element {
-  return <div className={`timeline-item timeline-item--${state}`}><span>{state === 'done' ? <Check aria-hidden width={14} height={14} /> : null}</span><div><strong>{title}</strong><small>{meta}</small></div></div>
+  return <div className={`timeline-item timeline-item--${state}`}><span>{state === 'done' ? <Check aria-hidden /> : null}</span><div><strong>{title}</strong><small>{meta}</small></div></div>
 }
 
 function DeleteAgentModal({ isOpen, onClose, onConfirm }: { isOpen: boolean; onClose: () => void; onConfirm: () => void }): React.JSX.Element {
-  return <ModalOverlay isOpen={isOpen} onOpenChange={(open) => !open && onClose()} isDismissable className="modal-overlay modal-overlay--nested"><Modal className="app-modal app-modal--small"><Dialog className="modal-dialog confirm-dialog" aria-label="删除 Agent"><span className="danger-icon"><WarningTriangle aria-hidden width={24} height={24} /></span><Heading slot="title">删除网络调研员？</Heading><p>此操作不可恢复。历史任务会保留执行时的名称与版本快照，并标记为已删除。</p><div className="confirm-actions"><Button className="button button--quiet" onPress={onClose}>取消</Button><Button className="button button--danger" onPress={onConfirm}>确认删除</Button></div></Dialog></Modal></ModalOverlay>
+  return <ModalOverlay isOpen={isOpen} onOpenChange={(open) => !open && onClose()} isDismissable className="modal-overlay modal-overlay--nested"><Modal className="app-modal app-modal--small"><Dialog className="modal-dialog confirm-dialog" aria-label="删除 Agent"><span className="danger-icon"><WarningTriangle aria-hidden /></span><Heading slot="title">删除网络调研员？</Heading><p>此操作不可恢复。历史任务会保留执行时的名称与版本快照，并标记为已删除。</p><div className="confirm-actions"><Button className="button button--quiet" onPress={onClose}>取消</Button><Button className="button button--danger" onPress={onConfirm}>确认删除</Button></div></Dialog></Modal></ModalOverlay>
 }
 
 export function App(): React.JSX.Element {
@@ -1014,7 +1096,7 @@ export function App(): React.JSX.Element {
   const navigate = (id: PageId): void => { setPage(id); setModal(null); setDetailView(null) }
   const openLinkedAgent = (): void => { setSelectedAgent('researcher'); setPage('contacts') }
   const createAgent = (agent: Agent): void => { setAgentItems((items) => [...items, agent]); setSelectedAgent(agent.id); setModal(null) }
-  const toolbarTitle = page === 'messages' ? activeConversation.title : page === 'contacts' ? activeAgent.name : page === 'capabilities' ? activeCapability.name : activeSystemSection.label
+  const toolbarTitle = page === 'messages' ? activeConversation.title : page === 'contacts' ? activeAgent.name : page === 'capabilities' ? activeCapability.name : page === 'connections' ? '连接' : activeSystemSection.label
   const toolbarSupport = page === 'contacts' ? <StatusLight tone={activeAgent.tone} label={activeAgent.status} breathing={activeAgent.tone === 'active' || activeAgent.tone === 'waiting'} /> : page === 'capabilities' ? <StatusLight tone={activeCapability.tone} label={activeCapability.status} /> : undefined
   const toolbarTrailing = page === 'contacts' ? <IconButton label="设置" icon={Settings} onPress={() => setModal('agent-settings')} /> : page === 'capabilities' ? <span className="quiet-meta">只读 {activeCapability.kind === 'skill' ? 'Skill' : 'Tool'} 目录</span> : undefined
 
@@ -1025,7 +1107,7 @@ export function App(): React.JSX.Element {
   }, [resolvedTheme])
 
   return (
-    <IconoirProvider iconProps={{ strokeWidth: 1.5 }}>
+    <ClientIconSystem>
       <div className="prototype" data-theme={resolvedTheme}>
         <Toolbar title={toolbarTitle} support={toolbarSupport} trailing={toolbarTrailing} />
         <Rail active={page} userProfile={userProfile} onNavigate={navigate} onProfile={() => { setSystemSection('profile'); navigate('system') }} />
@@ -1035,6 +1117,7 @@ export function App(): React.JSX.Element {
             {page === 'messages' && <MessagesPage conversationId={selectedConversation} userProfile={userProfile} onOpenMatter={(matterId) => { setSelectedMatterId(matterId); setModal('matter-detail') }} onOpenDetail={setDetailView} />}
             {page === 'contacts' && <ContactPage agent={activeAgent} />}
             {page === 'capabilities' && <CapabilityPage capability={activeCapability} onAgent={openLinkedAgent} onOpenDetail={setDetailView} />}
+            {page === 'connections' && <ConnectionsPage />}
             {page === 'system' && <SystemPage section={systemSection} theme={theme} onTheme={setTheme} userProfile={userProfile} onUserProfile={setUserProfile} supervisorPrompt={supervisorPrompt} onSupervisorPrompt={setSupervisorPrompt} onOpenDetail={setDetailView} />}
           </div>
         </main>
@@ -1044,6 +1127,6 @@ export function App(): React.JSX.Element {
         <DeleteAgentModal isOpen={modal === 'delete-agent'} onClose={() => setModal('agent-settings')} onConfirm={() => setModal(null)} />
         <DetailModal view={detailView} capability={activeCapability} onClose={() => setDetailView(null)} />
       </div>
-    </IconoirProvider>
+    </ClientIconSystem>
   )
 }

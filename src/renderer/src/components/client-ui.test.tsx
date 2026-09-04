@@ -2,14 +2,21 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { ChatBubble, Check, ShieldCheck } from 'iconoir-react'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { CLIENT_ICON_CONTRACT, ClientIconSystem } from './client-icon-system'
 import { AppShell, Avatar, ClientModal, ContextPane, DetailListMark, DetailNote, DetailPage, DetailSectionHeader, DetailState, DetailSummaryPanel, ListRow, ProfileFacts, ProfileSummary, ProfileValueTags, Rail, SelectionCatalog, SelectionOption, SummaryCard, SummaryCardGrid, SummaryList, SummaryListItem, Toolbar } from './client-ui'
 
 describe('client UI contracts', () => {
+  it('applies the shared minimal icon family and stroke contract', () => {
+    const { container } = render(<ClientIconSystem><Check aria-label="完成" /></ClientIconSystem>)
+    expect(CLIENT_ICON_CONTRACT).toEqual({ library: 'iconoir-react', strokeWidth: 1.5 })
+    expect(container.querySelector('svg')).toHaveAttribute('stroke-width', '1.5')
+  })
+
   it('keeps the toolbar, primary rail, context pane and workspace as stable landmarks', () => {
     const onNavigate = vi.fn()
     const { container } = render(
       <AppShell
-        toolbar={<Toolbar title="会话" />}
+        toolbar={<Toolbar title="会话" navigation={<button type="button">折叠左侧栏</button>} trailing={<button type="button">折叠右侧栏</button>} />}
         rail={<Rail active="messages" items={[{ id: 'messages', label: '消息', icon: ChatBubble }]} footerItems={[]} onNavigate={onNavigate} />}
         context={<ContextPane><p>上下文</p></ContextPane>}
       >
@@ -17,7 +24,12 @@ describe('client UI contracts', () => {
       </AppShell>
     )
 
-    expect(screen.getByRole('banner', { name: '窗口拖拽区' })).toBeInTheDocument()
+    const toolbar = screen.getByRole('banner', { name: '窗口拖拽区' })
+    expect(toolbar).toHaveAttribute('data-layout-contract', 'application-toolbar')
+    expect(toolbar.querySelector('[data-toolbar-zone="navigation"]')).toBeInTheDocument()
+    expect(toolbar.querySelector('[data-toolbar-zone="workspace"]')).toBeInTheDocument()
+    expect(toolbar.querySelector('[data-toolbar-zone="identity"]')).toBeInTheDocument()
+    expect(toolbar.querySelector('[data-toolbar-zone="actions"]')).toBeInTheDocument()
     expect(container.querySelector('.window-controls-safe-area')).toBeInTheDocument()
     expect(container.querySelector('.traffic-lights')).not.toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: '一级导航' })).toBeInTheDocument()

@@ -8,6 +8,10 @@
 
   /* Persistent three-column shell. */
   --layout-toolbar-height: 40px;
+  --layout-toolbar-inline-padding: 24px;
+  --layout-toolbar-navigation-edge-padding: 10px;
+  --layout-toolbar-window-controls-gap: 16px;
+  --layout-toolbar-collapsed-navigation-width: calc(var(--layout-window-controls-safe-left) + var(--layout-toolbar-window-controls-gap) + var(--layout-icon-button-size) + var(--layout-toolbar-navigation-edge-padding));
   --layout-rail-width: 52px;
   --layout-context-width: 264px;
   --layout-workspace-min-width: 744px;
@@ -24,6 +28,11 @@
   --layout-topic-bar-height: 39px;
 
   /* Reusable component dimensions. */
+  --icon-size-inline: 14px;
+  --icon-size-control: 16px;
+  --icon-size-standard: 18px;
+  --icon-size-navigation: 20px;
+  --icon-size-feature: 24px;
   --layout-icon-button-size: 30px;
   --layout-window-controls-safe-left: 76px;
   --layout-window-controls-safe-top: 44px;

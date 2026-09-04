@@ -12,7 +12,7 @@ export interface RailItem<TId extends string> {
 }
 
 export function IconButton({ label, icon: Icon, className = '', disabled = false, onClick }: { label: string; icon: ClientIcon; className?: string; disabled?: boolean; onClick?: () => void }): React.JSX.Element {
-  return <TooltipTrigger delay={450}><Button aria-label={label} className={`icon-button${className ? ` ${className}` : ''}`} isDisabled={disabled} onPress={onClick}><Icon aria-hidden width={19} height={19} /></Button><Tooltip className="app-tooltip" placement="bottom">{label}</Tooltip></TooltipTrigger>
+  return <TooltipTrigger delay={450}><Button aria-label={label} className={`icon-button${className ? ` ${className}` : ''}`} isDisabled={disabled} onPress={onClick}><Icon aria-hidden /></Button><Tooltip className="app-tooltip" placement="bottom">{label}</Tooltip></TooltipTrigger>
 }
 
 export function Avatar({ label, initials, color = '#d7b36a', size = 'small', src }: { label: string; initials: string; color?: string; size?: 'small' | 'medium' | 'large'; src?: string | null }): React.JSX.Element {
@@ -39,7 +39,7 @@ export function SectionHeader({ title, action }: { title: string; action?: React
 }
 
 export function SearchBox({ label, placeholder, value, onChange }: { label: string; placeholder: string; value: string; onChange: (value: string) => void }): React.JSX.Element {
-  return <TextField aria-label={label} value={value} onChange={onChange} className="search-box"><Search aria-hidden width={17} height={17} /><Input placeholder={placeholder} /></TextField>
+  return <TextField aria-label={label} value={value} onChange={onChange} className="search-box"><Search aria-hidden /><Input placeholder={placeholder} /></TextField>
 }
 
 export function SelectionCatalog({ searchLabel, placeholder, query, resultLabel, emptyMessage, onQueryChange, children }: { searchLabel: string; placeholder: string; query: string; resultLabel: string; emptyMessage: string; onQueryChange: (value: string) => void; children: ReactNode }): React.JSX.Element {
@@ -48,7 +48,7 @@ export function SelectionCatalog({ searchLabel, placeholder, query, resultLabel,
 }
 
 export function SelectionOption({ title, description, meta, status, selected, disabled = false, leading, onSelect }: { title: string; description: string; meta: string; status: ReactNode; selected: boolean; disabled?: boolean; leading: ReactNode; onSelect: () => void }): React.JSX.Element {
-  return <Button className={`selection-option${selected ? ' is-selected' : ''}`} aria-pressed={selected} isDisabled={disabled} onPress={onSelect}><span className="selection-option__leading">{leading}</span><span className="selection-option__body"><span className="selection-option__title"><strong>{title}</strong><em>{meta}</em></span><small>{description}</small><span className="selection-option__status">{status}</span></span><span className="selection-option__indicator" aria-hidden="true">{selected && <Check width={17} height={17} />}</span></Button>
+  return <Button className={`selection-option${selected ? ' is-selected' : ''}`} aria-pressed={selected} isDisabled={disabled} onPress={onSelect}><span className="selection-option__leading">{leading}</span><span className="selection-option__body"><span className="selection-option__title"><strong>{title}</strong><em>{meta}</em></span><small>{description}</small><span className="selection-option__status">{status}</span></span><span className="selection-option__indicator" aria-hidden="true">{selected && <Check />}</span></Button>
 }
 
 export function ListRow({ title, subtitle, meta, selected = false, avatar, identity = avatar ? 'person' : 'text', marker, onClick }: { title: string; subtitle: string; meta?: string; selected?: boolean; avatar?: ReactNode; identity?: 'person' | 'text'; marker?: ReactNode; onClick: () => void }): React.JSX.Element {
@@ -131,11 +131,11 @@ export function SummaryListItem({ title, subtitle, leading, trailing, onClick }:
 }
 
 export function Toolbar({ title, icon: Icon, navigation, support, trailing }: { title: string; icon?: ClientIcon; navigation?: ReactNode; support?: ReactNode; trailing?: ReactNode }): React.JSX.Element {
-  return <header className="toolbar" aria-label="窗口拖拽区"><div className="window-controls-safe-area">{navigation}</div><div className="toolbar__workspace"><div className="toolbar__content"><div className="toolbar__identity">{Icon && <span className="toolbar__title-icon" aria-hidden="true"><Icon width={18} height={18} /></span>}<h1>{title}</h1>{support}</div>{trailing && <div className="toolbar__trailing">{trailing}</div>}</div></div></header>
+  return <header className="toolbar" aria-label="窗口拖拽区" data-layout-contract="application-toolbar"><div className="window-controls-safe-area" data-toolbar-zone="navigation">{navigation}</div><div className="toolbar__workspace" data-toolbar-zone="workspace"><div className="toolbar__content"><div className="toolbar__identity" data-toolbar-zone="identity">{Icon && <span className="toolbar__title-icon" aria-hidden="true"><Icon /></span>}<h1>{title}</h1>{support}</div>{trailing && <div className="toolbar__trailing" data-toolbar-zone="actions">{trailing}</div>}</div></div></header>
 }
 
 export function Rail<TId extends string>({ active, items, footerItems, userProfile, onProfile, onNavigate }: { active: TId; items: Array<RailItem<TId>>; footerItems: Array<RailItem<TId>>; userProfile?: { name: string; avatarUrl?: string | null }; onProfile?: () => void; onNavigate: (id: TId) => void }): React.JSX.Element {
-  const render = (item: RailItem<TId>): React.JSX.Element => { const Icon = item.icon; return <TooltipTrigger key={item.id} delay={350}><Button aria-label={item.label} aria-current={active === item.id ? 'page' : undefined} className={`rail-button${active === item.id ? ' is-active' : ''}`} onPress={() => onNavigate(item.id)}><Icon aria-hidden width={22} height={22} />{item.marker && <span className="rail-button__marker">{item.marker}</span>}</Button><Tooltip className="app-tooltip" placement="right">{item.label}</Tooltip></TooltipTrigger> }
+  const render = (item: RailItem<TId>): React.JSX.Element => { const Icon = item.icon; return <TooltipTrigger key={item.id} delay={350}><Button aria-label={item.label} aria-current={active === item.id ? 'page' : undefined} className={`rail-button${active === item.id ? ' is-active' : ''}`} onPress={() => onNavigate(item.id)}><Icon aria-hidden />{item.marker && <span className="rail-button__marker">{item.marker}</span>}</Button><Tooltip className="app-tooltip" placement="right">{item.label}</Tooltip></TooltipTrigger> }
   return <nav className="rail" aria-label="一级导航"><div className="rail__main">{items.map(render)}</div><div className="rail__footer">{userProfile && onProfile && <TooltipTrigger delay={350}><Button className="rail-profile-button" aria-label={`${userProfile.name} 个人信息`} onPress={onProfile}><Avatar label={userProfile.name} initials={userProfile.name.trim().slice(0, 1) || '用'} color="#d7b36a" size="small" src={userProfile.avatarUrl} /></Button><Tooltip className="app-tooltip" placement="right">个人信息</Tooltip></TooltipTrigger>}{footerItems.map(render)}</div></nav>
 }
 

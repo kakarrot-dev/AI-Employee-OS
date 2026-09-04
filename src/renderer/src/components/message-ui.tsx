@@ -59,7 +59,7 @@ export function MarkdownMessage({ children, compact = false }: { children: strin
     return () => { observer.disconnect(); window.cancelAnimationFrame(frame) }
   }, [children, expanded])
 
-  return <div className={`markdown-message${compact ? ' markdown-message--compact' : ''}`}><div ref={contentRef} className={`markdown-message__content${collapsible ? ' is-collapsible' : ''}${expanded ? ' is-expanded' : ''}`}><MarkdownContent>{children}</MarkdownContent></div>{(collapsible || expanded) && <Button className="message-expand-button" aria-expanded={expanded} onPress={() => setExpanded((value) => !value)}>{expanded ? '收起' : '展开全文'}<NavArrowDown aria-hidden width={14} height={14} className={expanded ? 'is-expanded' : ''} /></Button>}</div>
+  return <div className={`markdown-message${compact ? ' markdown-message--compact' : ''}`}><div ref={contentRef} className={`markdown-message__content${collapsible ? ' is-collapsible' : ''}${expanded ? ' is-expanded' : ''}`}><MarkdownContent>{children}</MarkdownContent></div>{(collapsible || expanded) && <Button className="message-expand-button" aria-expanded={expanded} onPress={() => setExpanded((value) => !value)}>{expanded ? '收起' : '展开全文'}<NavArrowDown aria-hidden className={expanded ? 'is-expanded' : ''} /></Button>}</div>
 }
 
 export function ChatContentBlock({ content, variant = 'timeline', children }: { content: ChatContentView; variant?: 'timeline' | 'delivery'; children?: ReactNode }): React.JSX.Element {
@@ -69,7 +69,7 @@ export function ChatContentBlock({ content, variant = 'timeline', children }: { 
     <strong className="chat-content__title">{content.title}</strong>
     <p className="chat-content__summary">{content.summary}</p>
     {content.metrics && content.metrics.length > 0 && <dl className="chat-content__metrics" aria-label={variant === 'delivery' ? '交付概况' : '内容概况'}>{content.metrics.map((item) => <div key={`${item.label}:${item.value}`}><dd>{item.value}</dd><dt>{item.label}</dt></div>)}</dl>}
-    {content.detail && <div className="chat-content__detail"><Button className="message-expand-button" aria-expanded={expanded} onPress={() => setExpanded((value) => !value)}>{expanded ? '收起详情' : content.detail.label}<NavArrowDown aria-hidden width={14} height={14} className={expanded ? 'is-expanded' : ''} /></Button>{expanded && <div className="chat-content__detail-body">{detailParagraphs.map((paragraph, index) => <p key={`${index}:${paragraph}`}>{paragraph}</p>)}</div>}</div>}
+    {content.detail && <div className="chat-content__detail"><Button className="message-expand-button" aria-expanded={expanded} onPress={() => setExpanded((value) => !value)}>{expanded ? '收起详情' : content.detail.label}<NavArrowDown aria-hidden className={expanded ? 'is-expanded' : ''} /></Button>{expanded && <div className="chat-content__detail-body">{detailParagraphs.map((paragraph, index) => <p key={`${index}:${paragraph}`}>{paragraph}</p>)}</div>}</div>}
     {children}
   </div>
 }
@@ -139,18 +139,18 @@ export function AttachmentOpenMenu({ attachment, onOpen, onReveal }: { attachmen
   const hasActions = Boolean(onOpen || onReveal)
   return <MenuTrigger>
     <Button className="attachment-open-trigger" aria-label={`打开方式 ${attachment.name}`} isDisabled={!hasActions}>
-      <OpenNewWindow aria-hidden width={16} height={16} />
+      <OpenNewWindow aria-hidden />
       <span>打开方式</span>
-      <NavArrowDown aria-hidden width={14} height={14} className="attachment-open-trigger__chevron" />
+      <NavArrowDown aria-hidden className="attachment-open-trigger__chevron" />
     </Button>
     <Popover className="attachment-open-popover" placement="bottom end" offset={6}>
       <Menu className="attachment-open-menu" aria-label={`${attachment.name} 的打开方式`}>
         {onOpen && <MenuItem id="open" className="attachment-open-menu__item" onAction={() => onOpen(attachment.id)}>
-          <span className="attachment-open-menu__icon"><OpenNewWindow aria-hidden width={17} height={17} /></span>
+          <span className="attachment-open-menu__icon"><OpenNewWindow aria-hidden /></span>
           <span className="attachment-open-menu__copy"><strong>使用系统默认应用打开</strong><small>使用 macOS 关联的应用</small></span>
         </MenuItem>}
         {onReveal && <MenuItem id="reveal" className="attachment-open-menu__item" onAction={() => onReveal(attachment.id)}>
-          <span className="attachment-open-menu__icon"><Folder aria-hidden width={17} height={17} /></span>
+          <span className="attachment-open-menu__icon"><Folder aria-hidden /></span>
           <span className="attachment-open-menu__copy"><strong>打开所在文件夹</strong><small>在 Finder 中定位此文件</small></span>
         </MenuItem>}
       </Menu>
@@ -191,8 +191,8 @@ export function MessageAttachmentGroup({ attachments, source, embedded = false, 
   if (!attachments.length) return null
   const multiple = attachments.length > 1
   return <div className={`message-attachments message-attachments--${source} message-attachments--${multiple ? 'multiple' : 'single'}${embedded ? ' message-attachments--embedded' : ''}${isTimelineCarousel ? ' message-attachments--carousel' : ''}`}>
-    {multiple && <div className="message-attachments__header"><span>{source === 'agent' ? <Sparks aria-hidden width={16} height={16} /> : <Page aria-hidden width={16} height={16} />}{attachments.length} 个附件</span>{isTimelineCarousel && (carouselState.canPrevious || carouselState.canNext) && <span className="attachment-carousel-navigation"><small>{carouselState.current} / {attachments.length}</small><IconButton label="查看上一份附件" icon={NavArrowLeft} onClick={() => moveCarousel(-1)} disabled={!carouselState.canPrevious} /><IconButton label="查看下一份附件" icon={NavArrowRight} onClick={() => moveCarousel(1)} disabled={!carouselState.canNext} /></span>}</div>}
-    <div className="message-attachments__rows" ref={rowsRef} onScroll={isTimelineCarousel ? updateCarouselState : undefined}>{attachments.map((attachment) => <div className="message-attachment-row" key={attachment.id}><span className="message-attachment-row__icon"><Page aria-hidden width={18} height={18} /></span><span className="message-attachment-row__body"><strong title={attachment.name}>{attachment.name}</strong><small>{attachment.detail}</small></span>{onRemove ? <IconButton label={`移除 ${attachment.name}`} icon={Xmark} onClick={() => onRemove(attachment.id)} /> : source === 'agent' ? <span className="message-attachment-row__actions"><AttachmentOpenMenu attachment={attachment} onOpen={onOpen} onReveal={onReveal} /></span> : <IconButton label={`打开 ${attachment.name}`} icon={NavArrowRight} onClick={() => onOpen?.(attachment.id)} disabled={!onOpen} />}</div>)}</div>
+    {multiple && <div className="message-attachments__header"><span>{source === 'agent' ? <Sparks aria-hidden /> : <Page aria-hidden />}{attachments.length} 个附件</span>{isTimelineCarousel && (carouselState.canPrevious || carouselState.canNext) && <span className="attachment-carousel-navigation"><small>{carouselState.current} / {attachments.length}</small><IconButton label="查看上一份附件" icon={NavArrowLeft} onClick={() => moveCarousel(-1)} disabled={!carouselState.canPrevious} /><IconButton label="查看下一份附件" icon={NavArrowRight} onClick={() => moveCarousel(1)} disabled={!carouselState.canNext} /></span>}</div>}
+    <div className="message-attachments__rows" ref={rowsRef} onScroll={isTimelineCarousel ? updateCarouselState : undefined}>{attachments.map((attachment) => <div className="message-attachment-row" key={attachment.id}><span className="message-attachment-row__icon"><Page aria-hidden /></span><span className="message-attachment-row__body"><strong title={attachment.name}>{attachment.name}</strong><small>{attachment.detail}</small></span>{onRemove ? <IconButton label={`移除 ${attachment.name}`} icon={Xmark} onClick={() => onRemove(attachment.id)} /> : source === 'agent' ? <span className="message-attachment-row__actions"><AttachmentOpenMenu attachment={attachment} onOpen={onOpen} onReveal={onReveal} /></span> : <IconButton label={`打开 ${attachment.name}`} icon={NavArrowRight} onClick={() => onOpen?.(attachment.id)} disabled={!onOpen} />}</div>)}</div>
   </div>
 }
 
@@ -202,7 +202,7 @@ export function MatterTeamAvatars({ team }: { team: MatterParticipant[] }): Reac
 
 export function MatterRouteNote({ title, mode, busy = false, onOpenMatter, onCreateMatter, onRequestChange }: { title: string; mode: 'created' | 'linked'; busy?: boolean; onOpenMatter: () => void; onCreateMatter: () => void; onRequestChange?: () => void }): React.JSX.Element {
   const [editing, setEditing] = useState(false)
-  return <div className="matter-route-note message-stream-item"><span title={title}><Sparks aria-hidden width={14} height={14} />{mode === 'created' ? '已创建事项' : '已归入已有事项'}</span><Button className="matter-route-note__change" aria-expanded={editing} onPress={() => setEditing((value) => !value)}>更改</Button>{editing && <div className="matter-route-note__options" role="group" aria-label="更改消息归类"><Button onPress={() => { setEditing(false); onOpenMatter() }}>查看当前事项</Button>{onRequestChange && <Button isDisabled={busy} onPress={() => { setEditing(false); onRequestChange() }}>将最新消息作为变更请求</Button>}{mode === 'linked' && <Button isDisabled={busy} onPress={() => { setEditing(false); onCreateMatter() }}>创建新事项草稿</Button>}</div>}</div>
+  return <div className="matter-route-note message-stream-item"><span title={title}><Sparks aria-hidden />{mode === 'created' ? '已创建事项' : '已归入已有事项'}</span><Button className="matter-route-note__change" aria-expanded={editing} onPress={() => setEditing((value) => !value)}>更改</Button>{editing && <div className="matter-route-note__options" role="group" aria-label="更改消息归类"><Button onPress={() => { setEditing(false); onOpenMatter() }}>查看当前事项</Button>{onRequestChange && <Button isDisabled={busy} onPress={() => { setEditing(false); onRequestChange() }}>将最新消息作为变更请求</Button>}{mode === 'linked' && <Button isDisabled={busy} onPress={() => { setEditing(false); onCreateMatter() }}>创建新事项草稿</Button>}</div>}</div>
 }
 
 export function fileSizeLabel(bytes: number): string {

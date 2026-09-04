@@ -145,7 +145,7 @@ export function RecruitmentCatalog({ employees }: { employees: EmployeeSummary[]
   return <DetailPage className="recruitment-page" width="wide">
     <section className="recruitment-catalog" aria-label="招募员工">
       <DetailSummaryPanel
-        icon={<UserPlus aria-hidden width={20} height={20} />}
+        icon={<UserPlus aria-hidden />}
         title="候选员工目录"
         description="按工作类型浏览候选 Agent 员工。当前版本仅展示员工资料，暂不支持选择或招募。"
         metrics={[{ label: '候选员工', value: employeeCount }, { label: '已招募', value: recruitedCount }, { label: '工作类型', value: recruitmentCategories.length }]}

@@ -136,6 +136,11 @@ describe('App shell', () => {
       },
       usage: {
         summary: vi.fn().mockResolvedValue({ requestCount: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, amountUsdMicros: null, checkedAt: '2026-08-31T00:00:00Z', models: [] })
+      },
+      connection: {
+        getFeishuStatus: vi.fn().mockResolvedValue({ provider: 'feishu', state: 'not_connected', checkedAt: '2026-09-04T00:00:00Z', scopes: [] }),
+        connectFeishu: vi.fn(),
+        disconnectFeishu: vi.fn()
       }
     }
   })
@@ -147,6 +152,7 @@ describe('App shell', () => {
     const destinations = [
       { button: /^通讯录$/, heading: 'Agent 员工' },
       { button: /^能力$/, heading: '能力目录' },
+      { button: /^连接$/, heading: '连接' },
       { button: /^系统$/, heading: '个人资料' }
     ]
     for (const destination of destinations) {
@@ -166,7 +172,7 @@ describe('App shell', () => {
     expect(screen.queryByRole('button', { name: /新建任务/ })).not.toBeInTheDocument()
   })
 
-  it('uses one dot for unread messages and does not mark execution status in the conversation list', async () => {
+  it('shows one unclassified conversation list and uses only a dot for unread messages', async () => {
     vi.mocked(window.aiEmployeeOS.conversation.list).mockResolvedValue([
       { id: 'conversation-selected', title: '当前会话', preview: '已读', updatedAt: '2026-09-02T08:00:00Z', messageCount: 0 },
       { id: 'conversation-unread', title: '未读会话', preview: '有三条新消息', updatedAt: '2026-09-02T07:00:00Z', messageCount: 3 },
@@ -180,7 +186,11 @@ describe('App shell', () => {
     expect(screen.getAllByLabelText('未读消息')).toHaveLength(1)
     expect(document.querySelectorAll('.unread-dot')).toHaveLength(1)
     expect(document.querySelector('.unread-count')).toBeNull()
-    expect(screen.queryByLabelText('待处理')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '全部' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '待处理' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '未读' })).not.toBeInTheDocument()
+    expect(screen.getByText('未读会话')).toBeInTheDocument()
+    expect(screen.getByText('待处理会话')).toBeInTheDocument()
   })
 
   it('keeps every system settings menu populated without large placeholder pages', async () => {
@@ -533,6 +543,49 @@ describe('App shell', () => {
     expect(catalog.querySelector('[data-availability="unavailable"] .summary-card')).toHaveClass('summary-card--muted')
     expect(within(within(catalog).getByText('文档编写员').closest('[role="listitem"]')!).getByText('未开放')).toBeInTheDocument()
     expect(within(catalog).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('shows the application catalog with a real Feishu connection entry', async () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: '连接' }))
+
+    expect(screen.getByRole('heading', { name: '连接', level: 1 })).toBeInTheDocument()
+    const catalog = screen.getByRole('region', { name: '连接' })
+    expect(catalog).toHaveAttribute('data-source', 'bridge')
+    expect(within(catalog).getAllByRole('listitem')).toHaveLength(12)
+    for (const category of ['协作沟通', '知识与文件', '研发与云服务']) {
+      expect(within(catalog).getByRole('region', { name: category })).toBeInTheDocument()
+    }
+    const metrics = within(catalog).getByLabelText('概况指标')
+    for (const metric of ['12', '应用总数', '3', '应用类型', '0', '已连接']) {
+      expect(within(metrics).getByText(metric)).toBeInTheDocument()
+    }
+    for (const application of ['GitHub', '飞书', 'Microsoft Teams', 'Notion', '钉钉', '企业微信', '微信', '语雀', 'WPS Office', '百度网盘', 'Gitee', '阿里云']) {
+      expect(within(catalog).getByText(application)).toBeInTheDocument()
+      expect(within(catalog).getByRole('img', { name: `${application} 官方图标` })).toBeInTheDocument()
+    }
+    await waitFor(() => expect(window.aiEmployeeOS.connection.getFeishuStatus).toHaveBeenCalled())
+    expect(within(catalog).getAllByText('未连接', { selector: '.detail-state' })).toHaveLength(12)
+    expect(catalog.querySelectorAll('.summary-card--muted')).toHaveLength(12)
+    expect(within(catalog).getByRole('button', { name: '连接' })).toBeInTheDocument()
+  })
+
+  it('authorizes Feishu through the narrow connection bridge and reflects the connected state', async () => {
+    vi.mocked(window.aiEmployeeOS.connection.connectFeishu).mockResolvedValue({ provider: 'feishu', state: 'connected', checkedAt: '2026-09-04T00:01:00Z', appId: 'cli_example123', expiresAt: '2026-09-04T02:01:00Z', scopes: ['offline_access'] })
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: '连接' }))
+    const catalog = screen.getByRole('region', { name: '连接' })
+    fireEvent.click(await within(catalog).findByRole('button', { name: '连接' }))
+    expect(screen.getByRole('dialog', { name: '飞书连接' })).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('飞书 App ID'), { target: { value: 'cli_example123' } })
+    fireEvent.change(screen.getByLabelText('飞书 App Secret'), { target: { value: 'secret-example' } })
+    fireEvent.click(screen.getByRole('button', { name: /打开飞书授权/ }))
+
+    await waitFor(() => expect(window.aiEmployeeOS.connection.connectFeishu).toHaveBeenCalledWith({ appId: 'cli_example123', appSecret: 'secret-example' }))
+    expect(await screen.findByText('已连接飞书')).toBeInTheDocument()
+    expect(within(catalog).getByText('已连接', { selector: '.detail-state' })).toBeInTheDocument()
+    expect(within(catalog).getByRole('button', { name: '管理' })).toBeInTheDocument()
+    expect(within(catalog).getByLabelText('概况指标')).toHaveTextContent('1已连接')
   })
 
   it('routes the new Agent entry to the existing three-step employee creation modal', async () => {
