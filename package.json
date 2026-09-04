@@ -11,7 +11,7 @@
     "npm": "11.19.0"
   },
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "npm run build:native-memory && npm run sign:provider-keychain && electron-vite dev",
     "prototype:dev": "vite prototypes/macos-client-v2",
     "prototype:check:typography": "node prototypes/macos-client-v2/scripts/check-typography-contract.mjs",
     "prototype:check:layout": "node prototypes/macos-client-v2/scripts/check-layout-contract.mjs",
@@ -19,8 +19,9 @@
     "build": "npm run build:native-memory && npm run typecheck && electron-vite build",
     "build:runtime": "node scripts/assemble_bundled_runtime.mjs",
     "build:release-metadata": "node scripts/generate_release_metadata.mjs",
-    "package:local": "npm run build && npm run build:runtime && npm run build:release-metadata && node scripts/package_local_app.mjs",
+    "package:local": "npm run build && npm run sign:provider-keychain && npm run build:runtime && npm run build:release-metadata && node scripts/package_local_app.mjs",
     "build:native-memory": "mkdir -p build/native && xcrun clang -O2 -Wall -Wextra spikes/local-memory/memory_keychain_helper.c -framework Security -framework CoreFoundation -o build/native/memory-keychain-helper && xcrun clang -O2 -Wall -Wextra spikes/macos-process-security/provider_keychain_helper.c -framework Security -framework CoreFoundation -o build/native/provider-keychain-helper && xcrun swiftc -O spikes/macos-process-security/image_text_extractor.swift -framework Vision -framework ImageIO -o build/native/image-text-extractor",
+    "sign:provider-keychain": "sh scripts/sign_local_provider_keychain_helper.sh",
     "preview": "electron-vite preview",
     "test": "npm run build:native-memory && vitest run",
     "test:watch": "vitest",

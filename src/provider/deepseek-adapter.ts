@@ -4,6 +4,7 @@ import { requireModel } from './models'
 import { parseToolArguments } from './json'
 
 type Fetch = typeof fetch
+const MAX_STRUCTURED_OUTPUT_ATTEMPTS = 3
 
 function parseStructuredText(text: string): unknown {
   const trimmed = text.trim()
@@ -65,29 +66,49 @@ export class DeepSeekAdapter {
 
   private async *executeStructuredJson(request: ProviderRequest, credential: string, signal?: AbortSignal): AsyncGenerator<ProviderEvent> {
     const schema = request.outputSchema!
-    const response = await this.fetchImpl('https://api.deepseek.com/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: request.modelId,
-        messages: [
-          { role: 'system', content: `你是 Runtime 的 JSON 控制面。只输出一个可被 JSON.parse 解析、且符合下列 JSON Schema 的完整 JSON 对象；不要 Markdown、代码围栏、解释或前后缀。\nSchema name: ${schema.name}\nJSON Schema: ${JSON.stringify(schema.schema)}` },
-          { role: 'user', content: request.input }
-        ],
-        response_format: { type: 'json_object' },
-        thinking: { type: 'disabled' },
-        max_tokens: request.maxOutputTokens,
-        stream: false
-      }),
-      signal
-    })
-    if (!response.ok) throw normalizeProviderFailure(response.status, response.headers.get('retry-after'))
-    const payload = await response.json() as any
-    const content = payload?.choices?.[0]?.message?.content
-    if (typeof payload?.id !== 'string' || typeof content !== 'string' || !content.trim()) throw new Error('invalid_structured_output')
-    yield { type: 'structured_result', requestId: request.requestId, value: parseStructuredText(content) }
-    if (payload.usage) yield { type: 'usage', requestId: request.requestId, inputTokens: Number(payload.usage.prompt_tokens ?? 0), outputTokens: Number(payload.usage.completion_tokens ?? 0), totalTokens: Number(payload.usage.total_tokens ?? 0), source: 'provider_actual' }
-    yield { type: 'completed', requestId: request.requestId, providerRequestId: payload.id }
+    let inputTokens = 0
+    let outputTokens = 0
+    let totalTokens = 0
+    for (let attempt = 0; attempt < MAX_STRUCTURED_OUTPUT_ATTEMPTS; attempt += 1) {
+      const response = await this.fetchImpl('https://api.deepseek.com/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: request.modelId,
+          messages: [
+            { role: 'system', content: attempt === 0 ? '你是 Runtime 的结构化控制面。必须调用指定函数提交唯一结果，不要输出普通文本。' : `上一响应没有提交有效函数参数。这是第 ${attempt + 1}/${MAX_STRUCTURED_OUTPUT_ATTEMPTS} 次尝试：必须调用 ${schema.name} 一次，并提交完整、可解析且符合参数 Schema 的 JSON；不要输出普通文本。` },
+            { role: 'user', content: request.input }
+          ],
+          tools: [{ type: 'function', function: { name: schema.name, description: '提交唯一的结构化 Runtime 结果', parameters: schema.schema } }],
+          tool_choice: { type: 'function', function: { name: schema.name } },
+          thinking: { type: 'disabled' },
+          max_tokens: request.maxOutputTokens,
+          stream: false
+        }),
+        signal
+      })
+      if (!response.ok) throw normalizeProviderFailure(response.status, response.headers.get('retry-after'))
+      const payload = await response.json() as any
+      if (payload?.usage) {
+        inputTokens += Number(payload.usage.prompt_tokens ?? 0)
+        outputTokens += Number(payload.usage.completion_tokens ?? 0)
+        totalTokens += Number(payload.usage.total_tokens ?? 0)
+      }
+      const toolCalls = payload?.choices?.[0]?.message?.tool_calls
+      const matchingCalls = Array.isArray(toolCalls) ? toolCalls.filter((call) => call?.type === 'function' && call?.function?.name === schema.name) : []
+      if (typeof payload?.id !== 'string' || matchingCalls.length !== 1 || typeof matchingCalls[0]?.function?.arguments !== 'string') continue
+      let value: unknown
+      try {
+        value = parseStructuredText(matchingCalls[0].function.arguments)
+      } catch {
+        continue
+      }
+      yield { type: 'structured_result', requestId: request.requestId, value }
+      if (inputTokens || outputTokens || totalTokens) yield { type: 'usage', requestId: request.requestId, inputTokens, outputTokens, totalTokens, source: 'provider_actual' }
+      yield { type: 'completed', requestId: request.requestId, providerRequestId: payload.id }
+      return
+    }
+    throw new Error('invalid_structured_output')
   }
 
   private async *parseStream(response: Response, request: ProviderRequest): AsyncGenerator<ProviderEvent> {

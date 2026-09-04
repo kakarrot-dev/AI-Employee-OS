@@ -46,7 +46,12 @@ export class MacOSKeychainCredentialReader implements CredentialStore {
 
   async exists(provider: ProviderId): Promise<boolean> {
     try {
-      await this.read(provider)
+      await execFileAsync(this.helperPath, ['exists', provider], {
+        encoding: 'utf8',
+        maxBuffer: 16 * 1024,
+        timeout: 3000,
+        windowsHide: true
+      })
       return true
     } catch {
       return false

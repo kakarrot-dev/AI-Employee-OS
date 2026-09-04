@@ -62,24 +62,39 @@ describe('provider adapters', () => {
     expect(body.tools[0].name).toBe('propose_task')
   })
 
-  it('uses DeepSeek JSON mode for pure structured control requests', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'chat-structured', choices: [{ message: { content: '```json\n{"mode":"create_task"}\n```' } }], usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 } }), { status: 200 }))
+  it('uses a forced DeepSeek function call for pure structured control requests', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'chat-structured', choices: [{ message: { content: '', tool_calls: [{ type: 'function', function: { name: 'route', arguments: '{"mode":"create_task"}' } }] } }], usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 } }), { status: 200 }))
     const events = []
     for await (const event of new DeepSeekAdapter(credentials, fetchMock).execute({ requestId: 'request-fenced', provider: 'deepseek', modelId: 'deepseek-v4-pro', input: 'route', maxOutputTokens: 32, stream: false, outputSchema: { name: 'route', schema: { type: 'object' }, strict: true } })) events.push(event)
     expect(events).toContainEqual({ type: 'structured_result', requestId: 'request-fenced', value: { mode: 'create_task' } })
     expect(fetchMock.mock.calls[0][0]).toBe('https://api.deepseek.com/chat/completions')
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
-    expect(body.response_format).toEqual({ type: 'json_object' })
-    expect(body.messages[0].content).toContain('只输出一个可被 JSON.parse 解析')
-    expect(body.messages[0].content).toContain('"type":"object"')
+    expect(body.response_format).toBeUndefined()
+    expect(body.tools).toEqual([{ type: 'function', function: { name: 'route', description: '提交唯一的结构化 Runtime 结果', parameters: { type: 'object' } } }])
+    expect(body.tool_choice).toEqual({ type: 'function', function: { name: 'route' } })
   })
 
-  it('normalizes non-JSON structured output into a stable provider failure code', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'chat-invalid', choices: [{ message: { content: '根据您的要求，我将安排员工。' } }] }), { status: 200 }))
+  it('retries an empty structured response and aggregates provider usage', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'chat-empty', choices: [{ message: { content: '   ' } }], usage: { prompt_tokens: 4, completion_tokens: 3, total_tokens: 7 } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'chat-retry', choices: [{ message: { tool_calls: [{ type: 'function', function: { name: 'route', arguments: '{"mode":"create_task"}' } }] } }], usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 } }), { status: 200 }))
+    const events = []
+    for await (const event of new DeepSeekAdapter(credentials, fetchMock).execute({ requestId: 'request-retry', provider: 'deepseek', modelId: 'deepseek-v4-pro', input: 'route', maxOutputTokens: 32, stream: false, outputSchema: { name: 'route', schema: { type: 'object' }, strict: true } })) events.push(event)
+    expect(events).toEqual([
+      { type: 'structured_result', requestId: 'request-retry', value: { mode: 'create_task' } },
+      { type: 'usage', requestId: 'request-retry', inputTokens: 9, outputTokens: 5, totalTokens: 14, source: 'provider_actual' },
+      { type: 'completed', requestId: 'request-retry', providerRequestId: 'chat-retry' }
+    ])
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('normalizes repeated invalid function arguments into a stable provider failure code', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ id: 'chat-invalid', choices: [{ message: { tool_calls: [{ type: 'function', function: { name: 'route', arguments: '{not-json}' } }] } }] }), { status: 200 }))
     const adapter = new DeepSeekAdapter(credentials, fetchMock)
     await expect(async () => {
       for await (const _event of adapter.execute({ requestId: 'request-invalid-json', provider: 'deepseek', modelId: 'deepseek-v4-pro', input: 'route', maxOutputTokens: 32, stream: false, outputSchema: { name: 'route', schema: { type: 'object' }, strict: true } })) void _event
     }).rejects.toThrow('invalid_structured_output')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
   it.each([

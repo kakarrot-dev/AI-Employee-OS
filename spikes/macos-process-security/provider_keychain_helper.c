@@ -60,6 +60,22 @@ static int read_item(const char *service_name, const char *account_name) {
     return 0;
 }
 
+static int item_exists(const char *service_name, const char *account_name) {
+    CFMutableDictionaryRef query = base_query(service_name, account_name);
+    if (query == NULL) return 70;
+    CFDictionarySetValue(query, kSecReturnAttributes, kCFBooleanTrue);
+    CFDictionarySetValue(query, kSecMatchLimit, kSecMatchLimitOne);
+    CFDictionarySetValue(query, kSecUseAuthenticationUI, kSecUseAuthenticationUIFail);
+    CFTypeRef result = NULL;
+    OSStatus status = SecItemCopyMatching(query, &result);
+    CFRelease(query);
+    if (result != NULL) CFRelease(result);
+    if (status == errSecSuccess) return 0;
+    if (status == errSecItemNotFound || status == errSecInteractionNotAllowed || status == errSecAuthFailed) return 44;
+    fprintf(stderr, "keychain_exists_failed:%d\n", (int)status);
+    return 4;
+}
+
 static int write_item(const char *service_name, const char *account_name) {
     UInt8 credential[MAX_CREDENTIAL_BYTES + 1];
     size_t length = fread(credential, 1, MAX_CREDENTIAL_BYTES + 1, stdin);
@@ -104,6 +120,7 @@ int main(int argc, char **argv) {
     const char *account_name = account_for_provider(argv[2]);
     if (service_name == NULL || account_name == NULL) return 65;
     if (strcmp(argv[1], "read") == 0) return read_item(service_name, account_name);
+    if (strcmp(argv[1], "exists") == 0) return item_exists(service_name, account_name);
     if (strcmp(argv[1], "write") == 0) return write_item(service_name, account_name);
     if (strcmp(argv[1], "delete") == 0) return delete_item(argv[2], service_name, account_name);
     return 65;
