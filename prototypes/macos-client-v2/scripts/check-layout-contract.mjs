@@ -411,8 +411,8 @@ for (const marker of ['message-block--timeline', '--layout-message-process-colla
   if (!styles.includes(marker)) errors.push(`信息流视觉层级未复用共享样式契约: ${marker}`)
 }
 
-if (!/border:\s*1px solid var\(--line\)/.test(cssRule(rendererStyles, '.matter-event'))) {
-  errors.push('时间线事项卡片属于内容区域，必须使用 --line 而不是外壳分隔线 Token')
+if (!/border:\s*0\s*;/.test(cssRule(rendererStyles, '.matter-event'))) {
+  errors.push('时间线事项卡片采用无边框样式，必须保持 border: 0')
 }
 
 if (app.includes('className="delivery-card delivery-card--complete message-stream-item"') || rendererApp.includes('className={`delivery-card delivery-card--')) {

@@ -37,6 +37,9 @@
   --type-body-size: var(--type-size-body);
   --type-secondary-size: var(--type-size-secondary);
   --type-control-size: var(--type-size-secondary);
+  --type-form-label-size: var(--type-size-heading);
+  --type-form-input-size: var(--type-size-heading);
+  --type-form-help-size: var(--type-size-body);
   --type-input-size: var(--type-size-body);
   --type-label-size: var(--type-size-secondary);
   --type-status-size: var(--type-size-secondary);

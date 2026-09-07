@@ -48,7 +48,7 @@ export function SelectionCatalog({ searchLabel, placeholder, query, resultLabel,
 }
 
 export function SelectionOption({ title, description, meta, status, selected, disabled = false, leading, onSelect }: { title: string; description: string; meta: string; status: ReactNode; selected: boolean; disabled?: boolean; leading: ReactNode; onSelect: () => void }): React.JSX.Element {
-  return <Button className={`selection-option${selected ? ' is-selected' : ''}`} aria-pressed={selected} isDisabled={disabled} onPress={onSelect}><span className="selection-option__leading">{leading}</span><span className="selection-option__body"><span className="selection-option__title"><strong>{title}</strong><em>{meta}</em></span><small>{description}</small><span className="selection-option__status">{status}</span></span><span className="selection-option__indicator" aria-hidden="true">{selected && <Check />}</span></Button>
+  return <Button className={`selection-option${selected ? ' is-selected' : ''}`} aria-pressed={selected} isDisabled={disabled} onPress={onSelect}><span className="selection-option__leading">{leading}</span><span className="selection-option__body"><span className="selection-option__title"><strong title={title}>{title}</strong><em>{meta}</em></span><small>{description}</small><span className="selection-option__status">{status}</span></span><span className="selection-option__indicator" aria-hidden="true">{selected && <Check />}</span></Button>
 }
 
 export function ListRow({ title, subtitle, meta, selected = false, avatar, identity = avatar ? 'person' : 'text', marker, onClick }: { title: string; subtitle: string; meta?: string; selected?: boolean; avatar?: ReactNode; identity?: 'person' | 'text'; marker?: ReactNode; onClick: () => void }): React.JSX.Element {
@@ -73,8 +73,8 @@ export interface ProfileValueTag extends ProfileFact {
   accessibleValue: string
 }
 
-export function ProfileValueTags({ label = '基本资料', items }: { label?: string; items: ProfileValueTag[] }): React.JSX.Element {
-  return <ul className="profile-value-tags" aria-label={label}>{items.map((item) => <li key={item.label} aria-label={`${item.label}：${item.accessibleValue}`}>{item.value}</li>)}</ul>
+export function ProfileValueTags({ label = '基本资料', items, showLabels = false }: { label?: string; items: ProfileValueTag[]; showLabels?: boolean }): React.JSX.Element {
+  return <ul className={`profile-value-tags${showLabels ? ' profile-value-tags--labeled' : ''}`} aria-label={label}>{items.map((item) => <li key={item.label} aria-label={`${item.label}：${item.accessibleValue}`}>{showLabels ? <><small>{item.label}</small><span>{item.value}</span></> : item.value}</li>)}</ul>
 }
 
 export function SummaryCardGrid({ children, emptyMessage, label }: { children: ReactNode; emptyMessage: string; label?: string }): React.JSX.Element {

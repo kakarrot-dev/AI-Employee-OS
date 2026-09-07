@@ -97,3 +97,11 @@
 - Renderer 测试、TypeScript 检查、生产构建通过，并在真实 Electron 窗口逐页完成视觉检查。
 - 960×640、1280×820 和 1600×1000 三档窗口下，Toolbar、Rail、ContextPane、Workspace 与 Modal 的 Token 尺寸不得漂移。
 - 外壳选择器只能使用 `--line-shell`，内容组件继续使用 `--line` / `--line-strong`；`npm run prototype:check:layout` 必须阻止语义混用。
+
+### 通用表单排版
+
+表单字段标签与输入内容分别使用 `--type-form-label-size`、`--type-form-input-size`（映射既有 14px 字阶）；说明、校验反馈与字数提示使用 `--type-form-help-size`（12px）。行高使用正文 Token，页面不得写死字号或字重。通用字段标签同时支持内层 label 与 `label.form-field > span`，避免不同 JSX 结构产生字号差异。创建专家步骤标题使用导航字号，步骤说明使用次级字号，弹窗标题沿用弹窗标题 Token。
+
+选择卡片 `SelectionOption` 的名称与元信息必须分行：名称占满内容列并单行展示，超长时省略并以 title 保留完整名称；版本、模型来源或依赖数量放在下一行，允许换行。不得使用不可收缩的元信息挤压名称，也不得通过缩小字号解决。
+
+创建与编辑专家的工作能力选择区仅展示含 Skill、Tool 或工具服务绑定的扩展能力，不将模型自带的文本理解与生成作为可选能力。扩展绑定可为空；已选数量和搜索总数只统计可展示扩展。历史模型基础能力绑定保留兼容，不在界面中重复选择。

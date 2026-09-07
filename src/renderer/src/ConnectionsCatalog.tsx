@@ -263,7 +263,7 @@ export function ConnectionsCatalog({ feishuStatus, loading, modalOpen, onModalOp
       <DetailSummaryPanel
         icon={<Link aria-hidden />}
         title="外部系统与应用"
-        description="飞书已支持安全授权与按需自动续期；其他应用仍为待接入目录。"
+        description="连接工作应用，供专家在授权范围内使用。当前支持飞书，其他应用待接入。"
         metrics={[
           { label: '应用总数', value: connectionApplications.length },
           { label: '应用类型', value: connectionCategories.length },
