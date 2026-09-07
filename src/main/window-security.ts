@@ -1,6 +1,14 @@
 import type { BrowserWindowConstructorOptions } from 'electron'
 import { CLIENT_WINDOW_LAYOUT, MACOS_TRAFFIC_LIGHT_POSITION } from '../shared/layout-contract'
 
+export function browserLinkUrl(value: string): string | undefined {
+  try {
+    const url = new URL(value)
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return undefined
+    return url.href
+  } catch { return undefined }
+}
+
 export function createWindowOptions(preloadPath: string): BrowserWindowConstructorOptions {
   return {
     width: CLIENT_WINDOW_LAYOUT.defaultWidth,

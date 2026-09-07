@@ -1,3 +1,4 @@
+import { FEISHU_MEETING_SCOPES, FEISHU_MEETING_TOOL_IDS as meetingIds } from '../shared/feishu-meeting-contract'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -1120,4 +1121,52 @@ describe('TaskService', () => {
     }
     store.close()
   })
+})
+
+
+it.each([true, false])('reuses confirmed meeting evidence across review and rework (invite colleague: %s)', async (invite) => {
+  const { employees, tasks, store, kernel, resources } = setup()
+  resources.updateFeishuConnection({ provider: 'feishu', state: 'connected', checkedAt: new Date().toISOString(), scopes: ['offline_access', 'search:docs:read', 'docx:document:readonly', 'wiki:wiki:readonly', ...FEISHU_MEETING_SCOPES] })
+  employees.seedRequestedSpecialists()
+  const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'meeting', sourceMessageIds: ['message'], goal: invite ? '明天下午三点开教学研讨会，半小时，邀请张老师' : '明天下午三点开教学研讨会，半小时，就我自己', acceptanceCriteria: [invite ? '创建会议并向张老师发送邀请' : '创建会议供本人加入'], employeeVersionIds: ['employee-version.meeting-coordinator.v3'], authorizationMode: 'full_access' }).draft.id)
+  const gateway = new ToolGateway(kernel, resources, async (tool, parameters) => tool.id === meetingIds.search ? { items: [{ name: '张老师', openId: 'ou_teacher' }], responseSha256: 'a'.repeat(64) } : tool.id === meetingIds.create ? { ...parameters, reserveId: 'reserve_1', meetingNumber: '123456789', meetingUrl: 'https://vc.feishu.cn/j/123456789', responseSha256: 'b'.repeat(64) } : { reserveId: 'reserve_1', recipientId: 'ou_teacher', messageId: 'om_1', status: 'sent', responseSha256: 'c'.repeat(64) })
+  const execute = async (requestId: string, toolVersionId: string, parameters: Record<string, unknown>) => {
+    const context = tasks.toolProposalContext(requestId, { type: 'tool_proposal', requestId, callId: toolVersionId, name: 'propose_tool_action', arguments: { toolVersionId, parameters } })
+    const action = await gateway.propose(context)
+    tasks.attachToolAction(context.assignmentId, action.id)
+    if (toolVersionId !== meetingIds.search) {
+      expect(action.state).toBe('pending')
+      const waiting = tasks.handleProviderEvent(requestId, { type: 'completed', requestId })!
+      expect(waiting.event).toBe('needs_attention')
+      return tasks.resumeAfterTool(await gateway.decide(action.id, true))
+    }
+    return tasks.handleProviderEvent(requestId, { type: 'completed', requestId })!
+  }
+  const createTurn = invite ? await execute(started.request.requestId, meetingIds.search, { query: '张老师' }) : { request: started.request }
+  expect(createTurn.request?.proposalTool?.parameters.properties).toMatchObject({ parameters: { properties: { topic: { type: 'string' }, recipientIds: { type: 'array' } } } })
+  const sendTurn = await execute(createTurn.request!.requestId, meetingIds.create, { topic: '教学研讨会', startTime: new Date(Date.now() + 3600000).toISOString(), endTime: new Date(Date.now() + 5400000).toISOString(), recipientIds: invite ? ['ou_teacher'] : [] })
+  if (invite) expect(sendTurn.request?.proposalTool?.parameters.properties).toMatchObject({ toolVersionId: { enum: [meetingIds.send] } })
+  const finalTurn = invite ? await execute(sendTurn.request!.requestId, meetingIds.send, { reserveId: 'reserve_1', recipientId: 'ou_teacher' }) : sendTurn
+  expect(finalTurn.request?.toolChoice).toBe('none')
+  tasks.handleProviderEvent(finalTurn.request!.requestId, { type: 'output_delta', requestId: finalTurn.request!.requestId, delta: '会议已创建，会议号 123456789；张老师的邀请发送成功，接受状态未知。' })
+  const completed = tasks.handleProviderEvent(finalTurn.request!.requestId, { type: 'completed', requestId: finalTurn.request!.requestId })!
+  expect(completed.event).toBe('assignment_completed')
+  expect(completed.detail.toolActions.filter((action) => action.state === 'succeeded')).toHaveLength(invite ? 3 : 1)
+  const review = tasks.beginManagerReview(started.run!.id)
+  expect(review.input).toContain('123456789')
+  expect(review.input).toContain(invite ? 'om_1' : '"recipientIds":[]')
+  expect(review.input).toContain('仅本人参会不等于要求给本人发消息')
+  tasks.handleProviderEvent(review.requestId, { type: 'structured_result', requestId: review.requestId, value: managerReview(1, false, '补充结果说明', 1) })
+  const rework = tasks.handleProviderEvent(review.requestId, { type: 'completed', requestId: review.requestId })!
+  expect(rework.request?.toolChoice).toBe('none')
+  expect(rework.request?.input).toContain(invite ? 'om_1' : '"recipientIds":[]')
+  tasks.handleProviderEvent(rework.request!.requestId, { type: 'output_delta', requestId: rework.request!.requestId, delta: '已复核原会议和发送回执，无需再次发送。' })
+  expect(tasks.handleProviderEvent(rework.request!.requestId, { type: 'completed', requestId: rework.request!.requestId })!.event).toBe('assignment_completed')
+  const finalReview = tasks.beginManagerReview(started.run!.id)
+  tasks.handleProviderEvent(finalReview.requestId, { type: 'structured_result', requestId: finalReview.requestId, value: managerReview(1, true, '会议及所需邀请回执已核验') })
+  const delivered = tasks.handleProviderEvent(finalReview.requestId, { type: 'completed', requestId: finalReview.requestId })!
+  expect(delivered.detail.task?.state).toBe('succeeded')
+  expect(delivered.detail.toolActions.filter((action) => action.toolVersionId === meetingIds.create)).toHaveLength(1)
+  expect(delivered.detail.toolActions.filter((action) => action.toolVersionId === meetingIds.send)).toHaveLength(invite ? 1 : 0)
+  store.close()
 })

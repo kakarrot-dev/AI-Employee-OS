@@ -1,3 +1,4 @@
+import { projectMeetingResult } from '../shared/feishu-meeting-contract'
 import { dirname, isAbsolute, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron'
@@ -10,7 +11,7 @@ import { projectAssignmentChatContent, projectDeliveryChatContent } from '../run
 import { normalizeMatterTitle } from '../shared/task-contract'
 import { ProviderSupervisor, type ProviderSupervisorEvent } from './provider-supervisor'
 import { RuntimeSupervisor, type RuntimeSupervisorEvent } from './runtime-supervisor'
-import { createWindowOptions, isTrustedRendererUrl } from './window-security'
+import { browserLinkUrl, createWindowOptions, isTrustedRendererUrl } from './window-security'
 import { bundledRuntimePaths, initializeBundledModel } from './bundled-runtime'
 import { maintainDiagnostics, writeLocalDiagnostic } from './storage-policy'
 import { resolveArtifactFilePath } from './artifact-file-actions'
@@ -147,12 +148,12 @@ function toTaskView(detail: FormalTaskDetail): TaskDetailView {
       const acceptanceResults = detail.delivery.acceptanceResults.map(({ criterion, passed }) => ({ criterion, passed }))
       const storedContent = isChatContentView(detail.delivery!.presentation) ? detail.delivery!.presentation : undefined
       const result = isDeliveryResultContract(detail.delivery!.result) ? detail.delivery!.result : undefined
-      const content = projectDeliveryChatContent({ result, summary: deliverySummary ?? storedContent?.summary, legacySummaries: [...detail.assignments].reverse().flatMap((assignment) => [assignment.summary, assignment.output].filter((value): value is string => Boolean(value?.trim()))), acceptanceResults, artifactCount: detail.artifacts.length, artifactNames: detail.artifacts.map((artifact) => artifact.relativePath), evidenceCount: detail.evidence.length, unresolvedIssues: detail.delivery!.unresolvedIssues })
+      const content = projectDeliveryChatContent({ actions: detail.toolActions, result, summary: deliverySummary ?? storedContent?.summary, legacySummaries: [...detail.assignments].reverse().flatMap((assignment) => [assignment.summary, assignment.output].filter((value): value is string => Boolean(value?.trim()))), acceptanceResults, artifactCount: detail.artifacts.length, artifactNames: detail.artifacts.map((artifact) => artifact.relativePath), evidenceCount: detail.evidence.length, unresolvedIssues: detail.delivery!.unresolvedIssues })
       return { id: detail.delivery!.id, content, summary: content.summary, createdAt: detail.delivery!.createdAt, acceptanceResults, artifacts: detail.artifacts.map(({ id, mediaType, relativePath, sha256 }) => ({ id, mediaType, relativePath, sha256 })), evidenceCount: detail.evidence.length, unresolvedIssues: detail.delivery!.unresolvedIssues }
     })() : undefined,
     researchBundles: detail.researchBundles.map(({ id, contentHash, items, claims, conflicts, informationGaps }) => ({ id, contentHash, sourceCount: items.length, claimCount: claims.length, conflicts, informationGaps })),
     pendingChange: detail.changeRequests.find((change) => change.decision === 'pending') ? (() => { const change = detail.changeRequests.find((item) => item.decision === 'pending')!; return { id: change.id, sourceMessageId: change.sourceMessageId, requestedDiff: change.requestedDiff } })() : undefined,
-    toolActions: detail.toolActions.map(({ id, assignmentId, createdAt, completedAt, toolVersionId, state: actionState, parameters, risk, approvalId, failureCode }) => ({ id, assignmentId, createdAt, completedAt, toolVersionId, state: actionState, parameters, risk, approvalId, failureCode })),
+    toolActions: detail.toolActions.map(({ id, assignmentId, createdAt, completedAt, toolVersionId, state: actionState, parameters, result, resultVerified, risk, approvalId, failureCode }) => ({ id, assignmentId, createdAt, completedAt, toolVersionId, state: actionState, parameters, meetingResult: projectMeetingResult(toolVersionId, result, resultVerified), risk, approvalId, failureCode })),
     approvals: detail.approvals.map(({ id, toolActionId, decision }) => ({ id, toolActionId, decision }))
   }
 }
@@ -452,9 +453,21 @@ async function createWindow(): Promise<void> {
   const window = new BrowserWindow(createWindowOptions(preloadPath))
   mainWindow = window
 
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  const openBrowserLink = (value: string): void => {
+    const url = browserLinkUrl(value)
+    if (url && !isTrustedRendererUrl(url, process.env.ELECTRON_RENDERER_URL)) {
+      void shell.openExternal(url).catch((error) => writeLocalDiagnostic(app.getPath('userData'), 'browser.open_failed', error))
+    }
+  }
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    openBrowserLink(url)
+    return { action: 'deny' }
+  })
   window.webContents.on('will-navigate', (event, url) => {
-    if (!isTrustedRendererUrl(url, process.env.ELECTRON_RENDERER_URL)) event.preventDefault()
+    if (!isTrustedRendererUrl(url, process.env.ELECTRON_RENDERER_URL)) {
+      event.preventDefault()
+      openBrowserLink(url)
+    }
   })
   window.webContents.on('will-attach-webview', (event) => event.preventDefault())
   window.once('ready-to-show', () => window.show())

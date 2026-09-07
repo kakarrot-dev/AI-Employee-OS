@@ -21,7 +21,7 @@ import { hasResearchCapability, hasTenderAnalysisCapability } from './builtin-co
 import { createAttachmentContentInspector } from './attachment-content-inspector'
 import { nativeImageTextRecognizer } from './tender-document-runner'
 import { normalizeHandoffJsonValue } from './handoff-contract'
-import { FEISHU_DOCUMENT_TOOL_IDS, type FeishuDocumentToolId } from '../shared/connection-contract'
+import { FEISHU_TOOL_IDS, type FeishuToolId } from '../shared/connection-contract'
 import type { ToolRunner } from './tool-gateway'
 
 function databasePathFromArgs(): string {
@@ -54,8 +54,8 @@ expertGroups.seed()
 const imageTextExtractorPath = requiredPathArgument('image-text-extractor')
 const pendingFeishuTools = new Map<string, { resolve: (result: Record<string, unknown>) => void; reject: (error: Error) => void; detachAbort: () => void }>()
 const feishuRunner: ToolRunner = async (tool, parameters, context) => {
-  if (!Object.values(FEISHU_DOCUMENT_TOOL_IDS).includes(tool.id as FeishuDocumentToolId)) throw new Error('unsupported_feishu_tool')
-  const requestId = randomUUID()
+  if (!Object.values(FEISHU_TOOL_IDS).includes(tool.id as FeishuToolId)) throw new Error('unsupported_feishu_tool')
+  const requestId = context.actionId
   return new Promise<Record<string, unknown>>((resolve, reject) => {
     const onAbort = (): void => {
       pendingFeishuTools.delete(requestId)
@@ -63,7 +63,7 @@ const feishuRunner: ToolRunner = async (tool, parameters, context) => {
     }
     context.signal.addEventListener('abort', onAbort, { once: true })
     pendingFeishuTools.set(requestId, { resolve, reject, detachAbort: () => context.signal.removeEventListener('abort', onAbort) })
-    emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.feishu.execute', requestId, toolVersionId: tool.id as FeishuDocumentToolId, parameters: structuredClone(parameters) })
+    emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.feishu.execute', requestId, toolVersionId: tool.id as FeishuToolId, parameters: structuredClone(parameters) })
   })
 }
 const toolGateway = new ToolGateway(kernel, resources, createToolRunner(imageTextExtractorPath, feishuRunner))

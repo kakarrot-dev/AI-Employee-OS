@@ -1,3 +1,5 @@
+import { isFeishuMeetingTool, validateMeetingParameters } from '../shared/feishu-meeting-contract'
+import { bindMeetingParameters } from './feishu-meeting-tools'
 import { createHash, randomUUID } from 'node:crypto'
 import type { Approval, Assignment, Run, RunGrant, ToolAction, ToolVersion } from './domain'
 import { RuntimeKernel } from './kernel'
@@ -67,7 +69,7 @@ export class ToolGateway {
     const now = new Date().toISOString()
     const action: ToolAction = {
       schemaVersion: 1, id: randomUUID(), createdAt: now, runId: run.id, assignmentId: assignment.id, toolVersionId: tool.id, idempotencyKey,
-      state: 'pending', parameters: structuredClone(proposal.parameters), parameterSources: structuredClone(proposal.parameterSources), risk: tool.risk,
+      state: 'pending', parameters: isFeishuMeetingTool(tool.id) ? bindMeetingParameters(tool.id, proposal.parameters, this.kernel.store.list<ToolAction>('ToolAction').filter((value) => value.runId === run.id)) : structuredClone(proposal.parameters), parameterSources: structuredClone(proposal.parameterSources), risk: tool.risk,
       sideEffect: tool.sideEffect, timeoutMs: tool.timeoutMs
     }
     const blocked = this.blockReason(action)
@@ -77,7 +79,7 @@ export class ToolGateway {
       return result
     }
     this.kernel.save({ entityType: 'ToolAction', entity: action, immutable: false }, 'tool_action.proposed', { toolVersionId: tool.id, idempotencyKey })
-    if (grant.authorizationMode === 'approval_required') {
+    if (grant.authorizationMode === 'approval_required' || (isFeishuMeetingTool(tool.id) && tool.sideEffect === 'external_write')) {
       const approval: Approval = { schemaVersion: 1, id: randomUUID(), createdAt: now, requestedAt: now, runId: run.id, toolActionId: action.id, decision: 'pending' }
       this.kernel.save({ entityType: 'Approval', entity: approval, immutable: false }, 'approval.requested', { toolActionId: action.id })
       const awaiting = { ...action, approvalId: approval.id }
@@ -123,14 +125,14 @@ export class ToolGateway {
     const timer = setTimeout(() => controller.abort('timeout'), action.timeoutMs)
     try {
       const grant = this.requireGrantForAction(action)
-      const result = await this.runner(tool, structuredClone(action.parameters), { actionId: action.id, signal: controller.signal, grantedDirectories: [...grant.resourceScope.directories], grantedFiles: [...(grant.resourceScope.files ?? [])] })
+      const result = await this.runner(tool, { ...structuredClone(action.parameters), ...(isFeishuMeetingTool(tool.id) ? { actionId: action.id } : {}) }, { actionId: action.id, signal: controller.signal, grantedDirectories: [...grant.resourceScope.directories], grantedFiles: [...(grant.resourceScope.files ?? [])] })
       if (controller.signal.aborted) throw new Error('tool_timeout')
       const completed: ToolAction = { ...running, state: 'succeeded', completedAt: new Date().toISOString(), result, resultVerified: true }
       this.kernel.save({ entityType: 'ToolAction', entity: completed, immutable: false }, 'tool_action.succeeded', {})
       return completed
     } catch (error) {
       const code = controller.signal.aborted ? 'tool_timeout' : error instanceof Error ? error.message.split(':')[0] : 'tool_failed'
-      const uncertain = code === 'tool_timeout' && tool.sideEffect === 'external_write'
+      const uncertain = (code === 'tool_timeout' || code === 'feishu_write_result_unknown') && tool.sideEffect === 'external_write'
       const failed: ToolAction = { ...running, state: uncertain ? 'result_unknown' : 'failed', completedAt: new Date().toISOString(), failureCode: code, resultVerified: !uncertain }
       this.kernel.save({ entityType: 'ToolAction', entity: failed, immutable: false }, uncertain ? 'tool_action.result_unknown' : 'tool_action.failed', { code })
       return failed
@@ -153,6 +155,7 @@ export class ToolGateway {
   }
 
   private validateParameters(tool: ToolVersion, parameters: Record<string, unknown>, sources: ToolAction['parameterSources']): void {
+    if (isFeishuMeetingTool(tool.id)) validateMeetingParameters(tool.id, parameters)
     const keys = Object.keys(parameters)
     if (!keys.length || keys.some((key) => !sources[key])) throw new Error('parameter_source_required')
     for (const source of Object.values(sources)) if (!source || !['task_input', 'trusted_runtime', 'model_output', 'untrusted_external_content'].includes(source.kind) || typeof source.sourceRef !== 'string' || source.sourceRef.length < 1 || source.sourceRef.length > 512) throw new Error('invalid_parameter_source')

@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { createWindowOptions, isTrustedRendererUrl } from './window-security'
+import { browserLinkUrl, createWindowOptions, isTrustedRendererUrl } from './window-security'
 import { CLIENT_WINDOW_LAYOUT, MACOS_TRAFFIC_LIGHT_POSITION } from '../shared/layout-contract'
 
 describe('Electron window security', () => {
+  it('allows meeting web links and rejects local files, executable schemes and embedded credentials', () => {
+    expect(browserLinkUrl('https://vc.feishu.cn/j/182742892')).toBe('https://vc.feishu.cn/j/182742892')
+    for (const url of ['file:///etc/passwd', 'javascript:alert(1)', 'data:text/html,test', 'feishu://meeting', 'https://user:secret@example.com', 'not a url']) expect(browserLinkUrl(url)).toBeUndefined()
+  })
   it('keeps the renderer sandboxed behind context isolation', () => {
     const options = createWindowOptions('/private/preload.js')
     expect(options.webPreferences).toMatchObject({

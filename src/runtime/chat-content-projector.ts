@@ -1,3 +1,4 @@
+import { FEISHU_MEETING_TOOL_IDS } from '../shared/feishu-meeting-contract'
 import { basename } from 'node:path'
 import type { ChatContentMetricView, ChatContentView } from '../shared/chat-content-contract'
 import { toPlainTimelineSummary, toResultMarkdown } from '../shared/chat-content-contract'
@@ -129,7 +130,7 @@ function firstLegacyOutcome(values: string[] | undefined): string | undefined {
   return undefined
 }
 
-export function projectDeliveryChatContent(input: { result?: DeliveryResultContract; summary?: string; legacySummaries?: string[]; acceptanceResults: Array<{ passed: boolean }>; artifactCount: number; artifactNames?: string[]; evidenceCount: number; unresolvedIssues: string[] }): ChatContentView {
+export function projectDeliveryChatContent(input: { actions?: ToolAction[]; result?: DeliveryResultContract; summary?: string; legacySummaries?: string[]; acceptanceResults: Array<{ passed: boolean }>; artifactCount: number; artifactNames?: string[]; evidenceCount: number; unresolvedIssues: string[] }): ChatContentView {
   const passed = input.acceptanceResults.filter((item) => item.passed).length
   const completed = passed === input.acceptanceResults.length
   const reviewSummary = toPlainTimelineSummary(input.summary ?? '', 1_200)
@@ -147,7 +148,15 @@ export function projectDeliveryChatContent(input: { result?: DeliveryResultContr
     : isKnowledgeBaseCount
     ? `当前可访问的飞书知识库共 **${spaceCount!.value}${spaceCount!.unit ? ` ${spaceCount!.unit}` : ''}**，文档总数为 **${documentCount!.value}${documentCount!.unit ? ` ${documentCount!.unit}` : ''}**。`
     : userVisibleResultMarkdown(input.result?.summary, 500)
-  const summary = resultSummary || reviewOutcome || firstLegacyOutcome(input.legacySummaries) || fallbackSummary
+  let summary = resultSummary || reviewOutcome || firstLegacyOutcome(input.legacySummaries) || fallbackSummary
+  const meetingUrls = [...new Set((input.actions ?? []).filter((action) => action.toolVersionId === FEISHU_MEETING_TOOL_IDS.create && action.state === 'succeeded' && action.resultVerified === true).flatMap((action) => {
+    const url = action.result?.meetingUrl
+    return typeof url === 'string' && /^https:\/\/vc\.feishu\.cn\/[A-Za-z0-9/_?=&%-]+$/.test(url) ? [url] : []
+  }))]
+  if (meetingUrls.length) {
+    summary = summary.split('\n').filter((line) => !/^\s*(?:[-*+]\s*)?入会链接[：:]?\s*$/.test(line)).join('\n').trim()
+    summary += '\n\n' + meetingUrls.map((url) => `入会链接：[${url}](${url})`).join('\n\n')
+  }
   const detailItems = [...(input.result?.limitations ?? []), ...input.unresolvedIssues]
     .map((item) => userVisibleResultMarkdown(item, 240))
     .filter(Boolean)

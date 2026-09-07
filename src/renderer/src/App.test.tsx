@@ -383,6 +383,17 @@ describe('App shell', () => {
     await waitFor(() => expect(window.aiEmployeeOS.conversation.send).toHaveBeenCalledWith('local-supervisor', '整理为文档', ['/Users/kakarrot/Downloads'], []))
   })
 
+  it('explains missing memory dependencies instead of claiming the message never reached Runtime', async () => {
+    vi.mocked(window.aiEmployeeOS.runtime.getStatus).mockResolvedValue({ state: 'connected', checkedAt: '2026-09-07T00:00:00Z', message: 'Runtime 已连接' })
+    vi.mocked(window.aiEmployeeOS.conversation.send).mockRejectedValueOnce(new Error('memory_runtime_missing'))
+    render(<App />)
+    const input = await screen.findByRole('textbox', { name: '发送消息' })
+    fireEvent.change(input, { target: { value: '发起一个在线会议' } })
+    fireEvent.submit(input.closest('form')!)
+    expect(await screen.findByText('本地记忆运行环境缺失，消息处理已停止。请修复运行依赖后再继续。')).toBeInTheDocument()
+    expect(screen.queryByText('消息未进入 Runtime')).not.toBeInTheDocument()
+  })
+
   it('sends with Enter from the conversation composer', async () => {
     vi.mocked(window.aiEmployeeOS.runtime.getStatus).mockResolvedValue({ state: 'connected', checkedAt: '2026-09-04T00:00:00Z', message: 'Runtime 已连接' })
     render(<App />)
@@ -561,7 +572,9 @@ describe('App shell', () => {
     expect(screen.getByText('悟空调用规则')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '招募' }))
-    let catalog = screen.getByRole('region', { name: '招募员工' })
+    expect(screen.queryByRole('region', { name: '招募专家' })).not.toBeInTheDocument()
+    fireEvent.click(within(screen.getByRole('dialog', { name: '招募' })).getByRole('button', { name: /招募专家/ }))
+    let catalog = screen.getByRole('region', { name: '招募专家' })
     expect(within(catalog).getByRole('tab', { name: '专家团' })).toHaveAttribute('aria-selected', 'true')
     expect(within(catalog).getByRole('button', { name: '查看专家团 售前分析专家团' })).toBeInTheDocument()
     expect(within(catalog).getAllByRole('listitem')).toHaveLength(3)
@@ -583,7 +596,9 @@ describe('App shell', () => {
     expect(screen.getByRole('heading', { name: '还没有已招募专家团' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '招募' }))
-    catalog = screen.getByRole('region', { name: '招募员工' })
+    expect(screen.queryByRole('region', { name: '招募专家' })).not.toBeInTheDocument()
+    fireEvent.click(within(screen.getByRole('dialog', { name: '招募' })).getByRole('button', { name: /招募专家/ }))
+    catalog = screen.getByRole('region', { name: '招募专家' })
     expect(within(catalog).getByRole('tab', { name: '专家团' })).toHaveAttribute('aria-selected', 'true')
     expect(within(catalog).getByText('会议专家团')).toBeInTheDocument()
     expect(within(catalog).getByText('报销专家团')).toBeInTheDocument()
@@ -607,7 +622,7 @@ describe('App shell', () => {
     expect(within(entryDialog).getByRole('button', { name: /创建专家/ })).toBeInTheDocument()
     fireEvent.click(within(entryDialog).getByRole('button', { name: /招募专家/ }))
 
-    const catalog = screen.getByRole('region', { name: '招募员工' })
+    const catalog = screen.getByRole('region', { name: '招募专家' })
     const recruitmentTabs = within(catalog).getByRole('tablist', { name: '招募类型' })
     expect(within(recruitmentTabs).getByRole('tab', { name: '专家' })).toHaveAttribute('aria-selected', 'true')
     expect(within(recruitmentTabs).getByText('单个 Agent')).toBeInTheDocument()
@@ -627,16 +642,16 @@ describe('App shell', () => {
       '提案策略师',
       '政务数字化售前顾问'
     ]) expect(within(catalog).getByText(employee)).toBeInTheDocument()
-    expect(within(catalog).getAllByRole('listitem')).toHaveLength(12)
-    await waitFor(() => expect(catalog.querySelectorAll('.detail-state')).toHaveLength(12))
+    expect(within(catalog).getAllByRole('listitem')).toHaveLength(13)
+    await waitFor(() => expect(catalog.querySelectorAll('.detail-state')).toHaveLength(13))
     expect(within(catalog).getAllByText('已招募', { selector: '.detail-state' })).toHaveLength(3)
-    expect(within(catalog).getAllByText('候选', { selector: '.detail-state' })).toHaveLength(9)
+    expect(within(catalog).getAllByText('候选', { selector: '.detail-state' })).toHaveLength(10)
     expect(catalog.querySelectorAll('[data-availability="recruited"]')).toHaveLength(3)
-    expect(catalog.querySelectorAll('[data-availability="unavailable"]')).toHaveLength(9)
+    expect(catalog.querySelectorAll('[data-availability="unavailable"]')).toHaveLength(10)
     expect(catalog.querySelector('[data-availability="recruited"] .summary-card')).toHaveClass('summary-card--success')
     expect(catalog.querySelector('[data-availability="unavailable"] .summary-card')).toHaveClass('summary-card--muted')
     expect(within(within(catalog).getByText('文档编写员').closest('[role="listitem"]')!).getByText('候选')).toBeInTheDocument()
-    expect(within(catalog).getAllByRole('button', { name: /^查看专家 / })).toHaveLength(12)
+    expect(within(catalog).getAllByRole('button', { name: /^查看专家 / })).toHaveLength(13)
 
     fireEvent.click(within(catalog).getByRole('button', { name: '查看专家 产品经理' }))
     const candidateDialog = screen.getByRole('dialog', { name: '产品经理详情' })
@@ -699,7 +714,7 @@ describe('App shell', () => {
     fireEvent.click(screen.getByRole('button', { name: '通讯录' }))
     fireEvent.click(await screen.findByRole('button', { name: '招募' }))
     fireEvent.click(within(screen.getByRole('dialog', { name: '招募' })).getByRole('button', { name: /招募专家/ }))
-    const catalog = screen.getByRole('region', { name: '招募员工' })
+    const catalog = screen.getByRole('region', { name: '招募专家' })
     fireEvent.click(within(catalog).getByRole('button', { name: '查看专家 网络情报员' }))
 
     const detailDialog = await screen.findByRole('dialog', { name: '网络情报员详情' })

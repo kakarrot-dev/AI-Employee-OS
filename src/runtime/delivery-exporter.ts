@@ -1,3 +1,4 @@
+import { isFeishuMeetingTool } from '../shared/feishu-meeting-contract'
 import { closeSync, existsSync, linkSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, join, relative, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
@@ -43,6 +44,7 @@ export class DeliveryExporter {
     }))
     for (const item of tenderEvidence) this.kernel.save({ entityType: 'Evidence', entity: item, immutable: true }, 'evidence.customer_attachment_committed', { sourceType: item.sourceType, sourceRef: item.sourceRef, sha256: item.sha256 })
     const feishuEvidence = this.kernel.store.list<ToolAction>('ToolAction').filter((action) => action.runId === detail.run?.id && action.state === 'succeeded' && action.resultVerified === true).flatMap((action): Evidence[] => {
+      if (isFeishuMeetingTool(action.toolVersionId) && typeof action.result?.responseSha256 === 'string') return [{ schemaVersion: 1, id: randomUUID(), createdAt: timestamp, runId: detail.run!.id, version: 1, sourceType: 'feishu_meeting', sourceRef: `feishu:meeting-action:${action.id}`, capturedAt: action.completedAt ?? timestamp, sha256: action.result.responseSha256 }]
       if (action.toolVersionId === FEISHU_DOCUMENT_TOOL_IDS.search && typeof action.result?.responseSha256 === 'string' && typeof action.result?.query === 'string') {
         return [{ schemaVersion: 1, id: randomUUID(), createdAt: timestamp, runId: detail.run!.id, version: 1, sourceType: 'feishu_document_search', sourceRef: `feishu:search:${sha256(action.result.query)}`, capturedAt: action.completedAt ?? timestamp, sha256: action.result.responseSha256 }]
       }

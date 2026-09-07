@@ -1,3 +1,4 @@
+import { FEISHU_MEETING_SCOPES, FEISHU_MEETING_TOOL_IDS, MEETING_PARAMETER_NAMES, MEETING_PARAMETER_PROPERTIES } from '../shared/feishu-meeting-contract'
 import { randomUUID } from 'node:crypto'
 import type { MCPVersion, SkillVersion, SourceHealthCheck, ToolVersion } from './domain'
 import { RuntimeKernel } from './kernel'
@@ -65,9 +66,18 @@ const feishuWikiMcp: MCPVersion = {
   credentialRequirement: 'required', credentialStatus: 'missing', health: 'degraded', available: true
 }
 
-const builtInMcps = [managedResearchMcp, externalIntelligenceMcp, localDocumentMcp, tenderDocumentMcp, feishuDocumentsMcp, feishuWikiMcp]
+const feishuMeetingsMcp: MCPVersion = { schemaVersion: 1, id: 'mcp.feishu-meetings.v1', createdAt: '2026-09-07T00:00:00.000Z', name: '飞书会议与邀请', description: '以连接用户身份搜索组织内联系人、创建会议号并发送邀请；不创建日历日程。', version: 1, transport: 'built_in_runner', toolVersionIds: Object.values(FEISHU_MEETING_TOOL_IDS), credentialRequirement: 'required', credentialStatus: 'missing', health: 'degraded', available: true }
+
+const builtInMcps = [managedResearchMcp, externalIntelligenceMcp, localDocumentMcp, tenderDocumentMcp, feishuDocumentsMcp, feishuWikiMcp, feishuMeetingsMcp]
 
 const builtInTools: ToolVersion[] = [
+  ...Object.values(FEISHU_MEETING_TOOL_IDS).map((id): ToolVersion => ({
+    schemaVersion: 1, id, createdAt: '2026-09-07T00:00:00.000Z', version: 1, source: 'mcp', mcpVersionId: feishuMeetingsMcp.id,
+    name: id === FEISHU_MEETING_TOOL_IDS.search ? '搜索飞书联系人' : id === FEISHU_MEETING_TOOL_IDS.create ? '创建飞书会议' : '发送飞书会议邀请',
+    description: id === FEISHU_MEETING_TOOL_IDS.search ? '按姓名搜索当前组织内联系人；不包含外部好友。' : id === FEISHU_MEETING_TOOL_IDS.create ? '确认主题、起止时间和邀请名单后创建会议号与链接；不创建日历日程。' : '确认后以当前用户身份向已选联系人发送会议邀请；发送不代表接受。',
+    inputSchema: { type: 'object', additionalProperties: false, required: MEETING_PARAMETER_NAMES[id], properties: Object.fromEntries(Object.entries(MEETING_PARAMETER_PROPERTIES).filter(([key]) => MEETING_PARAMETER_NAMES[id].includes(key))) },
+    sideEffect: id === FEISHU_MEETING_TOOL_IDS.search ? 'external_read' : 'external_write', risk: id === FEISHU_MEETING_TOOL_IDS.search ? 'low' : 'medium', timeoutMs: 30_000, networkOrigins: ['https://open.feishu.cn'], available: true, health: 'degraded', credentialStatus: 'missing', reason: '需开通飞书会议授权'
+  })),
   {
     schemaVersion: 1, id: FEISHU_DOCUMENT_TOOL_IDS.search, createdAt: '2026-09-04T00:00:00.000Z', name: '搜索飞书文档', description: '以当前连接用户身份搜索其可访问的飞书文档，只返回标题、类型和文档 ID。', version: 1,
     source: 'mcp', mcpVersionId: feishuDocumentsMcp.id, inputSchema: { type: 'object', required: ['query'], properties: { query: { type: 'string', minLength: 1, maxLength: 256 }, limit: { type: 'integer', minimum: 1, maximum: 10 } }, additionalProperties: false },
@@ -187,9 +197,11 @@ export class ResourceService {
   }
 
   async probe(): Promise<SourceHealthCheck[]> {
+    // Health checks must be able to retry a source whose last check failed.
+    // Normal task execution still uses tool() to enforce current availability.
     const probes: Array<{ tool: ToolVersion; parameters: Record<string, unknown> }> = [
-      { tool: this.tool('github.repositories.search@research-source/v1'), parameters: { query: 'deep agents', limit: 1 } },
-      { tool: this.tool('rss.read@research-source/v1'), parameters: { url: 'https://github.blog/feed/', limit: 1 } }
+      { tool: this.kernel.store.get<ToolVersion>('ToolVersion', 'github.repositories.search@research-source/v1')!, parameters: { query: 'deep agents', limit: 1 } },
+      { tool: this.kernel.store.get<ToolVersion>('ToolVersion', 'rss.read@research-source/v1')!, parameters: { url: 'https://github.blog/feed/', limit: 1 } }
     ]
     const results = await Promise.all(probes.map(async ({ tool, parameters }) => {
       const started = Date.now()
@@ -213,15 +225,16 @@ export class ResourceService {
   }
 
   updateFeishuConnection(status: FeishuConnectionStatus): ResourceCatalog {
-    const granted = new Set(status.scopes)
-    const scopesReady = FEISHU_DOCUMENT_SCOPES.every((scope) => granted.has(scope))
-    const available = status.state === 'connected' && scopesReady
-    const credentialStatus: SourceHealthCheck['credentialStatus'] = status.state === 'not_connected' ? 'missing' : 'configured'
-    const failureCode = available ? undefined : status.state === 'reauthorization_required' || !scopesReady ? 'feishu_reauthorization_required' : status.state === 'error' ? 'feishu_connection_error' : 'feishu_not_connected'
     const checkedAt = status.checkedAt || new Date().toISOString()
-    for (const adapterVersionId of Object.values(FEISHU_DOCUMENT_TOOL_IDS)) {
-      const check: SourceHealthCheck = { schemaVersion: 1, id: randomUUID(), createdAt: checkedAt, adapterVersionId, status: available ? 'available' : 'unavailable', credentialStatus, latencyMs: 0, checkedAt, failureCode }
-      this.kernel.save({ entityType: 'SourceHealthCheck', entity: check, immutable: true }, 'resource.connection_status_updated', { adapterVersionId, status: check.status, credentialStatus, failureCode })
+    for (const [scopes, toolIds] of [[FEISHU_DOCUMENT_SCOPES, Object.values(FEISHU_DOCUMENT_TOOL_IDS)], [FEISHU_MEETING_SCOPES, Object.values(FEISHU_MEETING_TOOL_IDS)]] as const) {
+      const scopesReady = scopes.every((scope) => status.scopes.includes(scope))
+      const available = status.state === 'connected' && scopesReady
+      const credentialStatus: SourceHealthCheck['credentialStatus'] = status.state === 'not_connected' ? 'missing' : 'configured'
+      const failureCode = available ? undefined : status.state === 'not_connected' ? 'feishu_not_connected' : status.state === 'error' ? 'feishu_connection_error' : 'feishu_reauthorization_required'
+      for (const adapterVersionId of toolIds) {
+        const check: SourceHealthCheck = { schemaVersion: 1, id: randomUUID(), createdAt: checkedAt, adapterVersionId, status: available ? 'available' : 'unavailable', credentialStatus, latencyMs: 0, checkedAt, failureCode }
+        this.kernel.save({ entityType: 'SourceHealthCheck', entity: check, immutable: true }, 'resource.connection_status_updated', { adapterVersionId, status: check.status, credentialStatus, failureCode })
+      }
     }
     return this.list()
   }

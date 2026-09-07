@@ -11,7 +11,7 @@ import type { SupervisorConfigInput, SupervisorConfigView } from '../shared/supe
 import type { UsageSummaryView } from '../shared/usage-contract'
 import type { ExpertGroupView } from '../shared/expert-group-contract'
 import { SIDECAR_PROTOCOL_VERSION, type RuntimeCommand, type RuntimeOutboundEvent, type RuntimeReadyEvent, type RuntimeResponse } from '../shared/runtime-sidecar-protocol'
-import type { FeishuConnectionStatus, FeishuDocumentToolId } from '../shared/connection-contract'
+import type { FeishuConnectionStatus, FeishuToolId } from '../shared/connection-contract'
 
 interface PendingRequest {
   resolve: (result: unknown) => void
@@ -44,7 +44,7 @@ export class RuntimeSupervisor {
     private readonly onConversationEvent?: (requestId: string, event: ProviderEvent | { type: 'failed'; requestId: string; code: string }) => void,
     private readonly onEmployeeEvent?: (event: { type: 'test_progress' | 'test_completed' | 'test_failed'; employeeId: string; testRunId: string; code?: string }) => void,
     private readonly onTaskEvent?: (event: { type: 'progress' | 'assignment_completed' | 'delivery_completed' | 'needs_attention' | 'failed'; taskId: string; runId?: string }) => void,
-    private readonly onFeishuExecute?: (toolVersionId: FeishuDocumentToolId, parameters: Record<string, unknown>) => Promise<Record<string, unknown>>
+    private readonly onFeishuExecute?: (toolVersionId: FeishuToolId, parameters: Record<string, unknown>) => Promise<Record<string, unknown>>
   ) {}
 
   start(): Promise<RuntimeHealth> {

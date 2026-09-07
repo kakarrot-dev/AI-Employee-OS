@@ -1,3 +1,5 @@
+import meetingInstructions from './skill-packages/feishu-meetings/SKILL.md?raw'
+import { FEISHU_MEETING_TOOL_IDS } from '../shared/feishu-meeting-contract'
 import { createHash } from 'node:crypto'
 import agentReachInstructions from './skill-packages/agent-reach/SKILL.md?raw'
 import feishuDocumentInstructions from './skill-packages/feishu-document-reading/SKILL.md?raw'
@@ -78,6 +80,7 @@ function skill(input: Omit<SkillVersion, 'schemaVersion' | 'createdAt' | 'instru
 }
 
 export const BUILT_IN_SKILLS: SkillVersion[] = [
+  skill({ id: 'skill.feishu-meetings.v2', name: '飞书会议办理', description: '创建会议并向组织内指定联系人发送邀请，分别留存创建与发送结果。', version: 2, steps: ['确认主题、起止时间和收件人', '搜索组织内联系人', '确认后创建会议', '逐人确认发送并核对结果'], toolVersionIds: Object.values(FEISHU_MEETING_TOOL_IDS), available: true, instructionsMarkdown: meetingInstructions }),
   skill({ id: 'skill.managed-research.v2', name: '多源网络调研', description: '使用固定 GitHub REST 与 RSS/Atom 来源形成可审计 ResearchBundle。', version: 2, steps: ['确认来源类型能够支持目标', '分别执行 GitHub 与 RSS 受管读取', '建立主张与来源索引', '固化冲突、缺口与内容 Hash'], toolVersionIds: ['github.repositories.search@research-source/v1', 'rss.read@research-source/v1'], available: true, instructionsMarkdown: managedResearchInstructions }),
   skill({ id: 'skill.agent-reach.v2', name: 'Agent-Reach', description: '跨站发现并核验公开网页来源，形成主张—证据映射。', version: 2, steps: ['拆分主证、反证与时效查询', '优先发现一手来源', '映射主张、URL 与日期', '报告冲突和未覆盖范围'], toolVersionIds: ['agent-reach.search@network-intelligence/v1'], available: true, instructionsMarkdown: agentReachInstructions }),
   skill({ id: 'skill.last30days.v2', name: 'Last 30 Days', description: '分析最近 30 天的社区与网页信号，并明确样本偏差。', version: 2, steps: ['定义 30 天窗口与观察信号', '采集近期跨来源样本', '区分趋势、异常与反例', '限定结论适用范围'], toolVersionIds: ['last30days.research@network-intelligence/v1'], available: true, instructionsMarkdown: last30daysInstructions }),

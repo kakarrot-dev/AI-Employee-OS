@@ -4,7 +4,10 @@ import { createServer, type Server } from 'node:http'
 import { promisify } from 'node:util'
 import axios from 'axios'
 import { Client } from '@larksuiteoapi/node-sdk'
-import { FEISHU_DOCUMENT_SCOPES, FEISHU_DOCUMENT_TOOL_IDS, FEISHU_REDIRECT_URI, FEISHU_REQUESTED_SCOPES, normalizeFeishuAppId, normalizeFeishuConnectionInput, type FeishuConnectionInput, type FeishuConnectionStatus, type FeishuDocumentToolId } from '../shared/connection-contract'
+import { FEISHU_DOCUMENT_SCOPES, FEISHU_DOCUMENT_TOOL_IDS, FEISHU_REDIRECT_URI, FEISHU_REQUESTED_SCOPES, normalizeFeishuAppId, normalizeFeishuConnectionInput, type FeishuConnectionInput, type FeishuConnectionStatus, type FeishuDocumentToolId, type FeishuToolId } from '../shared/connection-contract'
+
+import { FEISHU_MEETING_SCOPES, isFeishuMeetingTool } from '../shared/feishu-meeting-contract'
+import { requestFeishuMeetingTool } from './feishu-meetings'
 
 const execFileAsync = promisify(execFile)
 export const FEISHU_AUTHORIZATION_ENDPOINT = 'https://accounts.feishu.cn/open-apis/authen/v1/authorize'
@@ -277,13 +280,13 @@ export async function requestFeishuDocumentTool(toolVersionId: FeishuDocumentToo
   throw new Error('unsupported_feishu_tool')
 }
 
-export function createFeishuAuthorizationUrl(input: { appId: string; state: string }): string {
+export function createFeishuAuthorizationUrl(input: { appId: string; state: string; enableMeetings?: boolean }): string {
   const url = new URL(FEISHU_AUTHORIZATION_ENDPOINT)
   url.search = new URLSearchParams({
     client_id: input.appId,
     response_type: 'code',
     redirect_uri: FEISHU_REDIRECT_URI,
-    scope: FEISHU_REQUESTED_SCOPES.join(' '),
+    scope: [...FEISHU_REQUESTED_SCOPES, ...(input.enableMeetings ? FEISHU_MEETING_SCOPES : [])].join(' '),
     prompt: 'consent',
     state: input.state
   }).toString()
@@ -461,7 +464,8 @@ export class FeishuConnectionService {
 
   async connect(value: unknown): Promise<FeishuConnectionStatus> {
     if (this.connecting) throw new Error('feishu_connection_in_progress')
-    const candidate = value as { appId?: unknown; appSecret?: unknown }
+    const candidate = value as { appId?: unknown; appSecret?: unknown; enableMeetings?: unknown }
+    if (candidate.enableMeetings !== undefined && typeof candidate.enableMeetings !== 'boolean') throw new Error('invalid_feishu_meeting_opt_in')
     const appId = normalizeFeishuAppId(candidate?.appId)
     const suppliedSecret = typeof candidate?.appSecret === 'string' ? candidate.appSecret.trim() : ''
     let input: FeishuConnectionInput
@@ -479,11 +483,11 @@ export class FeishuConnectionService {
       const state = randomBytes(32).toString('base64url')
       listener = await this.listenerFactory(state)
       this.activeListener = listener
-      await this.openExternal(createFeishuAuthorizationUrl({ appId: input.appId, state }))
+      await this.openExternal(createFeishuAuthorizationUrl({ appId: input.appId, state, enableMeetings: candidate.enableMeetings === true }))
       const code = await listener.waitForCode
       const token = await this.tokenRequester({ grant_type: 'authorization_code', client_id: input.appId, client_secret: input.appSecret, code, redirect_uri: FEISHU_REDIRECT_URI })
       const credential = toStoredCredential(input, token, this.now)
-      const missing = missingDocumentScopes(credential.scopes)
+      const missing = [...missingDocumentScopes(credential.scopes), ...(candidate.enableMeetings === true ? FEISHU_MEETING_SCOPES.filter((scope) => !credential.scopes.includes(scope)) : [])]
       if (missing.length > 0) throw new Error(`feishu_required_scopes_missing:${missing.join(',')}`)
       await this.store.write(JSON.stringify(credential))
       return toCredentialStatus(credential, this.now)
@@ -505,7 +509,7 @@ export class FeishuConnectionService {
     return status('not_connected', this.now)
   }
 
-  async executeDocumentTool(toolVersionId: FeishuDocumentToolId, parameters: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async executeDocumentTool(toolVersionId: FeishuToolId, parameters: Record<string, unknown>): Promise<Record<string, unknown>> {
     let raw = await this.store.read()
     if (!raw) throw new Error('feishu_not_connected')
     let credential = parseCredential(raw)
@@ -517,6 +521,10 @@ export class FeishuConnectionService {
       raw = await this.store.read()
       if (!raw) throw new Error('feishu_not_connected')
       credential = parseCredential(raw)
+    }
+    if (isFeishuMeetingTool(toolVersionId)) {
+      if (!FEISHU_MEETING_SCOPES.every((scope) => credential.scopes.includes(scope))) throw new Error('feishu_meeting_authorization_required')
+      return requestFeishuMeetingTool(toolVersionId, parameters, credential.accessToken, this.apiRequester, this.now())
     }
     return requestFeishuDocumentTool(toolVersionId, parameters, credential.accessToken, this.apiRequester)
   }

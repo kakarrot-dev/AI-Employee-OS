@@ -1,3 +1,4 @@
+import type { Employee, EmployeeVersion, AgentCapabilityVersion } from './domain'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -61,7 +62,7 @@ describe('EmployeeService', () => {
     const { service, store } = setup()
     service.seedRequestedSpecialists(); service.seedRequestedSpecialists()
     const installed = service.list().filter((employee) => employee.id.startsWith('employee.'))
-    expect(installed).toHaveLength(4)
+    expect(installed).toHaveLength(5)
     expect(installed.find((employee) => employee.id === 'employee.network-intelligence')).toMatchObject({ name: '网络情报员', status: 'active', capabilityVersionIds: ['capability.network-intelligence.v2'], activeCapabilityVersionIds: ['capability.network-intelligence.v2'] })
     expect(installed.find((employee) => employee.id === 'employee.document-writer')).toMatchObject({ name: '文档编写员', status: 'active', capabilityVersionIds: ['capability.local-document.v2'], activeCapabilityVersionIds: ['capability.local-document.v2'] })
     expect(installed.find((employee) => employee.id === 'employee.tender-analyst')).toMatchObject({ name: '招投标分析员', status: 'active', capabilityVersionIds: ['capability.tender-analysis.v2'], activeCapabilityVersionIds: ['capability.tender-analysis.v2'] })
@@ -250,4 +251,17 @@ describe('EmployeeService', () => {
     expect(service.detail(referenced.employee.id).formalReferences).toHaveLength(1)
     store.close()
   })
+})
+
+it('upgrades an installed v2 meeting employee to v3 without rewriting its history', () => {
+  const { service, kernel, store } = setup()
+  const original = { schemaVersion: 1 as const, id: 'employee.meeting-coordinator', createdAt: '2026-09-07T00:00:00Z', name: '会议助理', activeVersionId: 'employee-version.meeting-coordinator.v2', disabled: false, archived: false }
+  kernel.save({ entityType: 'Employee', entity: original, immutable: false }, 'test.seeded', {})
+  service.seedRequestedSpecialists()
+  expect(store.get<Employee>('Employee', original.id)).toMatchObject({ activeVersionId: 'employee-version.meeting-coordinator.v3', name: '飞书会议专员' })
+  expect(store.get<EmployeeVersion>('EmployeeVersion', 'employee-version.meeting-coordinator.v3')?.capabilityVersionIds).toEqual(['capability.feishu-meetings.v2'])
+  expect(store.get<AgentCapabilityVersion>('AgentCapabilityVersion', 'capability.feishu-meetings.v2')?.skillVersionIds).toEqual(['skill.feishu-meetings.v2'])
+  service.seedRequestedSpecialists()
+  expect(store.get<Employee>('Employee', original.id)).toMatchObject({ activeVersionId: 'employee-version.meeting-coordinator.v3', name: '飞书会议专员' })
+  store.close()
 })

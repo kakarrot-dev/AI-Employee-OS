@@ -56,6 +56,9 @@
 | `SettingsBlock` / `SettingRow` | 系统设置右侧的单栏分组与键值动作；分区标题、说明、内容自上而下排列 | Runtime 状态伪造、左右说明栏 |
 | `IconButton` / `Avatar` / `StatusLight` | 一致的原子视觉与无障碍语义 | 业务副作用 |
 | `ClientModal` | 统一遮罩、尺寸、Esc/遮罩关闭与 Dialog 语义 | 创建、发布、删除等业务状态机 |
+| `MessageActionCard` | 消息流动作卡片的标题、文字状态、内容与确认操作插槽；复用 `approval-card`、`DetailState`、`approval-actions` | 业务审批决策、接口调用和独立主题值 |
+
+消息动作卡片使用 `data-component-contract="message-action-card"`。会议联系人查找、创建与邀请统一复用该组件；标题、正文与辅助说明分别使用 `--type-card-title-size`、`--type-card-body-size`、`--type-secondary-size`，样式只在原型事实源定义。操作使用 React Aria `Button` 与通用按钮类，状态同时使用文字和语义色；长链接和联系人标识允许换行，不得撑宽消息区。
 
 ### 2.1 图标系统契约
 

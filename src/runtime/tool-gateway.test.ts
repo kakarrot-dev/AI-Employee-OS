@@ -1,3 +1,5 @@
+import { FEISHU_MEETING_SCOPES, FEISHU_MEETING_TOOL_IDS as meetingIds } from '../shared/feishu-meeting-contract'
+import { FEISHU_DOCUMENT_SCOPES } from '../shared/connection-contract'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -143,4 +145,43 @@ describe('ToolGateway', () => {
     expect(result.items).toEqual(expect.arrayContaining([expect.objectContaining({ sourceType: 'agent_reach_web', url: expect.stringMatching(/^https:\/\//), trust: 'untrusted_external_content' })]))
     store.close()
   }, 35_000)
+})
+
+
+describe('meeting action governance', () => {
+  const plan = () => ({ topic: '教学会议', startTime: new Date(Date.now() + 3600000).toISOString(), endTime: new Date(Date.now() + 5400000).toISOString(), recipientIds: ['ou_teacher'] })
+  const proposal = (toolVersionId: string, parameters: Record<string, unknown>) => ({ runId: 'run-1', assignmentId: 'assignment-1', toolVersionId, parameters, parameterSources: Object.fromEntries(Object.keys(parameters).map((key) => [key, { kind: 'model_output' as const, sourceRef: 'provider-request' }])) })
+  it('requires explicit confirmation even in full access, binds recipients and blocks a second creation', async () => {
+    const runner = vi.fn<ToolRunner>().mockImplementation(async (tool, parameters) => tool.id === meetingIds.search ? { items: [{ openId: 'ou_teacher', name: '张老师' }] } : tool.id === meetingIds.create ? { ...parameters, reserveId: 'reserve_1', meetingNumber: '123456789', meetingUrl: 'https://vc.feishu.cn/j/123456789' } : { status: 'sent', messageId: 'om_1' })
+    const { gateway, resources, store } = setup('full_access', runner, Object.values(meetingIds))
+    resources.updateFeishuConnection({ provider: 'feishu', state: 'connected', checkedAt: new Date().toISOString(), scopes: [...FEISHU_DOCUMENT_SCOPES, ...FEISHU_MEETING_SCOPES] })
+    const input = plan()
+    await expect(gateway.propose(proposal(meetingIds.create, input))).rejects.toThrow('meeting_recipient_not_from_search')
+    await gateway.propose(proposal(meetingIds.search, { query: '张老师' }))
+    const create = await gateway.propose(proposal(meetingIds.create, input))
+    expect(create.state).toBe('pending')
+    expect(create.parameters.recipientNames).toEqual(['张老师'])
+    expect(runner).toHaveBeenCalledTimes(1)
+    expect((await gateway.propose(proposal(meetingIds.create, input))).id).toBe(create.id)
+    await gateway.decide(create.id, true)
+    await expect(gateway.propose(proposal(meetingIds.create, { ...input, topic: 'another' }))).rejects.toThrow('meeting_creation_already_attempted')
+    await expect(gateway.propose(proposal(meetingIds.send, { reserveId: 'reserve_1', recipientId: 'ou_other' }))).rejects.toThrow('meeting_invitation_not_bound')
+    const send = await gateway.propose(proposal(meetingIds.send, { reserveId: 'reserve_1', recipientId: 'ou_teacher' }))
+    expect(send.state).toBe('pending')
+    expect(send.parameters).toMatchObject({ recipientName: '张老师', meeting: { meetingNumber: '123456789' } })
+    await gateway.decide(send.id, false)
+    expect(runner).toHaveBeenCalledTimes(2)
+    store.close()
+  })
+  it('persists ambiguous external writes and deduplicates subsequent requests', async () => {
+    const runner = vi.fn<ToolRunner>().mockRejectedValue(new Error('feishu_write_result_unknown'))
+    const { gateway, resources, store } = setup('full_access', runner, Object.values(meetingIds))
+    resources.updateFeishuConnection({ provider: 'feishu', state: 'connected', checkedAt: new Date().toISOString(), scopes: [...FEISHU_DOCUMENT_SCOPES, ...FEISHU_MEETING_SCOPES] })
+    const input = proposal(meetingIds.create, { ...plan(), recipientIds: [] })
+    const pending = await gateway.propose(input)
+    expect(await gateway.decide(pending.id, true)).toMatchObject({ state: 'result_unknown', resultVerified: false })
+    expect((await gateway.propose(input)).state).toBe('result_unknown')
+    expect(runner).toHaveBeenCalledOnce()
+    store.close()
+  })
 })

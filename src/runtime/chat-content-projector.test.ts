@@ -115,3 +115,10 @@ describe('chat content projector', () => {
     expect(content.summary).not.toMatch(/Runtime|Tool|通道|检索执行/)
   })
 })
+
+it('includes only verified meeting join URLs in the final delivery', () => {
+  const action: ToolAction = { schemaVersion: 1, id: 'meeting', createdAt: assignment.createdAt, runId: 'run', assignmentId: assignment.id, toolVersionId: 'feishu.meetings.create@feishu-meetings/v1', idempotencyKey: 'meeting', state: 'succeeded', parameters: {}, parameterSources: {}, risk: 'medium', sideEffect: 'external_write', timeoutMs: 30000, resultVerified: true, result: { meetingNumber: '182742892', meetingUrl: 'https://vc.feishu.cn/j/182742892' } }
+  const input = { summary: '会议已创建。\n- 入会链接：https://vc.feishu.cn/j/182742892', acceptanceResults: [{ passed: true }], artifactCount: 0, evidenceCount: 1, unresolvedIssues: [], actions: [action] }
+  expect(projectDeliveryChatContent(input).summary).toContain('[https://vc.feishu.cn/j/182742892](https://vc.feishu.cn/j/182742892)')
+  expect(projectDeliveryChatContent({ ...input, actions: [{ ...action, resultVerified: false }] }).summary).not.toContain('https://')
+})

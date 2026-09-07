@@ -4,7 +4,15 @@ import remarkGfm from 'remark-gfm'
 import { Folder, NavArrowDown, NavArrowLeft, NavArrowRight, OpenNewWindow, Page, Sparks, Xmark } from 'iconoir-react'
 import { Button, Menu, MenuItem, MenuTrigger, Popover } from 'react-aria-components'
 import { legacyChatContent, type ChatContentView } from '../../../shared/chat-content-contract'
-import { Avatar, IconButton } from './client-ui'
+import { Avatar, IconButton, DetailState, type DetailTone } from './client-ui'
+
+export function MessageActionCard({ title, status, tone, children, actions }: { title: string; status: string; tone: DetailTone; children: ReactNode; actions?: ReactNode }): React.JSX.Element {
+  return <article className="approval-card message-action-card message-stream-item" data-component-contract="message-action-card" aria-label={title}>
+    <header className="message-action-card__header"><h3>{title}</h3><span role="status"><DetailState tone={tone}>{status}</DetailState></span></header>
+    <div className="message-action-card__body">{children}</div>
+    {actions && <div className="approval-actions">{actions}</div>}
+  </article>
+}
 
 export interface MessageAttachment {
   id: string

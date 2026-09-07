@@ -9,7 +9,7 @@ import type { MemoryHealth, MemoryQueueItem, MemorySearchResult, MemoryView } fr
 import type { SupervisorConfigInput, SupervisorConfigView } from './supervisor-contract'
 import type { UsageSummaryView } from './usage-contract'
 import type { ExpertGroupView } from './expert-group-contract'
-import type { FeishuConnectionStatus, FeishuDocumentToolId } from './connection-contract'
+import type { FeishuConnectionStatus, FeishuToolId } from './connection-contract'
 
 export const SIDECAR_PROTOCOL_VERSION = 1 as const
 
@@ -88,7 +88,7 @@ export type RuntimeOutboundEvent =
   | { schemaVersion: 1; type: 'runtime.conversation.event'; requestId: string; event: ProviderEvent | { type: 'failed'; requestId: string; code: string } }
   | { schemaVersion: 1; type: 'runtime.employee.event'; requestId: string; event: { type: 'test_progress' | 'test_completed' | 'test_failed'; employeeId: string; testRunId: string; code?: string } }
   | { schemaVersion: 1; type: 'runtime.task.event'; requestId: string; event: { type: 'progress' | 'assignment_completed' | 'delivery_completed' | 'needs_attention' | 'failed'; taskId: string; runId?: string } }
-  | { schemaVersion: 1; type: 'runtime.feishu.execute'; requestId: string; toolVersionId: FeishuDocumentToolId; parameters: Record<string, unknown> }
+  | { schemaVersion: 1; type: 'runtime.feishu.execute'; requestId: string; toolVersionId: FeishuToolId; parameters: Record<string, unknown> }
 
 export function parseRuntimeCommand(value: unknown): RuntimeCommand {
   if (!value || typeof value !== 'object') throw new Error('invalid_command')

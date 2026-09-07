@@ -1,3 +1,4 @@
+import { FEISHU_MEETING_SCOPES } from '../../shared/feishu-meeting-contract'
 import { useEffect, useState } from 'react'
 import { CheckCircle, Link, OpenNewWindow, ShieldCheck, WarningTriangle } from 'iconoir-react'
 import { ClientModal, DetailNote, DetailPage, DetailSectionHeader, DetailState, DetailSummaryPanel, SummaryCard, SummaryCardGrid } from './components/client-ui'
@@ -29,7 +30,7 @@ interface ConnectionCategory {
   applications: ConnectionApplication[]
 }
 
-export const FEISHU_CONNECTION_APPLICATION: ConnectionApplication = { id: 'feishu', name: '飞书', description: '当前支持知识库统计、新版文档搜索与只读提炼。', icon: feishuIcon }
+export const FEISHU_CONNECTION_APPLICATION: ConnectionApplication = { id: 'feishu', name: '飞书', description: '知识库与文档读取；可选开通会议创建和组织内联系人邀请。', icon: feishuIcon }
 
 export const connectionCategories: ConnectionCategory[] = [
   {
@@ -71,6 +72,18 @@ export const connectionApplications = connectionCategories.flatMap((category) =>
 
 export const EMPTY_FEISHU_STATUS: FeishuConnectionStatus = { provider: 'feishu', state: 'not_connected', checkedAt: '', scopes: [] }
 
+const feishuPermissionNames: Record<string, string> = {
+  'auth:user.id:read': '读取用户身份标识',
+  'contact:user:search': '搜索组织内联系人',
+  'docx:document:readonly': '读取新版文档',
+  'im:message': '获取与发送消息',
+  'im:message.send_as_user': '以你的身份发送消息',
+  offline_access: '离线访问与自动续期',
+  'search:docs:read': '搜索文档',
+  'vc:reserve': '预约视频会议',
+  'wiki:wiki:readonly': '读取知识库'
+}
+
 function ApplicationLogo({ application }: { application: ConnectionApplication }): React.JSX.Element {
   return <span className="connection-logo" role="img" aria-label={`${application.name} 官方图标`}><img alt="" src={application.icon} /></span>
 }
@@ -93,7 +106,7 @@ export function readableConnectionError(error: unknown): string {
   if (code.includes('feishu_authorization_denied')) return '你取消了飞书授权，连接未发生变更。'
   if (code.includes('feishu_oauth_state_mismatch')) return '授权回调校验失败，请重新发起连接。'
   if (code.includes('feishu_offline_access_missing')) return '飞书未返回 refresh token。请在应用权限管理中开通 offline_access、发布版本后重试。'
-  if (code.includes('feishu_required_scopes_missing')) return '飞书未授予知识库或文档只读权限。请在权限管理中添加 search:docs:read、docx:document:readonly、wiki:wiki:readonly，发布版本后重新授权。'
+  if (code.includes('feishu_required_scopes_missing')) return `飞书未授予所选能力的全部权限。缺少：${code.split('feishu_required_scopes_missing:')[1] || '请查看下方权限清单'}。请在权限管理中开通、发布版本后重新授权；原连接保持不变。`
   if (code.includes('feishu_app_id_invalid')) return 'App ID 格式无效，应为 cli_ 开头的飞书应用 ID。'
   if (code.includes('feishu_app_secret_invalid')) return 'App Secret 格式无效，请重新复制。'
   if (code.includes('20029')) return '飞书重定向 URL 校验失败。请在开放平台“安全设置”中添加下方地址，保存后重试。'
@@ -112,6 +125,8 @@ export function readableConnectionError(error: unknown): string {
 }
 
 function FeishuConnectionModal({ open, status, onClose, onStatusChange }: { open: boolean; status: FeishuConnectionStatus; onClose: () => void; onStatusChange: (status: FeishuConnectionStatus) => void }): React.JSX.Element {
+  const [enableMeetings, setEnableMeetings] = useState(false)
+  const [upgrading, setUpgrading] = useState(false)
   const [appId, setAppId] = useState('')
   const [appSecret, setAppSecret] = useState('')
   const [busy, setBusy] = useState(false)
@@ -123,6 +138,8 @@ function FeishuConnectionModal({ open, status, onClose, onStatusChange }: { open
   useEffect(() => {
     if (!open) return
     setAppId(status.appId ?? '')
+    setEnableMeetings(FEISHU_MEETING_SCOPES.some((scope) => status.scopes.includes(scope)))
+    setUpgrading(false)
     setAppSecret('')
     setRedirectConfigured(false)
     setFeedback(status.state === 'error' || status.state === 'reauthorization_required' ? status.message : undefined)
@@ -133,8 +150,9 @@ function FeishuConnectionModal({ open, status, onClose, onStatusChange }: { open
     setBusy(true)
     setFeedback(undefined)
     try {
-      const value = await window.aiEmployeeOS.connection.connectFeishu({ appId, appSecret })
+      const value = await window.aiEmployeeOS.connection.connectFeishu({ appId, appSecret, ...(enableMeetings ? { enableMeetings: true } : {}) })
       onStatusChange(value)
+      setUpgrading(false)
       setAppSecret('')
     } catch (error) {
       setFeedback(readableConnectionError(error))
@@ -181,22 +199,25 @@ function FeishuConnectionModal({ open, status, onClose, onStatusChange }: { open
   }
 
   const connected = status.state === 'connected'
-  const reauthorizing = status.state === 'reauthorization_required'
+  const reauthorizing = status.state === 'reauthorization_required' || upgrading
+  const meetingsReady = FEISHU_MEETING_SCOPES.every((scope) => status.scopes.includes(scope))
   const closeModal = (): void => { if (busy) void cancelAuthorization(true); else onClose() }
   const validAppId = /^cli_[A-Za-z0-9_-]{4,124}$/.test(appId.trim())
   const readyToAuthorize = validAppId && (reauthorizing || appSecret.trim().length >= 8) && redirectConfigured
   return <ClientModal open={open} title="飞书连接" size="large" onClose={closeModal}>
     <div className="connection-modal">
-      {connected ? <>
+      {connected && !upgrading ? <>
         <div className="connection-modal__hero is-connected"><CheckCircle aria-hidden /><div><h3>已连接飞书</h3><p>用户令牌有效；再次使用或检查状态时，客户端会按需自动刷新。</p></div></div>
-        <dl className="connection-facts"><div><dt>App ID</dt><dd>{status.appId}</dd></div><div><dt>凭证存储</dt><dd>macOS 钥匙串</dd></div><div><dt>当前权限</dt><dd>{status.scopes.join('、') || '由飞书授权结果决定'}</dd></div></dl>
+        <DetailNote icon={<ShieldCheck aria-hidden />}>会议能力：{meetingsReady ? '已授权。可创建会议并以你的身份发送邀请；发送前会展示确认。' : '未授权。文档读取仍可使用。'}</DetailNote>{!meetingsReady && <button type="button" className="button button--primary" onClick={() => { setEnableMeetings(true); setUpgrading(true); setRedirectConfigured(false) }}>开通会议能力</button>}
+        <dl className="connection-facts"><div><dt>App ID</dt><dd>{status.appId}</dd></div><div><dt>凭证存储</dt><dd>macOS 钥匙串</dd></div><div className="connection-facts__permissions"><dt>当前权限</dt><dd>{status.scopes.length ? <ul className="connection-permission-list">{status.scopes.map((scope) => <li key={scope} title={scope}>{feishuPermissionNames[scope] ?? scope}</li>)}</ul> : '由飞书授权结果决定'}</dd></div></dl>
         <DetailNote icon={<ShieldCheck aria-hidden />}>App Secret 与用户令牌不会返回 Renderer，也不会写入客户端配置文件。</DetailNote>
         <DetailNote icon={<ShieldCheck aria-hidden />}>执行飞书资料任务时，命中文档的纯文本会作为受控 ToolResult 交给该 Agent 当前配置的模型服务；仅连接或检查状态不会读取文档。</DetailNote>
         {confirmingDisconnect && <div className="connection-disconnect-confirm" role="alert"><WarningTriangle aria-hidden /><span>断开后将从本机钥匙串删除飞书凭证，恢复连接需要重新授权。</span></div>}
         {feedback && <p className="provider-feedback is-error" role="alert">{feedback}</p>}
         <div className="connection-modal__actions">{confirmingDisconnect ? <><button type="button" className="button button--quiet" disabled={busy} onClick={() => setConfirmingDisconnect(false)}>取消</button><button type="button" className="button button--danger" disabled={busy} onClick={() => void disconnect()}>{busy ? '正在断开' : '确认断开'}</button></> : <button type="button" className="button button--quiet danger-action" onClick={() => setConfirmingDisconnect(true)}>断开连接</button>}</div>
       </> : <form onSubmit={(event) => { event.preventDefault(); void connect() }}>
-        <div className="connection-modal__hero"><span className="connection-modal__logo"><img src={feishuIcon} alt="" /></span><div><h3>{status.state === 'reauthorization_required' ? '重新授权飞书' : '连接自建应用'}</h3><p>使用用户身份连接，只申请保持登录、知识库枚举、搜索和只读新版文档所需权限。</p></div></div>
+        <div className="connection-modal__hero"><span className="connection-modal__logo"><img src={feishuIcon} alt="" /></span><div><h3>{upgrading ? '开通飞书会议' : status.state === 'reauthorization_required' ? '重新授权飞书' : '连接自建应用'}</h3><p>使用你的飞书身份连接。文档读取与会议邀请按所选范围申请授权。</p></div></div>
+        <label className="connection-redirect-confirm"><input type="checkbox" checked={enableMeetings} disabled={busy} onChange={(event) => { setEnableMeetings(event.target.checked); setRedirectConfigured(false) }} /><span>开通会议：搜索组织内联系人、创建会议并以我的身份发送邀请</span></label>
         <ol className="connection-flow" aria-label="飞书连接流程">
           <li className="connection-flow__step">
             <span className="connection-flow__index">1</span>
@@ -210,12 +231,12 @@ function FeishuConnectionModal({ open, status, onClose, onStatusChange }: { open
           </li>
           <li className="connection-flow__step">
             <span className="connection-flow__index">2</span>
-            <div><h4>配置权限与重定向 URL</h4><p>在“权限管理”添加 search:docs:read、docx:document:readonly、wiki:wiki:readonly 并发布版本；再到“安全设置 → 重定向 URL”添加完全一致的地址。</p></div>
+            <div><h4>配置权限与重定向 URL</h4><p>在“权限管理”添加 search:docs:read、docx:document:readonly、wiki:wiki:readonly{enableMeetings ? `，以及 ${FEISHU_MEETING_SCOPES.join('、')}` : ''} 并发布版本；再到“安全设置 → 重定向 URL”添加完全一致的地址。</p></div>
           </li>
           <li className="connection-flow__content connection-setup-list">
             <code>{FEISHU_REDIRECT_URI}</code>
             <button type="button" className="button button--quiet" disabled={busy || openingConsole || !validAppId} onClick={() => void openDeveloperConsole()}><OpenNewWindow aria-hidden />{openingConsole ? '正在打开' : '打开安全设置'}</button>
-            <label className="connection-redirect-confirm"><input type="checkbox" checked={redirectConfigured} disabled={busy} onChange={(event) => { setRedirectConfigured(event.target.checked); setFeedback(undefined) }} /><span>我已添加三个只读权限、发布版本，并保存上述重定向 URL</span></label>
+            <label className="connection-redirect-confirm"><input type="checkbox" checked={redirectConfigured} disabled={busy} onChange={(event) => { setRedirectConfigured(event.target.checked); setFeedback(undefined) }} /><span>{enableMeetings ? '我已添加文档和会议所需权限、发布版本，并保存上述重定向 URL' : '我已添加三个只读权限、发布版本，并保存上述重定向 URL'}</span></label>
           </li>
           <li className="connection-flow__step">
             <span className="connection-flow__index">3</span>
@@ -223,8 +244,8 @@ function FeishuConnectionModal({ open, status, onClose, onStatusChange }: { open
           </li>
         </ol>
         <div className="connection-setup-list connection-setup-list--scope">
-          <p><strong>当前申请权限</strong><span>offline_access、search:docs:read、docx:document:readonly、wiki:wiki:readonly；不申请消息、文档写入、日历或通讯录权限。</span></p>
-          <p><strong>数据使用</strong><span>只有正式任务执行只读 Tool 时，知识库统计结果或命中文档纯文本才会交给该 Agent 当前配置的模型服务分析。</span></p>
+          <p><strong>当前申请权限</strong><span>offline_access、search:docs:read、docx:document:readonly、wiki:wiki:readonly{enableMeetings ? `、${FEISHU_MEETING_SCOPES.join('、')}。邀请以你的身份发送；联系人搜索不包含外部好友，会议不会自动添加到日历。` : '；不申请消息、文档写入、日历或通讯录权限。'}</span></p>
+          <p><strong>数据使用</strong><span>文档内容只在任务读取时交给员工的模型分析。{enableMeetings ? '会议任务还会使用联系人搜索结果与会议信息；应用仅使用消息权限发送会议邀请，不读取聊天历史。' : ''}</span></p>
         </div>
         <DetailNote icon={<ShieldCheck aria-hidden />}>{busy ? '正在等待浏览器回调。若浏览器仍显示错误码 20029，请取消授权，返回第 2 步检查地址。' : '客户端使用 OAuth state 校验一次性回调，并以 App Secret 完成令牌交换；关闭弹窗或点击取消会终止本次授权。'}</DetailNote>
         {feedback && <p className="provider-feedback is-error" role="alert">{feedback}</p>}

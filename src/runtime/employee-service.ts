@@ -1,3 +1,4 @@
+import { FEISHU_MEETING_CAPABILITY_ID, FEISHU_MEETING_TOOL_IDS } from '../shared/feishu-meeting-contract'
 import { createHash, randomUUID } from 'node:crypto'
 import type { ProviderEvent, ProviderRequest } from '../provider/contract'
 import type { AllowedModelId } from '../provider/models'
@@ -14,6 +15,7 @@ export interface TestStartResult {
 export type TestProviderProgress = SandboxTestRun & { nextRequest?: ProviderRequest }
 
 const BUILT_IN_CAPABILITIES: AgentCapabilityVersion[] = [
+  { schemaVersion: 1, id: FEISHU_MEETING_CAPABILITY_ID, createdAt: '2026-09-07T00:00:00.000Z', name: '飞书会议办理', description: '搜索组织内联系人、确认创建会议号并以连接用户身份发送邀请。', version: 2, skillVersionIds: ['skill.feishu-meetings.v2'], toolVersionIds: Object.values(FEISHU_MEETING_TOOL_IDS), mcpVersionIds: ['mcp.feishu-meetings.v1'], requiredModelIds: ['deepseek-v4-pro', 'claude-sonnet-4.6'], permissionRequirements: ['feishu.contacts.search', 'feishu.meetings.create', 'feishu.meetings.send'], dependencies: [{ kind: 'Skill', versionId: 'skill.feishu-meetings.v2', available: true }, ...Object.values(FEISHU_MEETING_TOOL_IDS).map((versionId) => ({ kind: 'Tool' as const, versionId, available: false, reason: '需开通飞书会议授权' })), { kind: 'MCP', versionId: 'mcp.feishu-meetings.v1', available: false, reason: '需开通飞书会议授权' }] },
   {
     schemaVersion: 1,
     id: 'capability.text-analysis.v1',
@@ -131,6 +133,7 @@ const BUILT_IN_CAPABILITIES: AgentCapabilityVersion[] = [
 ]
 
 const SPECIALIST_EMPLOYEES: Array<{ employee: Employee; version: EmployeeVersion }> = [
+  { employee: { schemaVersion: 1, id: 'employee.meeting-coordinator', createdAt: '2026-09-07T00:00:00.000Z', name: '飞书会议专员', activeVersionId: 'employee-version.meeting-coordinator.v3', disabled: false, archived: false }, version: { schemaVersion: 1, id: 'employee-version.meeting-coordinator.v3', createdAt: '2026-09-07T00:00:00.000Z', employeeId: 'employee.meeting-coordinator', version: 3, state: 'active', name: '飞书会议专员', role: '飞书会议安排、组织内联系人查找与邀请发送', description: '在用户确认后创建飞书会议并逐人发送邀请，保留部分失败与结果待核实状态；不创建日历日程。', systemPrompt: '你是飞书会议专员。遵循飞书会议办理 Skill，只操作已授权的会议工具。时间、收件人和会议主题必须来自用户目标；不得编造联系人、会议号或发送结果。创建会议和发送邀请均等待具体动作确认；拒绝、失败或结果待核实时不得重建会议。完成以真实创建回执及每位目标联系人消息回执为依据，不将发送成功当作对方接受。', modelId: 'deepseek-v4-pro', capabilityVersionIds: [FEISHU_MEETING_CAPABILITY_ID], memoryScopes: ['task'], testRunIds: [], publishedAt: '2026-09-07T00:00:00.000Z' } },
   {
     employee: { schemaVersion: 1, id: 'employee.network-intelligence', createdAt: '2026-09-02T00:00:00.000Z', name: '网络情报员', activeVersionId: 'employee-version.network-intelligence.v2', disabled: false, archived: false },
     version: {
@@ -187,7 +190,8 @@ export class EmployeeService {
       else {
         const currentIdentityVersionId = current.draftVersionId ?? current.activeVersionId
         const currentIdentityVersion = currentIdentityVersionId ? this.kernel.store.get<EmployeeVersion>('EmployeeVersion', currentIdentityVersionId) : undefined
-        const identity = current.avatarDataUrl === undefined && currentIdentityVersion?.avatarDataUrl ? { ...current, avatarDataUrl: currentIdentityVersion.avatarDataUrl } : current
+        let identity = current.avatarDataUrl === undefined && currentIdentityVersion?.avatarDataUrl ? { ...current, avatarDataUrl: currentIdentityVersion.avatarDataUrl } : current
+        if (employee.id === 'employee.meeting-coordinator' && current.name === '会议助理') identity = { ...identity, name: employee.name }
         if (current.draftVersionId) this.upgradeUntouchedBuiltInDraft(current.draftVersionId, version)
         const legacyBuiltInVersionId = version.version > 1 ? version.id.replace(`.v${version.version}`, `.v${version.version - 1}`) : undefined
         if (!current.activeVersionId || current.activeVersionId === legacyBuiltInVersionId) this.kernel.save({ entityType: 'Employee', entity: { ...identity, activeVersionId: version.id }, immutable: false }, 'employee.profile_upgraded', { previousVersionId: current.activeVersionId, activeVersionId: version.id, draftPreserved: Boolean(current.draftVersionId), identityPreserved: Boolean(identity.avatarDataUrl) })

@@ -1,3 +1,4 @@
+import meetingSpecialistAvatar from './assets/employee-avatars/feishu-meeting-specialist.png'
 import networkIntelligenceAvatar from './assets/employee-avatars/network-intelligence.png'
 import tenderAnalystAvatar from './assets/employee-avatars/tender-analyst.png'
 import documentWriterAvatar from './assets/employee-avatars/document-writer.png'
@@ -20,6 +21,7 @@ export function userIdentity(name: string, avatarSrc?: string | null): { name: s
 }
 
 const employeeAvatars: Record<string, string> = {
+  'employee.meeting-coordinator': meetingSpecialistAvatar,
   'employee.network-intelligence': networkIntelligenceAvatar,
   'employee.tender-analyst': tenderAnalystAvatar,
   'employee.document-writer': documentWriterAvatar,

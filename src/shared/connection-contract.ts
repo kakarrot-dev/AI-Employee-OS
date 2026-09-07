@@ -1,3 +1,5 @@
+import { FEISHU_MEETING_TOOL_IDS, type FeishuMeetingToolId } from './feishu-meeting-contract'
+
 export const CONNECTION_IPC = {
   getFeishuStatus: 'connection:feishu:get-status',
   openFeishuDeveloperConsole: 'connection:feishu:open-developer-console',
@@ -17,6 +19,8 @@ export const FEISHU_DOCUMENT_TOOL_IDS = {
 } as const
 
 export type FeishuDocumentToolId = typeof FEISHU_DOCUMENT_TOOL_IDS[keyof typeof FEISHU_DOCUMENT_TOOL_IDS]
+export type FeishuToolId = FeishuDocumentToolId | FeishuMeetingToolId
+export const FEISHU_TOOL_IDS: Record<string, FeishuToolId> = { ...FEISHU_DOCUMENT_TOOL_IDS, ...Object.fromEntries(Object.entries(FEISHU_MEETING_TOOL_IDS).map(([key, value]) => [`meeting_${key}`, value])) }
 
 export type FeishuConnectionState = 'not_connected' | 'connecting' | 'connected' | 'reauthorization_required' | 'error'
 
@@ -33,6 +37,7 @@ export interface FeishuConnectionStatus {
 export interface FeishuConnectionInput {
   appId: string
   appSecret: string
+  enableMeetings?: boolean
 }
 
 export interface ConnectionBridge {

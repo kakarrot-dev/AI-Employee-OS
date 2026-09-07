@@ -28,6 +28,7 @@ interface RecruitmentCategory {
 }
 
 const recruitmentCategories: RecruitmentCategory[] = [
+  { id: 'meetings', name: '会议与协作', description: '安排飞书会议并向组织内联系人发送邀请。', employees: [{ id: 'employee.meeting-coordinator', name: '飞书会议专员', description: '确认后创建会议号、逐人发送邀请并跟踪结果。', color: '#85a9c7' }] },
   {
     id: 'analysis',
     name: '信息与分析',
@@ -267,7 +268,7 @@ export function RecruitmentCatalog({ employees, expertGroups = [], skills = [], 
   }
 
   return <DetailPage className="recruitment-page" width="wide">
-    <section className="recruitment-catalog" aria-label="招募员工">
+    <section className="recruitment-catalog" aria-label="招募专家">
       <div className="filter-row capability-kind-switch recruitment-kind-switch" role="tablist" aria-label="招募类型">
         <button type="button" role="tab" id="recruitment-experts-tab" aria-label="专家" aria-controls="recruitment-experts-panel" aria-selected={kind === 'experts'} className={kind === 'experts' ? 'is-active' : ''} onClick={() => setKind('experts')}>
           <span className="recruitment-kind-switch__icon"><UserPlus aria-hidden /></span>

@@ -1,3 +1,4 @@
+import type { FeishuMeetingResultView } from './feishu-meeting-contract'
 import { toPlainTimelineSummary, type ChatContentView } from './chat-content-contract'
 
 export const MATTER_TITLE_MAX_CHARACTERS = 32
@@ -71,7 +72,7 @@ export interface TaskDetailView {
   delivery?: { id: string; content?: ChatContentView; /** @deprecated Use content.summary. */ summary?: string; /** @deprecated Raw employee output is not a delivery presentation. */ result?: string; createdAt?: string; acceptanceResults: Array<{ criterion: string; passed: boolean }>; artifacts: Array<{ id: string; mediaType: string; relativePath: string; sha256: string }>; evidenceCount: number; unresolvedIssues: string[] }
   researchBundles: Array<{ id: string; contentHash: string; sourceCount: number; claimCount: number; conflicts: string[]; informationGaps: string[] }>
   pendingChange?: { id: string; sourceMessageId: string; requestedDiff: Record<string, unknown> }
-  toolActions: Array<{ id: string; assignmentId?: string; createdAt?: string; completedAt?: string; toolVersionId: string; state: 'pending' | 'running' | 'succeeded' | 'failed' | 'blocked' | 'result_unknown' | 'cancelled'; parameters: Record<string, unknown>; risk: 'low' | 'medium' | 'high'; approvalId?: string; failureCode?: string }>
+  toolActions: Array<{ id: string; assignmentId?: string; createdAt?: string; completedAt?: string; toolVersionId: string; state: 'pending' | 'running' | 'succeeded' | 'failed' | 'blocked' | 'result_unknown' | 'cancelled'; parameters: Record<string, unknown>; meetingResult?: FeishuMeetingResultView; risk: 'low' | 'medium' | 'high'; approvalId?: string; failureCode?: string }>
   approvals: Array<{ id: string; toolActionId: string; decision: 'pending' | 'approved' | 'rejected' }>
 }
 

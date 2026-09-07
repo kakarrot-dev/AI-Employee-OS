@@ -77,8 +77,18 @@ export class MemoryService {
       input: JSON.stringify(payload), encoding: 'utf8', timeout, maxBuffer: 4_000_000,
       env: this.workerEnvironment(allowNetwork)
     })
-    if (child.error || child.status !== 0) {
-      try { const parsed = JSON.parse(child.stderr.trim()) as { error?: string }; throw new Error(parsed.error ?? 'memory_worker_failed') } catch (error) { if (error instanceof Error && error.message !== 'Unexpected end of JSON input') throw error; throw new Error('memory_worker_failed') }
+    if (child.error) {
+      const code = (child.error as NodeJS.ErrnoException).code
+      throw new Error(code === 'ENOENT' ? 'memory_runtime_missing' : code === 'ETIMEDOUT' ? 'memory_worker_timeout' : 'memory_worker_failed')
+    }
+    if (child.status !== 0) {
+      let code = 'memory_worker_failed'
+      try {
+        const parsed = JSON.parse(child.stderr?.trim().split('\n').at(-1) ?? '') as { error?: unknown }
+        const workerCode = typeof parsed.error === 'string' ? parsed.error.split(':')[0] : ''
+        if (/^[a-z][a-z0-9_]{0,100}$/.test(workerCode)) code = workerCode
+      } catch { /* A worker may exit before producing structured diagnostics. */ }
+      throw new Error(code)
     }
     try { return JSON.parse(child.stdout) } catch { throw new Error('invalid_memory_worker_response') }
   }
