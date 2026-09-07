@@ -189,8 +189,8 @@ function FeishuConnectionModal({ open, status, onClose, onStatusChange }: { open
     <div className="connection-modal">
       {connected ? <>
         <div className="connection-modal__hero is-connected"><CheckCircle aria-hidden /><div><h3>已连接飞书</h3><p>用户令牌有效；再次使用或检查状态时，客户端会按需自动刷新。</p></div></div>
-        <dl className="connection-facts"><div><dt>App ID</dt><dd>{status.appId}</dd></div><div><dt>凭证存储</dt><dd>macOS 钥匙串</dd></div><div><dt>当前权限</dt><dd>{status.scopes.join('、') || '由飞书授权结果决定'}</dd></div></dl>
-        <DetailNote icon={<ShieldCheck aria-hidden />}>App Secret 与用户令牌不会返回 Renderer，也不会写入客户端配置文件。</DetailNote>
+        <dl className="connection-facts"><div><dt>App ID</dt><dd>{status.appId}</dd></div><div><dt>凭证存储</dt><dd>不保存真实凭证</dd></div><div><dt>当前权限</dt><dd>{status.scopes.join('、') || '由飞书授权结果决定'}</dd></div></dl>
+        <DetailNote icon={<ShieldCheck aria-hidden />}>此处为模拟连接状态，没有读取或存储真实凭证。</DetailNote>
         <DetailNote icon={<ShieldCheck aria-hidden />}>执行飞书资料任务时，命中文档的纯文本会作为受控 ToolResult 交给该 Agent 当前配置的模型服务；仅连接或检查状态不会读取文档。</DetailNote>
         {confirmingDisconnect && <div className="connection-disconnect-confirm" role="alert"><WarningTriangle aria-hidden /><span>断开后将从本机钥匙串删除飞书凭证，恢复连接需要重新授权。</span></div>}
         {feedback && <p className="provider-feedback is-error" role="alert">{feedback}</p>}
@@ -203,10 +203,10 @@ function FeishuConnectionModal({ open, status, onClose, onStatusChange }: { open
             <div><h4>填写应用凭证</h4><p>从飞书开放平台“凭证与基础信息”复制，仅在完成授权后写入 macOS 钥匙串。</p></div>
           </li>
           <li className="connection-flow__content connection-form-fields">
-            <label className="form-field"><span>App ID</span><input value={appId} autoComplete="off" aria-label="飞书 App ID" placeholder="cli_xxxxxxxxxxxxxxxx" disabled={busy} onChange={(event) => { setAppId(event.target.value); setRedirectConfigured(false); setFeedback(undefined) }} /></label>
+            <label className="form-field"><span>App ID</span><input value={appId} autoComplete="off" aria-label="飞书 App ID" placeholder="cli_mock_demo" disabled={busy} onChange={(event) => { setAppId(event.target.value); setRedirectConfigured(false); setFeedback(undefined) }} /></label>
             {reauthorizing
-              ? <DetailNote icon={<ShieldCheck aria-hidden />}>复用 macOS 钥匙串中已保存的 App Secret，不返回界面、不写入日志。</DetailNote>
-              : <label className="form-field"><span>App Secret</span><input type="password" value={appSecret} autoComplete="off" aria-label="飞书 App Secret" placeholder="仅保存到 macOS 钥匙串" disabled={busy} onChange={(event) => { setAppSecret(event.target.value); setFeedback(undefined) }} /></label>}
+              ? <DetailNote icon={<ShieldCheck aria-hidden />}>复用演示配置，无需输入真实 App Secret。</DetailNote>
+              : <label className="form-field"><span>App Secret</span><input type="password" value={appSecret} autoComplete="off" aria-label="飞书 App Secret" placeholder="填写 mock-only 即可" disabled={busy} onChange={(event) => { setAppSecret(event.target.value); setFeedback(undefined) }} /></label>}
           </li>
           <li className="connection-flow__step">
             <span className="connection-flow__index">2</span>
@@ -226,7 +226,7 @@ function FeishuConnectionModal({ open, status, onClose, onStatusChange }: { open
           <p><strong>当前申请权限</strong><span>offline_access、search:docs:read、docx:document:readonly、wiki:wiki:readonly；不申请消息、文档写入、日历或通讯录权限。</span></p>
           <p><strong>数据使用</strong><span>只有正式任务执行只读 Tool 时，知识库统计结果或命中文档纯文本才会交给该 Agent 当前配置的模型服务分析。</span></p>
         </div>
-        <DetailNote icon={<ShieldCheck aria-hidden />}>{busy ? '正在等待浏览器回调。若浏览器仍显示错误码 20029，请取消授权，返回第 2 步检查地址。' : '客户端使用 OAuth state 校验一次性回调，并以 App Secret 完成令牌交换；关闭弹窗或点击取消会终止本次授权。'}</DetailNote>
+        <DetailNote icon={<ShieldCheck aria-hidden />}>{busy ? '正在等待浏览器回调。若浏览器仍显示错误码 20029，请取消授权，返回第 2 步检查地址。' : '原型模拟授权结果，不进行 OAuth 回调或令牌交换；可在顶部原型入口切换失败场景。'}</DetailNote>
         {feedback && <p className="provider-feedback is-error" role="alert">{feedback}</p>}
         <div className="connection-modal__actions"><button type="button" className="button button--quiet" onClick={() => { if (busy) void cancelAuthorization(); else onClose() }}>{busy ? '取消授权' : '取消'}</button><button type="submit" className="button button--primary" disabled={busy || !readyToAuthorize}><OpenNewWindow aria-hidden />{busy ? '等待飞书授权' : '开始用户授权'}</button></div>
       </form>}
@@ -242,7 +242,7 @@ export function ConnectionsCatalog({ feishuStatus, loading, modalOpen, onModalOp
       <DetailSummaryPanel
         icon={<Link aria-hidden />}
         title="外部系统与应用"
-        description="飞书已支持安全授权与按需自动续期；其他应用仍为待接入目录。"
+        description="飞书可演示授权与断开流程；其他应用展示待接入状态。"
         metrics={[
           { label: '应用总数', value: connectionApplications.length },
           { label: '应用类型', value: connectionCategories.length },

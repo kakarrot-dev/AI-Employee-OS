@@ -1,0 +1,10 @@
+.prototype-launcher { position: fixed; right: 92px; top: 7px; z-index: 20; border: 0; border-radius: 5px; background: var(--accent-soft); color: var(--accent-strong); font-size: 10px; padding: 5px 8px; -webkit-app-region: no-drag; cursor: pointer; }
+.prototype-panel { padding: 24px; overflow: auto; min-height: 0; font-size: 13px; line-height: 1.8; color: var(--text-primary); }
+.prototype-panel label { display: grid; gap: 8px; margin: 24px 0; }
+.prototype-panel select { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--text-primary); background: var(--surface-raised); }
+.prototype-preview { flex: 1; }
+.prototype-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.prototype-preview-footer { padding: 16px 24px; border-top: 1px solid var(--line); }
+.prototype-notice { padding: 12px; background: var(--surface-subtle); border-radius: 7px; }
+.prototype-warning { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; padding: 14px 20px; border: 1px solid var(--line); background: var(--surface-raised); box-shadow: var(--shadow-popover); border-radius: 8px; font-size: 12px; }
+.prototype-warning button { margin-left: 14px; border: 0; background: none; color: var(--accent); cursor: pointer; }

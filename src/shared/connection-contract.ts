@@ -1,11 +1,3 @@
-export const CONNECTION_IPC = {
-  getFeishuStatus: 'connection:feishu:get-status',
-  openFeishuDeveloperConsole: 'connection:feishu:open-developer-console',
-  connectFeishu: 'connection:feishu:connect',
-  cancelFeishuAuthorization: 'connection:feishu:cancel-authorization',
-  disconnectFeishu: 'connection:feishu:disconnect'
-} as const
-
 export const FEISHU_REDIRECT_URI = 'http://localhost:3000/callback'
 export const FEISHU_DOCUMENT_SCOPES = ['search:docs:read', 'docx:document:readonly', 'wiki:wiki:readonly'] as const
 export const FEISHU_REQUESTED_SCOPES = ['offline_access', ...FEISHU_DOCUMENT_SCOPES] as const

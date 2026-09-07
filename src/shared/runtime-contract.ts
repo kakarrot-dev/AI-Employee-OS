@@ -6,70 +6,7 @@ import type { SupervisorConfigInput, SupervisorConfigView } from './supervisor-c
 import type { UsageSummaryView } from './usage-contract'
 import type { ExpertGroupView } from './expert-group-contract'
 
-export const RUNTIME_IPC = {
-  getStatus: 'runtime:get-status',
-  reconnect: 'runtime:reconnect',
-  statusChanged: 'runtime:status-changed'
-} as const
-
-export const PROVIDER_IPC = {
-  getStatus: 'provider:get-status',
-  configurePoe: 'provider:configure-poe',
-  verifyPoeModel: 'provider:verify-poe-model'
-} as const
-
-export const CONVERSATION_IPC = {
-  list: 'conversation:list',
-  create: 'conversation:create',
-  archive: 'conversation:archive',
-  send: 'conversation:send',
-  cancel: 'conversation:cancel',
-  history: 'conversation:history',
-  event: 'conversation:event'
-} as const
-
-export const ATTACHMENT_IPC = {
-  select: 'attachment:select',
-  importDropped: 'attachment:import-dropped',
-  open: 'attachment:open',
-  reveal: 'attachment:reveal'
-} as const
-
-export const SUPERVISOR_IPC = {
-  get: 'supervisor:get',
-  update: 'supervisor:update'
-} as const
-
-export const EMPLOYEE_IPC = {
-  list: 'employee:list',
-  capabilities: 'employee:capabilities',
-  detail: 'employee:detail',
-  create: 'employee:create',
-  beginEdit: 'employee:begin-edit',
-  saveDraft: 'employee:save-draft',
-  addTestCase: 'employee:add-test-case',
-  runTest: 'employee:run-test',
-  confirmTest: 'employee:confirm-test',
-  publish: 'employee:publish',
-  rollback: 'employee:rollback',
-  setDisabled: 'employee:set-disabled',
-  archive: 'employee:archive',
-  restore: 'employee:restore',
-  deleteDraft: 'employee:delete-draft',
-  event: 'employee:event'
-} as const
-
-export const EXPERT_GROUP_IPC = {
-  list: 'expert-group:list',
-  archive: 'expert-group:archive'
-} as const
-
-export const TASK_IPC = { list: 'task:list', outputDirectory: 'task:output-directory', openArtifact: 'task:open-artifact', revealArtifact: 'task:reveal-artifact', createDraft: 'task:create-draft', updateDraft: 'task:update-draft', start: 'task:start', retry: 'task:retry', requestChange: 'task:request-change', acceptChange: 'task:accept-change', rejectChange: 'task:reject-change', approveTool: 'task:approve-tool', rejectTool: 'task:reject-tool', resolveTool: 'task:resolve-tool', event: 'task:event' } as const
-
-export const RESOURCE_IPC = { list: 'resource:list', probe: 'resource:probe' } as const
-export const MEMORY_IPC = { status: 'memory:status', downloadModel: 'memory:download-model', list: 'memory:list', search: 'memory:search', update: 'memory:update', disable: 'memory:disable', restore: 'memory:restore', resolveConflict: 'memory:resolve-conflict', permanentlyDelete: 'memory:permanently-delete', queue: 'memory:queue', acceptQueueItem: 'memory:queue-accept', dismissQueueItem: 'memory:queue-dismiss', migrateEmbeddings: 'memory:migrate-embeddings' } as const
-export const USAGE_IPC = { summary: 'usage:summary' } as const
-
+// Presentation contracts retained for the client mock adapter; no IPC transport.
 export type RuntimeConnectionState = 'disconnected' | 'connecting' | 'connected'
 
 export interface RuntimeStatus {

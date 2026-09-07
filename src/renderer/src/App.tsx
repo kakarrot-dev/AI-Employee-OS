@@ -598,6 +598,15 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
     } catch (reason) { setError(reason instanceof Error ? reason.message : '变更决策失败') } finally { setTaskBusy(false) }
   }
 
+  const decideMockApproval = async (actionId: string, approved: boolean): Promise<void> => {
+    setTaskBusy(true); setError(undefined)
+    try {
+      const value = approved ? await window.aiEmployeeOS.task.approveTool(actionId) : await window.aiEmployeeOS.task.rejectTool(actionId)
+      setTasks(current => current.map(item => item.id === value.id ? value : item))
+      onDataChanged()
+    } catch { setError('审批操作未完成，请重试') } finally { setTaskBusy(false) }
+  }
+
   const performArtifactAction = async (taskId: string, artifactId: string, action: 'open' | 'reveal'): Promise<void> => {
     try {
       if (action === 'open') await window.aiEmployeeOS.task.openArtifact(taskId, artifactId)
@@ -648,6 +657,7 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
           {activeTask ? (
             <><MatterRouteNote title={activeTask.title} mode={activeRouteMode} busy={taskBusy} onOpenMatter={() => setSelectedMatterId(activeTask.id)} onCreateMatter={() => void createTaskDraft()} onRequestChange={activeTask.state === 'running' && !activeTask.pendingChange && latestChangeMessage ? () => void requestTaskChange() : undefined} />{conversationTasks.map((task) => <MatterEvent key={task.id} task={task} onOpen={() => setSelectedMatterId(task.id)} onAnchor={(element) => { if (element) matterAnchors.current.set(task.id, element); else matterAnchors.current.delete(task.id) }} />)}<TaskWorkTimeline task={activeTask} supervisor={supervisor} />
               {activeTask.pendingChange && <div className="change-card message-stream-item"><strong>待处理变更</strong><p>{String(activeTask.pendingChange.requestedDiff.goal ?? '需求已变化')}</p>{activeTask.state === 'needs_attention' ? <div><button type="button" onClick={() => void decideTaskChange(false)} disabled={taskBusy}>保持原事项</button><button type="button" onClick={() => void decideTaskChange(true)} disabled={taskBusy}>接受并启动新 Revision</button></div> : <small>将在当前节点完成并提交 Checkpoint 后暂停</small>}</div>}
+              {activeTask.approvals.filter(approval => approval.decision === 'pending').map(approval => <section key={approval.id} className="change-card message-stream-item"><strong>需要确认文件操作</strong><p>员工准备生成交付文件。确认后继续，拒绝后取消当前事项。</p><div><button type="button" disabled={taskBusy} onClick={() => void decideMockApproval(approval.toolActionId, false)}>拒绝操作</button><button type="button" disabled={taskBusy} onClick={() => void decideMockApproval(approval.toolActionId, true)}>确认操作</button></div></section>)}
               {activeTask.state === 'failed' && <section className="runtime-route-note message-stream-item"><Page aria-hidden /><span>本次执行已失败；未完成的只读 Tool 已安全终止，结果未知的写入操作需要先核验。</span><button type="button" onClick={() => void retryTask()} disabled={taskBusy}>{taskBusy ? '正在重试' : '按原事项重试'}</button></section>}
               {activeTask.state === 'draft' && <section className="runtime-route-note message-stream-item"><Page aria-hidden /><span>{activeTask.requiresDirectories && activeTask.directories.length === 0 ? '该事项尚未绑定固定下载目录。' : '事项已生成，Runtime 正在自动启动员工。'}</span>{activeTask.requiresDirectories && activeTask.directories.length === 0 && <button type="button" onClick={() => void startDraftInOutputDirectory()} disabled={taskBusy}>{taskBusy ? '正在启动' : '使用下载文件夹并开始'}</button>}</section>}
               <DeliveryMessage task={activeTask} supervisor={supervisor} onOpen={() => setSelectedMatterId(activeTask.id)} onOpenArtifact={(artifactId) => void performArtifactAction(activeTask.id, artifactId, 'open')} onRevealArtifact={(artifactId) => void performArtifactAction(activeTask.id, artifactId, 'reveal')} />{activeTask.toolActions.some((item) => item.state === 'result_unknown') && <div className="boundary-note message-stream-item">存在结果未知的 Tool Action。需要在 Runtime 记录真实外部结果后才能继续，客户端不会猜测成功或失败。</div>}</>

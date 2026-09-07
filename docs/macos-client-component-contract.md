@@ -1,10 +1,10 @@
 # macOS 客户端组件与布局契约
 
-本契约以 `prototypes/macos-client-v2` 为界面与交互事实源，约束正式客户端的布局职责、组件复用和业务边界。原型定义“长什么样、如何组织信息”，Runtime Bridge 定义“哪些功能真实可用”。两者不得互相伪造。
+本契约用于 `codex/client-prototype` 分支。客户端 React 页面承载完整交互，`prototypes/macos-client-v2` 保留为复用样式与组件设计资源。所有业务数据和运行状态均为本地 mock，不代表真实执行或连接。
 
 ## 1. 固定壳层
 
-正式客户端只有一套一级壳层：
+客户端原型只有一套一级壳层：
 
 1. `Toolbar`：高度使用 `--layout-toolbar-height`，承载当前上下文标题和少量全局动作；内边距使用顶栏专属 Token，不复用页面内容边距。
 2. `Rail`：宽度使用 `--layout-rail-width`，只承载消息、通讯录、能力、连接与系统入口。
@@ -17,7 +17,7 @@
 
 `Toolbar` 是全局唯一的应用顶栏，固定使用 `data-layout-contract="application-toolbar"`，内部只允许四个稳定插槽：`navigation`、`workspace`、`identity`、`actions`。
 
-- 高度固定为 `--layout-toolbar-height: 40px`，正式客户端适配层不得覆盖。
+- 高度固定为 `--layout-toolbar-height: 40px`，客户端原型适配层不得覆盖。
 - 内容区左右安全边距固定使用 `--layout-toolbar-inline-padding: 24px`；右侧折叠按钮等页面级动作必须包含在该边距内。
 - 左侧导航控件使用 `--layout-toolbar-navigation-edge-padding` 与分栏边界保持距离。
 - 列表栏收起时，导航槽位使用 `--layout-toolbar-collapsed-navigation-width`，必须同时容纳 macOS 窗口控件安全区、`--layout-toolbar-window-controls-gap: 16px`、折叠按钮和边缘间距，不得回落为仅使用图标栏宽度。
@@ -53,7 +53,7 @@
 | `ContextPane` | 搜索、筛选、对象列表、创建入口 | 详情编辑表单 |
 | `ListRow` | 标题、副标题、元信息、选中态 | 对象专属布局分支 |
 | `DetailPage` | 详情页宽度、滚动和内容画布 | 模块自己的导航壳 |
-| `SettingsBlock` / `SettingRow` | 系统设置右侧的单栏分组与键值动作；分区标题、说明、内容自上而下排列 | Runtime 状态伪造、左右说明栏 |
+| `SettingsBlock` / `SettingRow` | 系统设置右侧的单栏分组与键值动作；分区标题、说明、内容自上而下排列 | 在共享视觉组件中产生业务状态、左右说明栏 |
 | `IconButton` / `Avatar` / `StatusLight` | 一致的原子视觉与无障碍语义 | 业务副作用 |
 | `ClientModal` | 统一遮罩、尺寸、Esc/遮罩关闭与 Dialog 语义 | 创建、发布、删除等业务状态机 |
 
@@ -68,21 +68,20 @@
 
 ## 3. 页面契约
 
-- 消息：`ContextPane` 展示真实会话；`Workspace` 永久保留 Composer，消息与业务事项共用同一条时间线。
-- 通讯录：`ContextPane` 展示真实 Agent 员工；`Workspace` 展示资料、能力摘要和最近交付；三步创建与五分区设置复用 `ClientModal`，测试、发布和治理继续调用真实 Runtime 状态机。
+- 消息：`ContextPane` 展示 mock 会话；`Workspace` 永久保留 Composer，消息与业务事项共用同一条时间线。
+- 通讯录：`ContextPane` 展示 mock Agent 员工；`Workspace` 展示资料、能力摘要和最近交付；三步创建与五分区设置复用 `ClientModal`，测试、发布和治理使用 mock 状态与事件。
 - 能力：`ContextPane` 只按原型展示 Skill、Tool；`Workspace` 展示 SKILL.md、适用任务、依赖、绑定 Agent 与高级信息。MCP 和数据源健康归入系统的资源治理。
-- 连接：`ContextPane` 只列出 Bridge 确认处于 `connected` 的应用，使用官方应用图标、名称、能力摘要和“已连接”状态；未连接、检查中、异常或需重新授权的应用不得混入该列表，空状态明确显示“暂无已连接应用”。点击已连接应用进入其管理弹窗。`Workspace` 复用招募员工目录的摘要、分组、卡片与状态组件，按协作沟通、知识与文件、研发与云服务三类展示 12 个可连接应用。飞书状态来自顶层持有的窄 `ConnectionBridge`，左侧列表、目录卡片和顶部指标共享同一状态事实；App Secret、用户令牌和 refresh token 只保存在 macOS Keychain，Renderer 不持有持久凭证。其余 11 个应用仍为静态“未连接”。
+- 连接：`ContextPane` 只列出 mock 状态处于 `connected` 的应用，使用官方应用图标、名称、能力摘要和“已连接”状态；空状态显示“暂无已连接应用”。点击已连接应用进入管理弹窗。`Workspace` 展示可连接应用目录。列表、目录卡片和顶部指标共享同一份 mock 状态；授权与断开均为演示操作，不启动 OAuth 服务、不发送网络请求、不写入 Keychain。
 - 系统：`ContextPane` 固定承载个人资料、通用、总管、模型服务、资源、记忆与存储、用量、关于；默认打开个人资料，`Workspace` 只显示所选设置页。右侧所有设置分区统一使用单栏阅读流，不为分区说明另建左侧标签栏。
 
 ## 4. 状态与数据边界
 
-- 列表、详情、创建、归档、运行状态必须来自 preload 暴露的窄 Bridge。
-- 飞书授权固定监听本机回环 `localhost:3000`，必须校验 OAuth `state`；自建应用以 App Secret 作为机密客户端凭证，token 交换使用飞书官方 Node SDK 的 OAuth v3 能力，不混用 PKCE 参数。连接阶段按“应用凭证 → 配置文档权限与重定向 URL → 用户授权”三步执行：确认配置前不得打开授权页，授权中必须支持主动取消，错误码 `20029` 必须引导用户返回安全设置修复。完整状态与恢复契约见 `docs/feishu-connection-flow.md`。当前只申请 `offline_access`、`search:docs:read`、`docx:document:readonly`；消息、文档写入、日历和组织权限不在范围内。
-- 暂未接入的上传、用量等能力明确显示不可用，不用假数据补齐原型。
+- 列表、详情、创建、归档、运行状态由 Renderer 内部的 mock 数据层提供，禁止依赖 preload、IPC、Provider、Worker 或后端服务。
+- 文件、连接、模型验证和任务运行交互必须明确标注为模拟；不要求真实密钥，不读取正式客户端数据，不向第三方发送消息。
 - 页面状态由顶层模块持有；共享视觉组件保持无业务状态，事件通过 props 上送。
 - 当前态必须同时具备视觉类名与可访问名称，不能只依赖颜色表达。
-- 原型由 React Aria 提供的焦点、禁用和弹层入场状态，正式客户端必须通过原生伪类或同名 data 属性复用同一套视觉规则。
-- Employee 身份字段由 Runtime 版本契约持有：`name`、`role`、`description`、`avatarDataUrl`；详情、创建和设置必须读取同一版本事实。
+- 原型由 React Aria 提供的焦点、禁用和弹层入场状态，客户端原型必须通过原生伪类或同名 data 属性复用同一套视觉规则。
+- Employee 身份字段由 mock 数据层持有：`name`、`role`、`description`、`avatarDataUrl`；详情、创建和设置必须读取同一版本事实。
 
 ## 5. 验收标准
 

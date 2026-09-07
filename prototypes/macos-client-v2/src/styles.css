@@ -1333,7 +1333,7 @@ button {
   margin: 0;
   color: var(--text-secondary);
   font-size: var(--type-secondary-size);
-  line-height: 1.72;
+  line-height: var(--type-leading-detail);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }

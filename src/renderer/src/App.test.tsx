@@ -777,7 +777,7 @@ describe('App shell', () => {
     expect(await screen.findByText('v2 · 可用')).toBeInTheDocument()
   })
 
-  it('reauthorizes Feishu by reusing the App Secret kept in Keychain', async () => {
+  it('reauthorizes Feishu using the existing prototype configuration', async () => {
     vi.mocked(window.aiEmployeeOS.connection.getFeishuStatus).mockResolvedValue({ provider: 'feishu', state: 'reauthorization_required', checkedAt: '2026-09-04T00:00:00Z', appId: 'cli_example123', scopes: ['offline_access', 'search:docs:read', 'docx:document:readonly'], message: '缺少知识库权限' })
     vi.mocked(window.aiEmployeeOS.connection.connectFeishu).mockResolvedValue({ provider: 'feishu', state: 'connected', checkedAt: '2026-09-04T00:01:00Z', appId: 'cli_example123', expiresAt: '2026-09-04T02:01:00Z', scopes: ['offline_access', 'search:docs:read', 'docx:document:readonly', 'wiki:wiki:readonly'] })
     render(<App />)
@@ -785,7 +785,7 @@ describe('App shell', () => {
     fireEvent.click(await within(screen.getByRole('region', { name: '连接' })).findByRole('button', { name: '重新授权' }))
 
     expect(screen.queryByLabelText('飞书 App Secret')).not.toBeInTheDocument()
-    expect(screen.getByText('复用 macOS 钥匙串中已保存的 App Secret，不返回界面、不写入日志。')).toBeInTheDocument()
+    expect(screen.getByText('复用演示配置，无需输入真实 App Secret。')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('checkbox', { name: '我已添加三个只读权限、发布版本，并保存上述重定向 URL' }))
     fireEvent.click(screen.getByRole('button', { name: '开始用户授权' }))
 
