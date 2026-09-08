@@ -1,0 +1,17 @@
+/* Web host only; client layout, typography and component tokens stay untouched. */
+#web-preview-notice {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  background: var(--surface-app);
+  color: var(--text-secondary, var(--muted));
+  font: 12px/1.4 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  border-bottom: 1px solid var(--line-shell);
+}
+/* Preserve the client's 960 x 640 minimum canvas on smaller browser windows. */
+body { overflow: auto; }
+body > #root { height: calc(100% - 28px); min-width: var(--web-client-min-width); min-height: var(--web-client-min-height); }

@@ -43,3 +43,9 @@ npm run package:local
 ```
 
 产物位于 `build/local-release/dist/AI Employee OS-darwin-arm64/AI Employee OS.app`。当前只构建 Apple Silicon arm64；运行时资源约 700 MiB，总 App 约 987 MiB。首次启动会把包内固定 Embedding 模型原子安装到应用私有目录。
+
+## Web 前端
+
+`npm run web:dev` 启动浏览器版，访问 `http://127.0.0.1:5174/`。Web 与 main 客户端直接共用页面、组件、样式和数据契约，以明确标注的演示数据独立运行。
+
+`npm run web:build` 构建静态产物到 `dist/web`；`npm run web:test` 验证相关页面与契约。完整覆盖范围、数据边界和运行方式见 [Web 前端与客户端还原契约](docs/web-frontend.md)。
