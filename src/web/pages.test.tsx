@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { App } from '../renderer/src/App'
 import { createPreviewBridge } from './preview-bridge'
 
-describe('Unmodified main renderer running on the Web bridge', () => {
+describe('Shared main renderer running on the Web bridge', () => {
   beforeEach(() => { window.localStorage?.clear(); window.aiEmployeeOS = createPreviewBridge() })
   it('renders message content, experts, capabilities, connections and every system page', async () => {
     render(<App />)

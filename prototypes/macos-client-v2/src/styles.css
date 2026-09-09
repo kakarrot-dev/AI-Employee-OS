@@ -2066,7 +2066,6 @@ button {
   color: var(--text-secondary);
 }
 
-.message-action-group { min-width: 0; margin-block-start: 18px; }
 .message-action-card { color: var(--text-primary); overflow-wrap: anywhere; }
 .message-action-card__header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
 .message-action-card__header h3 { margin: 0; font-size: var(--type-card-title-size); font-weight: var(--type-weight-semibold); line-height: var(--type-leading-compact); }
@@ -4417,3 +4416,14 @@ label.form-field > span:first-child {
 }
 .form-notice .detail-note--danger { border-color: color-mix(in srgb, var(--danger) 20%, transparent); background: color-mix(in srgb, var(--danger) 5%, var(--surface-content)); }
 .form-notice .detail-note--waiting { border-color: color-mix(in srgb, var(--warning) 20%, transparent); background: color-mix(in srgb, var(--warning) 5%, var(--surface-content)); }
+
+.message-action-card { color: var(--text-primary); overflow-wrap: anywhere; }
+.message-action-card__header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
+.message-action-card__header h3 { margin: 0; font-size: var(--type-card-title-size); font-weight: var(--type-weight-semibold); line-height: var(--type-leading-compact); }
+.message-action-card__body { display: grid; gap: 8px; margin-top: 10px; font-size: var(--type-card-body-size); line-height: var(--type-leading-body); }
+.message-action-card__body p { min-width: 0; }
+.message-action-card__body ul { margin: 0; padding-inline-start: 18px; }
+.message-action-card__body small { color: var(--text-secondary); font-size: var(--type-secondary-size); }
+.message-action-card__body a { color: var(--accent-strong); text-underline-offset: 3px; }
+.message-action-card__body a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.message-action-card .approval-actions { flex-wrap: wrap; }

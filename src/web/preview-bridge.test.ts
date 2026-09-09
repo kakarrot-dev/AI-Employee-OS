@@ -40,7 +40,7 @@ describe('Web preview bridge', () => {
       const sent = await bridge.conversation.send(conversation.id, '你好')
       await bridge.conversation.cancel(sent.requestId)
       await vi.runAllTimersAsync()
-      expect(listener).toHaveBeenCalledExactlyOnceWith({ type: 'completed', requestId: sent.requestId })
+      expect(listener).toHaveBeenCalledExactlyOnceWith({ type: 'completed', requestId: sent.requestId, conversationId: conversation.id })
       expect(await bridge.conversation.history(conversation.id)).toHaveLength(1)
       await bridge.conversation.send(conversation.id, '查看演示')
       await vi.runAllTimersAsync()

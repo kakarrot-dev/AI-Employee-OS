@@ -1,3 +1,4 @@
+import { meetingGroupView, type MeetingStore } from './meeting/store'
 import { normalizeEmployeeDraft, validateEmployeeDraft, type EmployeeDetail, type EmployeeDraftInput, type EmployeeSummary } from '../shared/employee-contract'
 import { DEFAULT_SUPERVISOR_CONFIG, normalizeSupervisorConfig, validateSupervisorConfig, type SupervisorConfigView } from '../shared/supervisor-contract'
 import type { ConversationMessageView, ConversationStreamEvent, EmployeeEvent, ProviderStatus, RuntimeStatus } from '../shared/runtime-contract'
@@ -20,15 +21,15 @@ function events<T>() {
 }
 
 /** In-memory UI preview. No network, credentials, model calls or local file paths. */
-export function createPreviewBridge(): WebClientBridge {
+export function createPreviewBridge(meetings?: MeetingStore): WebClientBridge {
   const catalog = copy(builtInCatalog)
   let employees = catalog.employees
-  let groups = catalog.groups
+  let groups = meetings ? [copy(meetingGroupView), ...catalog.groups] : catalog.groups
   let conversations = [copy(previewConversation)]
   const histories = new Map<string, ConversationMessageView[]>([[previewConversation.id, copy(previewHistory)]])
-  const conversationEvents = events<ConversationStreamEvent>()
+  const conversationEvents = events<ConversationStreamEvent & { conversationId?: string }>()
   const employeeEvents = events<EmployeeEvent>()
-  const pendingReplies = new Map<string, ReturnType<typeof setTimeout>>()
+  const pendingReplies = new Map<string, { timer: ReturnType<typeof setTimeout>; conversationId: string }>()
   let supervisor: SupervisorConfigView = { schemaVersion: 1, id: 'supervisor.local', createdAt: previewDate, updatedAt: previewDate, ...copy(DEFAULT_SUPERVISOR_CONFIG) }
   const runtimeStatus = (): RuntimeStatus => ({ state: 'connected', checkedAt: now(), message: '已连接浏览器演示适配器，未连接本机 Runtime' })
   const providerStatus = (): ProviderStatus => ({ state: 'stopped', credentialStatus: { deepseek: 'missing', poe: 'missing' }, models: [
@@ -78,13 +79,17 @@ export function createPreviewBridge(): WebClientBridge {
     runtime: { getStatus: async () => runtimeStatus(), reconnect: async () => runtimeStatus(), onStatusChanged: () => () => undefined },
     provider: { getStatus: async () => providerStatus(), configurePoe: unavailable, verifyPoeModel: unavailable },
     conversation: {
-      list: async () => copy(conversations),
+      list: async () => copy(conversations.map((value) => meetings?.summary(value) ?? value)),
       create: async () => {
         const value = { id: id(), title: '新会话', preview: '尚无消息', updatedAt: now(), messageCount: 0 }
         conversations.unshift(value); histories.set(value.id, []); return copy(value)
       },
       archive: async (conversationId) => {
         requireConversation(conversationId)
+        for (const [requestId, pending] of pendingReplies) {
+          if (pending.conversationId === conversationId) { clearTimeout(pending.timer); pendingReplies.delete(requestId) }
+        }
+        meetings?.archive(conversationId)
         conversations = conversations.filter((item) => item.id !== conversationId)
         return { archived: true, conversationId }
       },
@@ -98,19 +103,19 @@ export function createPreviewBridge(): WebClientBridge {
         if (!conversation.messageCount) conversation.title = text.trim().slice(0, 32)
         conversation.messageCount = messages.length
         conversation.preview = text; conversation.updatedAt = now()
-        pendingReplies.set(requestId, setTimeout(() => {
+        pendingReplies.set(requestId, { conversationId, timer: setTimeout(() => {
           pendingReplies.delete(requestId)
-          const content = '这是 Web 演示回复，用于展示消息交互。你的输入已保留在当前预览中；未调用模型、执行任务或向外部服务发送内容。'
+          const content = meetings?.get(conversationId) ? '消息已记入当前会话。本演示按已提交的会议表单继续执行；这条消息不会更改会议安排，也不会调用模型或发送到飞书。' : '这是 Web 演示回复，用于展示消息交互。你的输入已保留在当前预览中；未调用模型、执行任务或向外部服务发送内容。'
           messages.push({ id: `stream:${requestId}`, role: 'assistant', content, createdAt: now() })
           conversation.messageCount = messages.length; conversation.preview = content; conversation.updatedAt = now()
-          conversationEvents.emit({ type: 'output_delta', requestId, delta: content })
-          conversationEvents.emit({ type: 'completed', requestId })
-        }, 400))
+          conversationEvents.emit({ type: 'output_delta', requestId, conversationId, delta: content })
+          conversationEvents.emit({ type: 'completed', requestId, conversationId })
+        }, 400) })
         return { accepted: true, requestId, messageId }
       },
       cancel: async (requestId) => {
-        const timer = pendingReplies.get(requestId)
-        if (timer) { clearTimeout(timer); pendingReplies.delete(requestId); conversationEvents.emit({ type: 'completed', requestId }) }
+        const pending = pendingReplies.get(requestId)
+        if (pending) { clearTimeout(pending.timer); pendingReplies.delete(requestId); conversationEvents.emit({ type: 'completed', requestId, conversationId: pending.conversationId }) }
         return { accepted: true }
       },
       onEvent: conversationEvents.subscribe
@@ -164,7 +169,7 @@ export function createPreviewBridge(): WebClientBridge {
     expertGroup: {
       list: async () => copy(groups.filter((group) => group.status !== 'archived').map((group) => ({ ...group, members: group.members.map((member) => {
         const employee = employees.find((item) => item.employee.id === member.employeeId)
-        return employee ? { ...member, name: employee.active?.name ?? employee.employee.name, status: employee.status } : { ...member, status: 'archived' as const }
+        return employee ? { ...member, name: employee.active?.name ?? employee.employee.name, status: employee.status } : group.id === meetingGroupView.id ? member : { ...member, status: 'archived' as const }
       }) }))),
       archive: async (groupId) => {
         const group = groups.find((item) => item.id === groupId)

@@ -1,0 +1,34 @@
+.meeting-scene-form { min-width: 0; }
+.meeting-scene-form .feishu-help { margin: 0; color: var(--text-secondary); font-size: var(--type-secondary-size); line-height: var(--type-leading-body); }
+.feishu-meeting-form { display: grid; gap: 14px; margin-top: 18px; }
+.feishu-field { display: grid; align-content: start; gap: 6px; min-width: 0; }
+.feishu-field > span, .feishu-people legend { font-weight: var(--type-weight-medium); font-size: var(--type-body-size); }
+.feishu-field > span small { margin-left: 4px; font-weight: var(--type-weight-regular); }
+.meeting-scene-form input:not([type="checkbox"]) { width: 100%; min-width: 0; padding: 8px 10px; min-height: 36px; background: var(--surface-content); color: var(--text-primary); border: 1px solid var(--line-strong); border-radius: 6px; font-size: var(--type-input-size); }
+.meeting-scene-form input::placeholder { color: var(--text-tertiary); }
+.meeting-scene-form input:focus-visible, .meeting-scene-form button:focus-visible, .meeting-scene-form summary:focus-visible, .meeting-scene-form [tabindex="-1"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.meeting-scene-form [aria-invalid="true"] { border-color: var(--danger); }
+.meeting-scene-form .feishu-error { display: block; color: var(--danger); }
+.feishu-time-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.feishu-time-fields + .feishu-help { margin-top: -8px; }
+.feishu-people { min-width: 0; margin: 0; padding: 0; border: 0; }
+.feishu-people legend { width: 100%; margin-bottom: 8px; padding: 0; }
+.feishu-people legend small { float: right; font-weight: var(--type-weight-regular); }
+.feishu-contact-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin-top: 8px; max-height: 210px; overflow-y: auto; padding: 3px; }
+.feishu-contact-option { min-width: 0; display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 6px; cursor: pointer; }
+.feishu-contact-option:hover { background: var(--surface-hover); }
+.feishu-contact-option.is-selected { background: var(--accent-soft); }
+.feishu-contact-option input { accent-color: var(--accent); width: 14px; height: 14px; margin: 0; flex-shrink: 0; }
+.feishu-contact-option > span:last-child { display: grid; gap: 2px; min-width: 0; }
+.feishu-contact-option strong { font-size: var(--type-body-size); font-weight: var(--type-weight-medium); }
+.feishu-contact-option small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feishu-selected-people { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.feishu-selected-people button { display: flex; align-items: center; gap: 5px; padding: 4px 7px; border: 0; border-radius: 4px; background: var(--surface-selected); cursor: pointer; font-size: var(--type-secondary-size); }
+.feishu-selected-people svg { width: var(--icon-size-inline); height: var(--icon-size-inline); }
+.feishu-auto-settings { display: flex; gap: 8px; align-items: flex-start; padding: 12px; background: var(--surface-subtle); border-radius: 6px; }
+.feishu-auto-settings > svg { width: var(--icon-size-control); height: var(--icon-size-control); flex-shrink: 0; color: var(--success); }
+.feishu-auto-settings > span { display: grid; gap: 4px; }
+.feishu-auto-settings strong { font-size: var(--type-body-size); font-weight: var(--type-weight-medium); }
+.meeting-summary-preview { min-height: 0; overflow-y: auto; padding: 20px 24px; }
+.meeting-summary-actions { display: flex; justify-content: flex-end; padding: 14px 24px; border-top: 1px solid var(--line); }
+@media (max-width: 1199px) { .feishu-time-fields, .feishu-contact-options { grid-template-columns: minmax(0, 1fr); } }

@@ -155,7 +155,8 @@ describe('macOS prototype visual contract', () => {
   })
 
   it('imports the prototype tokens after legacy styles and isolates retired prototype-class rules', () => {
-    const entry = source('src/renderer/src/main.tsx')
+    expect(source('src/renderer/src/main.tsx')).toContain("import { mountClient } from './mount-client'")
+    const entry = source('src/renderer/src/mount-client.tsx')
     expect(entry.indexOf("import './styles.css'")).toBeLessThan(entry.indexOf('prototypes/macos-client-v2/src/layout.css'))
     expect(entry.indexOf('layout.css')).toBeLessThan(entry.indexOf('typography.css'))
     expect(entry.indexOf('typography.css')).toBeLessThan(entry.indexOf('prototypes/macos-client-v2/src/styles.css'))

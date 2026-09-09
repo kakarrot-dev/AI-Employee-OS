@@ -61,6 +61,23 @@ describe('message UI contracts', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /展开全文/ })).toHaveAttribute('aria-expanded', 'false'))
   })
 
+  it('supports preview and download in the same attachment menu without desktop-only actions', () => {
+    const onOpen = vi.fn(), onDownload = vi.fn()
+    const attachment = { id: 'summary', name: '会议摘要.md', detail: 'Markdown · 演示文档' }
+    const { rerender } = render(<MessageAttachmentGroup source="agent" embedded openMode="preview" attachments={[attachment]} onOpen={onOpen} onDownload={onDownload} />)
+    fireEvent.click(screen.getByRole('button', { name: '打开方式 会议摘要.md' }))
+    expect(screen.queryByRole('menuitem', { name: /使用系统默认应用打开/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: /打开所在文件夹/ })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('menuitem', { name: /预览文档/ }))
+    expect(onOpen).toHaveBeenCalledExactlyOnceWith('summary')
+    fireEvent.click(screen.getByRole('button', { name: '打开方式 会议摘要.md' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /下载文档/ }))
+    expect(onDownload).toHaveBeenCalledExactlyOnceWith('summary')
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    rerender(<MessageAttachmentGroup source="agent" openMode="preview" attachments={[attachment]} />)
+    expect(screen.getByRole('button', { name: '打开方式 会议摘要.md' })).toBeDisabled()
+  })
+
   it('does not mark a short message as collapsible', async () => {
     vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(32)
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(32)

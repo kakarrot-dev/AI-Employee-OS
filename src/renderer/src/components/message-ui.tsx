@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Folder, NavArrowDown, NavArrowLeft, NavArrowRight, OpenNewWindow, Page, Sparks, Xmark } from 'iconoir-react'
+import { Download, Folder, NavArrowDown, NavArrowLeft, NavArrowRight, OpenNewWindow, Page, Sparks, Xmark } from 'iconoir-react'
 import { Button, Menu, MenuItem, MenuTrigger, Popover } from 'react-aria-components'
 import { legacyChatContent, type ChatContentView } from '../../../shared/chat-content-contract'
 import { Avatar, IconButton, DetailState, type DetailTone } from './client-ui'
@@ -143,8 +143,15 @@ export function StreamingMarkdownMessage({ children, active }: { children: strin
   </div>
 }
 
-export function AttachmentOpenMenu({ attachment, onOpen, onReveal }: { attachment: MessageAttachment; onOpen?: (id: string) => void; onReveal?: (id: string) => void }): React.JSX.Element {
-  const hasActions = Boolean(onOpen || onReveal)
+interface AttachmentActions {
+  openMode?: 'system' | 'preview'
+  onOpen?: (id: string) => void
+  onReveal?: (id: string) => void
+  onDownload?: (id: string) => void
+}
+
+export function AttachmentOpenMenu({ attachment, openMode = 'system', onOpen, onReveal, onDownload }: { attachment: MessageAttachment } & AttachmentActions): React.JSX.Element {
+  const hasActions = Boolean(onOpen || onReveal || onDownload)
   return <MenuTrigger>
     <Button className="attachment-open-trigger" aria-label={`打开方式 ${attachment.name}`} isDisabled={!hasActions}>
       <OpenNewWindow aria-hidden />
@@ -155,18 +162,22 @@ export function AttachmentOpenMenu({ attachment, onOpen, onReveal }: { attachmen
       <Menu className="attachment-open-menu" aria-label={`${attachment.name} 的打开方式`}>
         {onOpen && <MenuItem id="open" className="attachment-open-menu__item" onAction={() => onOpen(attachment.id)}>
           <span className="attachment-open-menu__icon"><OpenNewWindow aria-hidden /></span>
-          <span className="attachment-open-menu__copy"><strong>使用系统默认应用打开</strong><small>使用 macOS 关联的应用</small></span>
+          <span className="attachment-open-menu__copy"><strong>{openMode === 'preview' ? '预览文档' : '使用系统默认应用打开'}</strong><small>{openMode === 'preview' ? '在当前窗口查看文档' : '使用 macOS 关联的应用'}</small></span>
         </MenuItem>}
         {onReveal && <MenuItem id="reveal" className="attachment-open-menu__item" onAction={() => onReveal(attachment.id)}>
           <span className="attachment-open-menu__icon"><Folder aria-hidden /></span>
           <span className="attachment-open-menu__copy"><strong>打开所在文件夹</strong><small>在 Finder 中定位此文件</small></span>
+        </MenuItem>}
+        {onDownload && <MenuItem id="download" className="attachment-open-menu__item" onAction={() => onDownload(attachment.id)}>
+          <span className="attachment-open-menu__icon"><Download aria-hidden /></span>
+          <span className="attachment-open-menu__copy"><strong>下载文档</strong><small>保存一份到本地</small></span>
         </MenuItem>}
       </Menu>
     </Popover>
   </MenuTrigger>
 }
 
-export function MessageAttachmentGroup({ attachments, source, embedded = false, onRemove, onOpen, onReveal }: { attachments: MessageAttachment[]; source: 'user' | 'agent'; embedded?: boolean; onRemove?: (id: string) => void; onOpen?: (id: string) => void; onReveal?: (id: string) => void }): React.JSX.Element | null {
+export function MessageAttachmentGroup({ attachments, source, embedded = false, onRemove, openMode, onOpen, onReveal, onDownload }: { attachments: MessageAttachment[]; source: 'user' | 'agent'; embedded?: boolean; onRemove?: (id: string) => void } & AttachmentActions): React.JSX.Element | null {
   const rowsRef = useRef<HTMLDivElement>(null)
   const [carouselState, setCarouselState] = useState({ current: 1, canPrevious: false, canNext: false })
   const isTimelineCarousel = source === 'user' && attachments.length > 1 && !onRemove
@@ -200,7 +211,7 @@ export function MessageAttachmentGroup({ attachments, source, embedded = false, 
   const multiple = attachments.length > 1
   return <div className={`message-attachments message-attachments--${source} message-attachments--${multiple ? 'multiple' : 'single'}${embedded ? ' message-attachments--embedded' : ''}${isTimelineCarousel ? ' message-attachments--carousel' : ''}`}>
     {multiple && <div className="message-attachments__header"><span>{source === 'agent' ? <Sparks aria-hidden /> : <Page aria-hidden />}{attachments.length} 个附件</span>{isTimelineCarousel && (carouselState.canPrevious || carouselState.canNext) && <span className="attachment-carousel-navigation"><small>{carouselState.current} / {attachments.length}</small><IconButton label="查看上一份附件" icon={NavArrowLeft} onClick={() => moveCarousel(-1)} disabled={!carouselState.canPrevious} /><IconButton label="查看下一份附件" icon={NavArrowRight} onClick={() => moveCarousel(1)} disabled={!carouselState.canNext} /></span>}</div>}
-    <div className="message-attachments__rows" ref={rowsRef} onScroll={isTimelineCarousel ? updateCarouselState : undefined}>{attachments.map((attachment) => <div className="message-attachment-row" key={attachment.id}><span className="message-attachment-row__icon"><Page aria-hidden /></span><span className="message-attachment-row__body"><strong title={attachment.name}>{attachment.name}</strong><small>{attachment.detail}</small></span>{onRemove ? <IconButton label={`移除 ${attachment.name}`} icon={Xmark} onClick={() => onRemove(attachment.id)} /> : source === 'agent' ? <span className="message-attachment-row__actions"><AttachmentOpenMenu attachment={attachment} onOpen={onOpen} onReveal={onReveal} /></span> : <IconButton label={`打开 ${attachment.name}`} icon={NavArrowRight} onClick={() => onOpen?.(attachment.id)} disabled={!onOpen} />}</div>)}</div>
+    <div className="message-attachments__rows" ref={rowsRef} onScroll={isTimelineCarousel ? updateCarouselState : undefined}>{attachments.map((attachment) => <div className="message-attachment-row" key={attachment.id}><span className="message-attachment-row__icon"><Page aria-hidden /></span><span className="message-attachment-row__body"><strong title={attachment.name}>{attachment.name}</strong><small>{attachment.detail}</small></span>{onRemove ? <IconButton label={`移除 ${attachment.name}`} icon={Xmark} onClick={() => onRemove(attachment.id)} /> : source === 'agent' ? <span className="message-attachment-row__actions"><AttachmentOpenMenu attachment={attachment} openMode={openMode} onOpen={onOpen} onReveal={onReveal} onDownload={onDownload} /></span> : <IconButton label={`打开 ${attachment.name}`} icon={NavArrowRight} onClick={() => onOpen?.(attachment.id)} disabled={!onOpen} />}</div>)}</div>
   </div>
 }
 
