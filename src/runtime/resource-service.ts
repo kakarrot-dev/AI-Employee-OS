@@ -1,3 +1,4 @@
+import { TEAMS_TOOL_IDS, TEAMS_PARAMETER_NAMES, TEAMS_PARAMETER_PROPERTIES, type TeamsConnectionStatus } from '../shared/teams-contract'
 import { FEISHU_MEETING_SCOPES, FEISHU_MEETING_TOOL_IDS, MEETING_PARAMETER_NAMES, MEETING_PARAMETER_PROPERTIES } from '../shared/feishu-meeting-contract'
 import { randomUUID } from 'node:crypto'
 import type { MCPVersion, SkillVersion, SourceHealthCheck, ToolVersion } from './domain'
@@ -68,9 +69,14 @@ const feishuWikiMcp: MCPVersion = {
 
 const feishuMeetingsMcp: MCPVersion = { schemaVersion: 1, id: 'mcp.feishu-meetings.v1', createdAt: '2026-09-07T00:00:00.000Z', name: '飞书会议与邀请', description: '以连接用户身份搜索组织内联系人、创建会议号并发送邀请；不创建日历日程。', version: 1, transport: 'built_in_runner', toolVersionIds: Object.values(FEISHU_MEETING_TOOL_IDS), credentialRequirement: 'required', credentialStatus: 'missing', health: 'degraded', available: true }
 
-const builtInMcps = [managedResearchMcp, externalIntelligenceMcp, localDocumentMcp, tenderDocumentMcp, feishuDocumentsMcp, feishuWikiMcp, feishuMeetingsMcp]
+const teamsMcp: MCPVersion = { schemaVersion: 1, id: 'mcp.teams.v1', createdAt: now, name: 'Microsoft Teams 连接', description: '内置 Microsoft Graph 通讯录及日历会议能力，凭据由主进程保管。', version: 1, transport: 'built_in_runner', toolVersionIds: Object.values(TEAMS_TOOL_IDS), credentialRequirement: 'required', credentialStatus: 'missing', health: 'degraded', available: true }
+
+const teamsMcpV2: MCPVersion = { ...teamsMcp, id: 'mcp.teams.v2', version: 2 }
+teamsMcp.toolVersionIds = [TEAMS_TOOL_IDS.search, TEAMS_TOOL_IDS.create]
+const builtInMcps = [teamsMcp, teamsMcpV2, managedResearchMcp, externalIntelligenceMcp, localDocumentMcp, tenderDocumentMcp, feishuDocumentsMcp, feishuWikiMcp, feishuMeetingsMcp]
 
 const builtInTools: ToolVersion[] = [
+  ...Object.values(TEAMS_TOOL_IDS).map((id): ToolVersion => ({ schemaVersion: 1, id, createdAt: now, version: 1, source: 'mcp', mcpVersionId: id === TEAMS_TOOL_IDS.addAttendees ? teamsMcpV2.id : teamsMcp.id, name: id === TEAMS_TOOL_IDS.search ? '查找 Teams 联系人' : id === TEAMS_TOOL_IDS.create ? '创建 Teams 日历会议' : '给 Teams 会议添加参会人', description: id === TEAMS_TOOL_IDS.search ? '按完整姓名查询企业通讯录；重名必须澄清。' : id === TEAMS_TOOL_IDS.addAttendees ? '确认后向已有会议添加参会人并提交日历邀请，保留原名单。' : '确认后创建 Teams 日历会议并提交参会人的日历邀请，发送不代表接受。', inputSchema: { type: 'object', additionalProperties: false, required: TEAMS_PARAMETER_NAMES[id], properties: Object.fromEntries(Object.entries(TEAMS_PARAMETER_PROPERTIES).filter(([key]) => TEAMS_PARAMETER_NAMES[id].includes(key))) }, sideEffect: id === TEAMS_TOOL_IDS.search ? 'external_read' : 'external_write', risk: id === TEAMS_TOOL_IDS.search ? 'low' : 'medium', timeoutMs: 120_000, networkOrigins: ['https://graph.microsoft.com', 'https://login.microsoftonline.com'], available: true, health: 'degraded', credentialStatus: 'missing', reason: '请连接 Microsoft Teams' })),
   ...Object.values(FEISHU_MEETING_TOOL_IDS).map((id): ToolVersion => ({
     schemaVersion: 1, id, createdAt: '2026-09-07T00:00:00.000Z', version: 1, source: 'mcp', mcpVersionId: feishuMeetingsMcp.id,
     name: id === FEISHU_MEETING_TOOL_IDS.search ? '搜索飞书联系人' : id === FEISHU_MEETING_TOOL_IDS.create ? '创建飞书会议' : '发送飞书会议邀请',
@@ -222,6 +228,16 @@ export class ResourceService {
       results.push(check)
     }
     return results
+  }
+
+  updateTeamsConnection(status: TeamsConnectionStatus): ResourceCatalog {
+    const checkedAt = status.checkedAt || new Date().toISOString()
+    for (const adapterVersionId of Object.values(TEAMS_TOOL_IDS)) {
+      const available = status.state === 'connected' && (adapterVersionId === TEAMS_TOOL_IDS.search ? status.canSearch : status.canCreate)
+      const check: SourceHealthCheck = { schemaVersion: 1, id: randomUUID(), createdAt: checkedAt, adapterVersionId, status: available ? 'available' : 'unavailable', credentialStatus: status.state === 'not_connected' ? 'missing' : 'configured', latencyMs: 0, checkedAt, failureCode: available ? undefined : 'teams_connection_unavailable' }
+      this.kernel.save({ entityType: 'SourceHealthCheck', entity: check, immutable: true }, 'resource.connection_status_updated', { adapterVersionId, status: check.status })
+    }
+    return this.list()
   }
 
   updateFeishuConnection(status: FeishuConnectionStatus): ResourceCatalog {

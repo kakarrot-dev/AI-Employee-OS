@@ -1,3 +1,4 @@
+import { type TeamsMeetingConfirmation, type TeamsToolId, type TeamsConnectionStatus } from './teams-contract'
 import type { RuntimeHealth } from '../runtime/kernel'
 import type { StoredAuditEvent } from '../runtime/store'
 import type { ProviderEvent, ProviderRequest } from '../provider/contract'
@@ -66,6 +67,10 @@ export type RuntimeCommand =
   | { schemaVersion: 1; requestId: string; type: 'memory.resolve_conflict'; payload: { chosenId: string } }
   | { schemaVersion: 1; requestId: string; type: 'provider.event'; payload: { providerRequestId: string; event: ProviderEvent } }
   | { schemaVersion: 1; requestId: string; type: 'provider.failed'; payload: { providerRequestId: string; code: string } }
+  | { schemaVersion: 1; requestId: string; type: 'connection.teams.status'; payload: { status: TeamsConnectionStatus } }
+  | { schemaVersion: 1; requestId: string; type: 'teams.confirmation'; payload: { confirmation: TeamsMeetingConfirmation } }
+  | { schemaVersion: 1; requestId: string; type: 'teams.result'; payload: { toolRequestId: string; result: Record<string, unknown> } }
+  | { schemaVersion: 1; requestId: string; type: 'teams.failed'; payload: { toolRequestId: string; code: string } }
   | { schemaVersion: 1; requestId: string; type: 'connection.feishu.status'; payload: { status: FeishuConnectionStatus } }
   | { schemaVersion: 1; requestId: string; type: 'feishu.result'; payload: { toolRequestId: string; result: Record<string, unknown> } }
   | { schemaVersion: 1; requestId: string; type: 'feishu.failed'; payload: { toolRequestId: string; code: string } }
@@ -88,6 +93,7 @@ export type RuntimeOutboundEvent =
   | { schemaVersion: 1; type: 'runtime.conversation.event'; requestId: string; event: ProviderEvent | { type: 'failed'; requestId: string; code: string } }
   | { schemaVersion: 1; type: 'runtime.employee.event'; requestId: string; event: { type: 'test_progress' | 'test_completed' | 'test_failed'; employeeId: string; testRunId: string; code?: string } }
   | { schemaVersion: 1; type: 'runtime.task.event'; requestId: string; event: { type: 'progress' | 'assignment_completed' | 'delivery_completed' | 'needs_attention' | 'failed'; taskId: string; runId?: string } }
+  | { schemaVersion: 1; type: 'runtime.teams.execute'; requestId: string; toolVersionId: TeamsToolId; parameters: Record<string, unknown> }
   | { schemaVersion: 1; type: 'runtime.feishu.execute'; requestId: string; toolVersionId: FeishuToolId; parameters: Record<string, unknown> }
 
 export function parseRuntimeCommand(value: unknown): RuntimeCommand {
@@ -95,7 +101,7 @@ export function parseRuntimeCommand(value: unknown): RuntimeCommand {
   const command = value as Partial<RuntimeCommand>
   if (command.schemaVersion !== SIDECAR_PROTOCOL_VERSION) throw new Error('unsupported_schema_version')
   if (typeof command.requestId !== 'string' || !command.requestId) throw new Error('invalid_request_id')
-  if (!['health', 'recover', 'shutdown.prepare', 'events.after', 'conversation.list', 'conversation.create', 'conversation.archive', 'conversation.send', 'conversation.history', 'conversation.cancel', 'supervisor.get', 'supervisor.update', 'employee.list', 'employee.capabilities', 'employee.detail', 'employee.create', 'employee.begin_edit', 'employee.save_draft', 'employee.test_case.add', 'employee.test.run', 'employee.test.confirm', 'employee.publish', 'employee.rollback', 'employee.disable', 'employee.archive', 'employee.restore', 'employee.delete', 'expert_group.list', 'expert_group.archive', 'task.list', 'task.create_draft', 'task.update_draft', 'task.start', 'task.retry', 'task.request_change', 'task.accept_change', 'task.reject_change', 'resource.list', 'resource.probe', 'usage.summary', 'tool.approve', 'tool.reject', 'tool.resolve_unknown', 'memory.status', 'memory.model.download', 'memory.list', 'memory.search', 'memory.update', 'memory.disable', 'memory.restore', 'memory.resolve_conflict', 'memory.delete', 'memory.queue.list', 'memory.queue.accept', 'memory.queue.dismiss', 'memory.embeddings.migrate', 'provider.event', 'provider.failed', 'connection.feishu.status', 'feishu.result', 'feishu.failed'].includes(String(command.type))) throw new Error('unknown_command')
+  if (!['health', 'recover', 'shutdown.prepare', 'events.after', 'conversation.list', 'conversation.create', 'conversation.archive', 'conversation.send', 'conversation.history', 'conversation.cancel', 'supervisor.get', 'supervisor.update', 'employee.list', 'employee.capabilities', 'employee.detail', 'employee.create', 'employee.begin_edit', 'employee.save_draft', 'employee.test_case.add', 'employee.test.run', 'employee.test.confirm', 'employee.publish', 'employee.rollback', 'employee.disable', 'employee.archive', 'employee.restore', 'employee.delete', 'expert_group.list', 'expert_group.archive', 'task.list', 'task.create_draft', 'task.update_draft', 'task.start', 'task.retry', 'task.request_change', 'task.accept_change', 'task.reject_change', 'resource.list', 'resource.probe', 'usage.summary', 'tool.approve', 'tool.reject', 'tool.resolve_unknown', 'memory.status', 'memory.model.download', 'memory.list', 'memory.search', 'memory.update', 'memory.disable', 'memory.restore', 'memory.resolve_conflict', 'memory.delete', 'memory.queue.list', 'memory.queue.accept', 'memory.queue.dismiss', 'memory.embeddings.migrate', 'provider.event', 'provider.failed', 'connection.feishu.status', 'feishu.result', 'feishu.failed', 'connection.teams.status', 'teams.result', 'teams.failed', 'teams.confirmation'].includes(String(command.type))) throw new Error('unknown_command')
   if (!command.payload || typeof command.payload !== 'object' || Array.isArray(command.payload)) throw new Error('invalid_payload')
   if (command.type === 'events.after') {
     const payload = command.payload as { sequence?: unknown; limit?: unknown }
@@ -163,13 +169,19 @@ export function parseRuntimeCommand(value: unknown): RuntimeCommand {
     if (command.type === 'memory.resolve_conflict' && !validId(payload.chosenId)) throw new Error('invalid_memory_id')
   } else if (command.type === 'provider.event' || command.type === 'provider.failed') {
     if (typeof (command.payload as { providerRequestId?: unknown }).providerRequestId !== 'string') throw new Error('invalid_provider_request_id')
+  } else if (command.type === 'teams.confirmation') {
+    const value = (command.payload as { confirmation?: TeamsMeetingConfirmation }).confirmation
+    if (!value || value.policy !== 'teams_card' || typeof value.calendarEventId !== 'string' || !Array.isArray(value.participants) || value.participants.length > 100) throw new Error('invalid_teams_confirmation')
+  } else if (command.type === 'connection.teams.status') {
+    const c = (command.payload as { status?: TeamsConnectionStatus }).status
+    if (!c || c.provider !== 'teams' || !['connected', 'not_connected', 'error'].includes(c.state) || typeof c.checkedAt !== 'string' || typeof c.canSearch !== 'boolean' || typeof c.canCreate !== 'boolean' || Object.keys(c).some(k => !['provider','state','checkedAt','canSearch','canCreate','organizer','tenantId','clientId','message'].includes(k))) throw new Error('invalid_teams_status')
   } else if (command.type === 'connection.feishu.status') {
     const connection = (command.payload as { status?: unknown }).status as Partial<FeishuConnectionStatus> | undefined
     if (!connection || connection.provider !== 'feishu' || !['not_connected', 'connecting', 'connected', 'reauthorization_required', 'error'].includes(String(connection.state)) || typeof connection.checkedAt !== 'string' || !Array.isArray(connection.scopes) || connection.scopes.some((scope) => typeof scope !== 'string' || scope.length > 128) || Object.keys(connection).some((key) => !['provider', 'state', 'checkedAt', 'appId', 'expiresAt', 'scopes', 'message'].includes(key))) throw new Error('invalid_feishu_status')
-  } else if (command.type === 'feishu.result') {
+  } else if ((command.type === 'feishu.result' || command.type === 'teams.result')) {
     const payload = command.payload as { toolRequestId?: unknown; result?: unknown }
     if (typeof payload.toolRequestId !== 'string' || !payload.toolRequestId || !payload.result || typeof payload.result !== 'object' || Array.isArray(payload.result) || JSON.stringify(payload.result).length > 1_000_000) throw new Error('invalid_feishu_result')
-  } else if (command.type === 'feishu.failed') {
+  } else if ((command.type === 'feishu.failed' || command.type === 'teams.failed')) {
     const payload = command.payload as { toolRequestId?: unknown; code?: unknown }
     if (typeof payload.toolRequestId !== 'string' || !payload.toolRequestId || typeof payload.code !== 'string' || !/^[a-z0-9_.-]{1,64}$/.test(payload.code)) throw new Error('invalid_feishu_failure')
   } else {

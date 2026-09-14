@@ -1,3 +1,5 @@
+import type { TeamsMeetingConfirmation } from '../shared/teams-contract'
+import { isTeamsTool, type TeamsToolId, type TeamsConnectionStatus } from '../shared/teams-contract'
 import { randomUUID } from 'node:crypto'
 import { utilityProcess, type UtilityProcess } from 'electron'
 import type { RuntimeHealth } from '../runtime/kernel'
@@ -44,7 +46,8 @@ export class RuntimeSupervisor {
     private readonly onConversationEvent?: (requestId: string, event: ProviderEvent | { type: 'failed'; requestId: string; code: string }) => void,
     private readonly onEmployeeEvent?: (event: { type: 'test_progress' | 'test_completed' | 'test_failed'; employeeId: string; testRunId: string; code?: string }) => void,
     private readonly onTaskEvent?: (event: { type: 'progress' | 'assignment_completed' | 'delivery_completed' | 'needs_attention' | 'failed'; taskId: string; runId?: string }) => void,
-    private readonly onFeishuExecute?: (toolVersionId: FeishuToolId, parameters: Record<string, unknown>) => Promise<Record<string, unknown>>
+    private readonly onFeishuExecute?: (toolVersionId: FeishuToolId, parameters: Record<string, unknown>) => Promise<Record<string, unknown>>,
+    private readonly onTeamsExecute?: (toolVersionId: TeamsToolId, parameters: Record<string, unknown>) => Promise<Record<string, unknown>>
   ) {}
 
   start(): Promise<RuntimeHealth> {
@@ -120,6 +123,7 @@ export class RuntimeSupervisor {
   employeeDeleteDraft(employeeId: string): Promise<{ accepted: true }> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'employee.delete', payload: { employeeId } }) }
   expertGroupList(): Promise<ExpertGroupView[]> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'expert_group.list', payload: {} }) }
   expertGroupArchive(groupId: string): Promise<ExpertGroupView> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'expert_group.archive', payload: { groupId } }) }
+  updateTeamsConfirmation(confirmation: TeamsMeetingConfirmation): Promise<unknown> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'teams.confirmation', payload: { confirmation } }) }
   taskList(): Promise<FormalTaskDetail[]> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.list', payload: {} }) }
   taskCreateDraft(input: TaskDraftInput): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.create_draft', payload: { input } }) }
   taskUpdateDraft(draftId: string, changes: Pick<TaskDraftInput, 'goal' | 'acceptanceCriteria' | 'employeeVersionIds' | 'directories'>): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.update_draft', payload: { draftId, changes } }) }
@@ -130,6 +134,8 @@ export class RuntimeSupervisor {
   taskRejectChange(changeRequestId: string): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'task.reject_change', payload: { changeRequestId } }, 5000) }
   resourceList(): Promise<ResourceCatalog> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'resource.list', payload: {} }) }
   resourceProbe(): Promise<ResourceCatalog> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'resource.probe', payload: {} }, 35_000) }
+  updateTeamsStatus(status: TeamsConnectionStatus): Promise<ResourceCatalog> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'connection.teams.status', payload: { status } }, 5000) }
+
   updateFeishuStatus(status: FeishuConnectionStatus): Promise<ResourceCatalog> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'connection.feishu.status', payload: { status } }, 5000) }
   usageSummary(): Promise<UsageSummaryView> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'usage.summary', payload: {} }) }
   toolApprove(actionId: string): Promise<FormalTaskDetail> { return this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'tool.approve', payload: { actionId } }, 135_000) }
@@ -223,6 +229,12 @@ export class RuntimeSupervisor {
     }
     if (outbound.schemaVersion === SIDECAR_PROTOCOL_VERSION && outbound.type === 'runtime.task.event' && outbound.event) {
       this.onTaskEvent?.(outbound.event)
+      return
+    }
+    if (outbound.schemaVersion === SIDECAR_PROTOCOL_VERSION && outbound.type === 'runtime.teams.execute' && typeof outbound.toolVersionId === 'string' && isTeamsTool(outbound.toolVersionId) && outbound.parameters && typeof outbound.parameters === 'object') {
+      void (this.onTeamsExecute ? this.onTeamsExecute(outbound.toolVersionId, outbound.parameters) : Promise.reject(new Error('teams_runner_unavailable')))
+        .then(result => this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'teams.result', payload: { toolRequestId: outbound.requestId!, result } }, 5000))
+        .catch(error => this.request({ schemaVersion: 1, requestId: randomUUID(), type: 'teams.failed', payload: { toolRequestId: outbound.requestId!, code: /^[a-z0-9_]{1,64}$/.test(error.message) ? error.message : 'teams_tool_failed' } }, 5000).catch(() => undefined))
       return
     }
     if (outbound.schemaVersion === SIDECAR_PROTOCOL_VERSION && outbound.type === 'runtime.feishu.execute' && typeof outbound.requestId === 'string' && typeof outbound.toolVersionId === 'string' && outbound.parameters && typeof outbound.parameters === 'object') {

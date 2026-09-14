@@ -44,7 +44,7 @@ describe('ResourceService professional Skill packages', () => {
     service.seed(); service.seed()
 
     const skills = service.list().skills
-    expect(skills).toHaveLength(8)
+    expect(skills).toHaveLength(9)
     expect(skills.every((skill) => skill.version >= 1)).toBe(true)
     for (const skill of skills) {
       expect(skill.instructionsMarkdown).toContain('## 适用边界')
@@ -53,7 +53,7 @@ describe('ResourceService professional Skill packages', () => {
       expect(skill.toolVersionIds.length).toBeGreaterThan(0)
     }
     expect(skills.find((skill) => skill.id === 'skill.local-document-operations.v2')?.instructionsMarkdown).toContain('## 失败与恢复')
-    expect(store.list('SkillVersion')).toHaveLength(8)
+    expect(store.list('SkillVersion')).toHaveLength(9)
     store.close()
   })
 

@@ -1,6 +1,10 @@
+import { TeamsCardService } from './teams-card-service'
+import { TEAMS_IPC, TEAMS_TOOL_IDS, normalizeTeamsInput } from '../shared/teams-contract'
+import { TeamsConnectionService } from './teams-connection'
+import { MacOSKeychainTeamsCredentialStore } from './teams-credential-store'
 import { projectMeetingResult } from '../shared/feishu-meeting-contract'
 import { dirname, isAbsolute, join } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron'
 import { ATTACHMENT_IPC, CONVERSATION_IPC, EMPLOYEE_IPC, EXPERT_GROUP_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, SUPERVISOR_IPC, TASK_IPC, USAGE_IPC, type ConversationStreamEvent, type ConversationSummaryView, type EmployeeDraftInput, type EmployeeEvent, type ProviderStatus, type RuntimeStatus, type SupervisorConfigInput, type TaskDetailView, type TaskDraftInputView, type TaskEvent } from '../shared/runtime-contract'
 import type { Conversation, Message, MessageAttachmentReference } from '../runtime/domain'
@@ -31,6 +35,9 @@ process.on('uncaughtExceptionMonitor', (error) => {
 let mainWindow: BrowserWindow | null = null
 let runtimeSupervisor: RuntimeSupervisor | null = null
 let providerSupervisor: ProviderSupervisor | null = null
+let teamsCards: TeamsCardService | undefined
+let teamsCredentialStore: MacOSKeychainTeamsCredentialStore | undefined
+let teamsConnection: TeamsConnectionService | undefined
 let feishuConnection: FeishuConnectionService | null = null
 
 async function syncFeishuRuntimeStatus(status: Awaited<ReturnType<FeishuConnectionService['getStatus']>>): Promise<void> {
@@ -96,6 +103,29 @@ function handleProviderEvent(event: ProviderSupervisorEvent): void {
   }
 }
 
+async function ensureTeamsCardService(): Promise<void> {
+  const stored = await teamsCredentialStore?.read()
+  if (!stored || !teamsCards) throw new Error('teams_card_connection_unavailable')
+  await teamsCards.start(normalizeTeamsInput(JSON.parse(stored)))
+}
+
+async function sendMeetingCards(result: Record<string, unknown>): Promise<Record<string, unknown>> {
+  // Creation already happened. Card delivery must never invalidate its receipt or permit another creation.
+  let confirmation
+  try {
+    const stored = await teamsCredentialStore?.read()
+    if (!stored || !teamsCards) throw new Error('teams_card_connection_unavailable')
+    const config = normalizeTeamsInput(JSON.parse(stored))
+    if (result.tenantId && result.tenantId !== config.tenantId || String(result.organizer ?? '').toLowerCase() !== config.organizer.toLowerCase()) throw new Error('teams_card_tenant_mismatch')
+    await ensureTeamsCardService().catch(() => undefined)
+    const cardInput = { calendarEventId: String(result.calendarEventId), tenantId: config.tenantId, topic: String(result.topic), startTime: String(result.startTime), endTime: String(result.endTime), meetingUrl: String(result.meetingUrl), participants: (result.attendeeIds as string[]).map((userId, index) => ({ userId, name: String((result.attendeeNames as string[])[index] ?? ''), email: String((result.attendeeEmails as string[] | undefined)?.[index] ?? '') })) }
+    confirmation = teamsCards.ledger.prepare(cardInput)
+    void teamsCards.send(cardInput).catch(() => undefined)
+  } catch { /* The meeting remains valid; the UI exposes missing card delivery separately. */ }
+  const receipt = { ...result, confirmationPolicy: 'teams_card', cardConfirmation: confirmation ?? null }
+  return { ...receipt, responseSha256: createHash('sha256').update(JSON.stringify(receipt)).digest('hex') }
+}
+
 function toTaskView(detail: FormalTaskDetail): TaskDetailView {
   const state = projectTaskState({
     hasDraft: true,
@@ -152,8 +182,10 @@ function toTaskView(detail: FormalTaskDetail): TaskDetailView {
       return { id: detail.delivery!.id, content, summary: content.summary, createdAt: detail.delivery!.createdAt, acceptanceResults, artifacts: detail.artifacts.map(({ id, mediaType, relativePath, sha256 }) => ({ id, mediaType, relativePath, sha256 })), evidenceCount: detail.evidence.length, unresolvedIssues: detail.delivery!.unresolvedIssues }
     })() : undefined,
     researchBundles: detail.researchBundles.map(({ id, contentHash, items, claims, conflicts, informationGaps }) => ({ id, contentHash, sourceCount: items.length, claimCount: claims.length, conflicts, informationGaps })),
+    meetingConfirmation: (() => { const action = detail.toolActions.findLast(item => item.toolVersionId === TEAMS_TOOL_IDS.create && item.state === 'succeeded' && item.resultVerified); return action?.result?.calendarEventId ? teamsCards?.ledger.snapshot(String(action.result.calendarEventId)) : undefined })(),
+    pendingInput: detail.run?.state === 'paused' ? (() => { const checkpoint = [...detail.checkpoints].reverse().find(item => item.phase === 'user_input_waiting'); return checkpoint && typeof checkpoint.payload.question === 'string' ? { question: checkpoint.payload.question } : undefined })() : undefined,
     pendingChange: detail.changeRequests.find((change) => change.decision === 'pending') ? (() => { const change = detail.changeRequests.find((item) => item.decision === 'pending')!; return { id: change.id, sourceMessageId: change.sourceMessageId, requestedDiff: change.requestedDiff } })() : undefined,
-    toolActions: detail.toolActions.map(({ id, assignmentId, createdAt, completedAt, toolVersionId, state: actionState, parameters, result, resultVerified, risk, approvalId, failureCode }) => ({ id, assignmentId, createdAt, completedAt, toolVersionId, state: actionState, parameters, meetingResult: projectMeetingResult(toolVersionId, result, resultVerified), risk, approvalId, failureCode })),
+    toolActions: detail.toolActions.map(({ id, assignmentId, createdAt, completedAt, toolVersionId, state: actionState, parameters, result, resultVerified, risk, approvalId, failureCode }) => ({ id, assignmentId, createdAt, completedAt, toolVersionId, state: actionState, parameters: [TEAMS_TOOL_IDS.create, TEAMS_TOOL_IDS.addAttendees].includes(toolVersionId as typeof TEAMS_TOOL_IDS.create) ? { ...parameters, attendeeEmails: parameters.attendeeEmails ?? (Array.isArray(parameters.attendeeIds) ? parameters.attendeeIds.map(userId => detail.toolActions.filter(action => action.toolVersionId === TEAMS_TOOL_IDS.search && action.resultVerified).flatMap(action => Array.isArray(action.result?.items) ? action.result.items : []).find(person => person.id === userId)?.email ?? '') : []) } : parameters, meetingResult: (toolVersionId === TEAMS_TOOL_IDS.create || toolVersionId === TEAMS_TOOL_IDS.addAttendees) && resultVerified && result ? { topic: String(result.topic ?? ''), startTime: String(result.startTime ?? ''), endTime: String(result.endTime ?? ''), meetingUrl: String(result.meetingUrl ?? ''), recipientNames: Array.isArray(result.attendeeNames) ? result.attendeeNames.filter((name): name is string => typeof name === 'string') : [] } : projectMeetingResult(toolVersionId, result, resultVerified), risk, approvalId, failureCode })),
     approvals: detail.approvals.map(({ id, toolActionId, decision }) => ({ id, toolActionId, decision }))
   }
 }
@@ -226,6 +258,29 @@ function registerRuntimeIpc(): void {
     handleProviderEvent({ type: 'ready', health })
     return providerStatus
   })
+
+  ipcMain.handle(TEAMS_IPC.sendCards, async (event, { taskId }: { taskId: string }) => {
+    assertTrustedSender(event.senderFrame?.url)
+    if (typeof taskId !== 'string' || !runtimeSupervisor) throw new Error('invalid_task')
+    const detail = (await runtimeSupervisor.taskList()).find(item => item.task?.id === taskId)
+    const actions = detail?.toolActions.filter(item => [TEAMS_TOOL_IDS.create, TEAMS_TOOL_IDS.addAttendees].includes(item.toolVersionId as typeof TEAMS_TOOL_IDS.create) && item.state === 'succeeded' && item.resultVerified && item.result)
+    if (!actions?.length) throw new Error('teams_meeting_receipt_missing')
+    // Explicit button authorizes only cards for this task's verified attendees; no new event or calendar change.
+    for (const action of actions) await sendMeetingCards(action.result!)
+    mainWindow?.webContents.send(TASK_IPC.event, { type: 'progress', taskId })
+  })
+
+  for (const [channel, operation] of [[TEAMS_IPC.status, () => teamsConnection!.getStatus()], [TEAMS_IPC.connect, (value: unknown) => teamsConnection!.connect(value)], [TEAMS_IPC.disconnect, () => teamsConnection!.disconnect()]] as const) {
+    ipcMain.handle(channel, async (event, value: unknown) => {
+      assertTrustedSender(event.senderFrame?.url)
+      if (!teamsConnection) throw new Error('teams_connection_unavailable')
+      const status = await operation(value)
+      if (channel === TEAMS_IPC.disconnect) await teamsCards?.stop()
+      else if (channel === TEAMS_IPC.connect && status.state === 'connected') await ensureTeamsCardService().catch(() => undefined)
+      await runtimeSupervisor?.updateTeamsStatus(status)
+      return status
+    })
+  }
 
   ipcMain.handle(CONNECTION_IPC.getFeishuStatus, async (event) => {
     assertTrustedSender(event.senderFrame?.url)
@@ -374,7 +429,24 @@ function registerRuntimeIpc(): void {
   ipcMain.handle(EMPLOYEE_IPC.deleteDraft, (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.employeeDeleteDraft(employeeIdFrom(value)) })
   ipcMain.handle(EXPERT_GROUP_IPC.list, (event) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.expertGroupList() })
   ipcMain.handle(EXPERT_GROUP_IPC.archive, (event, value: unknown) => { assertTrustedSender(event.senderFrame?.url); const groupId = (value as { groupId?: unknown })?.groupId; if (typeof groupId !== 'string' || groupId.length < 1 || groupId.length > 128) throw new Error('invalid_expert_group_id'); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return runtimeSupervisor.expertGroupArchive(groupId) })
-  ipcMain.handle(TASK_IPC.list, async (event) => { assertTrustedSender(event.senderFrame?.url); if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable'); return (await runtimeSupervisor.taskList()).map(toTaskView) })
+  ipcMain.handle(TASK_IPC.list, async (event) => {
+    assertTrustedSender(event.senderFrame?.url)
+    if (!runtimeSupervisor) throw new Error('runtime_supervisor_unavailable')
+    let details = await runtimeSupervisor.taskList()
+    let reconciled = false
+    for (const detail of details.filter(item => item.run?.state === 'paused')) {
+      const waiting = detail.checkpoints.findLast(item => item.phase === 'participants_waiting')
+      if (!waiting) continue
+      const snapshot = teamsCards?.ledger.snapshot(String(waiting.payload.calendarEventId))
+      const previous = waiting.payload.confirmation as import('../shared/teams-contract').TeamsMeetingConfirmation | undefined
+      if (snapshot?.participants.length && (snapshot.updatedAt !== previous?.updatedAt || snapshot.allConfirmed && !detail.changeRequests.some(change => change.decision === 'pending'))) {
+        await runtimeSupervisor.updateTeamsConfirmation(snapshot)
+        reconciled = true
+      }
+    }
+    if (reconciled) details = await runtimeSupervisor.taskList()
+    return details.map(toTaskView)
+  })
   ipcMain.handle(TASK_IPC.outputDirectory, (event) => { assertTrustedSender(event.senderFrame?.url); return app.getPath('downloads') })
   const artifactFileFrom = async (value: unknown): Promise<string> => {
     const { taskId, artifactId } = value as { taskId?: unknown; artifactId?: unknown }
@@ -493,6 +565,14 @@ app.whenReady().then(async () => {
   registerRuntimeIpc()
   createApplicationMenu()
   const runtimePaths = bundledRuntimePaths(app.getAppPath(), process.resourcesPath, app.isPackaged)
+  teamsCredentialStore = new MacOSKeychainTeamsCredentialStore(runtimePaths.providerKeychainHelper)
+  teamsConnection = new TeamsConnectionService(teamsCredentialStore)
+  try {
+    teamsCards = new TeamsCardService(join(app.getPath('userData'), 'teams', 'confirmations'), snapshot => {
+      if (snapshot.participants.length) void runtimeSupervisor?.updateTeamsConfirmation(snapshot).catch(() => undefined)
+    })
+    await ensureTeamsCardService().catch(() => undefined)
+  } catch { console.warn('teams_card_state_unavailable') }
   feishuConnection = new FeishuConnectionService(new MacOSKeychainFeishuCredentialStore(runtimePaths.providerKeychainHelper), (url) => shell.openExternal(url))
   if (app.isPackaged) {
     try {
@@ -531,11 +611,18 @@ app.whenReady().then(async () => {
     (toolVersionId, parameters) => {
       if (!feishuConnection) return Promise.reject(new Error('feishu_connection_unavailable'))
       return feishuConnection.executeDocumentTool(toolVersionId, parameters)
+    },
+    async (toolVersionId, parameters) => {
+      if (!teamsConnection) return Promise.reject(new Error('teams_connection_unavailable'))
+      const result = await teamsConnection.execute(toolVersionId, parameters)
+      return [TEAMS_TOOL_IDS.create, TEAMS_TOOL_IDS.addAttendees].includes(toolVersionId as typeof TEAMS_TOOL_IDS.create) ? sendMeetingCards(result) : result
     }
   )
   try {
     await runtimeSupervisor.start()
     await syncFeishuRuntimeStatus(await feishuConnection.getStatus())
+    await runtimeSupervisor.updateTeamsStatus(await teamsConnection.getStatus())
+    for (const snapshot of teamsCards?.ledger.snapshots() ?? []) if (snapshot.participants.length) await runtimeSupervisor.updateTeamsConfirmation(snapshot)
   } catch {
     publishRuntimeStatus({ state: 'disconnected', checkedAt: new Date().toISOString(), message: 'Runtime 启动失败' })
   }
@@ -552,6 +639,7 @@ app.on('window-all-closed', () => {
 let quitPreparationStarted = false
 let servicesStoppedForQuit = false
 app.on('before-quit', (event) => {
+  void teamsCards?.stop()
   if (servicesStoppedForQuit) return
   event.preventDefault()
   if (quitPreparationStarted) return

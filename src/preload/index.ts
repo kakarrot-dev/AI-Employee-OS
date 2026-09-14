@@ -1,3 +1,4 @@
+import { TEAMS_IPC, type TeamsConnectionInput } from '../shared/teams-contract'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { ATTACHMENT_IPC, CONVERSATION_IPC, EMPLOYEE_IPC, EXPERT_GROUP_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, SUPERVISOR_IPC, TASK_IPC, USAGE_IPC, type AttachmentBridge, type ConversationBridge, type ConversationStreamEvent, type EmployeeBridge, type EmployeeDraftInput, type EmployeeEvent, type ExpertGroupBridge, type MemoryBridge, type ProviderBridge, type ResourceBridge, type RuntimeBridge, type RuntimeStatus, type SupervisorBridge, type SupervisorConfigInput, type TaskBridge, type TaskDraftInputView, type TaskEvent, type UsageBridge } from '../shared/runtime-contract'
 import type { MemoryCategoryView, MemoryScopeTypeView, MemoryStatusView, MemoryViewModel } from '../shared/memory-contract'
@@ -107,6 +108,10 @@ const memoryBridge: MemoryBridge = Object.freeze({
 const usageBridge: UsageBridge = Object.freeze({ summary: () => ipcRenderer.invoke(USAGE_IPC.summary) })
 
 const connectionBridge: ConnectionBridge = Object.freeze({
+  sendTeamsConfirmationCards: (taskId: string) => ipcRenderer.invoke(TEAMS_IPC.sendCards, { taskId }),
+  getTeamsStatus: () => ipcRenderer.invoke(TEAMS_IPC.status),
+  connectTeams: (input: TeamsConnectionInput) => ipcRenderer.invoke(TEAMS_IPC.connect, input),
+  disconnectTeams: () => ipcRenderer.invoke(TEAMS_IPC.disconnect),
   getFeishuStatus: () => ipcRenderer.invoke(CONNECTION_IPC.getFeishuStatus),
   openFeishuDeveloperConsole: (appId: string) => ipcRenderer.invoke(CONNECTION_IPC.openFeishuDeveloperConsole, { appId }),
   connectFeishu: (input: FeishuConnectionInput) => ipcRenderer.invoke(CONNECTION_IPC.connectFeishu, input),

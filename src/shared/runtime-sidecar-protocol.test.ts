@@ -35,3 +35,9 @@ describe('runtime sidecar protocol', () => {
     expect(parseRuntimeCommand({ schemaVersion: 1, requestId: '16', type: 'feishu.result', payload: { toolRequestId: 'tool-request-1', result: { status: 'succeeded' } } })).toMatchObject({ type: 'feishu.result' })
   })
 })
+
+it('accepts only the native Teams card confirmation envelope', () => {
+  const input = { schemaVersion: 1, requestId: 'card', type: 'teams.confirmation', payload: { confirmation: { calendarEventId: 'event', policy: 'teams_card', participants: [], confirmedCount: 0, allConfirmed: false, updatedAt: '' } } }
+  expect(parseRuntimeCommand(input).type).toBe('teams.confirmation')
+  expect(() => parseRuntimeCommand({ ...input, payload: { confirmation: { ...input.payload.confirmation, policy: 'calendar' } } })).toThrow('invalid_teams_confirmation')
+})

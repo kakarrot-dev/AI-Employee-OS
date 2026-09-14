@@ -1,3 +1,4 @@
+import type { TeamsConnectionInput, TeamsConnectionStatus } from './teams-contract'
 import { FEISHU_MEETING_TOOL_IDS, type FeishuMeetingToolId } from './feishu-meeting-contract'
 
 export const CONNECTION_IPC = {
@@ -41,6 +42,10 @@ export interface FeishuConnectionInput {
 }
 
 export interface ConnectionBridge {
+  sendTeamsConfirmationCards(taskId: string): Promise<void>
+  getTeamsStatus(): Promise<TeamsConnectionStatus>
+  connectTeams(input: TeamsConnectionInput): Promise<TeamsConnectionStatus>
+  disconnectTeams(): Promise<TeamsConnectionStatus>
   getFeishuStatus(): Promise<FeishuConnectionStatus>
   openFeishuDeveloperConsole(appId: string): Promise<void>
   connectFeishu(input: FeishuConnectionInput): Promise<FeishuConnectionStatus>

@@ -61,3 +61,17 @@ describe('DeliveryExporter', () => {
     store.close()
   })
 })
+
+it('materializes original Teams receipts after a retry with no new tool writes', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'ai-employee-os-teams-export-')); directories.push(directory)
+  const store = new RuntimeStore(join(directory, 'control.sqlite3')), kernel = new RuntimeKernel(store)
+  const timestamp = new Date().toISOString()
+  for (const [id, supersedesRunId] of [['old', undefined], ['current', 'old']] as const) kernel.save({ entityType: 'Run', entity: { schemaVersion: 1, id, createdAt: timestamp, taskId: 'same-task', taskRevisionId: 'revision', runGrantId: 'grant', state: 'succeeded', supersedesRunId }, immutable: false }, 'seed', {})
+  kernel.save({ entityType: 'ToolAction', entity: { schemaVersion: 1, id: 'original-meeting', createdAt: timestamp, runId: 'old', assignmentId: 'old-assignment', toolVersionId: 'teams.meetings.create@teams/v1', idempotencyKey: 'original', state: 'succeeded', parameters: {}, parameterSources: {}, risk: 'medium', sideEffect: 'external_write', timeoutMs: 1000, resultVerified: true, result: { calendarEventId: 'event', responseSha256: 'a'.repeat(64) } }, immutable: false }, 'seed', {})
+  const result = new DeliveryExporter(kernel, directory).materialize({ run: { id: 'current' }, assignments: [] } as unknown as FormalTaskDetail)
+  expect(result.unresolvedIssues).toEqual([])
+  expect(result.artifactIds).toEqual([])
+  expect(result.evidenceIds).toHaveLength(1)
+  expect(store.list('Evidence')[0]).toMatchObject({ runId: 'current', sourceRef: 'teams:action:original-meeting', sha256: 'a'.repeat(64) })
+  store.close()
+})

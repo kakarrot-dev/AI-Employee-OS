@@ -185,3 +185,24 @@ describe('meeting action governance', () => {
     store.close()
   })
 })
+
+describe('Teams meeting governance', () => {
+  const ids = { search: 'teams.contacts.search@teams/v1', create: 'teams.meetings.create@teams/v1' }
+  const personId = '33333333-3333-3333-3333-333333333333'
+  const plan = () => ({ topic: '项目会议', startTime: new Date(Date.now() + 3600000).toISOString(), endTime: new Date(Date.now() + 5400000).toISOString(), attendeeIds: [personId] })
+  const proposal = (toolVersionId: string, parameters: Record<string, unknown>) => ({ runId: 'run-1', assignmentId: 'assignment-1', toolVersionId, parameters, parameterSources: Object.fromEntries(Object.keys(parameters).map(key => [key, { kind: 'task_input' as const, sourceRef: 'task' }])) })
+  it('requires searched recipients and explicit approval; unknown results cannot be duplicated', async () => {
+    const runner = vi.fn<ToolRunner>(async tool => { if (tool.id === ids.search) return { items: [{ id: personId, name: '张三' }] }; throw new Error('teams_write_result_unknown') })
+    const { gateway, resources, store } = setup('full_access', runner, Object.values(ids))
+    resources.updateTeamsConnection({ provider: 'teams', state: 'connected', checkedAt: new Date().toISOString(), canSearch: true, canCreate: true })
+    await expect(gateway.propose(proposal(ids.create, plan()))).rejects.toThrow('teams_attendee_not_from_search')
+    await gateway.propose(proposal(ids.search, { query: '张三' }))
+    const create = await gateway.propose(proposal(ids.create, plan()))
+    expect(create).toMatchObject({ state: 'pending', parameters: { attendeeNames: ['张三'] } })
+    expect(runner).toHaveBeenCalledTimes(1)
+    expect(await gateway.decide(create.id, true)).toMatchObject({ state: 'result_unknown', resultVerified: false })
+    await expect(gateway.propose(proposal(ids.create, { ...plan(), topic: '重试' }))).rejects.toThrow('teams_action_unsettled')
+    expect(runner).toHaveBeenCalledTimes(2)
+    store.close()
+  })
+})

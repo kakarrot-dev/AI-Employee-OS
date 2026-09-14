@@ -1,3 +1,4 @@
+import { isTeamsTool } from '../shared/teams-contract'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
@@ -52,21 +53,22 @@ employees.seedRequestedSpecialists()
 const expertGroups = new ExpertGroupService(kernel, employees)
 expertGroups.seed()
 const imageTextExtractorPath = requiredPathArgument('image-text-extractor')
-const pendingFeishuTools = new Map<string, { resolve: (result: Record<string, unknown>) => void; reject: (error: Error) => void; detachAbort: () => void }>()
-const feishuRunner: ToolRunner = async (tool, parameters, context) => {
-  if (!Object.values(FEISHU_TOOL_IDS).includes(tool.id as FeishuToolId)) throw new Error('unsupported_feishu_tool')
+const pendingConnectionTools = new Map<string, { resolve: (result: Record<string, unknown>) => void; reject: (error: Error) => void; detachAbort: () => void }>()
+const connectionRunner: ToolRunner = async (tool, parameters, context) => {
+  if (!isTeamsTool(tool.id) && !Object.values(FEISHU_TOOL_IDS).includes(tool.id as FeishuToolId)) throw new Error('unsupported_connection_tool')
   const requestId = context.actionId
   return new Promise<Record<string, unknown>>((resolve, reject) => {
     const onAbort = (): void => {
-      pendingFeishuTools.delete(requestId)
+      pendingConnectionTools.delete(requestId)
       reject(new Error('tool_timeout'))
     }
     context.signal.addEventListener('abort', onAbort, { once: true })
-    pendingFeishuTools.set(requestId, { resolve, reject, detachAbort: () => context.signal.removeEventListener('abort', onAbort) })
-    emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.feishu.execute', requestId, toolVersionId: tool.id as FeishuToolId, parameters: structuredClone(parameters) })
+    pendingConnectionTools.set(requestId, { resolve, reject, detachAbort: () => context.signal.removeEventListener('abort', onAbort) })
+    if (isTeamsTool(tool.id)) emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.teams.execute', requestId, toolVersionId: tool.id, parameters: structuredClone(parameters) })
+    else emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.feishu.execute', requestId, toolVersionId: tool.id as FeishuToolId, parameters: structuredClone(parameters) })
   })
 }
-const toolGateway = new ToolGateway(kernel, resources, createToolRunner(imageTextExtractorPath, feishuRunner))
+const toolGateway = new ToolGateway(kernel, resources, createToolRunner(imageTextExtractorPath, connectionRunner, connectionRunner))
 const research = new ManagedResearchService(kernel, toolGateway)
 const workerPython = requiredPathArgument('worker-python')
 const workerScript = requiredPathArgument('worker-script')
@@ -148,16 +150,28 @@ parentPort.on('message', async (event) => {
   try {
     const command = parseRuntimeCommand(event.data)
     requestId = command.requestId
+    if (command.type === 'teams.confirmation') {
+      for (const result of tasks.updateTeamsConfirmation(command.payload.confirmation)) {
+        if (result.request) emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: result.request.requestId, request: result.request })
+        emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId, event: { type: result.request ? 'progress' : 'needs_attention', taskId: result.detail.task!.id, runId: result.detail.run?.id } })
+      }
+      respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
+      return
+    }
+    if (command.type === 'connection.teams.status') {
+      respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: resources.updateTeamsConnection(command.payload.status) })
+      return
+    }
     if (command.type === 'connection.feishu.status') {
       respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: resources.updateFeishuConnection(command.payload.status) })
       return
     }
-    if (command.type === 'feishu.result' || command.type === 'feishu.failed') {
-      const pending = pendingFeishuTools.get(command.payload.toolRequestId)
+    if (command.type === 'feishu.result' || command.type === 'feishu.failed' || command.type === 'teams.result' || command.type === 'teams.failed') {
+      const pending = pendingConnectionTools.get(command.payload.toolRequestId)
       if (pending) {
-        pendingFeishuTools.delete(command.payload.toolRequestId)
+        pendingConnectionTools.delete(command.payload.toolRequestId)
         pending.detachAbort()
-        if (command.type === 'feishu.result') pending.resolve(command.payload.result)
+        if (command.type === 'feishu.result' || command.type === 'teams.result') pending.resolve(command.payload.result)
         else pending.reject(new Error(command.payload.code))
       }
       respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
@@ -456,7 +470,7 @@ parentPort.on('message', async (event) => {
         action = await toolGateway.propose(proposal)
       } catch (error) {
         const code = error instanceof Error ? error.message.split(':')[0] : 'invalid_tool_proposal'
-        if (['invalid_tool_parameters', 'parameter_source_required', 'invalid_parameter_source', 'invalid_tool_proposal_name', 'invalid_tool_proposal_arguments', 'invalid_tool_proposal_schema', 'tool_not_available_for_assignment', 'invalid_document_create_path', 'invalid_document_create_filename', 'document_draft_required_before_create', 'document_write_or_existing_create_required_before_read', 'document_draft_required_before_edit', 'document_read_required_before_edit'].includes(code)) {
+        if (['teams_attendee_not_from_search', 'teams_event_not_from_task', 'invalid_teams_parameters', 'invalid_tool_parameters', 'parameter_source_required', 'invalid_parameter_source', 'invalid_tool_proposal_name', 'invalid_tool_proposal_arguments', 'invalid_tool_proposal_schema', 'tool_not_available_for_assignment', 'invalid_document_create_path', 'invalid_document_create_filename', 'document_draft_required_before_create', 'document_write_or_existing_create_required_before_read', 'document_draft_required_before_edit', 'document_read_required_before_edit'].includes(code)) {
           const detail = tasks.recordInvalidToolProposal(command.payload.providerRequestId, code)
           emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId: command.payload.providerRequestId, event: { type: 'progress', taskId: detail.task!.id, runId: detail.run?.id } })
           respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })

@@ -1,3 +1,4 @@
+import type { TeamsMeetingConfirmation } from './teams-contract'
 import type { FeishuMeetingResultView } from './feishu-meeting-contract'
 import { toPlainTimelineSummary, type ChatContentView } from './chat-content-contract'
 
@@ -71,6 +72,8 @@ export interface TaskDetailView {
   timeline: Array<{ phase: string; assignmentId?: string; nextNode?: string; createdAt: string; memoryRefs?: Array<{ id: string; reason: string }> }>
   delivery?: { id: string; content?: ChatContentView; /** @deprecated Use content.summary. */ summary?: string; /** @deprecated Raw employee output is not a delivery presentation. */ result?: string; createdAt?: string; acceptanceResults: Array<{ criterion: string; passed: boolean }>; artifacts: Array<{ id: string; mediaType: string; relativePath: string; sha256: string }>; evidenceCount: number; unresolvedIssues: string[] }
   researchBundles: Array<{ id: string; contentHash: string; sourceCount: number; claimCount: number; conflicts: string[]; informationGaps: string[] }>
+  meetingConfirmation?: TeamsMeetingConfirmation
+  pendingInput?: { question: string }
   pendingChange?: { id: string; sourceMessageId: string; requestedDiff: Record<string, unknown> }
   toolActions: Array<{ id: string; assignmentId?: string; createdAt?: string; completedAt?: string; toolVersionId: string; state: 'pending' | 'running' | 'succeeded' | 'failed' | 'blocked' | 'result_unknown' | 'cancelled'; parameters: Record<string, unknown>; meetingResult?: FeishuMeetingResultView; risk: 'low' | 'medium' | 'high'; approvalId?: string; failureCode?: string }>
   approvals: Array<{ id: string; toolActionId: string; decision: 'pending' | 'approved' | 'rejected' }>

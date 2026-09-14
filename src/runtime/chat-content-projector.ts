@@ -1,3 +1,4 @@
+import { TEAMS_TOOL_IDS } from '../shared/teams-contract'
 import { FEISHU_MEETING_TOOL_IDS } from '../shared/feishu-meeting-contract'
 import { basename } from 'node:path'
 import type { ChatContentMetricView, ChatContentView } from '../shared/chat-content-contract'
@@ -20,7 +21,7 @@ const TRUNCATED_FRAGMENT = /(?:…|\.\.\.)\s*$/u
  * projection is intentionally narrower: only result copy enters the chat body.
  */
 function userVisibleResultMarkdown(value: string | undefined, maxLength = 420): string {
-  const markdown = toResultMarkdown(value ?? '', Number.MAX_SAFE_INTEGER)
+  const markdown = toResultMarkdown((value ?? '').replace(/```(?:toolAction|json)[^\n]*\n[\s\S]*?(?:```|$)/gi, ''), Number.MAX_SAFE_INTEGER)
     .replace(/^\s*(?:#{1,6}\s*)?(?:阶段工作已完成|交付结果已完成|交付结果|完成摘要)\s*[：:]?\s*/u, '')
   if (!markdown) return ''
 
@@ -30,7 +31,7 @@ function userVisibleResultMarkdown(value: string | undefined, maxLength = 420): 
 
   const blocks: string[] = []
   for (const rawBlock of source.split(/\n+/)) {
-    if (rawBlock.includes('|')) continue
+    if (rawBlock.includes('|') || /^\s*(?:[{}[\],"]+|"[\w-]+"\s*:.*)\s*$/.test(rawBlock)) continue
     const prefixMatch = /^\s*((?:[-+*]|\d+[.)]|>)\s+)?/u.exec(rawBlock)
     const prefix = prefixMatch?.[1] ?? ''
     let block = rawBlock.slice(prefixMatch?.[0].length ?? 0)
@@ -109,7 +110,7 @@ export function projectAssignmentChatContent(input: { assignment: Assignment; ac
     }
   }
 
-  const summary = userVisibleResultMarkdown(assignment.summary || assignment.output) || (assignment.state === 'succeeded' ? '当前阶段结果已提交。' : '当前阶段未能形成可交付结果。')
+  const summary = userVisibleResultMarkdown(/```(?:toolAction|json)/i.test(assignment.output ?? '') ? assignment.output : assignment.summary || assignment.output) || (assignment.state === 'succeeded' ? '当前阶段结果已提交。' : '当前阶段未能形成可交付结果。')
   const title = assignment.state === 'succeeded' ? '阶段工作已完成' : assignment.state === 'failed' ? '阶段执行未完成' : assignment.state === 'cancelled' ? '阶段执行已取消' : '阶段状态已更新'
   return { schemaVersion: 1, title, summary }
 }
@@ -149,9 +150,10 @@ export function projectDeliveryChatContent(input: { actions?: ToolAction[]; resu
     ? `当前可访问的飞书知识库共 **${spaceCount!.value}${spaceCount!.unit ? ` ${spaceCount!.unit}` : ''}**，文档总数为 **${documentCount!.value}${documentCount!.unit ? ` ${documentCount!.unit}` : ''}**。`
     : userVisibleResultMarkdown(input.result?.summary, 500)
   let summary = resultSummary || reviewOutcome || firstLegacyOutcome(input.legacySummaries) || fallbackSummary
-  const meetingUrls = [...new Set((input.actions ?? []).filter((action) => action.toolVersionId === FEISHU_MEETING_TOOL_IDS.create && action.state === 'succeeded' && action.resultVerified === true).flatMap((action) => {
+  const latestTeamsMeeting = (input.actions ?? []).findLast(action => (action.toolVersionId === TEAMS_TOOL_IDS.create || action.toolVersionId === TEAMS_TOOL_IDS.addAttendees) && action.state === 'succeeded' && action.resultVerified === true)
+  const meetingUrls = [...new Set((input.actions ?? []).filter((action) => (action.toolVersionId === FEISHU_MEETING_TOOL_IDS.create || action.id === latestTeamsMeeting?.id) && action.state === 'succeeded' && action.resultVerified === true).flatMap((action) => {
     const url = action.result?.meetingUrl
-    return typeof url === 'string' && /^https:\/\/vc\.feishu\.cn\/[A-Za-z0-9/_?=&%-]+$/.test(url) ? [url] : []
+    return typeof url === 'string' && /^https:\/\/(?:vc\.feishu\.cn|teams\.microsoft\.com)\/[A-Za-z0-9/_?=&%-]+$/.test(url) ? [url] : []
   }))]
   if (meetingUrls.length) {
     summary = summary.split('\n').filter((line) => !/^\s*(?:[-*+]\s*)?入会链接[：:]?\s*$/.test(line)).join('\n').trim()

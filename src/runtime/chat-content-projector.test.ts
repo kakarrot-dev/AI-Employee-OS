@@ -122,3 +122,10 @@ it('includes only verified meeting join URLs in the final delivery', () => {
   expect(projectDeliveryChatContent(input).summary).toContain('[https://vc.feishu.cn/j/182742892](https://vc.feishu.cn/j/182742892)')
   expect(projectDeliveryChatContent({ ...input, actions: [{ ...action, resultVerified: false }] }).summary).not.toContain('https://')
 })
+
+it('removes the whole textual Teams tool block instead of leaking JSON fragments', () => {
+  const output = '需要先查询“马二峰”以确认其组织内身份。\n```toolAction\n{\n "tool": "teams.contacts.search",\n "parameters": { "query": "马二峰" }\n}\n```'
+  const view = projectAssignmentChatContent({ assignment: { ...assignment, output, summary: '需要先查询“马二峰”以确认其组织内身份。\n{\n"\n"parameters": {' }, actions: [] })
+  expect(view.summary).toBe('需要先查询“马二峰”以确认其组织内身份。')
+  expect(view.summary).not.toMatch(/[{}]|parameters|toolAction/)
+})

@@ -2,7 +2,7 @@ import { FEISHU_MEETING_SCOPES, FEISHU_MEETING_TOOL_IDS as meetingIds } from '..
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EmployeeService } from './employee-service'
 import { RuntimeKernel } from './kernel'
 import { RuntimeStore } from './store'
@@ -1168,5 +1168,170 @@ it.each([true, false])('reuses confirmed meeting evidence across review and rewo
   expect(delivered.detail.task?.state).toBe('succeeded')
   expect(delivered.detail.toolActions.filter((action) => action.toolVersionId === meetingIds.create)).toHaveLength(1)
   expect(delivered.detail.toolActions.filter((action) => action.toolVersionId === meetingIds.send)).toHaveLength(invite ? 1 : 0)
+  store.close()
+})
+
+it('routes a Teams meeting through search, approval, receipt and final output without a second creation', async () => {
+  const { employees, tasks, store, kernel, resources } = setup()
+  const ids = { search: 'teams.contacts.search@teams/v1', create: 'teams.meetings.create@teams/v1' }
+  const person = '33333333-3333-3333-3333-333333333333'
+  resources.updateTeamsConnection({ provider: 'teams', state: 'connected', checkedAt: new Date().toISOString(), canSearch: true, canCreate: true })
+  employees.seedRequestedSpecialists()
+  const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'teams', sourceMessageIds: ['message'], goal: '找到张三并创建 Teams 项目会议', acceptanceCriteria: ['会议链接和日历邀请回执'], employeeVersionIds: ['employee-version.teams-coordinator.v2'], authorizationMode: 'full_access' }).draft.id)
+  const gateway = new ToolGateway(kernel, resources, async (tool, parameters) => tool.id === ids.search ? { items: [{ name: '张三', id: person }], responseSha256: 'a'.repeat(64) } : { ...parameters, calendarEventId: 'event-1', meetingUrl: 'https://teams.microsoft.com/l/meetup-join/test', invitations: 'submitted', responseSha256: 'b'.repeat(64) })
+  const searchContext = tasks.toolProposalContext(started.request.requestId, { type: 'tool_proposal', requestId: started.request.requestId, callId: 'search', name: 'propose_tool_action', arguments: { toolVersionId: ids.search, parameters: { query: '张三' } } })
+  const search = await gateway.propose(searchContext); tasks.attachToolAction(searchContext.assignmentId, search.id)
+  const next = tasks.handleProviderEvent(started.request.requestId, { type: 'completed', requestId: started.request.requestId })!
+  expect(next.request?.proposalTool?.parameters.properties).toMatchObject({ parameters: { properties: { attendeeIds: { type: 'array' } } } })
+  const requestId = next.request!.requestId
+  const context = tasks.toolProposalContext(requestId, { type: 'tool_proposal', requestId, callId: 'create', name: 'propose_tool_action', arguments: { toolVersionId: ids.create, parameters: { topic: '项目会议', startTime: new Date(Date.now() + 3600000).toISOString(), endTime: new Date(Date.now() + 5400000).toISOString(), attendeeIds: [person] } } })
+  const action = await gateway.propose(context); tasks.attachToolAction(context.assignmentId, action.id)
+  expect(tasks.handleProviderEvent(requestId, { type: 'completed', requestId })?.event).toBe('needs_attention')
+  const final = tasks.resumeAfterTool(await gateway.decide(action.id, true))
+  expect(final.request?.toolChoice).toBe('auto')
+  expect(final.request?.proposalTool?.parameters.properties).toMatchObject({ toolVersionId: { enum: [ids.search, 'teams.meetings.add-attendees@teams/v1'] } })
+  tasks.handleProviderEvent(final.request!.requestId, { type: 'output_delta', requestId: final.request!.requestId, delta: 'Teams 会议创建成功，已提交日历邀请。' })
+  const completionReview = tasks.handleProviderEvent(final.request!.requestId, { type: 'completed', requestId: final.request!.requestId })!
+  const completionReviewId = completionReview.request!.requestId
+  tasks.handleProviderEvent(completionReviewId, { type: 'structured_result', requestId: completionReviewId, value: { nextStep: 'complete', question: '' } })
+  expect(tasks.handleProviderEvent(completionReviewId, { type: 'completed', requestId: completionReviewId })?.event).toBe('assignment_completed')
+  const review = tasks.beginManagerReview(started.run!.id)
+  expect(review.input).toContain('event-1')
+  expect(review.outputSchema?.schema).toMatchObject({ properties: { deliveryResult: { properties: { keyResults: { maxItems: 0 } } } } })
+  store.close()
+})
+
+it('recovers a failed Teams task using its original event, permits lookup and add, and rejects new creation', async () => {
+  const { tasks, resources, employees, kernel, store } = setup()
+  resources.updateTeamsConnection({ provider: 'teams', state: 'connected', checkedAt: new Date().toISOString(), canSearch: true, canCreate: true })
+  employees.seedRequestedSpecialists()
+  const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'teams-retry', sourceMessageIds: ['message'], goal: '创建会议后添加李四为参会人', acceptanceCriteria: ['李四收到原会议日历邀请'], employeeVersionIds: ['employee-version.teams-coordinator.v2'], authorizationMode: 'full_access' }).draft.id)
+  const person = '44444444-4444-4444-4444-444444444444'
+  const ids = { search: 'teams.contacts.search@teams/v1', create: 'teams.meetings.create@teams/v1', add: 'teams.meetings.add-attendees@teams/v1' }
+  const gateway = new ToolGateway(kernel, resources, async (tool, parameters) => tool.id === ids.search ? { items: [{ name: '李四', id: person }], responseSha256: 'a'.repeat(64) } : { ...parameters, calendarEventId: 'original-event', meetingUrl: 'https://teams.microsoft.com/l/meetup-join/original', invitations: 'submitted', responseSha256: 'b'.repeat(64) })
+  const execute = async (requestId: string, toolVersionId: string, parameters: Record<string, unknown>) => {
+    const context = tasks.toolProposalContext(requestId, { type: 'tool_proposal', requestId, callId: toolVersionId, name: 'propose_tool_action', arguments: { toolVersionId, parameters } })
+    const action = await gateway.propose(context); tasks.attachToolAction(context.assignmentId, action.id)
+    const completed = tasks.handleProviderEvent(requestId, { type: 'completed', requestId })!
+    return action.state === 'pending' ? tasks.resumeAfterTool(await gateway.decide(action.id, true)) : completed
+  }
+  await execute(started.request.requestId, ids.create, { topic: '原会议', startTime: new Date(Date.now() + 3600000).toISOString(), endTime: new Date(Date.now() + 5400000).toISOString(), attendeeIds: [] })
+  tasks.failRun(started.run!.id, 'test_missing_add_capability')
+  const retry = tasks.retryFailedTask(started.task!.id)
+  expect(retry.request.input).toContain('original-event')
+  expect(retry.request.proposalTool?.parameters.properties).toMatchObject({ toolVersionId: { enum: [ids.search, ids.add] } })
+  expect(retry.toolActions.filter(a => a.toolVersionId === ids.create)).toHaveLength(1)
+  const next = await execute(retry.request.requestId, ids.search, { query: '李四' })
+  const final = await execute(next.request!.requestId, ids.add, { calendarEventId: 'original-event', attendeeIds: [person] })
+  expect(final.request?.input).toContain('original-event')
+  const detail = tasks.detailByTask(started.task!.id)
+  expect(detail.toolActions.filter(a => a.toolVersionId === ids.create)).toHaveLength(1)
+  expect(detail.toolActions.find(a => a.toolVersionId === ids.add)).toMatchObject({ state: 'succeeded', parameters: { calendarEventId: 'original-event', attendeeNames: ['李四'] } })
+  expect(() => tasks.toolProposalContext(final.request!.requestId, { type: 'tool_proposal', requestId: final.request!.requestId, callId: 'forged-create', name: 'propose_tool_action', arguments: { toolVersionId: ids.create, parameters: { topic: '重复会议', startTime: new Date(Date.now() + 3600000).toISOString(), endTime: new Date(Date.now() + 5400000).toISOString(), attendeeIds: [] } } })).toThrow('tool_not_available_for_assignment')
+  store.close()
+})
+
+it('reads each large projection table once when listing multiple tasks', () => {
+  const { tasks, employees, store } = setup()
+  const employeeVersionId = publishEmployee(employees)
+  for (let i = 0; i < 3; i++) tasks.confirmAndStart(tasks.createDraft({ conversationId: `list-${i}`, sourceMessageIds: [`message-${i}`], goal: '输出结论', acceptanceCriteria: ['结论清晰'], employeeVersionIds: [employeeVersionId], authorizationMode: 'full_access' }).draft.id)
+  const read = vi.spyOn(store, 'list')
+  expect(tasks.list()).toHaveLength(3)
+  for (const type of ['ToolAction', 'Assignment', 'Handoff', 'Checkpoint', 'Delivery', 'Evidence', 'ResearchBundle']) expect(read.mock.calls.filter(([kind]) => kind === type), type).toHaveLength(1)
+  read.mockRestore()
+  store.close()
+})
+
+it.each([
+  ['propose_action', '三位参会人已确认，是否确认创建并提交邀请？', ''],
+  ['needs_input', '张俊有同名候选，请补充邮箱。', '请选择张俊：a@example.com 或 b@example.com。'],
+  ['complete', '查找已完成，找到张俊。', '']
+] as const)('uses structured Teams next step %s instead of treating prose confirmation as completion', async (nextStep, output, question) => {
+  const { tasks, resources, employees, kernel, store } = setup()
+  resources.updateTeamsConnection({ provider: 'teams', state: 'connected', checkedAt: new Date().toISOString(), canSearch: true, canCreate: true })
+  employees.seedRequestedSpecialists()
+  const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'clarification', sourceMessageIds: ['message'], goal: nextStep === 'complete' ? '查找张俊' : '为张俊创建测试会议，今天16点到18点', acceptanceCriteria: ['按目标办理并核验回执'], employeeVersionIds: ['employee-version.teams-coordinator.v2'], authorizationMode: 'full_access' }).draft.id)
+  const person = '33333333-3333-3333-3333-333333333333'
+  const runner = vi.fn(async () => ({ items: [{ id: person, name: '张俊', email: 'a@example.com' }], responseSha256: 'a'.repeat(64) }))
+  const gateway = new ToolGateway(kernel, resources, runner)
+  const context = tasks.toolProposalContext(started.request.requestId, { type: 'tool_proposal', requestId: started.request.requestId, callId: 'search', name: 'propose_tool_action', arguments: { toolVersionId: 'teams.contacts.search@teams/v1', parameters: { query: '张俊' } } })
+  const search = await gateway.propose(context); tasks.attachToolAction(context.assignmentId, search.id)
+  const next = tasks.handleProviderEvent(started.request.requestId, { type: 'completed', requestId: started.request.requestId })!
+  const requestId = next.request!.requestId
+  tasks.handleProviderEvent(requestId, { type: 'output_delta', requestId, delta: output })
+  const review = tasks.handleProviderEvent(requestId, { type: 'completed', requestId })!
+  expect(review.request?.outputSchema?.name).toBe('teams_completion_decision')
+  expect(review.request?.toolChoice).toBe('none')
+  expect(review.request?.input).toContain('a@example.com')
+  const reviewId = review.request!.requestId
+  tasks.handleProviderEvent(reviewId, { type: 'structured_result', requestId: reviewId, value: { nextStep, question } })
+  const result = tasks.handleProviderEvent(reviewId, { type: 'completed', requestId: reviewId })!
+  if (nextStep === 'propose_action') {
+    expect(result.event).toBe('progress')
+    expect(result.request?.toolChoice).toBe('required')
+    expect(result.request?.input).toContain(person)
+    expect(result.request?.proposalTool?.parameters.properties).toMatchObject({ parameters: { properties: { attendeeIds: { items: { enum: [person] } } } } })
+    let proposalId = result.request!.requestId
+    tasks.recordInvalidToolProposal(proposalId, 'teams_attendee_not_from_search')
+    const corrected = tasks.handleProviderEvent(proposalId, { type: 'completed', requestId: proposalId })!
+    expect(corrected.event).toBe('progress')
+    expect(corrected.request?.toolChoice).toBe('required')
+    expect(corrected.request?.input).toContain('teams_attendee_not_from_search')
+    proposalId = corrected.request!.requestId
+    const proposal = tasks.toolProposalContext(proposalId, { type: 'tool_proposal', requestId: proposalId, callId: 'create', name: 'propose_tool_action', arguments: { toolVersionId: 'teams.meetings.create@teams/v1', parameters: { topic: '测试', startTime: new Date(Date.now() + 3600000).toISOString(), endTime: new Date(Date.now() + 7200000).toISOString(), attendeeIds: [person] } } })
+    const action = await gateway.propose(proposal); tasks.attachToolAction(proposal.assignmentId, action.id)
+    expect(action.state).toBe('pending')
+    expect(tasks.handleProviderEvent(proposalId, { type: 'completed', requestId: proposalId })?.event).toBe('needs_attention')
+    expect(runner).toHaveBeenCalledTimes(1) // Approval card does not execute the write.
+  } else if (nextStep === 'needs_input') {
+    expect(result.event).toBe('needs_attention')
+    expect(result.detail.run?.state).toBe('paused')
+    expect(result.detail.assignments[0].state).toBe('running')
+    expect(result.detail.handoffs).toHaveLength(0)
+    expect(result.detail.checkpoints.at(-1)?.payload.question).toBe(question)
+    expect(tasks.recoverPendingRequests()).toHaveLength(0)
+    const change = tasks.requestChange(started.task!.id, 'answer', { goal: '张俊邮箱 a@example.com，创建测试会议' })
+    const resumed = tasks.acceptChange(change.id, { goal: '张俊邮箱 a@example.com，创建测试会议', acceptanceCriteria: ['会议回执'], employeeVersionIds: ['employee-version.teams-coordinator.v2'] })
+    expect(resumed.request.input).toContain(person)
+    expect(resumed.run?.supersedesRunId).toBe(started.run!.id)
+  } else {
+    expect(result.event).toBe('assignment_completed')
+    expect(result.detail.toolActions).toHaveLength(1)
+    expect(result.detail.assignments[0].output).toBe(output)
+  }
+  store.close()
+})
+
+it('holds a created Teams meeting until every participant clicks the card, then finalizes without more tools', async () => {
+  const { tasks, resources, employees, kernel, store } = setup()
+  resources.updateTeamsConnection({ provider: 'teams', state: 'connected', checkedAt: new Date().toISOString(), canSearch: true, canCreate: true })
+  employees.seedRequestedSpecialists()
+  const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'cards', sourceMessageIds: ['message'], goal: '创建会议，参会人全部点击 Teams 卡片后才完成', acceptanceCriteria: ['所有参会人卡片确认'], employeeVersionIds: ['employee-version.teams-coordinator.v2'], authorizationMode: 'full_access' }).draft.id)
+  const ids = ['33333333-3333-3333-3333-333333333333', '44444444-4444-4444-4444-444444444444']
+  const snapshot = { calendarEventId: 'card-event', policy: 'teams_card' as const, participants: ids.map((userId, i) => ({ userId, name: `参会人${i}`, email: `${i}@example.com`, state: 'awaiting_confirmation' as const })), confirmedCount: 0, allConfirmed: false, updatedAt: new Date().toISOString() }
+  const gateway = new ToolGateway(kernel, resources, async tool => tool.id === 'teams.contacts.search@teams/v1' ? { items: ids.map((id, i) => ({ id, name: `参会人${i}` })), responseSha256: 'a'.repeat(64) } : { calendarEventId: 'card-event', meetingUrl: 'https://teams.microsoft.com/l/meetup-join/test', invitations: 'submitted', confirmationPolicy: 'teams_card', cardConfirmation: snapshot, responseSha256: 'b'.repeat(64) })
+  const submit = async (requestId: string, toolVersionId: string, parameters: Record<string, unknown>) => {
+    const context = tasks.toolProposalContext(requestId, { type: 'tool_proposal', requestId, callId: toolVersionId, name: 'propose_tool_action', arguments: { toolVersionId, parameters } })
+    const action = await gateway.propose(context); tasks.attachToolAction(context.assignmentId, action.id)
+    return { action, next: tasks.handleProviderEvent(requestId, { type: 'completed', requestId })! }
+  }
+  const searched = await submit(started.request.requestId, 'teams.contacts.search@teams/v1', { query: '参会人' })
+  const created = await submit(searched.next.request!.requestId, 'teams.meetings.create@teams/v1', { topic: '测试', startTime: new Date(Date.now() + 3600000).toISOString(), endTime: new Date(Date.now() + 7200000).toISOString(), attendeeIds: ids })
+  const settled = tasks.resumeAfterTool(await gateway.decide(created.action.id, true))
+  expect(settled.request).toBeUndefined()
+  expect(settled.detail.run?.state).toBe('paused')
+  expect(settled.detail.checkpoints.at(-1)?.phase).toBe('participants_waiting')
+  expect(tasks.recoverPendingRequests()).toHaveLength(0)
+  const partial = { ...snapshot, participants: snapshot.participants.map((p, i) => ({ ...p, state: i === 0 ? 'confirmed' as const : 'awaiting_confirmation' as const })), confirmedCount: 1 }
+  expect(tasks.updateTeamsConfirmation(partial)[0].request).toBeUndefined()
+  expect(tasks.detailByTask(started.task!.id).run?.state).toBe('paused')
+  expect(() => tasks.updateTeamsConfirmation({ ...partial, allConfirmed: true })).toThrow('invalid_teams_confirmation')
+  const all = { ...snapshot, participants: snapshot.participants.map(p => ({ ...p, state: 'confirmed' as const })), confirmedCount: 2, allConfirmed: true }
+  const resumed = tasks.updateTeamsConfirmation(all)[0]
+  expect(resumed.request?.toolChoice).toBe('none')
+  expect(resumed.request?.input).toContain('"confirmedCount":2')
+  expect(resumed.detail.run?.state).toBe('running')
+  expect(tasks.updateTeamsConfirmation(all)).toHaveLength(0)
+  expect(resumed.detail.toolActions.filter(action => action.toolVersionId === 'teams.meetings.create@teams/v1')).toHaveLength(1)
   store.close()
 })

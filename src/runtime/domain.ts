@@ -255,6 +255,9 @@ export interface Assignment extends VersionedEntity {
   toolActionIds?: string[]
   awaitingToolActionId?: string
   reworkOfAssignmentId?: string
+  teamsFinalizing?: boolean
+  teamsCompletionReview?: { output: string }
+  lastToolProposalError?: string
   invalidToolProposalCount?: number
   continuationCount?: number
   continuationBoundaryLength?: number
@@ -472,7 +475,7 @@ export interface Checkpoint extends VersionedEntity {
   sequence: number
   assignmentId?: string
   workerThreadId: string
-  phase: 'created' | 'memory_loaded' | 'provider_step' | 'tool_waiting' | 'source_batch' | 'employee_completed' | 'deep_agents_safe_pause' | 'manager_review' | 'manager_rework' | 'delivery_committed' | 'shutdown_requested' | 'safe_paused'
+  phase: 'created' | 'memory_loaded' | 'provider_step' | 'tool_waiting' | 'user_input_waiting' | 'participants_waiting' | 'source_batch' | 'employee_completed' | 'deep_agents_safe_pause' | 'manager_review' | 'manager_rework' | 'delivery_committed' | 'shutdown_requested' | 'safe_paused'
   nextNode?: 'employee' | 'manager' | 'delivery'
   committed: true
   unsettledToolActionIds: string[]
