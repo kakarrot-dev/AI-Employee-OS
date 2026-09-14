@@ -1,3 +1,5 @@
+import { EMPTY_TEAMS_STATUS, type TeamsConnectionStatus } from '../../shared/teams-contract'
+import { TeamsConnectionModal } from './TeamsConnectionModal'
 import { FEISHU_MEETING_SCOPES } from '../../shared/feishu-meeting-contract'
 import { useEffect, useState } from 'react'
 import { CheckCircle, Link, OpenNewWindow, ShieldCheck, WarningTriangle } from 'iconoir-react'
@@ -30,6 +32,8 @@ interface ConnectionCategory {
   applications: ConnectionApplication[]
 }
 
+export const TEAMS_CONNECTION_APPLICATION: ConnectionApplication = { id: 'teams', name: 'Microsoft Teams', description: '查找企业联系人，创建 Teams 会议与日历邀请。', icon: teamsIcon }
+
 export const FEISHU_CONNECTION_APPLICATION: ConnectionApplication = { id: 'feishu', name: '飞书', description: '知识库与文档读取；可选开通会议创建和组织内联系人邀请。', icon: feishuIcon }
 
 export const connectionCategories: ConnectionCategory[] = [
@@ -39,7 +43,7 @@ export const connectionCategories: ConnectionCategory[] = [
     description: '连接团队消息、组织协同与客户触达渠道。',
     applications: [
       FEISHU_CONNECTION_APPLICATION,
-      { id: 'teams', name: 'Microsoft Teams', description: '团队消息、会议与协作空间。', icon: teamsIcon },
+      TEAMS_CONNECTION_APPLICATION,
       { id: 'dingtalk', name: '钉钉', description: '组织通讯、消息、审批与协同办公。', icon: dingtalkIcon },
       { id: 'wecom', name: '企业微信', description: '企业内部协作与客户连接。', icon: wecomIcon },
       { id: 'wechat', name: '微信', description: '消息触达与客户沟通渠道。', icon: wechatIcon }
@@ -255,15 +259,15 @@ function FeishuConnectionModal({ open, status, onClose, onStatusChange }: { open
   </ClientModal>
 }
 
-export function ConnectionsCatalog({ feishuStatus, loading, modalOpen, onModalOpenChange, onStatusChange }: { feishuStatus: FeishuConnectionStatus; loading: boolean; modalOpen: boolean; onModalOpenChange: (open: boolean) => void; onStatusChange: (status: FeishuConnectionStatus) => void }): React.JSX.Element {
+export function ConnectionsCatalog({ teamsStatus = EMPTY_TEAMS_STATUS, teamsModalOpen = false, onTeamsModalOpenChange = () => undefined, onTeamsStatusChange = () => undefined, feishuStatus, loading, modalOpen, onModalOpenChange, onStatusChange }: { teamsStatus?: TeamsConnectionStatus; teamsModalOpen?: boolean; onTeamsModalOpenChange?: (open: boolean) => void; onTeamsStatusChange?: (status: TeamsConnectionStatus) => void; feishuStatus: FeishuConnectionStatus; loading: boolean; modalOpen: boolean; onModalOpenChange: (open: boolean) => void; onStatusChange: (status: FeishuConnectionStatus) => void }): React.JSX.Element {
   const currentState = feishuState(feishuStatus, loading)
-  const connectedCount = feishuStatus.state === 'connected' ? 1 : 0
+  const connectedCount = Number(feishuStatus.state === 'connected') + Number(teamsStatus.state === 'connected')
   return <><DetailPage className="connections-page" width="wide">
     <section className="recruitment-catalog connections-catalog" aria-label="连接" data-source="bridge">
       <DetailSummaryPanel
         icon={<Link aria-hidden />}
         title="外部系统与应用"
-        description="连接工作应用，供专家在授权范围内使用。当前支持飞书，其他应用待接入。"
+        description="连接工作应用，供专家在授权范围内使用。当前支持飞书与 Microsoft Teams。"
         metrics={[
           { label: '应用总数', value: connectionApplications.length },
           { label: '应用类型', value: connectionCategories.length },
@@ -277,14 +281,15 @@ export function ConnectionsCatalog({ feishuStatus, loading, modalOpen, onModalOp
           <SummaryCardGrid emptyMessage="暂无已连接应用" label={`${category.name}应用`}>
             {category.applications.map((application) => {
               const isFeishu = application.id === 'feishu'
-              const appState = isFeishu ? currentState : { label: '未连接', tone: 'muted' as const }
-              return <div className={`recruitment-card connection-card${isFeishu ? ' connection-card--available' : ''}`} role="listitem" key={application.id}>
-                <SummaryCard leading={<ApplicationLogo application={application} />} title={application.name} description={application.description} tone={isFeishu && feishuStatus.state === 'connected' ? 'success' : 'muted'} trailing={<div className="connection-card__trailing"><DetailState tone={appState.tone}>{appState.label}</DetailState>{isFeishu && <button type="button" className="connection-card__action" disabled={loading} onClick={() => onModalOpenChange(true)}>{feishuStatus.state === 'connected' ? '管理' : feishuStatus.state === 'reauthorization_required' ? '重新授权' : '连接'}</button>}</div>} />
+              const isTeams = application.id === 'teams'
+              const appState = isTeams ? { label: teamsStatus.state === 'connected' ? '已连接' : teamsStatus.state === 'error' ? '连接异常' : '未连接', tone: teamsStatus.state === 'connected' ? 'success' as const : teamsStatus.state === 'error' ? 'danger' as const : 'muted' as const } : isFeishu ? currentState : { label: '未连接', tone: 'muted' as const }
+              return <div className={`recruitment-card connection-card${isFeishu || isTeams ? ' connection-card--available' : ''}`} role="listitem" key={application.id}>
+                <SummaryCard leading={<ApplicationLogo application={application} />} title={application.name} description={application.description} tone={(isFeishu && feishuStatus.state === 'connected') || (isTeams && teamsStatus.state === 'connected') ? 'success' : 'muted'} trailing={<div className="connection-card__trailing"><DetailState tone={appState.tone}>{appState.label}</DetailState>{isTeams && <button type="button" className="connection-card__action" disabled={loading} onClick={() => onTeamsModalOpenChange(true)}>{teamsStatus.state === 'connected' ? '管理' : '连接'}</button>}{isFeishu && <button type="button" className="connection-card__action" disabled={loading} onClick={() => onModalOpenChange(true)}>{feishuStatus.state === 'connected' ? '管理' : feishuStatus.state === 'reauthorization_required' ? '重新授权' : '连接'}</button>}</div>} />
               </div>
             })}
           </SummaryCardGrid>
         </section>)}
       </div>
     </section>
-  </DetailPage><FeishuConnectionModal open={modalOpen} status={feishuStatus} onClose={() => onModalOpenChange(false)} onStatusChange={onStatusChange} /></>
+  </DetailPage><TeamsConnectionModal open={teamsModalOpen} status={teamsStatus} onClose={() => onTeamsModalOpenChange(false)} onStatusChange={onTeamsStatusChange} /><FeishuConnectionModal open={modalOpen} status={feishuStatus} onClose={() => onModalOpenChange(false)} onStatusChange={onStatusChange} /></>
 }

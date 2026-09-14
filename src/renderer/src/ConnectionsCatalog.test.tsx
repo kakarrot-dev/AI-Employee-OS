@@ -21,3 +21,12 @@ describe('meeting authorization upgrade', () => {
     expect(connectFeishu).toHaveBeenCalledWith({ appId: status.appId, appSecret: '', enableMeetings: true })
   })
 })
+
+it('shows Teams management and capability status without returning its secret', () => {
+  const status = { provider: 'teams' as const, state: 'connected' as const, checkedAt: '', canSearch: true, canCreate: true, organizer: 'organizer@example.com' }
+  render(<ConnectionsCatalog feishuStatus={{ provider: 'feishu', state: 'not_connected', checkedAt: '', scopes: [] }} teamsStatus={status} teamsModalOpen loading={false} modalOpen={false} onModalOpenChange={vi.fn()} onStatusChange={vi.fn()} />)
+  expect(screen.getByRole('dialog', { name: 'Microsoft Teams 连接' })).toBeInTheDocument()
+  expect(screen.getByText('organizer@example.com')).toBeInTheDocument()
+  expect(screen.queryByLabelText('Teams 客户端密钥')).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '检查连接' })).toBeInTheDocument()
+})

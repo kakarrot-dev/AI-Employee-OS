@@ -31,3 +31,18 @@ describe('meeting confirmation and results', () => {
     expect(screen.queryByText('邀请已发送；尚未确认对方阅读或接受')).not.toBeInTheDocument()
   })
 })
+
+it('shows each Teams participant and card-only confirmation, including missing and declined responses', () => {
+  const input = task('needs_attention')
+  input.toolActions[0] = { ...input.toolActions[0], toolVersionId: 'teams.meetings.create@teams/v1', state: 'succeeded', parameters: { topic: '测试', attendeeIds: ['one', 'two', 'three'], attendeeNames: ['段茱文', '马二锋', '张俊'], attendeeEmails: ['a@example.com', 'b@example.com', 'c@example.com'] } }
+  input.meetingConfirmation = { calendarEventId: 'event', policy: 'teams_card', confirmedCount: 1, allConfirmed: false, updatedAt: '', participants: [{ userId: 'one', name: '段茱文', email: 'a@example.com', state: 'confirmed' }, { userId: 'two', name: '马二锋', email: 'b@example.com', state: 'awaiting_confirmation' }, { userId: 'three', name: '张俊', email: 'c@example.com', state: 'declined' }] }
+  render(<MeetingActions task={input} onUpdate={vi.fn()} />)
+  expect(screen.getByRole('table', { name: '参会人员及卡片确认状态' })).toBeInTheDocument()
+  expect(screen.getByText('已确认 1 / 3 人')).toBeInTheDocument()
+  expect(screen.getByText('a@example.com')).toBeInTheDocument()
+  expect(screen.getByText('已确认参加')).toBeInTheDocument()
+  expect(screen.getByText('等待确认')).toBeInTheDocument()
+  expect(screen.getByText('已拒绝参加')).toBeInTheDocument()
+  expect(screen.getByText(/日历接受不会替代卡片回执/)).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '发送未发送的确认卡' })).not.toBeInTheDocument()
+})

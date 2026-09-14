@@ -28,7 +28,13 @@ interface RecruitmentCategory {
 }
 
 const recruitmentCategories: RecruitmentCategory[] = [
-  { id: 'meetings', name: '会议与协作', description: '安排飞书会议并向组织内联系人发送邀请。', employees: [{ id: 'employee.meeting-coordinator', name: '飞书会议专员', description: '确认后创建会议号、逐人发送邀请并跟踪结果。', color: '#85a9c7' }] },
+  {
+    id: 'meetings', name: '会议与协作', description: '查询组织内联系人，安排 Teams 或飞书会议并发送邀请。',
+    employees: [
+      { id: 'employee.teams-coordinator', name: 'Teams 会议专员', description: '查询企业联系人，确认后创建 Teams 日历会议，或向已有会议添加参会人并提交邀请。', color: '#9994cf' },
+      { id: 'employee.meeting-coordinator', name: '飞书会议专员', description: '确认后创建会议号、逐人发送邀请并跟踪结果。', color: '#85a9c7' }
+    ]
+  },
   {
     id: 'analysis',
     name: '信息与分析',
@@ -134,9 +140,9 @@ const recruitmentCategories: RecruitmentCategory[] = [
   }
 ]
 
-function RecruitmentAvatar({ employee }: { employee: RecruitmentEmployee }): React.JSX.Element {
-  if (!employee.avatarPosition) {
-    return <Avatar label={employee.name} initials={employee.name.slice(0, 1)} color={employee.color} size="medium" src={employeeAvatarSrc({ employeeId: employee.id })} />
+function RecruitmentAvatar({ employee, avatarDataUrl }: { employee: RecruitmentEmployee; avatarDataUrl?: string }): React.JSX.Element {
+  if (avatarDataUrl || !employee.avatarPosition) {
+    return <Avatar label={employee.name} initials={employee.name.slice(0, 1)} color={employee.color} size="medium" src={employeeAvatarSrc({ employeeId: employee.id, avatarDataUrl })} />
   }
 
   return <span
@@ -172,7 +178,7 @@ function CandidateExpertProfile({ employee, categoryName, summary }: { employee:
   const name = summary?.name ?? employee.name
   const status = summary ? employeeStatusLabel(summary.status) : '未招募'
   return <div className="expert-profile-content recruitment-candidate-profile">
-    <ProfileSummary identity={{ name, initials: name.slice(0, 1), color: employee.color, avatarSrc: employeeAvatarSrc({ employeeId: employee.id, avatarDataUrl: summary?.avatarDataUrl }) }} avatar={<RecruitmentAvatar employee={{ ...employee, name }} />} title={summary?.role || categoryName} description={employee.description} />
+    <ProfileSummary identity={{ name, initials: name.slice(0, 1), color: employee.color, avatarSrc: employeeAvatarSrc({ employeeId: employee.id, avatarDataUrl: summary?.avatarDataUrl }) }} avatar={<RecruitmentAvatar employee={{ ...employee, name }} avatarDataUrl={summary?.avatarDataUrl} />} title={summary?.role || categoryName} description={employee.description} />
     <ProfileValueTags items={[
       { label: '当前状态', accessibleValue: status, value: <StatusLight state={summary ? employeeStatusTone(summary.status) : 'muted'} label={status} /> },
       { label: '专家类型', accessibleValue: '单 Agent 专家', value: '单 Agent 专家' },
@@ -289,7 +295,7 @@ export function RecruitmentCatalog({ employees, expertGroups = [], skills = [], 
           <SummaryCardGrid emptyMessage="暂无候选员工" label={`${category.name}员工`}>
             {category.employees.map((employee) => { const summary = employees.find((item) => item.id === employee.id); const displayName = summary?.name ?? employee.name; return <div className="recruitment-card" data-availability={recruitedEmployeeIds.has(employee.id) ? 'recruited' : 'unavailable'} data-source-path={employee.sourcePath} role="listitem" key={employee.id}>
               <SummaryCard
-                leading={<RecruitmentAvatar employee={{ ...employee, name: displayName }} />}
+                leading={<RecruitmentAvatar employee={{ ...employee, name: displayName }} avatarDataUrl={summary?.avatarDataUrl} />}
                 title={<span className="recruitment-card__title"><span>专家</span>{displayName}</span>}
                 description={<span className="recruitment-card__description">{summary?.role || employee.description}</span>}
                 tone={recruitedEmployeeIds.has(employee.id) ? 'success' : 'muted'}

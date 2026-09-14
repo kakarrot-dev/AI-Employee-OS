@@ -198,10 +198,6 @@ button { font: inherit; }
 .legacy-delivery-card { margin-top: 8px; padding: 10px; border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line)); border-radius: 9px; background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
 .legacy-delivery-card p { margin: 6px 0 0; }
 .confirm-task.secondary { color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); background: var(--surface); }
-.change-card { margin-top: 8px; padding: 10px; border: 1px solid color-mix(in srgb, #bf7b21 32%, var(--line)); border-radius: 9px; background: color-mix(in srgb, #bf7b21 7%, var(--surface)); }
-.change-card p, .change-card small { color: var(--muted); }
-.change-card > div { display: flex; gap: 6px; }
-.change-card button { flex: 1; padding: 7px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: var(--surface); }
 .task-module { min-height: 100%; padding: 22px; }
 .task-filter { display: flex; gap: 5px; margin-bottom: 14px; overflow-x: auto; }
 .task-filter button { display: flex; align-items: center; gap: 6px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--surface); white-space: nowrap; }

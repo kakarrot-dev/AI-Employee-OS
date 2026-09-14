@@ -1,0 +1,72 @@
+.feishu-scene .conversation-column { container-type: inline-size; container-name: feishu-column; }
+.feishu-scene-banner { display: flex; align-items: center; gap: 10px; padding: 14px 24px; border-bottom: 1px solid var(--line); }
+.feishu-group-mark { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; background: var(--surface-selected); }
+.feishu-group-mark svg { width: var(--icon-size-standard); height: var(--icon-size-standard); }
+.feishu-scene-banner > span:nth-child(2) { display: grid; gap: 2px; }
+.feishu-scene-banner strong { font-size: var(--type-body-size); }
+.feishu-scene small { font-size: var(--type-secondary-size); color: var(--text-secondary); }
+.feishu-demo-label { margin-left: auto; padding: 3px 8px; border-radius: 5px; background: var(--surface-subtle); color: var(--text-secondary); font-size: var(--type-meta-size); white-space: nowrap; }
+.feishu-demo-notice { color: var(--text-secondary); font-size: var(--type-secondary-size); line-height: var(--type-leading-body); margin-bottom: 20px; }
+.feishu-scene .message-canvas { padding-top: 20px; }
+.feishu-scene .feishu-help { margin: 0; color: var(--text-secondary); font-size: var(--type-secondary-size); line-height: var(--type-leading-body); }
+.feishu-meeting-form { display: grid; gap: 14px; margin-top: 18px; }
+.feishu-field { display: grid; align-content: start; gap: 6px; min-width: 0; }
+.feishu-field > span, .feishu-people legend { font-weight: var(--type-weight-medium); font-size: var(--type-body-size); }
+.feishu-field > span small { margin-left: 4px; font-weight: var(--type-weight-regular); }
+.feishu-scene input:not([type="checkbox"]) { width: 100%; min-width: 0; padding: 8px 10px; min-height: 36px; background: var(--surface-content); color: var(--text-primary); border: 1px solid var(--line-strong); border-radius: 6px; font-size: var(--type-input-size); }
+.feishu-scene input::placeholder { color: var(--text-tertiary); }
+.feishu-scene input:focus-visible, .feishu-scene button:focus-visible, .feishu-scene summary:focus-visible, .feishu-scene [tabindex="-1"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.feishu-scene [aria-invalid="true"] { border-color: var(--danger); }
+.feishu-scene .feishu-error { display: block; color: var(--danger); }
+.feishu-time-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.feishu-time-fields + .feishu-help { margin-top: -8px; }
+.feishu-people { min-width: 0; margin: 0; padding: 0; border: 0; }
+.feishu-people legend { width: 100%; margin-bottom: 8px; padding: 0; }
+.feishu-people legend small { float: right; font-weight: var(--type-weight-regular); }
+.feishu-contact-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin-top: 8px; max-height: 210px; overflow-y: auto; padding: 3px; }
+.feishu-contact-option { min-width: 0; display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 6px; cursor: pointer; }
+.feishu-contact-option:hover { background: var(--surface-hover); }
+.feishu-contact-option.is-selected { background: var(--accent-soft); }
+.feishu-contact-option input { accent-color: var(--accent); width: 14px; height: 14px; margin: 0; flex-shrink: 0; }
+.feishu-contact-option > span:last-child { display: grid; gap: 2px; min-width: 0; }
+.feishu-contact-option strong { font-size: var(--type-body-size); font-weight: var(--type-weight-medium); }
+.feishu-contact-option small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feishu-selected-people { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.feishu-selected-people button { display: flex; align-items: center; gap: 5px; padding: 4px 7px; border: 0; border-radius: 4px; background: var(--surface-selected); cursor: pointer; font-size: var(--type-secondary-size); }
+.feishu-selected-people svg { width: var(--icon-size-inline); height: var(--icon-size-inline); }
+.feishu-auto-settings { display: flex; gap: 8px; align-items: flex-start; padding: 12px; background: var(--surface-subtle); border-radius: 6px; }
+.feishu-auto-settings > svg { width: var(--icon-size-control); height: var(--icon-size-control); flex-shrink: 0; color: var(--success); }
+.feishu-auto-settings > span { display: grid; gap: 4px; }
+.feishu-auto-settings strong { font-size: var(--type-body-size); font-weight: var(--type-weight-medium); }
+.feishu-next-action .feishu-playback-status { flex-shrink: 0; justify-items: end; }
+.feishu-scene .button svg { width: var(--icon-size-control); height: var(--icon-size-control); flex-shrink: 0; }
+.feishu-scene .button { white-space: nowrap; }
+.feishu-document-actions { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 10px; }
+.feishu-document-actions a { text-decoration: none; }
+.feishu-summary-document { flex: 1; overflow-y: auto; min-height: 0; padding: 20px 24px; }
+.feishu-summary-document + .feishu-document-actions { flex-shrink: 0; border-top: 1px solid var(--line); padding: 14px 24px; }
+.feishu-next-action { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 24px; border-top: 1px solid var(--line); background: var(--surface-content); }
+.feishu-next-action > div { display: grid; gap: 3px; min-width: 0; }
+.feishu-next-action strong { font-size: var(--type-body-size); font-weight: var(--type-weight-medium); }
+.feishu-progress ol { display: grid; gap: 6px; list-style: none; margin: 0; padding: 8px 10px; }
+.feishu-progress li button { display: flex; align-items: flex-start; width: 100%; gap: 10px; padding: 12px 8px; border: 0; border-radius: 6px; text-align: left; background: transparent; cursor: pointer; }
+.feishu-progress li button:disabled { color: var(--text-tertiary); cursor: default; }
+.feishu-progress li button:not(:disabled):hover { background: var(--surface-hover); }
+.feishu-progress li button.is-current { background: var(--surface-selected); }
+.feishu-step-number { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--line-strong); border-radius: 50%; flex-shrink: 0; font-size: var(--type-secondary-size); }
+.feishu-step-number svg { width: var(--icon-size-inline); height: var(--icon-size-inline); color: var(--success); }
+.feishu-progress li button > span:last-child { display: grid; gap: 4px; min-width: 0; }
+.feishu-progress li strong { font-size: var(--type-body-size); font-weight: var(--type-weight-medium); }
+.feishu-progress { overflow-y: auto; }
+.feishu-group-members { margin: 14px 18px; border-top: 1px solid var(--line); padding-top: 14px; }
+.feishu-group-members h3 { display: flex; justify-content: space-between; gap: 8px; margin: 0 0 12px; font-size: var(--type-body-size); font-weight: var(--type-weight-semibold); }
+.feishu-group-member { margin-bottom: 14px; }
+.feishu-group-member strong { font-size: var(--type-body-size); font-weight: var(--type-weight-medium); }
+.feishu-group-member p { margin: 4px 0; color: var(--text-secondary); font-size: var(--type-secondary-size); }
+.feishu-group-member .is-done { color: var(--success); }
+@container feishu-column (max-width: 560px) {
+  .feishu-time-fields, .feishu-contact-options { grid-template-columns: minmax(0, 1fr); }
+  .feishu-scene-banner, .feishu-next-action { padding: 12px 16px; }
+  .feishu-next-action { flex-wrap: wrap; gap: 10px; }
+  .feishu-next-action > .button { margin-left: auto; }
+}

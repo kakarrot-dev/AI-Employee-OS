@@ -53,7 +53,7 @@ export function SelectionOption({ title, description, meta, status, selected, di
 
 export function ListRow({ title, subtitle, meta, selected = false, avatar, identity = avatar ? 'person' : 'text', marker, onClick }: { title: string; subtitle: string; meta?: string; selected?: boolean; avatar?: ReactNode; identity?: 'person' | 'text'; marker?: ReactNode; onClick: () => void }): React.JSX.Element {
   const showAvatar = identity === 'person' && avatar !== undefined && avatar !== null
-  return <Button className={`list-row list-row--${identity}${selected ? ' is-selected' : ''}`} onPress={onClick}>{showAvatar && <span className="list-row__avatar">{avatar}</span>}<span className="list-row__body"><span className="list-row__title">{title}</span><span className="list-row__subtitle">{subtitle}</span></span><span className="list-row__meta">{meta}{marker}</span></Button>
+  return <Button aria-current={selected ? 'true' : undefined} className={`list-row list-row--${identity}${selected ? ' is-selected' : ''}`} onPress={onClick}>{showAvatar && <span className="list-row__avatar">{avatar}</span>}<span className="list-row__body"><span className="list-row__title">{title}</span><span className="list-row__subtitle">{subtitle}</span></span><span className="list-row__meta">{meta}{marker}</span></Button>
 }
 
 export function ProfileSummary({ identity, title, description, avatar, actions }: { identity: PersonIdentity; title: string; description: string; avatar?: ReactNode; actions?: ReactNode }): React.JSX.Element {

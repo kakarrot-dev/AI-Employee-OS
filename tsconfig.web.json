@@ -7,8 +7,33 @@
     "jsx": "react-jsx",
     "strict": true,
     "skipLibCheck": true,
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"]
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "vite/client",
+      "vitest/globals",
+      "@testing-library/jest-dom"
+    ]
   },
-  "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx", "src/shared/runtime-contract.ts", "src/shared/employee-contract.ts", "src/shared/expert-group-contract.ts", "src/shared/supervisor-contract.ts", "src/shared/task-contract.ts", "src/shared/chat-content-contract.ts", "src/shared/resource-contract.ts", "src/shared/memory-contract.ts", "src/shared/usage-contract.ts", "src/shared/capability-contract.ts", "src/shared/feishu-meeting-contract.ts"]
+  "include": [
+    "src/renderer/**/*.ts",
+    "src/renderer/**/*.tsx",
+    "src/shared/runtime-contract.ts",
+    "src/shared/employee-contract.ts",
+    "src/shared/expert-group-contract.ts",
+    "src/shared/supervisor-contract.ts",
+    "src/shared/task-contract.ts",
+    "src/shared/chat-content-contract.ts",
+    "src/shared/resource-contract.ts",
+    "src/shared/memory-contract.ts",
+    "src/shared/usage-contract.ts",
+    "src/shared/capability-contract.ts",
+    "src/shared/feishu-meeting-contract.ts",
+    "src/shared/teams-contract.ts",
+    "prototypes/macos-client-v2/src/**/*.ts",
+    "prototypes/macos-client-v2/src/**/*.tsx"
+  ]
 }

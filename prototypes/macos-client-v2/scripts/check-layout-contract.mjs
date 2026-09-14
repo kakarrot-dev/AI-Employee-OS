@@ -5,6 +5,7 @@ const root = fileURLToPath(new URL('..', import.meta.url))
 const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const contract = await readFile(`${root}/src/layout.css`, 'utf8')
 const styles = await readFile(`${root}/src/styles.css`, 'utf8')
+const prototypeEntry = await readFile(`${root}/src/main.tsx`, 'utf8')
 const app = await readFile(`${root}/src/App.tsx`, 'utf8')
 const windowContract = await readFile(`${repositoryRoot}/src/shared/layout-contract.ts`, 'utf8')
 const rendererStyles = await readFile(`${repositoryRoot}/src/renderer/src/prototype-adapter.css`, 'utf8')
@@ -255,7 +256,7 @@ if (/\.(?:rail|context-pane)[^{]*\{[^}]*display:\s*none/s.test(styles)) {
   errors.push('图标栏或列表栏被隐藏，违反固定三栏契约')
 }
 
-if (!app.includes('function Toolbar({ title, support, trailing }') || !app.includes('className="window-controls-safe-area"') || !app.includes('className="toolbar__workspace"') || !app.includes('data-layout-contract="application-toolbar"')) {
+if (!app.includes('<AppShell') || !app.includes('<ClientToolbar') || !app.includes('<ClientRail') || !app.includes('<ClientContextPane')) {
   errors.push('顶部栏必须复用集成式 macOS 窗口栏，保留原生窗口控制安全区、当前标题和必要操作')
 }
 
@@ -335,12 +336,12 @@ for (const marker of ['.conversation-row:hover .conversation-row__delete', '.con
   if (!styles.includes(marker)) errors.push(`缺少当前行 Hover 或键盘焦点删除操作: ${marker}`)
 }
 
-for (const label of ['删除会话', '打开所在文件夹']) {
+for (const label of ['删除会话']) {
   if (!app.includes(label)) errors.push(`缺少消息操作契约: ${label}`)
 }
 
-if (!app.includes('function ChatMessage') || !app.includes('message-block--${source}')) {
-  errors.push('用户与总管消息必须复用左右对齐的 ChatMessage 气泡组件')
+if (!['ChatMessage', 'MarkdownMessage', 'ChatContentBlock', 'MarkdownContent', 'ClientMessageAttachmentGroup'].every((name) => app.includes(`<${name}`)) || !rendererMessageComponents.includes('message-block--${source}')) {
+  errors.push('Web 原型用户与总管消息必须直接复用客户端 ChatMessage、MarkdownMessage 和 ChatContentBlock')
 }
 
 if (app.includes('name="你"') || rendererApp.includes("isUser ? '你'")) {
@@ -372,14 +373,14 @@ for (const marker of ['.message-block--user {', 'flex-direction: row-reverse', '
 }
 
 if (app.includes('className="participants"') || app.includes('aria-label="新建话题"')) {
-  errors.push('会话标题栏不得固定展示事项团队，事项只能由总管根据对话意图创建')
+  errors.push('会话标题栏不得固定展示事项团队；Web v0.1 由用户明确选择场景')
 }
 
 if (app.includes('>任务 <')) {
   errors.push('消息页不得把顶层事项命名为任务')
 }
 
-for (const marker of ['className="topic-bar__count"', 'className="matter-route-note message-stream-item"', 'className="matter-event message-stream-item"', 'className="matter-index-card"', 'className="matter-team-avatars"']) {
+for (const marker of ['className="matter-event message-stream-item"', 'className="matter-sidebar__item"', 'className="matter-team-avatars"']) {
   if (!app.includes(marker)) errors.push(`缺少会话事项结构: ${marker}`)
 }
 
@@ -387,19 +388,26 @@ for (const marker of ['<MatterSidebar tasks={conversationTasks}', '<small>{tasks
   if (!rendererApp.includes(marker)) errors.push(`客户端事项数量或头像未复用当前会话事实: ${marker}`)
 }
 
-if (!app.includes('{hasMatters && <div className="topic-bar"')) {
-  errors.push('普通问答会话不得展示没有切换价值的单独对话页签')
+if (app.includes('className="topic-bar"') || app.includes('function MatterIndexView')) {
+  errors.push('Web 消息页必须与当前客户端一致，使用右侧事项栏，不得恢复对话与事项页签')
 }
 
-for (const marker of ['function MarkdownMessage', '<ReactMarkdown remarkPlugins={[remarkGfm]}>', 'aria-expanded={expanded}', 'className="attachment-carousel-navigation"', 'label="查看上一份附件"', 'label="查看下一份附件"']) {
-  if (!app.includes(marker)) errors.push(`缺少消息折叠或附件导航复用组件: ${marker}`)
+for (const marker of ['<ClientToolbar', 'conversation-workspace', 'conversation-column', 'matterSidebarCollapsed', '<MatterSidebar matters={hasMatters ? conversationMatters : []}', '当前会话暂无事项', 'target.focus({ preventScroll: true })']) {
+  if (!app.includes(marker)) errors.push(`Web 消息页缺少客户端样式、布局或事项定位契约: ${marker}`)
+}
+
+for (const marker of ['<ReactMarkdown remarkPlugins={[remarkGfm]}>', 'className="attachment-carousel-navigation"', 'label="查看上一份附件"', 'label="查看下一份附件"']) {
+  if (!rendererMessageComponents.includes(marker)) errors.push(`缺少消息折叠或附件导航复用组件: ${marker}`)
+}
+for (const marker of ['function MarkdownMessage', 'aria-expanded={expanded}']) {
+  if (!rendererMessageComponents.includes(marker)) errors.push(`共享消息组件缺少长文折叠契约: ${marker}`)
 }
 
 for (const marker of ['variant="timeline"', '<TimelineSummary content={assignment.content}', '<ChatContentBlock content={content} variant="delivery">', '<MessageAttachmentGroup source="agent" embedded', 'className="matter-event__body"><strong>{task.title}</strong><span>{summary.description}</span>']) {
   if (!rendererApp.includes(marker)) errors.push(`客户端信息流缺少目标、过程或结果分层契约: ${marker}`)
 }
 
-for (const marker of ['matter-route-note message-stream-item', 'matter-event message-stream-item', 'message-block--timeline message-stream-item', 'runtime-route-note message-stream-item', 'change-card message-stream-item', 'boundary-note message-stream-item']) {
+for (const marker of ['matter-route-note message-stream-item', 'matter-event message-stream-item', 'message-block--timeline message-stream-item', 'runtime-route-note message-stream-item', 'approval-card message-action-card message-stream-item', 'boundary-note message-stream-item']) {
   if (!rendererApp.includes(marker) && !rendererMessageComponents.includes(marker)) errors.push(`客户端信息流组件未复用最大宽度与自适应契约: ${marker}`)
 }
 
@@ -420,14 +428,14 @@ if (app.includes('className="delivery-card delivery-card--complete message-strea
 }
 
 for (const marker of ['function AttachmentOpenMenu', '<MenuTrigger>', 'className="attachment-open-trigger"', '使用系统默认应用打开', '打开所在文件夹']) {
-  if (!app.includes(marker) || !rendererMessageComponents.includes(marker)) errors.push(`原型与客户端缺少共享附件打开方式契约: ${marker}`)
+  if (!rendererMessageComponents.includes(marker)) errors.push(`原型与客户端缺少共享附件打开方式契约: ${marker}`)
 }
 
 if (rendererMessageComponents.includes('label={`打开 ${attachment.name}`} icon={OpenNewWindow}')) {
   errors.push('客户端附件不得恢复两个无文字图标，文件操作必须收敛到“打开方式”菜单')
 }
 
-for (const marker of ['function MarkdownContent', 'skillMarkdown?: string', '<h2>{capability.name}</h2>', '<p>{capability.summary}</p>', '<h3>SKILL.md</h3>', '<MarkdownContent className="skill-document__markdown">']) {
+for (const marker of ['<MarkdownContent', 'skillMarkdown?: string', '<h2>{capability.name}</h2>', '<p>{capability.summary}</p>', '<h3>SKILL.md</h3>', '<MarkdownContent className="skill-document__markdown">']) {
   if (!app.includes(marker)) errors.push(`缺少 Skill 名称、描述或完整 Markdown 文档详情: ${marker}`)
 }
 
@@ -441,8 +449,8 @@ for (const usage of ['max-height: calc(1em * var(--type-leading-reading) * var(-
   if (!styles.includes(usage)) errors.push(`消息折叠或附件导航未使用尺寸契约: ${usage}`)
 }
 
-for (const label of ['需要你处理', '进行中', '已完成', '总管直接回答，不创建事项']) {
-  if (!app.includes(label)) errors.push(`缺少事项意图或分组契约: ${label}`)
+for (const label of ['需要你处理', '已完成']) {
+  if (!app.includes(label)) errors.push(`缺少事项状态契约: ${label}`)
 }
 
 for (const marker of ['function DetailSummaryPanel', 'function DetailSectionHeader', 'function DetailListMark', 'function DetailState', 'function DetailNote']) {
@@ -457,6 +465,15 @@ for (const legacySelector of ['.matter-summary', '.matter-section-heading', '.ma
   if (rendererStyles.includes(legacySelector)) errors.push(`事项详情不得继续使用页面专用组件样式: ${legacySelector}`)
   if (rendererApp.includes(legacySelector.slice(1))) errors.push(`事项详情不得继续渲染页面专用组件类名: ${legacySelector.slice(1)}`)
 }
+
+// Guard the actual shared imports, not duplicated markup in the Web entry.
+const reusedPrimitives = ['DetailPage', 'SectionHeader', 'ProfileFacts', 'ProfileValueTags', 'SummaryCardGrid', 'SummaryCard', 'DetailSummaryPanel', 'DetailSectionHeader', 'DetailState', 'SettingsBlock', 'SettingRow', 'MarkdownContent']
+for (const name of reusedPrimitives) {
+  if (new RegExp(`function ${name}\\b`).test(app)) errors.push(`Web 不得重新实现共享组件 ${name}`)
+}
+if (!prototypeEntry.includes("import '../../../src/renderer/src/prototype-adapter.css'") || app.includes('prototype-adapter.css?inline')) errors.push('共享视觉样式必须在 Web 入口全局加载，不能按页面切换')
+if (/--(?:surface-[\w-]+|text-(?:primary|secondary|tertiary)|line(?:-strong|-shell)?|accent(?:-strong|-soft)?|focus|danger(?:-soft)?|warning|success|active|muted|shadow-(?:popover|modal|tag|card|card-hover)|shell-composer-shadow)\s*:/.test(rendererStyles)) errors.push('共享适配样式不得重新定义 styles.css 中的主题 Token')
+if (/--layout-[\w-]+\s*:/.test(rendererStyles)) errors.push('共享适配样式不得重新定义 layout.css 中的尺寸 Token')
 
 if (errors.length) {
   console.error(errors.join('\n'))

@@ -19,8 +19,8 @@ describe('macOS prototype visual contract', () => {
       '--layout-toolbar-navigation-edge-padding: 10px',
       '--layout-toolbar-window-controls-gap: 16px',
       '--layout-toolbar-collapsed-navigation-width: calc(var(--layout-window-controls-safe-left) + var(--layout-toolbar-window-controls-gap) + var(--layout-icon-button-size) + var(--layout-toolbar-navigation-edge-padding))',
-      '--layout-rail-width: 52px',
-      '--layout-context-width: 264px',
+      '--layout-rail-width: 56px',
+      '--layout-context-width: 276px',
       '--layout-window-controls-safe-left: 76px',
       '--layout-window-controls-safe-top: 44px',
       '--icon-size-inline: 14px',
@@ -32,7 +32,7 @@ describe('macOS prototype visual contract', () => {
       '--layout-modal-large-width: 900px',
       '--layout-modal-large-height: 680px'
     ]) expect(css).toContain(token)
-    expect(css).toMatch(/@media \(max-width: 1199px\)[\s\S]*--layout-rail-width: 48px;[\s\S]*--layout-context-width: 226px;/)
+    expect(css).toMatch(/@media \(max-width: 1199px\)[\s\S]*--layout-rail-width: 56px;[\s\S]*--layout-context-width: 236px;/)
   })
 
   it('keeps the canonical compact typography scale', () => {

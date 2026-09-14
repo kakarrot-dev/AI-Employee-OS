@@ -56,9 +56,14 @@
 | `SettingsBlock` / `SettingRow` | 系统设置右侧的单栏分组与键值动作；分区标题、说明、内容自上而下排列 | Runtime 状态伪造、左右说明栏 |
 | `IconButton` / `Avatar` / `StatusLight` | 一致的原子视觉与无障碍语义 | 业务副作用 |
 | `ClientModal` | 统一遮罩、尺寸、Esc/遮罩关闭与 Dialog 语义 | 创建、发布、删除等业务状态机 |
+| `ChatMessage` / `MarkdownMessage` | 消息身份、时间、正文、长文折叠和过程消息外观 | 页面复制消息壳、业务状态推断 |
+| `ChatContentBlock` | 标题、摘要、指标和可展开详情；过程与交付共用结构 | 页面专用资料卡和第二套交付排版 |
+| `MessageAttachmentGroup` / `AttachmentOpenMenu` | 文件信息和打开方式菜单；通过回调提供系统打开、文件夹定位、预览或下载 | 文件读写、外部请求、页面复制附件 DOM |
 | `MessageActionCard` | 消息流动作卡片的标题、文字状态、内容与确认操作插槽；复用 `approval-card`、`DetailState`、`approval-actions` | 业务审批决策、接口调用和独立主题值 |
 
-消息动作卡片使用 `data-component-contract="message-action-card"`。会议联系人查找、创建与邀请统一复用该组件；标题、正文与辅助说明分别使用 `--type-card-title-size`、`--type-card-body-size`、`--type-secondary-size`，样式只在原型事实源定义。操作使用 React Aria `Button` 与通用按钮类，状态同时使用文字和语义色；长链接和联系人标识允许换行，不得撑宽消息区。
+消息动作卡片使用 `data-component-contract="message-action-card"`。事项变更确认、待补充信息、会议联系人查找、创建与邀请统一复用该组件；标题、正文与辅助说明分别使用 `--type-card-title-size`、`--type-card-body-size`、`--type-secondary-size`，样式只在原型事实源定义。确认操作统一使用 `MessageConfirmationActions`，内部使用 React Aria `Button` 与通用按钮类；取消在前，确认在后，忙碌时同时禁用并显示“正在处理”。不得在业务页增加独立确认卡 CSS、裸按钮或字号；文案使用“确认变更并继续”，不向用户展示 Revision、Checkpoint 等内部实现名称。状态同时使用文字和语义色；长链接和联系人标识允许换行，不得撑宽消息区。
+
+会议 Web 原型直接复用上述消息组件。`AttachmentOpenMenu` 默认保持桌面系统打开与 Finder 定位；Web 通过 `openMode="preview"` 显示“预览文档”，通过 `onDownload` 提供“下载文档”，仅展示调用方提供的可执行动作。共享组件负责菜单语义与视觉，预览弹窗、Blob URL 和下载副作用由业务调用方管理，不在 Web 展示虚假的 macOS 操作。
 
 ### 2.1 图标系统契约
 
@@ -72,14 +77,14 @@
 ## 3. 页面契约
 
 - 消息：`ContextPane` 展示真实会话；`Workspace` 永久保留 Composer，消息与业务事项共用同一条时间线。
-- 通讯录：`ContextPane` 展示真实 Agent 员工；`Workspace` 展示资料、能力摘要和最近交付；三步创建与五分区设置复用 `ClientModal`，测试、发布和治理继续调用真实 Runtime 状态机。
+- 通讯录：`ContextPane` 展示真实 Agent 员工；`Workspace` 展示资料和能力摘要；创建采用三步，设置保留基本资料、提示词、模型与能力、记忆四个分区。客户端使用 `ClientModal`，Web 使用 React Aria Modal 生命周期并共享尺寸和样式；业务结果分别来自 Bridge 和本地演示状态。
 - 能力：`ContextPane` 只按原型展示 Skill、Tool；`Workspace` 展示 SKILL.md、适用任务、依赖、绑定 Agent 与高级信息。MCP 和数据源健康归入系统的资源治理。
-- 连接：`ContextPane` 只列出 Bridge 确认处于 `connected` 的应用，使用官方应用图标、名称、能力摘要和“已连接”状态；未连接、检查中、异常或需重新授权的应用不得混入该列表，空状态明确显示“暂无已连接应用”。点击已连接应用进入其管理弹窗。`Workspace` 复用招募员工目录的摘要、分组、卡片与状态组件，按协作沟通、知识与文件、研发与云服务三类展示 12 个可连接应用。飞书状态来自顶层持有的窄 `ConnectionBridge`，左侧列表、目录卡片和顶部指标共享同一状态事实；App Secret、用户令牌和 refresh token 只保存在 macOS Keychain，Renderer 不持有持久凭证。其余 11 个应用仍为静态“未连接”。
-- 系统：`ContextPane` 固定承载个人资料、通用、总管、模型服务、资源、记忆与存储、用量、关于；默认打开个人资料，`Workspace` 只显示所选设置页。右侧所有设置分区统一使用单栏阅读流，不为分区说明另建左侧标签栏。
+- 连接：`ContextPane` 只列出 Bridge 确认处于 `connected` 的应用，使用官方应用图标、名称、能力摘要和“已连接”状态；未连接、检查中、异常或需重新授权的应用不得混入该列表，空状态明确显示“暂无已连接应用”。点击已连接应用进入其管理弹窗。`Workspace` 复用招募员工目录的摘要、分组、卡片与状态组件，按协作沟通、知识与文件、研发与云服务三类展示 12 个可连接应用。飞书状态来自顶层持有的窄 `ConnectionBridge`，左侧列表、目录卡片和顶部指标共享同一状态事实；App Secret、用户令牌和 refresh token 只保存在 macOS Keychain，Renderer 不持有持久凭证。Teams 接入边界以 `docs/teams-connection-flow.md` 和当前 Bridge 能力为准；Web 目录中的 12 项均为静态“未连接”。
+- 系统：`ContextPane` 固定承载个人资料、通用、总管、模型服务、资源与权限、记忆与存储、用量与预算、关于与诊断；默认打开个人资料，`Workspace` 只显示所选设置页。右侧所有设置分区统一使用单栏阅读流，不为分区说明另建左侧标签栏。
 
 ## 4. 状态与数据边界
 
-- 列表、详情、创建、归档、运行状态必须来自 preload 暴露的窄 Bridge。
+- 正式客户端的列表、详情、创建、归档和运行状态必须来自 preload 暴露的窄 Bridge；Web 演示状态遵守文末独立边界。
 - 飞书授权固定监听本机回环 `localhost:3000`，必须校验 OAuth `state`；自建应用以 App Secret 作为机密客户端凭证，token 交换使用飞书官方 Node SDK 的 OAuth v3 能力，不混用 PKCE 参数。连接阶段按“应用凭证 → 配置文档权限与重定向 URL → 用户授权”三步执行：确认配置前不得打开授权页，授权中必须支持主动取消，错误码 `20029` 必须引导用户返回安全设置修复。完整状态与恢复契约见 `docs/feishu-connection-flow.md`。当前只申请 `offline_access`、`search:docs:read`、`docx:document:readonly`；消息、文档写入、日历和组织权限不在范围内。
 - 暂未接入的上传、用量等能力明确显示不可用，不用假数据补齐原型。
 - 页面状态由顶层模块持有；共享视觉组件保持无业务状态，事件通过 props 上送。
@@ -105,3 +110,15 @@
 选择卡片 `SelectionOption` 的名称与元信息必须分行：名称占满内容列并单行展示，超长时省略并以 title 保留完整名称；版本、模型来源或依赖数量放在下一行，允许换行。不得使用不可收缩的元信息挤压名称，也不得通过缩小字号解决。
 
 创建与编辑专家的工作能力选择区仅展示含 Skill、Tool 或工具服务绑定的扩展能力，不将模型自带的文本理解与生成作为可选能力。扩展绑定可为空；已选数量和搜索总数只统计可展示扩展。历史模型基础能力绑定保留兼容，不在界面中重复选择。
+
+### Teams 参会确认展示
+
+`TeamsParticipantList` 只展示 Runtime/主进程提供的姓名、邮箱与逐人卡片确认状态，复用消息卡正文排版和 `DetailState`。表格使用语义表头，长邮箱允许换行。汇总“已确认 X / N 人”只计算 `confirmed`；日历接受、消息发送成功、未知结果均不得计入。未发送时提供显式发送按钮，已发送或发送结果未知的卡片不得出现重复发送操作。
+
+## Web 原型复用与状态边界（2026-09-10）
+
+Web 与客户端复用 `client-ui.tsx` 和 `message-ui.tsx` 的公共 DOM、交互与样式；原型内保留的薄适配函数仅转换字段和回调。五个主页面全局加载同一组样式，尺寸、字体、主题数值分别集中于 `layout.css`、`typography.css`、`styles.css`。检查脚本覆盖共享适配样式，阻止重复实现公共资料/设置组件、条件加载样式、重复定义尺寸/主题和硬编码排版。
+
+Web 会话草稿、附件、方向确认、员工创建/编辑/删除及系统示例配置由顶层持有，切换页面保留，刷新恢复初始示例。删除最后一个对象必须清空详情并提供重新开始入口；能力绑定人员随员工配置派生。导航暴露 `aria-current`，通讯录与能力 Tabs 使用 React Aria 键盘行为。Web 弹窗沿用 React Aria 的进入/退出、焦点恢复与 Escape 行为，附件滚动复用支持减少动态效果的共享实现。
+
+示例附件无实际文件时禁用操作并说明；本次上传附件保留 File 引用并提供浏览器查看/下载，预览关闭时释放 Blob URL。Web 不支持的启动、系统通知和本地诊断控件禁用并给出原因；模型验证仅改变演示状态，不能显示为真实外部连接成功。

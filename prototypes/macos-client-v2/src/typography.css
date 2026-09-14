@@ -1,4 +1,6 @@
 :root {
+  --type-family-interface: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+  --type-family-code: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
   /* Primitive scale: product text may only use these sizes. */
   --type-size-badge: 8px;
   --type-size-meta: 10px;

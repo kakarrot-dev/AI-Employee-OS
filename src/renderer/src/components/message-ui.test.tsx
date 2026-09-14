@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AgentActivityMessage, ChatContentBlock, ChatMessage, MarkdownMessage, MatterRouteNote, MessageAttachmentGroup, TimelineSummary } from './message-ui'
+import { AgentActivityMessage, MessageActionCard, MessageConfirmationActions, ChatContentBlock, ChatMessage, MarkdownMessage, MatterRouteNote, MessageAttachmentGroup, TimelineSummary } from './message-ui'
 
 describe('message UI contracts', () => {
   afterEach(() => vi.restoreAllMocks())
@@ -61,6 +61,23 @@ describe('message UI contracts', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /展开全文/ })).toHaveAttribute('aria-expanded', 'false'))
   })
 
+  it('supports preview and download in the same attachment menu without desktop-only actions', () => {
+    const onOpen = vi.fn(), onDownload = vi.fn()
+    const attachment = { id: 'summary', name: '会议摘要.md', detail: 'Markdown · 演示文档' }
+    const { rerender } = render(<MessageAttachmentGroup source="agent" embedded openMode="preview" attachments={[attachment]} onOpen={onOpen} onDownload={onDownload} />)
+    fireEvent.click(screen.getByRole('button', { name: '打开方式 会议摘要.md' }))
+    expect(screen.queryByRole('menuitem', { name: /使用系统默认应用打开/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: /打开所在文件夹/ })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('menuitem', { name: /预览文档/ }))
+    expect(onOpen).toHaveBeenCalledExactlyOnceWith('summary')
+    fireEvent.click(screen.getByRole('button', { name: '打开方式 会议摘要.md' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /下载文档/ }))
+    expect(onDownload).toHaveBeenCalledExactlyOnceWith('summary')
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    rerender(<MessageAttachmentGroup source="agent" openMode="preview" attachments={[attachment]} />)
+    expect(screen.getByRole('button', { name: '打开方式 会议摘要.md' })).toBeDisabled()
+  })
+
   it('does not mark a short message as collapsible', async () => {
     vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(32)
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(32)
@@ -117,4 +134,17 @@ describe('message UI contracts', () => {
     rerender(<ChatContentBlock content={content} variant="delivery" />)
     expect(screen.getByText('公开信息核验完成').closest('.chat-content')).toHaveClass('chat-content--delivery')
   })
+})
+
+it('uses one confirmation action contract with a busy state and an accessible status', () => {
+  const confirm = vi.fn(), cancel = vi.fn()
+  const view = (busy: boolean) => <MessageActionCard title="确认事项变更" status="等待你确认" tone="waiting" actions={<MessageConfirmationActions cancelLabel="保持原事项" confirmLabel="确认变更并继续" busy={busy} onCancel={cancel} onConfirm={confirm} />}><p>更新会议参会人</p></MessageActionCard>
+  const { rerender } = render(view(false))
+  expect(screen.getByRole('article', { name: '确认事项变更' })).toHaveAttribute('data-component-contract', 'message-action-card')
+  expect(screen.getByRole('status')).toHaveTextContent('等待你确认')
+  fireEvent.click(screen.getByRole('button', { name: '确认变更并继续' }))
+  expect(confirm).toHaveBeenCalledOnce()
+  rerender(view(true))
+  expect(screen.getByRole('button', { name: '正在处理' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: '保持原事项' })).toBeDisabled()
 })

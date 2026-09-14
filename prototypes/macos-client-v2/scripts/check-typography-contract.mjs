@@ -2,6 +2,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
+const sharedAdapter = fileURLToPath(new URL('../../../src/renderer/src/prototype-adapter.css', import.meta.url))
 const contract = await readFile(`${root}/src/typography.css`, 'utf8')
 
 async function collectCssFiles(directory) {
@@ -15,6 +16,8 @@ async function collectCssFiles(directory) {
 }
 
 const requiredTokens = [
+  '--type-family-interface',
+  '--type-family-code',
   '--type-navigation-size',
   '--type-list-title-size',
   '--type-body-size',
@@ -36,12 +39,12 @@ const requiredTokens = [
 ]
 
 const missingTokens = requiredTokens.filter((token) => !contract.includes(`${token}:`))
-const styleFiles = await collectCssFiles(`${root}/src`)
+const styleFiles = [...await collectCssFiles(`${root}/src`), sharedAdapter]
 const rawRules = []
 
 for (const file of styleFiles) {
   const styles = await readFile(file, 'utf8')
-  for (const match of styles.matchAll(/(?:font-size|font-weight|line-height|letter-spacing):\s*([^;]+);/g)) {
+  for (const match of styles.matchAll(/(?:font-family|font-size|font-weight|line-height|letter-spacing):\s*([^;]+);/g)) {
     if (match[1].trim().startsWith('var(')) continue
     const line = styles.slice(0, match.index).split('\n').length
     rawRules.push(`${file.replace(`${root}/`, '')}:${line} ${match[0]}`)

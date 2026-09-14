@@ -1,18 +1,18 @@
 # macOS 客户端排版契约
 
-本契约是客户端文字层级的唯一事实源。页面和组件不得直接写字号、字重、行高或字距数值，只能使用 `src/typography.css` 中的语义 Token。
+`src/typography.css` 是 Web 和客户端文字层级的唯一数值来源，本契约说明对应语义。页面和组件不得直接写字号、字重、行高或字距数值，只能使用 `src/typography.css` 中的语义 Token。
 
 ## 1. 基础刻度
 
 | 层级 | Token | 大小 | 使用边界 |
 | --- | --- | ---: | --- |
-| Badge | `--type-size-badge` | 9px | 未读数字等非句子信息 |
-| Meta | `--type-size-meta` | 11px | 时间、版本、数量等元数据 |
-| Secondary | `--type-size-secondary` | 12px | 描述、状态、帮助文字、按钮 |
-| Body | `--type-size-body` | 13px | 正文、列表标题、输入内容、导航 |
-| Heading | `--type-size-heading` | 15px | 工作区标题、卡片标题、确认弹窗标题 |
-| Title | `--type-size-title` | 20px | 页面、详情页和设置页主标题 |
-| Metric | `--type-size-metric` | 23px | 金额和关键统计值，不用于普通标题 |
+| Badge | `--type-size-badge` | 8px | 未读数字等非句子信息 |
+| Meta | `--type-size-meta` | 10px | 时间、版本、数量等元数据 |
+| Secondary | `--type-size-secondary` | 11px | 描述、状态、帮助文字、按钮 |
+| Body | `--type-size-body` | 12px | 正文、列表标题、输入内容、导航 |
+| Heading | `--type-size-heading` | 14px | 工作区标题、卡片标题、确认弹窗标题 |
+| Title | `--type-size-title` | 18px | 页面、详情页和设置页主标题 |
+| Metric | `--type-size-metric` | 21px | 金额和关键统计值，不用于普通标题 |
 
 持续显示的中文句子不得使用 Badge 或 Meta。Meta 只承载可快速略读的元数据。
 
@@ -57,3 +57,7 @@
 6. Markdown 标题与代码使用独立组件 Token，但只映射现有 Title、Heading、Body 和 Secondary 基础刻度，不新增临时字号。
 
 运行 `npm run prototype:check:typography` 检查是否出现绕过契约的原始排版数值。
+
+## 5. 共享样式检查范围
+
+`prototype:check:typography` 同时扫描原型 CSS 与 `src/renderer/src/prototype-adapter.css`，检查字体族、字号、字重、行高和字距。界面和代码字体分别引用 `--type-family-interface`、`--type-family-code`；适配层必须使用已有语义角色，不能重新引入 13px、17px 等局部刻度。

@@ -1,7 +1,7 @@
 :root {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
-  color: #25231f;
-  background: #d8d6d1;
+  font-family: var(--type-family-interface);
+  color: var(--text-primary);
+  background: var(--surface-app);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -22,7 +22,7 @@ body,
 }
 
 body {
-  background: #d8d6d1;
+  background: var(--surface-app);
 }
 
 #root {
@@ -42,35 +42,44 @@ button {
 }
 
 :root {
-  --surface-app: #f3f1ec;
-  --surface-rail: #edeae4;
-  --surface-list: #f6f4ef;
-  --surface-content: #fbfaf7;
-  --surface-raised: #ffffff;
-  --surface-subtle: #efede8;
-  --surface-selected: #e8e5de;
-  --surface-hover: #ece9e3;
-  --text-primary: #26241f;
-  --text-secondary: #68645c;
-  --text-tertiary: #928d84;
-  --line: #dfdcd5;
-  --line-strong: #cfcbc2;
+  --surface-app: #f5f4f0;
+  --surface-rail: #f5f4f0;
+  --surface-list: #f5f4f0;
+  --surface-content: #faf9f6;
+  --surface-raised: #fdfcf9;
+  --surface-subtle: #f0efeb;
+  --surface-selected: #e9e7e2;
+  --surface-hover: #eceae5;
+  --text-primary: #2b2925;
+  --text-secondary: #716e67;
+  --text-tertiary: #99958d;
+  --line: rgb(54 51 45 / 8%);
+  --line-strong: rgb(54 51 45 / 14%);
   --line-shell: rgb(54 51 45 / 5%);
-  --accent: #687749;
-  --accent-strong: #4f5d34;
-  --accent-soft: #e8ecd9;
-  --focus: #6578a6;
-  --danger: #c63f3f;
-  --danger-soft: #f9e9e7;
-  --warning: #cc7b22;
-  --success: #54825c;
-  --active: #6d78a7;
-  --muted: #9a968e;
-  --shadow-popover: 0 12px 32px rgba(55, 50, 41, 0.16), 0 2px 8px rgba(55, 50, 41, 0.08);
-  --shadow-modal: 0 28px 90px rgba(55, 50, 41, 0.22), 0 4px 16px rgba(55, 50, 41, 0.1);
+  --accent: #6b7652;
+  --accent-strong: #56623d;
+  --accent-soft: #e9ecdf;
+  --focus: #7786a8;
+  --danger: #bf4b47;
+  --danger-soft: #f7e9e7;
+  --warning: #b77730;
+  --success: #5b8060;
+  --active: #6877a0;
+  --muted: #99958d;
+  --shadow-popover: 0 14px 38px rgb(61 56 47 / 12%), 0 2px 8px rgb(61 56 47 / 6%);
+  --shadow-modal: 0 30px 90px rgb(61 56 47 / 18%), 0 4px 16px rgb(61 56 47 / 8%);
   --shadow-tag: 0 1px 2px rgba(55, 50, 41, 0.07), 0 4px 12px rgba(55, 50, 41, 0.04);
-  --shadow-card: 0 1px 2px rgba(55, 50, 41, 0.08), 0 8px 22px rgba(55, 50, 41, 0.06);
-  --shadow-card-hover: 0 2px 4px rgba(55, 50, 41, 0.09), 0 12px 28px rgba(55, 50, 41, 0.08);
+  --shadow-card: 0 1px 2px rgb(61 56 47 / 5%), 0 8px 24px rgb(61 56 47 / 4%);
+  --shadow-card-hover: 0 2px 4px rgb(61 56 47 / 7%), 0 12px 28px rgb(61 56 47 / 6%);
+  color-scheme: light dark;
+  --shell-composer-shadow: 0 8px 26px rgb(61 56 47 / 6%);
+  --canvas: var(--surface-app);
+  --chrome: var(--surface-subtle);
+  --surface: var(--surface-content);
+  --surface-strong: var(--surface-raised);
+  --ink: var(--text-primary);
+  --faint: var(--text-tertiary);
+  --radius: 12px;
 }
 
 .prototype {
@@ -88,12 +97,15 @@ button {
 }
 
 /* Client icon contract: Iconoir owns geometry; components choose semantic roles. */
+.app-modal svg,
+.attachment-open-popover svg,
 .prototype svg {
   width: var(--icon-size-standard);
   height: var(--icon-size-standard);
   flex: 0 0 auto;
 }
 
+.app-modal :is(.icon-button, .search-box, .button, .composer__control, .modal-navigation button, .avatar-upload__affordance) svg,
 .prototype :is(.icon-button, .search-box, .button, .composer__control, .modal-navigation button, .avatar-upload__affordance) svg {
   width: var(--icon-size-control);
   height: var(--icon-size-control);
@@ -104,17 +116,21 @@ button {
   height: var(--icon-size-navigation);
 }
 
+.app-modal :is(.text-action, .advanced-disclosure, .dependency-groups p) svg,
+.attachment-open-popover .attachment-open-trigger__chevron,
 .prototype :is(.message-expand-button, .text-action, .advanced-disclosure, .matter-event__time, .dependency-groups p) svg,
 .prototype .attachment-open-trigger__chevron {
   width: var(--icon-size-inline);
   height: var(--icon-size-inline);
 }
 
+.app-modal :is(.danger-icon, .connection-modal__hero) > svg,
 .prototype :is(.capability-mark, .runtime-empty-state__mark, .danger-icon, .connection-modal__hero) > svg {
   width: var(--icon-size-feature);
   height: var(--icon-size-feature);
 }
 
+.app-modal .detail-summary-panel__icon > svg,
 .prototype :is(.detail-summary-panel__icon, .composer-drop-zone) > svg {
   width: var(--icon-size-navigation);
   height: var(--icon-size-navigation);
@@ -129,70 +145,75 @@ button {
 .task-result-icon--passed { color: var(--success); }
 .task-result-icon--failed { color: var(--danger); }
 
+:root[data-theme="light"] { color-scheme: light; }
+
 :root[data-theme="dark"] {
-  --surface-app: #1c1c1a;
-  --surface-rail: #20201e;
-  --surface-list: #242320;
-  --surface-content: #292824;
-  --surface-raised: #302f2b;
-  --surface-subtle: #34322d;
-  --surface-selected: #3a3832;
-  --surface-hover: #34332e;
-  --text-primary: #f0eee7;
-  --text-secondary: #bbb6ab;
-  --text-tertiary: #89857c;
-  --line: #3b3934;
-  --line-strong: #4b4841;
+  --surface-app: #1f1f1d;
+  --surface-rail: #1f1f1d;
+  --surface-list: #222220;
+  --surface-content: #272623;
+  --surface-raised: #2d2c28;
+  --surface-subtle: #302f2b;
+  --surface-selected: #37352f;
+  --surface-hover: #33312d;
+  --text-primary: #eeece6;
+  --text-secondary: #bab6ad;
+  --text-tertiary: #88847c;
+  --line: rgb(235 232 224 / 8%);
+  --line-strong: rgb(235 232 224 / 14%);
   --line-shell: rgb(235 232 224 / 7%);
-  --accent: #a7b879;
-  --accent-strong: #c0cf91;
-  --accent-soft: #333b26;
-  --focus: #91a7d7;
-  --danger: #ee7772;
-  --danger-soft: #482a29;
-  --warning: #e7a45d;
-  --success: #80b187;
-  --active: #9da8d7;
+  --accent: #a5b17e;
+  --accent-strong: #c0ca9d;
+  --accent-soft: #343a2a;
+  --focus: #93a4ca;
+  --danger: #df7470;
+  --danger-soft: #472d2b;
+  --warning: #dda05c;
+  --success: #7ba482;
+  --active: #98a5cf;
   --muted: #77736b;
   --shadow-popover: 0 14px 36px rgba(0, 0, 0, 0.34), 0 2px 10px rgba(0, 0, 0, 0.24);
   --shadow-modal: 0 32px 100px rgba(0, 0, 0, 0.48), 0 4px 20px rgba(0, 0, 0, 0.32);
   --shadow-tag: 0 1px 2px rgba(0, 0, 0, 0.18), 0 5px 14px rgba(0, 0, 0, 0.12);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.22), 0 9px 24px rgba(0, 0, 0, 0.16);
   --shadow-card-hover: 0 2px 5px rgba(0, 0, 0, 0.26), 0 13px 30px rgba(0, 0, 0, 0.22);
+  color-scheme: dark;
+  --shell-composer-shadow: 0 10px 30px rgb(0 0 0 / 18%);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
-    --surface-app: #1c1c1a;
-    --surface-rail: #20201e;
-    --surface-list: #242320;
-    --surface-content: #292824;
-    --surface-raised: #302f2b;
-    --surface-subtle: #34322d;
-    --surface-selected: #3a3832;
-    --surface-hover: #34332e;
-    --text-primary: #f0eee7;
-    --text-secondary: #bbb6ab;
-    --text-tertiary: #89857c;
-    --line: #3b3934;
-    --line-strong: #4b4841;
+    --surface-app: #1f1f1d;
+    --surface-rail: #1f1f1d;
+    --surface-list: #222220;
+    --surface-content: #272623;
+    --surface-raised: #2d2c28;
+    --surface-subtle: #302f2b;
+    --surface-selected: #37352f;
+    --surface-hover: #33312d;
+    --text-primary: #eeece6;
+    --text-secondary: #bab6ad;
+    --text-tertiary: #88847c;
+    --line: rgb(235 232 224 / 8%);
+    --line-strong: rgb(235 232 224 / 14%);
     --line-shell: rgb(235 232 224 / 7%);
-    --accent: #a7b879;
-    --accent-strong: #c0cf91;
-    --accent-soft: #333b26;
-    --focus: #91a7d7;
-    --danger: #ee7772;
-    --danger-soft: #482a29;
-    --warning: #e7a45d;
-    --success: #80b187;
-    --active: #9da8d7;
+    --accent: #a5b17e;
+    --accent-strong: #c0ca9d;
+    --accent-soft: #343a2a;
+    --focus: #93a4ca;
+    --danger: #df7470;
+    --danger-soft: #472d2b;
+    --warning: #dda05c;
+    --success: #7ba482;
+    --active: #98a5cf;
     --muted: #77736b;
     --shadow-popover: 0 14px 36px rgba(0, 0, 0, 0.34), 0 2px 10px rgba(0, 0, 0, 0.24);
     --shadow-modal: 0 32px 100px rgba(0, 0, 0, 0.48), 0 4px 20px rgba(0, 0, 0, 0.32);
     --shadow-tag: 0 1px 2px rgba(0, 0, 0, 0.18), 0 5px 14px rgba(0, 0, 0, 0.12);
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.22), 0 9px 24px rgba(0, 0, 0, 0.16);
     --shadow-card-hover: 0 2px 5px rgba(0, 0, 0, 0.26), 0 13px 30px rgba(0, 0, 0, 0.22);
-  }
+  --shell-composer-shadow: 0 10px 30px rgb(0 0 0 / 18%);
+}
 }
 
 .toolbar {
@@ -492,7 +513,8 @@ button {
   padding: 0 14px 10px;
 }
 
-.filter-row button {
+.filter-row button,
+.filter-row [role="tab"] {
   min-width: 0;
   padding: 5px 9px;
   border: 0;
@@ -504,14 +526,41 @@ button {
 }
 
 .filter-row button:hover,
-.filter-row button.is-active {
+.filter-row button.is-active,
+.filter-row [role="tab"]:hover,
+.filter-row [role="tab"].is-active {
   background: var(--surface-selected);
   color: var(--text-primary);
 }
 
-.capability-kind-switch button {
+.capability-kind-switch button,
+.capability-kind-switch [role="tab"] {
   flex: 1;
   min-height: 32px;
+}
+
+.contact-tabs {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.contact-tabs [role="tab"] {
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.contact-tabs [role="tab"][data-focus-visible] {
+  box-shadow: 0 0 0 2px var(--focus);
+}
+
+.contact-list-empty {
+  margin: 16px 10px;
+  color: var(--text-secondary);
+  font-size: var(--type-secondary-size);
+  line-height: var(--type-leading-body);
 }
 
 .context-scroll {
@@ -1470,7 +1519,7 @@ button {
   padding: 0.12em 0.35em;
   border-radius: 5px;
   background: color-mix(in srgb, var(--text-primary) 8%, transparent);
-  font-family: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+  font-family: var(--type-family-code);
   font-size: var(--type-markdown-code-size);
 }
 
@@ -4417,3 +4466,14 @@ label.form-field > span:first-child {
 }
 .form-notice .detail-note--danger { border-color: color-mix(in srgb, var(--danger) 20%, transparent); background: color-mix(in srgb, var(--danger) 5%, var(--surface-content)); }
 .form-notice .detail-note--waiting { border-color: color-mix(in srgb, var(--warning) 20%, transparent); background: color-mix(in srgb, var(--warning) 5%, var(--surface-content)); }
+
+/* Meeting participant state uses the message card typography and semantic states. */
+.meeting-participants { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: var(--type-card-body-size); }
+.meeting-participants th, .meeting-participants td { padding: 10px 8px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.meeting-participants thead th { color: var(--text-secondary); font-size: var(--type-secondary-size); font-weight: var(--type-weight-medium); }
+.meeting-participants th:first-child { width: 22%; }
+.meeting-participants th:last-child { width: 30%; }
+.meeting-participants td small { display: block; margin-top: 4px; }
+
+/* Browser preview uses the shared modal and keeps uploaded images within it. */
+.attachment-image-preview { display: block; max-width: 100%; max-height: 320px; object-fit: contain; margin-bottom: 16px; }

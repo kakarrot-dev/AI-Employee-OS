@@ -2,9 +2,9 @@
 
 ## 事实源
 
-- 界面布局、组件层级、视觉状态与交互入口：`prototypes/macos-client-v2`。
+- 界面基础布局、组件层级与交互入口：`prototypes/macos-client-v2`。消息页以当前客户端为准，直接复用 `src/renderer/src/components/{client-ui,message-ui}.tsx` 与 `prototype-adapter.css`，原型只提供演示数据。
 - 业务数据、权限、状态机和副作用：Runtime Bridge 与 `src/shared/*-contract.ts`。
-- 原型出现但 Runtime 尚未开放的能力必须展示明确的不可用状态，不得用模拟数据伪装成功。
+- 原型出现但 Runtime 尚未开放的能力必须明确说明边界。Web 0.1 飞书会议使用独立、全程标明演示来源的本地流程；客户端不因此获得真实会后转写或摘要能力。不得用模拟数据伪装真实成功。
 
 ## 全局布局与复用契约
 
@@ -24,17 +24,29 @@
 | 页面/组件 | 原型状态 | Runtime 映射 | 验收 |
 | --- | --- | --- | --- |
 | 会话列表 | 不分类展示全部会话、选中、删除 | `ConversationSummaryView`；未读为本地阅读状态 | 搜索、选中、删除、未读提示、空态均可操作 |
+| 事项边栏 | 右侧事项列表、数量、最新更新排序、空态、折叠与定位 | `TaskDetailView`；Web 使用演示事项 | 左右栏独立折叠，定位条目滚动并聚焦消息中的事项卡；不再切换对话 / 事项页签 |
 | 对话时间线 | 用户消息、总管消息、流式生成、失败 | `ConversationMessageView`、`ConversationStreamEvent` | 历史与流式内容使用同一消息组件；只有实际超过折叠阈值且尚未展开的消息显示渐变，短消息不显示渐变 |
-| 事项路由 | 新建事项 / 归入事项 / 变更事项 | `TaskBridge.createDraft/requestChange` | 每个入口只触发真实 Runtime 命令；直接回答或未形成事项不在消息时间线插入横幅 |
+| 事项路由 | Web 0.1 不做意图识别、自动归类或追问；客户端保留自己的 Runtime 路由 | `TaskBridge.createDraft/requestChange` | 每个入口只触发真实 Runtime 命令；直接回答或未形成事项不在消息时间线插入横幅 |
 | 事项卡 | draft / pending / running / succeeded / failed / cancelled / needs_attention | `TaskDetailView.state` | 标签、动作与状态机一致 |
 | 审批卡 | pending / approved / rejected / result_unknown | `approvals`、`toolActions` | 审批与拒绝调用真实 Tool Action API |
 | 交付卡 | 验收结果、产物、证据、未解决问题 | `delivery` | 可查看完整证据，不伪造文件预览 |
 | Composer | 文本、发送、取消、附件、模型、麦克风 | 文本/取消已开放；附件、模型切换、语音尚无 Bridge | 永久固定；不可用能力保留原型入口并明确禁用原因 |
 
+### Web 0.1 飞书会议场景
+
+- 默认会话、新建会话和“通讯录 → 专家团 → 会议专家团 → 选择并进入会话”进入同一组件。
+- 自动演示：提交一次会议信息 → 预约会议及邀请 → 会议开始与录制 → 结束通知 → 录制就绪 → 妙记转写等待与自动重试 → 读取内容 → 专家团整理与核对 → 交付摘要文档。时间压缩为约 30 秒，各场会议在切换页面后继续独立推进。
+- 时间线保存用户提交快照、飞书妙记来源、自动处理回执、专家团协作记录和摘要文档卡片，不展示会议原文或摘要正文。摘要文档直接复用统一附件组件和“打开方式”菜单，支持独立预览和下载，包含妙记来源、交付团队、会议信息、结论与行动项；过程状态及来源、协作记录复用统一状态和详情展开。
+- 所有回复由会议专家团统一呈现，成员身份复用专家团目录。会议策划 Agent 负责筹备和来源核对，会议纪要 Agent 负责妙记读取和内容整理，行动项跟进 Agent 负责负责人及截止时间核对；各会话独立保存来源和协作记录。
+- Web 端全程标明演示模式，不创建真实会议、不发送邀请、不读取真实飞书妙记、不调用真实专家团执行服务或模型。原型不实现意图识别、自动归类或追问。
+- 布局/字段/测试边界见 `prototypes/macos-client-v2/FEISHU_MEETING_V01.md`。
+
 ## 通讯录
 
 | 页面/组件 | 原型状态 | Runtime 映射 | 验收 |
 | --- | --- | --- | --- |
+| 通讯录类型 | 专家 / 专家团 Tab、对应搜索、列表和详情 | 客户端使用 Employee / ExpertGroup；Web 专家团复用候选目录作为明确标注的原型示例 | 点击或方向键切换 Tab；切换清空搜索、保留各自选中对象，详情标题随类型与选择同步；支持无搜索结果 |
+| 专家团进入会话 | 会议专家团打开飞书结构化表单；其他专家团新会话保留手动输入 | Web 会话分别保存草稿、消息和会议状态 | 会议专家团固定选择飞书场景，无意图识别；切换菜单或会话后数据保留，新建会议互相隔离；刷新重置，未调用 Runtime |
 | 员工目录 | 搜索、选中、状态灯、空态 | `EmployeeSummary` | draft / pending_test / active / disabled / archived 全覆盖；活动版本存在时保持 active，草稿进度不混入可工作状态 |
 | 员工详情 | 资料、能力摘要、最近交付 | `EmployeeDetail` + Task assignments | 不复制版本事实，不隐藏正式引用 |
 | 创建 Agent | 头像 / 名称 / 职责 / 说明 / Prompt / 模型与能力 | `EmployeeBridge.create/saveDraft` | 三步字段门禁；创建时持久化头像与职责，创建后进入可编辑草稿 |
@@ -84,7 +96,11 @@
 
 ## 样式与交互复用规则
 
-- `layout.css`、`typography.css` 和原型 `styles.css` 是尺寸、字体、色彩与组件状态的唯一事实源；正式页面不得复制同名像素常量。
+- `layout.css`、`typography.css` 和原型 `styles.css` 分别提供尺寸、排版、主题的唯一数值来源。Web 与客户端在入口全局加载同一结构适配文件 `src/renderer/src/prototype-adapter.css`；切换页面不装卸样式，适配层不得重复定义尺寸、主题或硬编码排版值。
 - 旧 Renderer 组件样式必须使用 `legacy-*` 作用域，禁止覆盖原型的 `.composer`、`.context-pane`、`.delivery-card` 等公共契约。
 - React Aria 的 `data-focus-visible/data-focus-within/data-disabled` 状态在正式原生控件上分别映射为 `:focus-visible/:focus-within/:disabled`，视觉反馈必须等价。
 - 原型入口在 Runtime 未开放时仍可展示可点击说明、真实可用性或明确禁用原因，不允许以无反馈按钮冒充已实现能力。
+
+## 2026-09-10 Web 修复复验
+
+Web 组件复用、筛选空态、本地状态保存、附件可用性与静态契约缺口已处理，详见 `audits/2026-09-10-prototype-parity/web-fixes.md`。此前审计中的客户端草稿、流式投递及页签/动效问题不在本次 Web 修复范围，不能据此判定客户端完整通过。

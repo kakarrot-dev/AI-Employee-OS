@@ -8,9 +8,9 @@
 | --- | ---: | ---: | --- |
 | 默认窗口 | 1280px | 820px | 首次启动和普通工作状态 |
 | 最小窗口 | 960px | 640px | 不允许继续缩小，三栏始终保留 |
-| 最大工作表面 | 1600px | 1000px | 窗口继续放大时，客户端居中并显示外围留白 |
+| 最大化窗口 | 跟随窗口 | 跟随窗口 | 外壳铺满可用区域，消息和详情各自限制阅读宽度 |
 
-Electron 窗口边界由 `src/shared/layout-contract.ts` 提供，Web 原型使用同值的 CSS Token。最大值限制的是工作表面，不限制用户最大化系统窗口。
+Electron 窗口边界由 `src/shared/layout-contract.ts` 提供，Web 原型使用同值的 CSS Token。外壳不设置 1600×1000 的上限；这与客户端最大化行为及窗口契约测试保持一致。
 
 顶部栏固定为 40px 高的集成式窗口拖拽区，左右内容安全边距统一使用 `--layout-toolbar-inline-padding`，左侧导航控件距分栏边界使用 `--layout-toolbar-navigation-edge-padding`。列表栏收起时，导航槽位使用 `--layout-toolbar-collapsed-navigation-width`，并以 `--layout-toolbar-window-controls-gap` 在 macOS 窗口控件和极简方向折叠按钮之间保留稳定间距。顶栏承载左侧 macOS 三色窗口控制灯、当前页面或会话标题、必要状态与关键操作；不承载前进、后退和更多按钮。
 
@@ -18,26 +18,26 @@ Electron 窗口边界由 `src/shared/layout-contract.ts` 提供，Web 原型使�
 
 | 区域 | 标准窗口 | 960-1199px 紧凑窗口 |
 | --- | ---: | ---: |
-| 图标栏 | 56px | 52px |
-| 列表栏 | 280px | 240px |
-| 内容栏 | 弹性，最小 784px | 弹性，最小 668px |
+| 图标栏 | 56px | 56px |
+| 列表栏 | 276px | 236px |
+| 内容栏 | 弹性，最小 744px | 弹性，最小 668px |
 
-禁止在任何窗口宽度下隐藏图标栏或列表栏。响应式只允许压缩固定栏、页面内边距和设置页标签列。
+响应式不自动隐藏图标栏或列表栏；消息页允许用户通过顶栏主动折叠列表栏和事项栏。紧凑窗口仅调整列表栏、页面内边距和弹窗外围间距。系统设置保持单列纵向布局。
 
 ## 3. 页面内容容器
 
 | 容器 | 最大宽度 |
 | --- | ---: |
-| 内容栏工作表面 | 1120px |
-| 消息和 Composer | 760px |
-| 通讯录、能力、系统详情 | 860px |
-| 长段说明文字 | 600px |
+| 宽版详情内容 | 1080px |
+| 消息和 Composer | 820px |
+| 通讯录、能力、系统详情 | 820px |
+| 长段说明文字 | 560px |
 
 内容容器达到最大宽度后居中，不随窗口无限拉宽。
 
 客户端采用单层集成式 macOS 窗口栏：红黄绿窗口控制灯位于左侧，当前会话或页面的简短标题进入同一窗口栏的内容区 leading 位置，必要状态紧随标题，页面级关键操作位于 trailing 位置。不得再在内容区重复生成独立标题栏，也不得恢复前进、后退或更多按钮。`Toolbar`、原生窗口控制安全区、工作区容器、标题区和操作区均属于 `drag` 区域；只有按钮、链接与表单控件自身使用 `no-drag`。任何页面不得用大块 `no-drag` 容器截断全宽拖拽能力。
 
-右侧内容区不使用左右框线，也不在集成窗口栏和页签栏下方额外绘制结构分割线。区域层级由背景、留白、标题和选中状态表达；卡片内部用于表达任务状态或数据关系的语义分隔不受此规则影响。
+持久外壳分隔线统一使用 `--line-shell`，内容边界使用 `--line` / `--line-strong`，不得混用。详情页依靠留白、标题和选中状态表达层级，不添加重复标题栏。
 
 ## 4. 复用组件
 
@@ -45,23 +45,23 @@ Electron 窗口边界由 `src/shared/layout-contract.ts` 提供，Web 原型使�
 
 | 组件 | 尺寸 Token | 尺寸 |
 | --- | --- | ---: |
-| 图标按钮 | `--layout-icon-button-size` | 32px |
-| 一级导航按钮 | `--layout-rail-button-size` | 38px |
-| 搜索框 | `--layout-search-height` | 34px |
-| 列表行 | `--layout-list-row-min-height` | 最小 62px |
-| 设置导航行 | `--layout-navigation-row-height` | 42px |
-| 标准按钮 | `--layout-button-min-height` | 最小 34px |
-| 表单输入框 | `--layout-form-control-height` | 40px |
-| 设置项 | `--layout-setting-row-min-height` | 最小 55px |
-| Composer | `--layout-composer-min-height` | 最小 116px |
-| 消息附件行 | `--layout-summary-row-min-height` | 最小 54px |
-| Composer 附件上传 | `--layout-composer-control-size` | 36px |
-| Composer 待发送附件 | `--layout-composer-attachment-size` | 96px 正方形 |
-| Composer 滚动衔接渐变 | `--layout-composer-scroll-fade-height` | 28px |
-| 时间线附件卡片 | `--layout-message-attachment-card-width` | 最小 210px |
-| 附件左右切换按钮 | `--layout-attachment-carousel-control-size` | 26px |
+| 图标按钮 | `--layout-icon-button-size` | 30px |
+| 一级导航按钮 | `--layout-rail-button-size` | 34px |
+| 搜索框 | `--layout-search-height` | 32px |
+| 列表行 | `--layout-list-row-min-height` | 最小 56px |
+| 设置导航行 | `--layout-navigation-row-height` | 38px |
+| 标准按钮 | `--layout-button-min-height` | 最小 32px |
+| 表单输入框 | `--layout-form-control-height` | 36px |
+| 设置项 | `--layout-setting-row-min-height` | 最小 50px |
+| Composer | `--layout-composer-min-height` | 最小 100px |
+| 消息附件行 | `--layout-summary-row-min-height` | 最小 50px |
+| Composer 附件上传 | `--layout-composer-control-size` | 32px |
+| Composer 待发送附件 | `--layout-composer-attachment-size` | 88px 正方形 |
+| Composer 滚动衔接渐变 | `--layout-composer-scroll-fade-height` | 24px |
+| 时间线附件卡片 | `--layout-message-attachment-card-width` | 最小 200px |
+| 附件左右切换按钮 | `--layout-attachment-carousel-control-size` | 24px |
 | 长消息默认折叠 | `--layout-message-collapse-lines` | 6 行 |
-| Timeline 节点 | `--layout-timeline-node-size` | 21px |
+| Timeline 节点 | `--layout-timeline-node-size` | 19px |
 
 头像、状态点、角标、弹窗宽高与弹窗导航行也必须使用对应 Token。
 
@@ -69,11 +69,11 @@ Electron 窗口边界由 `src/shared/layout-contract.ts` 提供，Web 原型使�
 
 | 类型 | 固定基准宽度 | 固定基准高度 |
 | --- | ---: | ---: |
-| 小型确认弹窗 | 430px | 280px |
-| 中型详情弹窗 | 680px | 620px |
-| 大型设置弹窗 | 960px | 720px |
+| 小型确认弹窗 | 400px | 260px |
+| 中型详情弹窗 | 640px | 580px |
+| 大型设置弹窗 | 900px | 680px |
 
-同一类型弹窗使用固定基准宽高，切换页签或内容时外框不得跳变。只有窗口可用空间小于基准尺寸时，才按外围间距约束缩小；最小窗口下外围间距从 44px 收到 24px。超出外框的内容必须在内容区内部滚动。
+同一类型弹窗使用固定基准宽高，切换页签或内容时外框不得跳变。只有窗口可用空间小于基准尺寸时，才按外围间距约束缩小；最小窗口下外围间距从 40px 收到 20px。超出外框的内容必须在内容区内部滚动。
 
 ## 6. 滚动容器契约
 
@@ -90,20 +90,22 @@ Electron 窗口边界由 `src/shared/layout-contract.ts` 提供，Web 原型使�
 
 Composer 中待发送的单附件和多附件都使用正方形卡片，多附件横向排列；删除按钮固定在附件卡片右上角。已发送消息和 Agent 交付物继续使用消息流附件组件，不受 Composer 规格影响。
 
-消息区与 Composer 使用重叠渐变衔接，滚动内容不得在 Composer 顶部形成硬截断；点击输入区域不改变 Composer 外框。Agent 文件交付物的行尾固定提供“打开”和“在文件夹中显示”两个图标操作，不使用导航箭头。
+消息区与 Composer 使用重叠渐变衔接，滚动内容不得在 Composer 顶部形成硬截断；点击输入区域不改变 Composer 外框。Agent 文件交付物使用共享“打开方式”菜单，仅展示已提供回调的操作；Web 不显示系统打开和 Finder 定位。无实际文件的示例附件禁用操作并说明原因。
 
 会话列表的删除按钮只在鼠标悬停当前行时以红色显示，不得因点击选中后的 `focus-within` 状态持续占用时间位置。键盘导航仅在删除按钮本身获得可见焦点时展示该按钮。
 
-普通对话消息复用同一气泡组件：用户消息整体右对齐，用户头像固定在气泡右侧；总管 Agent 消息整体左对齐，Agent 头像固定在气泡左侧。身份与时间跟随对应气泡对齐。事项事件、审批和交付物属于结构化记录，不套用左右消息气泡布局。
+普通对话消息复用同一气泡组件：用户消息整体右对齐，用户头像固定在气泡右侧；总管 Agent 消息整体左对齐，Agent 头像固定在气泡左侧。身份与时间跟随对应气泡对齐。事项事件和审批使用共享结构化卡片；交付物使用 Agent 的 `ChatMessage` + `ChatContentBlock` 展示。
 
-所有消息会话都以总管 Agent 为唯一对话入口。总管先进行意图识别：可以直接回答、把消息归入已有事项，或创建新事项；只有需要持续状态、多个步骤、等待、交付物或用户确认时才创建事项。普通问答会话不展示顶部页签栏，直接展示消息时间线；只有存在事项时才显示“对话 / 事项”切换。
+Web 原型 0.1 不做意图识别、自动消息归类或多轮追问。用户明确选择场景、填写结构化表单；会议表单提交后自动演示全流程；无效字段在表单内显示错误。默认飞书会议会话及通讯录中的会议专家团均进入同一会议组件，详见 `FEISHU_MEETING_V01.md`。普通历史演示仍用于展示消息样式，不代表真实执行。
 
-一个会话可以包含多个相关事项，但 Agent 团队归属于事项，不归属于会话。会话标题栏不得展示固定 Agent 团队；总管可以按事项阶段增减或替换临时成员，事项关闭后团队自动解散并保留历史参与记录。Agent 员工不直接向用户发送普通消息，由总管汇总关键事件和最终结果。
+飞书场景直接复用客户端 `ChatMessage`、`MarkdownMessage`、`MessageActionCard`、`ChatContentBlock`、`StatusLight` 和 `MessageAttachmentGroup`；来源与协作记录使用统一详情展开，摘要使用统一“打开方式”菜单预览或下载，不得复制附件 DOM 或覆盖共享消息样式；回复身份统一为会议专家团，三位成员分工和完成记录来自本会话协作状态；固定底部区域显示当前步骤、自动演示状态与查看最新进度入口，右侧 232px 栏展示可定位的会议流程。用户提交、预约及邀请回执、会议开始与录制、结束通知、录制就绪、妙记转写等待、调取完成、专家团协作和摘要文档按时间顺序保留；切换菜单或会话后自动继续；会议原文和摘要正文不在消息中展开，摘要通过独立文档预览与下载；参会人员属于该会议，不能混入其他会话。
 
 时间线中的用户多附件始终使用单行横向列表，保留触控板和 Shift+滚轮横向滚动；只有内容溢出时才显示上一份、下一份按钮和当前位置。滚动使用附件卡片为吸附单位，不允许最后一份附件被永久截断。
 
-用户和总管的普通消息正文共用 Markdown 阅读与长文折叠组件。Markdown 支持标题、段落、强调、列表、引用、链接、行内代码、代码块、表格和图片，所有样式必须限定在消息气泡内。默认最多展示 6 行阅读高度，实际未溢出时不显示操作，溢出时在正文底部展示渐变与“展开全文 / 收起”。折叠只影响 Markdown 正文，附件、事项归类、审批和交付记录始终可见。
+用户和总管的普通消息正文共用 Markdown 阅读与长文折叠组件。Markdown 支持标题、段落、强调、列表、引用、链接、行内代码、代码块、表格和图片，所有样式必须限定在消息气泡内。默认最多展示 6 行阅读高度，实际未溢出时不显示操作，溢出时在正文底部展示渐变与“展开全文 / 收起”。折叠只影响 Markdown 正文，附件、审批和交付记录始终可见。
 
 Skill 详情顶部必须明确展示 Skill 名称和描述，并在正文中展示该 Skill 当前版本完整的 `SKILL.md` 内容。文档复用全局 Markdown 渲染内核与排版 Token，但不使用消息的 6 行折叠规则；Tool 详情不展示或伪造 `SKILL.md`。Skill 名称、描述和文档内容均来自同一 Capability 数据模型。
 
-存在事项时，顶部只提供“对话”和聚合“事项”视图，不显示事项数量；仅当存在等待用户确认、补充材料或异常处理的事项时，以无背景的呼吸提示点提醒。事项索引按“需要你处理 / 进行中 / 已完成”分组，组内按最近更新时间倒序。用户消息下方使用轻量提示展示总管的归类结果，Hover 才显示“更改”。消息时间线只追加不可变的事项创建、用户确认、重要异常、阶段结果和最终交付；事项最新状态只在事项索引与详情弹窗中展示。
+消息页按当前客户端实现对齐：对话与固定输入框放在同一内容列，右侧为 232px 事项栏，顶部显示事项数量，按最近更新时间倒序展示；普通问答显示“当前会话暂无事项”。顶栏提供左右栏独立折叠，点击事项栏条目滚动定位并聚焦对应事项卡，点击卡片查看详情，不再使用“对话 / 事项”页签。事项卡展示标题、摘要、当前状态和更新时间；消息、审批与交付内容继续保留在对话中。
+
+Web 五个主页面统一复用 `AppShell`、`Toolbar`、`Rail`、`ContextPane`、`DetailPage`、资料与设置组件；消息、Markdown、附件与确认动作同样使用共享组件。Web 与客户端按相同顺序加载布局、排版、主题和结构适配样式。`layout.css` 是尺寸来源，`typography.css` 是字体来源，`styles.css` 是主题来源；适配文件不得重新定义这些 Token。原型业务层只适配字段、持有本地演示状态和执行浏览器文件操作，不连接 Runtime。

@@ -155,6 +155,9 @@ describe('App shell', () => {
         summary: vi.fn().mockResolvedValue({ requestCount: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, amountUsdMicros: null, checkedAt: '2026-08-31T00:00:00Z', models: [] })
       },
       connection: {
+        sendTeamsConfirmationCards: vi.fn(),
+        getTeamsStatus: vi.fn().mockResolvedValue({ provider: 'teams', state: 'not_connected', checkedAt: '', canSearch: false, canCreate: false }),
+        connectTeams: vi.fn(), disconnectTeams: vi.fn(),
         getFeishuStatus: vi.fn().mockResolvedValue({ provider: 'feishu', state: 'not_connected', checkedAt: '2026-09-04T00:00:00Z', scopes: [] }),
         openFeishuDeveloperConsole: vi.fn().mockResolvedValue(undefined),
         connectFeishu: vi.fn(),
@@ -629,6 +632,8 @@ describe('App shell', () => {
     expect(catalog.querySelector('.recruitment-overview--experts')).toBeInTheDocument()
     for (const category of ['信息与分析', '内容与交付', '产品与研究', '工程与质量', '方案与业务']) expect(within(catalog).getByText(category)).toBeInTheDocument()
     for (const employee of [
+      'Teams 会议专员',
+      '飞书会议专员',
       '网络情报员',
       '飞书资料员',
       '招投标分析员',
@@ -642,16 +647,16 @@ describe('App shell', () => {
       '提案策略师',
       '政务数字化售前顾问'
     ]) expect(within(catalog).getByText(employee)).toBeInTheDocument()
-    expect(within(catalog).getAllByRole('listitem')).toHaveLength(13)
-    await waitFor(() => expect(catalog.querySelectorAll('.detail-state')).toHaveLength(13))
+    expect(within(catalog).getAllByRole('listitem')).toHaveLength(14)
+    await waitFor(() => expect(catalog.querySelectorAll('.detail-state')).toHaveLength(14))
     expect(within(catalog).getAllByText('已招募', { selector: '.detail-state' })).toHaveLength(3)
-    expect(within(catalog).getAllByText('候选', { selector: '.detail-state' })).toHaveLength(10)
+    expect(within(catalog).getAllByText('候选', { selector: '.detail-state' })).toHaveLength(11)
     expect(catalog.querySelectorAll('[data-availability="recruited"]')).toHaveLength(3)
-    expect(catalog.querySelectorAll('[data-availability="unavailable"]')).toHaveLength(10)
+    expect(catalog.querySelectorAll('[data-availability="unavailable"]')).toHaveLength(11)
     expect(catalog.querySelector('[data-availability="recruited"] .summary-card')).toHaveClass('summary-card--success')
     expect(catalog.querySelector('[data-availability="unavailable"] .summary-card')).toHaveClass('summary-card--muted')
     expect(within(within(catalog).getByText('文档编写员').closest('[role="listitem"]')!).getByText('候选')).toBeInTheDocument()
-    expect(within(catalog).getAllByRole('button', { name: /^查看专家 / })).toHaveLength(13)
+    expect(within(catalog).getAllByRole('button', { name: /^查看专家 / })).toHaveLength(14)
 
     fireEvent.click(within(catalog).getByRole('button', { name: '查看专家 产品经理' }))
     const candidateDialog = screen.getByRole('dialog', { name: '产品经理详情' })
@@ -750,7 +755,7 @@ describe('App shell', () => {
     expect(await within(screen.getByLabelText('已连接应用')).findByText('暂无已连接应用')).toBeInTheDocument()
     expect(within(catalog).getAllByText('未连接', { selector: '.detail-state' })).toHaveLength(12)
     expect(catalog.querySelectorAll('.summary-card--muted')).toHaveLength(12)
-    expect(within(catalog).getByRole('button', { name: '连接' })).toBeInTheDocument()
+    expect(within(catalog).getAllByRole('button', { name: '连接' })).toHaveLength(2)
   })
 
   it('authorizes Feishu through the narrow connection bridge and reflects the connected state', async () => {
@@ -764,7 +769,7 @@ describe('App shell', () => {
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: '连接' }))
     const catalog = screen.getByRole('region', { name: '连接' })
-    fireEvent.click(await within(catalog).findByRole('button', { name: '连接' }))
+    fireEvent.click((await within(catalog).findAllByRole('button', { name: '连接' }))[0])
     expect(screen.getByRole('dialog', { name: '飞书连接' })).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('飞书 App ID'), { target: { value: 'cli_example123' } })
     fireEvent.change(screen.getByLabelText('飞书 App Secret'), { target: { value: 'secret-example' } })
@@ -817,7 +822,7 @@ describe('App shell', () => {
     })
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: '连接' }))
-    fireEvent.click(await within(screen.getByRole('region', { name: '连接' })).findByRole('button', { name: '连接' }))
+    fireEvent.click((await within(screen.getByRole('region', { name: '连接' })).findAllByRole('button', { name: '连接' }))[0])
     fireEvent.change(screen.getByLabelText('飞书 App ID'), { target: { value: 'cli_example123' } })
     fireEvent.change(screen.getByLabelText('飞书 App Secret'), { target: { value: 'secret-example' } })
     fireEvent.click(screen.getByRole('checkbox', { name: '我已添加三个只读权限、发布版本，并保存上述重定向 URL' }))
@@ -1300,4 +1305,31 @@ describe('App shell', () => {
     expect(screen.getByText('模型服务未提供')).toBeInTheDocument()
     expect(screen.queryByText('Runtime 尚未提供聚合用量接口')).not.toBeInTheDocument()
   })
+  it('recovers a transient task projection failure and clears the stale error', async () => {
+    vi.mocked(window.aiEmployeeOS.task.list).mockRejectedValueOnce(new Error('runtime_request_timeout')).mockResolvedValue([])
+    render(<App />)
+    expect(await screen.findByText('任务投影读取失败')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('任务投影读取失败')).not.toBeInTheDocument(), { timeout: 2000 })
+    expect(window.aiEmployeeOS.task.list).toHaveBeenCalledTimes(2)
+  })
+
+  it('recovers conversation loading without creating a replacement for unread history', async () => {
+    vi.mocked(window.aiEmployeeOS.conversation.list).mockRejectedValueOnce(new Error('runtime_request_timeout'))
+    render(<App />)
+    expect(await screen.findByText('会话读取失败')).toBeInTheDocument()
+    await screen.findByRole('button', { name: /^与总管的对话/ }, { timeout: 2000 })
+    expect(screen.queryByText('会话读取失败')).not.toBeInTheDocument()
+    expect(window.aiEmployeeOS.conversation.create).not.toHaveBeenCalled()
+  })
+
+  it('coalesces focus refreshes while the initial task projection is still loading', async () => {
+    let resolve!: (items: never[]) => void
+    vi.mocked(window.aiEmployeeOS.task.list).mockReturnValue(new Promise(done => { resolve = done }))
+    render(<App />)
+    await waitFor(() => expect(window.aiEmployeeOS.task.list).toHaveBeenCalledTimes(1))
+    act(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('focus')) })
+    expect(window.aiEmployeeOS.task.list).toHaveBeenCalledTimes(1)
+    await act(async () => resolve([]))
+  })
+
 })
