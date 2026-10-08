@@ -7,7 +7,7 @@
 正式客户端只有一套一级壳层：
 
 1. `Toolbar`：高度使用 `--layout-toolbar-height`，承载当前上下文标题和少量全局动作；内边距使用顶栏专属 Token，不复用页面内容边距。
-2. `Rail`：宽度使用 `--layout-rail-width`，只承载消息、通讯录、能力、连接与系统入口。
+2. `Rail`：宽度使用 `--layout-rail-width`，正式客户端依次承载消息、事项、通讯录、能力、连接与系统入口。
 3. `ContextPane`：宽度使用 `--layout-context-width`，承载对象目录、搜索、筛选和创建入口。
 4. `Workspace`：业务详情与工作流区域，页面不得自行复制上述三层结构。
 
@@ -77,6 +77,7 @@
 ## 3. 页面契约
 
 - 消息：`ContextPane` 展示真实会话；`Workspace` 永久保留 Composer，消息与业务事项共用同一条时间线。
+- 事项：正式客户端 `ContextPane` 提供关键词搜索与 Runtime 状态筛选，`Workspace` 汇总各会话的事项，展示标题、参与员工、当前状态和最近进展时间。列表通过 `task.list()` 读取，复用会话事项的生命周期合并规则、状态文案、`SummaryList` 与事项详情弹窗；事件、窗口聚焦和 Runtime 重连后刷新。读取失败保留已有列表并提供重新读取，不能将错误展示成“暂无事项”。不提供脱离总管对话的新建入口。
 - 通讯录：`ContextPane` 展示真实 Agent 员工；`Workspace` 展示资料和能力摘要；创建采用三步，设置保留基本资料、提示词、模型与能力、记忆四个分区。客户端使用 `ClientModal`，Web 使用 React Aria Modal 生命周期并共享尺寸和样式；业务结果分别来自 Bridge 和本地演示状态。
 - 能力：`ContextPane` 只按原型展示 Skill、Tool；`Workspace` 展示 SKILL.md、适用任务、依赖、绑定 Agent 与高级信息。MCP 和数据源健康归入系统的资源治理。
 - 连接：`ContextPane` 只列出 Bridge 确认处于 `connected` 的应用，使用官方应用图标、名称、能力摘要和“已连接”状态；未连接、检查中、异常或需重新授权的应用不得混入该列表，空状态明确显示“暂无已连接应用”。点击已连接应用进入其管理弹窗。`Workspace` 复用招募员工目录的摘要、分组、卡片与状态组件，按协作沟通、知识与文件、研发与云服务三类展示 12 个可连接应用。飞书状态来自顶层持有的窄 `ConnectionBridge`，左侧列表、目录卡片和顶部指标共享同一状态事实；App Secret、用户令牌和 refresh token 只保存在 macOS Keychain，Renderer 不持有持久凭证。Teams 接入边界以 `docs/teams-connection-flow.md` 和当前 Bridge 能力为准；Web 目录中的 12 项均为静态“未连接”。
@@ -94,7 +95,7 @@
 
 ## 5. 验收标准
 
-- 五个一级模块均复用同一个 `AppShell`，切换时壳层不重排。
+- 正式客户端六个一级模块均复用同一个 `AppShell`，切换时壳层不重排。
 - 目录页均复用 `SearchBox`、`ListRow` 和一致的空状态。
 - 系统设置均复用单栏 `SettingsBlock`、`SettingRow`，标题、说明与控件保持同一左对齐基线。
 - 组件契约测试验证壳层 landmark、一级导航事件和选中态。

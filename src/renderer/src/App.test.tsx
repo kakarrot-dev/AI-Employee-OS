@@ -1,8 +1,20 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MemoryViewModel } from '../../shared/memory-contract'
+import type { TaskDetailView } from '../../shared/task-contract'
 import { App, buildFriendlyTimeline, coalesceMatterCards, identityAwareConversationPreview, selectActiveTask } from './App'
 import { readableConnectionError } from './ConnectionsCatalog'
+
+function directoryTask(overrides: Partial<TaskDetailView> = {}): TaskDetailView {
+  const id = overrides.id ?? 'directory-task'
+  return {
+    id, taskId: id, draftId: `draft-${id}`, conversationId: 'other-conversation', createdAt: '2026-09-10T01:00:00Z', sourceMessageIds: [`message-${id}`],
+    state: 'running', title: '整理行业研究报告', goal: '整理行业研究报告并核对来源', acceptanceCriteria: ['来源可追溯'], employeeVersionIds: ['employee-v1'], directories: [], draftRevision: 1,
+    assignments: [{ id: `assignment-${id}`, sequence: 1, employeeVersionId: 'employee-v1', employeeName: '文档编写员', state: 'running' }],
+    timeline: [], researchBundles: [], toolActions: [], approvals: [],
+    ...overrides
+  }
+}
 
 describe('App shell', () => {
   it('turns Feishu token failures into targeted recovery guidance', () => {
@@ -960,6 +972,100 @@ describe('App shell', () => {
     fireEvent.change(screen.getByRole('textbox', { name: '职责' }), { target: { value: '来源核验' } })
     expect(within(settingsDialog).queryByText(/已保存|保存中|未保存/)).not.toBeInTheDocument()
     await waitFor(() => expect(window.aiEmployeeOS.employee.saveDraft).toHaveBeenCalledWith('employee-1', expect.objectContaining({ role: '来源核验' })), { timeout: 1_500 })
+  })
+
+  it('lists matters across conversations, coalesces retries and opens the existing detail', async () => {
+    const running = directoryTask()
+    const original = directoryTask({ id: 'original', sourceMessageIds: running.sourceMessageIds, state: 'failed', createdAt: '2026-09-09T01:00:00Z' })
+    const completed = directoryTask({ id: 'completed', conversationId: 'archived-conversation', title: '归档会话的会议纪要', goal: '整理会议纪要', state: 'succeeded', createdAt: '2026-09-11T01:00:00Z', assignments: [] })
+    vi.mocked(window.aiEmployeeOS.task.list).mockResolvedValue([original, running, completed])
+
+    render(<App />)
+    const navigation = screen.getByRole('navigation', { name: '一级导航' })
+    fireEvent.click(within(navigation).getByRole('button', { name: '事项' }))
+    expect(within(navigation).getByRole('button', { name: '事项' })).toHaveAttribute('aria-current', 'page')
+    const list = screen.getByRole('region', { name: '我的事项列表' })
+    await within(list).findByRole('button', { name: /归档会话的会议纪要/ })
+    expect(within(list).getAllByRole('button')).toHaveLength(2)
+    expect(within(list).getAllByRole('button')[0]).toHaveTextContent('归档会话的会议纪要')
+    expect(within(list).getByRole('button', { name: /整理行业研究报告/ })).toHaveTextContent('进行中')
+
+    const filters = screen.getByRole('group', { name: '事项状态筛选' })
+    fireEvent.click(within(filters).getByRole('button', { name: /已完成/ }))
+    expect(within(list).queryByRole('button', { name: /整理行业研究报告/ })).not.toBeInTheDocument()
+    fireEvent.click(within(filters).getByRole('button', { name: /全部事项/ }))
+    fireEvent.change(screen.getByRole('textbox', { name: '搜索事项' }), { target: { value: '文档编写员' } })
+    expect(within(list).getAllByRole('button')).toHaveLength(1)
+    fireEvent.click(within(list).getByRole('button', { name: /整理行业研究报告/ }))
+    const dialog = screen.getByRole('dialog', { name: '整理行业研究报告' })
+    expect(within(dialog).getByText(running.goal)).toBeInTheDocument()
+    expect(within(dialog).getByRole('heading', { name: '完成要求' })).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: '关闭' }))
+
+    fireEvent.click(within(navigation).getByRole('button', { name: '连接' }))
+    fireEvent.click(within(navigation).getByRole('button', { name: '事项' }))
+    expect(screen.getByRole('textbox', { name: '搜索事项' })).toHaveValue('文档编写员')
+    expect(screen.queryByRole('button', { name: '新建事项' })).not.toBeInTheDocument()
+  })
+
+  it('refreshes the matter directory and open detail when Runtime publishes a state change', async () => {
+    const task = directoryTask()
+    vi.mocked(window.aiEmployeeOS.task.list).mockResolvedValue([task])
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: '事项' }))
+    const list = screen.getByRole('region', { name: '我的事项列表' })
+    fireEvent.click(await within(list).findByRole('button', { name: /整理行业研究报告/ }))
+
+    vi.mocked(window.aiEmployeeOS.task.list).mockResolvedValue([{ ...task, state: 'succeeded' }])
+    const receiveEvent = vi.mocked(window.aiEmployeeOS.task.onEvent).mock.calls.at(-1)![0]
+    await act(async () => receiveEvent({ type: 'delivery_completed', taskId: task.id }))
+    const dialog = screen.getByRole('dialog', { name: '整理行业研究报告' })
+    expect(await within(dialog).findByText('所有完成要求均已通过')).toBeInTheDocument()
+    expect(within(list).getByRole('button', { name: /整理行业研究报告/ })).toHaveTextContent('已完成')
+  })
+
+  it('shows directory read errors, retries and retains existing matters during a refresh failure', async () => {
+    render(<App />)
+    await screen.findByLabelText('当前会话事项')
+    await waitFor(() => expect(window.aiEmployeeOS.task.list).toHaveBeenCalled())
+    vi.mocked(window.aiEmployeeOS.task.list).mockRejectedValue(new Error('runtime_unavailable'))
+    fireEvent.click(screen.getByRole('button', { name: '事项' }))
+    const list = screen.getByRole('region', { name: '我的事项列表' })
+    expect(await within(list).findByRole('alert')).toHaveTextContent('事项读取失败')
+    expect(within(list).queryByText('暂无事项')).not.toBeInTheDocument()
+
+    vi.mocked(window.aiEmployeeOS.task.list).mockResolvedValue([directoryTask()])
+    fireEvent.click(within(list).getByRole('button', { name: '重新读取' }))
+    await within(list).findByRole('button', { name: /整理行业研究报告/ })
+    expect(within(list).queryByRole('alert')).not.toBeInTheDocument()
+
+    vi.mocked(window.aiEmployeeOS.task.list).mockRejectedValue(new Error('runtime_disconnected'))
+    const receiveEvent = vi.mocked(window.aiEmployeeOS.task.onEvent).mock.calls.at(-1)![0]
+    await act(async () => receiveEvent({ type: 'progress', taskId: 'directory-task' }))
+    expect(await within(list).findByRole('alert')).toHaveTextContent('事项读取失败')
+    expect(within(list).getByRole('button', { name: /整理行业研究报告/ })).toBeInTheDocument()
+  })
+
+  it('retries a matter through the existing Runtime command and keeps failure guidance in its detail', async () => {
+    const failed = directoryTask({ state: 'failed' })
+    vi.mocked(window.aiEmployeeOS.task.list).mockResolvedValue([failed])
+    vi.mocked(window.aiEmployeeOS.task.retry).mockRejectedValueOnce(new Error('retry_requires_external_write_review'))
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: '事项' }))
+    const list = screen.getByRole('region', { name: '我的事项列表' })
+    fireEvent.click(await within(list).findByRole('button', { name: /整理行业研究报告/ }))
+    const dialog = screen.getByRole('dialog', { name: '整理行业研究报告' })
+    fireEvent.click(within(dialog).getByRole('button', { name: '按该事项原内容重试' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('结果未核实的写入操作')
+
+    const retried = { ...failed, state: 'running' as const, runId: 'run-retry' }
+    vi.mocked(window.aiEmployeeOS.task.retry).mockResolvedValue(retried)
+    vi.mocked(window.aiEmployeeOS.task.list).mockResolvedValue([retried])
+    fireEvent.click(within(dialog).getByRole('button', { name: '按该事项原内容重试' }))
+    await waitFor(() => expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument())
+    expect(window.aiEmployeeOS.task.retry).toHaveBeenCalledWith(failed.taskId)
+    expect(within(list).getAllByRole('button', { name: /整理行业研究报告/ })).toHaveLength(1)
+    expect(within(list).getByRole('button', { name: /整理行业研究报告/ })).toHaveTextContent('进行中')
   })
 
   it('renders matter and delivery states without exposing legacy Tool approvals', async () => {

@@ -43,8 +43,9 @@ import { AgentActivityMessage, MessageActionCard, MessageConfirmationActions, Ch
 import { readClientProfile, SystemModule, systemSections, type ClientProfile, type SystemSectionId } from './SystemModule'
 import { formatClientTimestamp, formatRunDuration } from './client-time'
 import { ExpertGroupModule } from './ExpertGroupModule'
+import { TaskModule, taskFilters, taskStateLabel, taskStateTone, type TaskFilter } from './TaskModule'
 
-type ModuleId = 'workbench' | 'team' | 'resources' | 'connections' | 'settings'
+type ModuleId = 'workbench' | 'tasks' | 'team' | 'resources' | 'connections' | 'settings'
 type ComposerPanel = 'model' | 'voice' | null
 type TeamView = 'directory' | 'recruitment'
 type TeamDirectoryKind = 'experts' | 'groups'
@@ -68,13 +69,14 @@ interface ModuleDefinition {
 
 const modules: ModuleDefinition[] = [
   { id: 'workbench', label: '消息', icon: ChatBubble, title: '与总管的对话', contextTitle: '消息' },
+  { id: 'tasks', label: '事项', icon: Page, title: '我的事项', contextTitle: '事项' },
   { id: 'team', label: '通讯录', icon: Group, title: 'Agent 员工', contextTitle: '通讯录' },
   { id: 'resources', label: '能力', icon: Sparks, title: '能力目录', contextTitle: '能力' },
   { id: 'connections', label: '连接', icon: Link, title: '连接', contextTitle: '连接' },
   { id: 'settings', label: '系统', icon: Settings, title: '系统', contextTitle: '系统' }
 ]
 
-const mainRailModules = modules.filter((module) => ['workbench', 'team', 'resources', 'connections'].includes(module.id))
+const mainRailModules = modules.filter((module) => ['workbench', 'tasks', 'team', 'resources', 'connections'].includes(module.id))
 const footerRailModules = modules.filter((module) => module.id === 'settings')
 
 const initialStatus: RuntimeStatus = {
@@ -101,18 +103,6 @@ function readInitialConversationId(): string {
     if (window.localStorage.getItem('ai-employee-os.restore-session') === 'false') return ''
     return window.localStorage.getItem('ai-employee-os.last-conversation') ?? ''
   } catch { return '' }
-}
-
-function taskStateLabel(state: TaskDetailView['state']): string {
-  return ({ draft: '待确认', pending: '等待开始', running: '进行中', succeeded: '已完成', failed: '执行失败', cancelled: '已取消', needs_attention: '需要你处理' })[state]
-}
-
-function taskStateTone(state: TaskDetailView['state']): 'success' | 'danger' | 'active' | 'waiting' | 'muted' {
-  if (state === 'succeeded') return 'success'
-  if (state === 'failed' || state === 'needs_attention') return 'danger'
-  if (state === 'running') return 'active'
-  if (state === 'draft' || state === 'pending') return 'waiting'
-  return 'muted'
 }
 
 type FriendlyMilestoneState = 'done' | 'active' | 'attention' | 'danger'
@@ -327,7 +317,7 @@ function DeliveryMessage({ task, supervisor, onOpen, onOpenArtifact, onRevealArt
   </ChatMessage>
 }
 
-function MatterDetailModal({ task, retrying, onRetry, onClose }: { task?: TaskDetailView; retrying: boolean; onRetry: (task: TaskDetailView) => void; onClose: () => void }): React.JSX.Element {
+function MatterDetailModal({ task, retrying, error, onRetry, onClose }: { task?: TaskDetailView; retrying: boolean; error?: string; onRetry: (task: TaskDetailView) => void; onClose: () => void }): React.JSX.Element {
   if (!task) return <ClientModal open={false} title="事项详情" size="medium" onClose={onClose}><div /></ClientModal>
   const summary = taskSummary(task)
   const milestones = buildFriendlyTimeline(task)
@@ -374,6 +364,7 @@ function MatterDetailModal({ task, retrying, onRetry, onClose }: { task?: TaskDe
       <DetailNote icon={<ShieldCheck aria-hidden />} tone="success">已保存 {task.delivery.evidenceCount} 条来源证据，可用于核对结果。</DetailNote>
       {task.delivery.unresolvedIssues.length > 0 && <div className="boundary-note">仍需注意：{task.delivery.unresolvedIssues.join('；')}</div>}
     </section>}
+    {error && <p className="inline-error" role="alert">{error}</p>}
     {(task.state === 'failed' || task.state === 'succeeded') && <div className="detail-actions"><button type="button" className="button button--primary" disabled={retrying} onClick={() => onRetry(task)}>{retrying ? '正在重新执行' : task.state === 'failed' ? '按该事项原内容重试' : '按该事项原内容重新执行'}</button></div>}
   </div></ClientModal>
 }
@@ -714,6 +705,15 @@ export function App(): React.JSX.Element {
   const [conversations, setConversations] = useState<ConversationSummaryView[]>([])
   const [selectedConversationId, setSelectedConversationId] = useState(readInitialConversationId)
   const [conversationQuery, setConversationQuery] = useState('')
+  const [directoryTasks, setDirectoryTasks] = useState<TaskDetailView[]>([])
+  const [directoryTasksLoading, setDirectoryTasksLoading] = useState(false)
+  const [directoryTasksError, setDirectoryTasksError] = useState<string>()
+  const [taskQuery, setTaskQuery] = useState('')
+  const [taskFilter, setTaskFilter] = useState<TaskFilter>('all')
+  const [selectedDirectoryTaskId, setSelectedDirectoryTaskId] = useState<string>()
+  const [directoryTaskRetrying, setDirectoryTaskRetrying] = useState(false)
+  const [directoryTaskRetryError, setDirectoryTaskRetryError] = useState<string>()
+  const directoryTasksRefreshRef = useRef<() => void>(() => undefined)
   const [systemSection, setSystemSection] = useState<SystemSectionId>('profile')
   const [profile, setProfile] = useState<ClientProfile>(readClientProfile)
   const [supervisor, setSupervisor] = useState<SupervisorConfigInput>({ ...DEFAULT_SUPERVISOR_CONFIG, memoryScopes: [...DEFAULT_SUPERVISOR_CONFIG.memoryScopes] })
@@ -764,6 +764,59 @@ export function App(): React.JSX.Element {
   const runtimeLabel = runtimeStatus.state === 'connecting' ? '正在连接' : '重新连接'
   const unreadCountFor = (conversation: ConversationSummaryView): number => Math.max(0, conversation.messageCount - (readCounts[conversation.id] ?? 0))
   const totalUnread = conversations.reduce((total, conversation) => total + unreadCountFor(conversation), 0)
+  const directoryMatters = useMemo(() => coalesceMatterCards(directoryTasks).sort((left, right) => Date.parse(taskUpdatedAt(right)) - Date.parse(taskUpdatedAt(left))), [directoryTasks])
+  const visibleDirectoryMatters = directoryMatters.filter((task) => (taskFilter === 'all' || task.state === taskFilter) && `${task.title} ${task.goal} ${task.assignments.map((assignment) => assignment.employeeName ?? '').join(' ')}`.toLocaleLowerCase().includes(taskQuery.trim().toLocaleLowerCase()))
+  const selectedDirectoryTask = directoryMatters.find((task) => task.id === selectedDirectoryTaskId)
+
+  useEffect(() => {
+    if (activeId !== 'tasks') return
+    let mounted = true
+    let refreshing = false
+    let refreshPending = false
+    const refresh = (): void => {
+      if (!mounted) return
+      if (refreshing) { refreshPending = true; return }
+      refreshing = true
+      setDirectoryTasksLoading(true)
+      window.aiEmployeeOS.task.list().then((items) => {
+        if (!mounted) return
+        setDirectoryTasks(items)
+        setDirectoryTasksError(undefined)
+      }).catch(() => {
+        if (mounted) setDirectoryTasksError('事项读取失败，请重新读取。')
+      }).finally(() => {
+        refreshing = false
+        if (!mounted) return
+        setDirectoryTasksLoading(false)
+        if (refreshPending) { refreshPending = false; refresh() }
+      })
+    }
+    directoryTasksRefreshRef.current = refresh
+    refresh()
+    const unsubscribe = window.aiEmployeeOS.task.onEvent(refresh)
+    window.addEventListener('focus', refresh)
+    return () => { mounted = false; directoryTasksRefreshRef.current = () => undefined; window.removeEventListener('focus', refresh); unsubscribe() }
+  }, [activeId, runtimeStatus.state])
+
+  const retryDirectoryTask = async (task: TaskDetailView): Promise<void> => {
+    if (!task.taskId || !['failed', 'succeeded'].includes(task.state)) return
+    setDirectoryTaskRetrying(true)
+    setDirectoryTaskRetryError(undefined)
+    try {
+      const retried = await window.aiEmployeeOS.task.retry(task.taskId)
+      setDirectoryTasks((items) => items.map((item) => item.taskId === retried.taskId ? retried : item))
+      setSelectedDirectoryTaskId(retried.id)
+      directoryTasksRefreshRef.current()
+      void refreshConversationData()
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : ''
+      setDirectoryTaskRetryError(message.includes('retry_requires_external_write_review') || message.includes('unsettled_tool_action')
+        ? '该事项存在结果未核实的写入操作，请先确认真实结果后再重试'
+        : '事项重试失败，请稍后重试')
+    } finally {
+      setDirectoryTaskRetrying(false)
+    }
+  }
 
   const refreshConversationData = (): Promise<void> => {
     if (conversationRefreshRef.current) return conversationRefreshRef.current
@@ -952,6 +1005,9 @@ export function App(): React.JSX.Element {
         const unread = unreadCountFor(conversation)
         return <div className="conversation-row" key={conversation.id}><ListRow title={conversation.title} subtitle={identityAwareConversationPreview(conversation, profile.name, supervisor.name)} meta={formatClientTimestamp(conversation.updatedAt)} selected={selectedConversationId === conversation.id} identity="text" marker={unread > 0 ? <span className="unread-dot" aria-label="未读消息" /> : undefined} onClick={() => setSelectedConversationId(conversation.id)} /><IconButton label={`归档会话 ${conversation.title}`} icon={Trash} className="conversation-row__delete" onClick={() => archiveConversation(conversation.id)} /></div>
       })}</div>
+    </> : activeId === 'tasks' ? <>
+      <SearchBox label="搜索事项" placeholder="搜索事项或参与员工" value={taskQuery} onChange={setTaskQuery} />
+      <div className="system-navigation" role="group" aria-label="事项状态筛选">{taskFilters.map((filter) => <button type="button" key={filter.id} aria-pressed={taskFilter === filter.id} className={taskFilter === filter.id ? 'is-active' : ''} onClick={() => setTaskFilter(filter.id)}><span>{filter.label}</span><small className="quiet-meta">{filter.id === 'all' ? directoryMatters.length : directoryMatters.filter((task) => task.state === filter.id).length}</small><NavArrowRight aria-hidden /></button>)}</div>
     </> : activeId === 'team' ? <>
       <SearchBox label={teamDirectoryKind === 'experts' ? '搜索专家' : '搜索专家团'} placeholder={teamDirectoryKind === 'experts' ? '搜索专家' : '搜索专家团'} value={employeeQuery} onChange={setEmployeeQuery} />
       <div className="filter-row capability-kind-switch" role="tablist" aria-label="通讯录类型">{([['experts', '专家'], ['groups', '专家团']] as const).map(([id, label]) => <button type="button" role="tab" id={`team-${id}-tab`} aria-controls="team-directory-panel" aria-selected={teamDirectoryKind === id} key={id} className={teamDirectoryKind === id ? 'is-active' : ''} onClick={() => { setTeamDirectoryKind(id); setTeamView('directory'); setEmployeeQuery('') }}>{label}</button>)}</div>
@@ -977,10 +1033,10 @@ export function App(): React.JSX.Element {
 
   return <ClientIconSystem><AppShell
     contextCollapsed={contextCollapsed}
-    toolbar={<Toolbar title={activeId === 'workbench' ? selectedConversation?.title ?? '消息' : activeId === 'team' ? teamView === 'recruitment' ? '招募专家' : teamDirectoryKind === 'groups' ? selectedExpertGroup?.name ?? '专家团' : selectedEmployee?.name ?? 'Agent 员工' : activeId === 'resources' ? selectedResource?.name ?? '能力目录' : activeId === 'connections' ? '连接' : systemSections.find((item) => item.id === systemSection)?.label ?? '系统'} icon={activeModule.icon} navigation={<IconButton label={contextCollapsed ? '展开左侧栏' : '折叠左侧栏'} icon={contextCollapsed ? NavArrowRight : NavArrowLeft} onClick={() => setContextCollapsed((value) => !value)} />} support={toolbarSupport} trailing={toolbarTrailing} />}
+    toolbar={<Toolbar title={activeId === 'workbench' ? selectedConversation?.title ?? '消息' : activeId === 'tasks' ? '我的事项' : activeId === 'team' ? teamView === 'recruitment' ? '招募专家' : teamDirectoryKind === 'groups' ? selectedExpertGroup?.name ?? '专家团' : selectedEmployee?.name ?? 'Agent 员工' : activeId === 'resources' ? selectedResource?.name ?? '能力目录' : activeId === 'connections' ? '连接' : systemSections.find((item) => item.id === systemSection)?.label ?? '系统'} icon={activeModule.icon} navigation={<IconButton label={contextCollapsed ? '展开左侧栏' : '折叠左侧栏'} icon={contextCollapsed ? NavArrowRight : NavArrowLeft} onClick={() => setContextCollapsed((value) => !value)} />} support={toolbarSupport} trailing={toolbarTrailing} />}
     rail={<Rail active={activeId} items={mainRailModules.map((item) => item.id === 'workbench' && totalUnread > 0 ? { ...item, marker: String(totalUnread) } : item)} footerItems={footerRailModules} userProfile={profile} onProfile={() => { setConnectionModalOpen(false); setSystemSection('profile'); setActiveId('settings') }} onNavigate={(id) => { if (id !== 'connections') setConnectionModalOpen(false); setActiveId(id) }} />}
     context={context}
-  >{activeId === 'workbench' ? selectedConversationId ? <Workbench runtimeStatus={runtimeStatus} providerStatus={providerStatus} conversationId={selectedConversationId} user={userIdentity(profile.name, profile.avatarUrl)} supervisor={supervisorIdentity(supervisor)} matterSidebarCollapsed={matterSidebarCollapsed} initialDraft={conversationDraftSeed?.conversationId === selectedConversationId ? conversationDraftSeed.text : undefined} onInitialDraftConsumed={() => setConversationDraftSeed(undefined)} onDataChanged={() => { void refreshConversationData() }} /> : <div className="runtime-empty-state"><h2>正在读取会话</h2></div> : activeId === 'team' ? teamView === 'recruitment' ? <RecruitmentCatalog employees={employees} expertGroups={expertGroups} skills={resourceCatalog.skills} initialKind={recruitmentKind} onEnterConversation={enterRecruitmentConversation} /> : teamDirectoryKind === 'groups' ? <ExpertGroupModule group={selectedExpertGroup} onGroupsChanged={(items) => { setExpertGroups(items); setSelectedExpertGroupId(items[0]?.id) }} /> : <TeamModule selectedEmployeeId={selectedEmployeeId} skills={resourceCatalog.skills} providerStatus={providerStatus} createRequest={employeeCreateRequest} editRequest={employeeEditRequest} onEmployeesChanged={(items) => { setEmployees(items); setSelectedEmployeeId((current) => current && items.some((employee) => employee.id === current) ? current : items[0]?.id) }} onSelectEmployee={setSelectedEmployeeId} onEditEmployee={() => setEmployeeEditRequest((value) => value + 1)} /> : activeId === 'resources' ? <ResourceModule catalog={resourceCatalog} kind={resourceKind} selectedId={selectedResourceId} loading={resourceCatalogLoading} probing={probingResources} error={resourceError} onProbe={() => void probeResources()} onOpenEmployee={(employeeId) => { setSelectedEmployeeId(employeeId); setTeamDirectoryKind('experts'); setTeamView('directory'); setActiveId('team') }} /> : activeId === 'connections' ? <ConnectionsCatalog teamsStatus={teamsStatus} teamsModalOpen={teamsModalOpen} onTeamsModalOpenChange={setTeamsModalOpen} onTeamsStatusChange={status => { setTeamsStatus(status); void refreshRuntimeCatalogs(() => mountedRef.current) }} feishuStatus={feishuStatus} loading={connectionStatusLoading} modalOpen={connectionModalOpen} onModalOpenChange={setConnectionModalOpen} onStatusChange={handleFeishuStatusChange} /> : <SystemModule section={systemSection} providerStatus={providerStatus} runtimeStatus={runtimeStatus} resourceCatalog={resourceCatalog} supervisor={supervisor} onReconnect={reconnect} onProbeResources={probeResources} onProfileChange={setProfile} onSupervisorChange={setSupervisor} onProviderStatusChange={setProviderStatus} />}</AppShell><ClientModal open={agentEntryOpen} title="招募" size="small" onClose={() => setAgentEntryOpen(false)}><div className="agent-entry-choice"><p>选择专家加入方式</p><div className="agent-entry-choice__options"><button type="button" onClick={() => { setAgentEntryOpen(false); setRecruitmentKind(teamDirectoryKind); setTeamView('recruitment') }}><span className="agent-entry-choice__icon"><Community aria-hidden /></span><span><strong>招募专家</strong><small>浏览专家与专家团候选目录</small></span><NavArrowRight aria-hidden /></button><button type="button" onClick={() => { setAgentEntryOpen(false); setTeamDirectoryKind('experts'); setTeamView('directory'); setEmployeeCreateRequest((value) => value + 1) }}><span className="agent-entry-choice__icon"><UserPlus aria-hidden /></span><span><strong>创建专家</strong><small>自定义身份、提示词、模型与能力</small></span><NavArrowRight aria-hidden /></button></div></div></ClientModal><ClientModal open={resourceInfoOpen} title="能力目录信息" eyebrow={<span className="quiet-meta">只读目录</span>} size="medium" onClose={() => setResourceInfoOpen(false)}><div className="detail-browser-content"><div className="detail-browser-intro"><h3>Runtime 能力目录</h3><p>客户端只展示 Runtime 已注册的不可变 Skill 与 Tool 版本，不在本地复制或改写能力事实。</p></div><section><div className="content-section-title"><h3>当前目录</h3><span>{resourceCatalog.skills.length + resourceCatalog.tools.length} 项</span></div><div className="detail-data-list"><div className="detail-data-row"><span><strong>Skills</strong><small>结构化步骤与 Tool 依赖</small></span><em>{resourceCatalog.skills.length}</em></div><div className="detail-data-row"><span><strong>Tools</strong><small>副作用、权限与健康状态</small></span><em>{resourceCatalog.tools.length}</em></div><div className="detail-data-row"><span><strong>健康检查</strong><small>由 Runtime 数据源探测提供</small></span><em>{resourceCatalog.healthChecks.length}</em></div></div></section><div className="resource-boundary">运行中的事项始终使用已冻结的能力版本；目录更新不会静默覆盖历史执行事实。</div></div></ClientModal></ClientIconSystem>
+  >{activeId === 'workbench' ? selectedConversationId ? <Workbench runtimeStatus={runtimeStatus} providerStatus={providerStatus} conversationId={selectedConversationId} user={userIdentity(profile.name, profile.avatarUrl)} supervisor={supervisorIdentity(supervisor)} matterSidebarCollapsed={matterSidebarCollapsed} initialDraft={conversationDraftSeed?.conversationId === selectedConversationId ? conversationDraftSeed.text : undefined} onInitialDraftConsumed={() => setConversationDraftSeed(undefined)} onDataChanged={() => { void refreshConversationData() }} /> : <div className="runtime-empty-state"><h2>正在读取会话</h2></div> : activeId === 'tasks' ? <TaskModule tasks={visibleDirectoryMatters} total={directoryMatters.length} loading={directoryTasksLoading} error={directoryTasksError} onRefresh={() => directoryTasksRefreshRef.current()} onOpen={(task) => { setSelectedDirectoryTaskId(task.id); setDirectoryTaskRetryError(undefined) }} /> : activeId === 'team' ? teamView === 'recruitment' ? <RecruitmentCatalog employees={employees} expertGroups={expertGroups} skills={resourceCatalog.skills} initialKind={recruitmentKind} onEnterConversation={enterRecruitmentConversation} /> : teamDirectoryKind === 'groups' ? <ExpertGroupModule group={selectedExpertGroup} onGroupsChanged={(items) => { setExpertGroups(items); setSelectedExpertGroupId(items[0]?.id) }} /> : <TeamModule selectedEmployeeId={selectedEmployeeId} skills={resourceCatalog.skills} providerStatus={providerStatus} createRequest={employeeCreateRequest} editRequest={employeeEditRequest} onEmployeesChanged={(items) => { setEmployees(items); setSelectedEmployeeId((current) => current && items.some((employee) => employee.id === current) ? current : items[0]?.id) }} onSelectEmployee={setSelectedEmployeeId} onEditEmployee={() => setEmployeeEditRequest((value) => value + 1)} /> : activeId === 'resources' ? <ResourceModule catalog={resourceCatalog} kind={resourceKind} selectedId={selectedResourceId} loading={resourceCatalogLoading} probing={probingResources} error={resourceError} onProbe={() => void probeResources()} onOpenEmployee={(employeeId) => { setSelectedEmployeeId(employeeId); setTeamDirectoryKind('experts'); setTeamView('directory'); setActiveId('team') }} /> : activeId === 'connections' ? <ConnectionsCatalog teamsStatus={teamsStatus} teamsModalOpen={teamsModalOpen} onTeamsModalOpenChange={setTeamsModalOpen} onTeamsStatusChange={status => { setTeamsStatus(status); void refreshRuntimeCatalogs(() => mountedRef.current) }} feishuStatus={feishuStatus} loading={connectionStatusLoading} modalOpen={connectionModalOpen} onModalOpenChange={setConnectionModalOpen} onStatusChange={handleFeishuStatusChange} /> : <SystemModule section={systemSection} providerStatus={providerStatus} runtimeStatus={runtimeStatus} resourceCatalog={resourceCatalog} supervisor={supervisor} onReconnect={reconnect} onProbeResources={probeResources} onProfileChange={setProfile} onSupervisorChange={setSupervisor} onProviderStatusChange={setProviderStatus} />}</AppShell><MatterDetailModal task={activeId === 'tasks' ? selectedDirectoryTask : undefined} retrying={directoryTaskRetrying} error={directoryTaskRetryError} onRetry={(task) => void retryDirectoryTask(task)} onClose={() => setSelectedDirectoryTaskId(undefined)} /><ClientModal open={agentEntryOpen} title="招募" size="small" onClose={() => setAgentEntryOpen(false)}><div className="agent-entry-choice"><p>选择专家加入方式</p><div className="agent-entry-choice__options"><button type="button" onClick={() => { setAgentEntryOpen(false); setRecruitmentKind(teamDirectoryKind); setTeamView('recruitment') }}><span className="agent-entry-choice__icon"><Community aria-hidden /></span><span><strong>招募专家</strong><small>浏览专家与专家团候选目录</small></span><NavArrowRight aria-hidden /></button><button type="button" onClick={() => { setAgentEntryOpen(false); setTeamDirectoryKind('experts'); setTeamView('directory'); setEmployeeCreateRequest((value) => value + 1) }}><span className="agent-entry-choice__icon"><UserPlus aria-hidden /></span><span><strong>创建专家</strong><small>自定义身份、提示词、模型与能力</small></span><NavArrowRight aria-hidden /></button></div></div></ClientModal><ClientModal open={resourceInfoOpen} title="能力目录信息" eyebrow={<span className="quiet-meta">只读目录</span>} size="medium" onClose={() => setResourceInfoOpen(false)}><div className="detail-browser-content"><div className="detail-browser-intro"><h3>Runtime 能力目录</h3><p>客户端只展示 Runtime 已注册的不可变 Skill 与 Tool 版本，不在本地复制或改写能力事实。</p></div><section><div className="content-section-title"><h3>当前目录</h3><span>{resourceCatalog.skills.length + resourceCatalog.tools.length} 项</span></div><div className="detail-data-list"><div className="detail-data-row"><span><strong>Skills</strong><small>结构化步骤与 Tool 依赖</small></span><em>{resourceCatalog.skills.length}</em></div><div className="detail-data-row"><span><strong>Tools</strong><small>副作用、权限与健康状态</small></span><em>{resourceCatalog.tools.length}</em></div><div className="detail-data-row"><span><strong>健康检查</strong><small>由 Runtime 数据源探测提供</small></span><em>{resourceCatalog.healthChecks.length}</em></div></div></section><div className="resource-boundary">运行中的事项始终使用已冻结的能力版本；目录更新不会静默覆盖历史执行事实。</div></div></ClientModal></ClientIconSystem>
 }
 
 function hasCreatedMeeting(task: TaskDetailView): boolean {
