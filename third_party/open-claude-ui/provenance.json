@@ -1,0 +1,33 @@
+{
+  "name": "open-claude-ui",
+  "repository": "https://github.com/Caho1/open-claude-ui",
+  "commit": "f504349419118a32804ce3a7fae74593070bf945",
+  "license": "MIT",
+  "adoptedFiles": [
+    "code-examples/cds-theme.css",
+    "code-examples/tailwind.config.js",
+    "code-examples/CdsButton.tsx",
+    "code-examples/SegmentedControl.tsx",
+    "code-examples/StatusIndicators.tsx",
+    "code-examples/ConfirmationDialog.tsx",
+    "code-examples/useClaudeScrollPinning.ts",
+    "code-examples/ClaudeDesktopHeader.tsx",
+    "code-examples/createClaudeMainWindow.ts",
+    "code-examples/ContainerResponsiveBar.tsx",
+    "code-examples/ChatComposer.tsx",
+    "code-examples/ChatComposerChin.tsx",
+    "code-examples/ChatMessageBubbles.tsx",
+    "code-examples/AttachmentCard.tsx",
+    "code-examples/McpToolDecisionCard.tsx",
+    "docs/v1/01-设计哲学与设计令牌体系.md",
+    "docs/v2/README.md",
+    "code-examples/CodeBlock.tsx"
+  ],
+  "adaptations": {
+    "components": "Runtime-owned props/callbacks, focus management and React types preserved",
+    "theme": "cds-theme.css copied byte-for-byte",
+    "typography": "Concrete code-examples sizes take precedence over generic role table; proprietary font binaries not distributed",
+    "responsive": "Upstream container width ladder plus local six-module layouts and compact navigation",
+    "markdown": "Upstream has no complete Markdown renderer. GFM elements use CDS typography/spacing roles; fences use the upstream CodeBlock geometry and real copy result."
+  }
+}

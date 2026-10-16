@@ -1,10 +1,24 @@
 # macOS 客户端组件与布局契约
 
-本契约以 `prototypes/macos-client-v2` 为界面与交互事实源，约束正式客户端的布局职责、组件复用和业务边界。原型定义“长什么样、如何组织信息”，Runtime Bridge 定义“哪些功能真实可用”。两者不得互相伪造。
+2026-10-16 起，正式客户端按用户指定的 Open Claude UI 桌面设计系统重构。生产入口为 `src/renderer/src/main.tsx`：Tailwind 基础 → 上游主题 `open-claude-ui/cds-theme.css` → CDS 角色 `design-system/tokens.css` → 基础组件 `primitives.css` → 消息组件 `messages.css` → 业务布局 `business.css` → 桌面组合 `desktop.css`。旧 `styles.css`、`prototype-adapter.css` 和原型 CSS 均不加载。Runtime Bridge 继续定义真实数据、状态和可执行动作。
 
-## 1. 固定壳层
+`prototypes/macos-client-v2` 保留独立的 Web 演示契约与历史样式，不再作为正式桌面壳层的视觉事实源。以下旧壳层尺寸约束适用于该原型；既有消息、资料、表单与审批组件的业务语义仍保留。
 
-正式客户端只有一套一级壳层：
+## 0. 当前正式桌面壳层
+
+- `DesktopShell` 统一承载原生窗口安全区、全局标题、单侧导航、上下文目录与工作区；六模块名称和 Runtime 行为保持原契约。
+- `DesktopComposer` 负责自适应输入区、附件入口、模型状态入口和发送/取消；它不直接操作 Runtime。Enter 发送，Shift+Enter 换行，CJK 合成态及 keyCode 229 不发送。
+- 暖灰表面、陶土强调色、气泡与阴影来自固定上游 CDS 源码；语义角色只在生产 Token 映射。上游来源和 MIT 声明见 `third_party/open-claude-ui`。
+- `useClaudeScrollPinning` 负责流式跟随、40px 底部容差、150ms 手动输入保护和返回最新位置；阅读历史时不抢夺位置。用户自己发送新消息时重新跟随，思考提示不单独滚动页面。
+- 草稿文字和附件按会话缓存于当前应用实例的内存中，切换模块与会话后恢复；不声明退出应用后的持久恢复。提交时文字和附件移入消息流，不在草稿中重复保留。新建会话失败保留当前会话并提供重试。
+- 浅色、深色和跟随系统复用原偏好键；`data-mode` 将实际主题同步到上游 CSS。窗口与 macOS 安全区由 `src/shared/layout-contract.ts` 唯一定义：1200×800 默认、600×400 最小、45px 顶栏。
+- 布局、字体栈、字号、组件、主题和响应式均按 CDS 替换。基础按钮与图标分别为 `CdsButton` / Lucide，分段选择、弹窗、状态、气泡和附件均采用 CDS 组件。CDS 的容器宽度阶梯结合本地业务完成窄窗口适配；详细来源和差异见迁移契约。
+- 普通消息与AI回复完整展示；用户附件置于气泡上方，AI身份/真实模型与时间共享头部。Markdown围栏采用实际CDS代码块与主进程文本复制；完整GFM节点由CDS适配层定义，上游未提供完整Markdown渲染器。
+- 新桌面验收与 Web 原型检查分别执行。范围与验收条件见 [重构契约](audits/2026-10-16-open-claude-ui-client-contract.md)。
+
+## 1. Web 原型壳层（历史兼容）
+
+旧 Web 原型保留以下壳层；正式客户端统一由上一节的 `DesktopShell` 组合：
 
 1. `Toolbar`：高度使用 `--layout-toolbar-height`，承载当前上下文标题和少量全局动作；内边距使用顶栏专属 Token，不复用页面内容边距。
 2. `Rail`：宽度使用 `--layout-rail-width`，正式客户端依次承载消息、事项、通讯录、能力、连接与系统入口。
@@ -97,6 +111,8 @@
 
 - 正式客户端六个一级模块均复用同一个 `AppShell`，切换时壳层不重排。
 - 目录页均复用 `SearchBox`、`ListRow` 和一致的空状态。
+- `SearchBox` 在有输入时提供共享的“清除搜索”按钮，清除后焦点回到输入框。已读取到有效目录后，筛选无匹配须显示就地提示；读取失败继续显示错误与恢复入口，不能用无匹配提示替代。搜索保留所选详情，中英文名称匹配不区分大小写。
+- 专家详情的四项基本资料在标准窗口中使用四列，1199px 及以下使用两列，保留字段标签与状态，不形成三项加一项的孤立分组。
 - 系统设置均复用单栏 `SettingsBlock`、`SettingRow`，标题、说明与控件保持同一左对齐基线。
 - 组件契约测试验证壳层 landmark、一级导航事件和选中态。
 - 图标契约测试验证唯一图标库、统一 Provider、线宽、五种语义尺寸，并阻止页面级像素尺寸、手绘 SVG 与文本伪图标。

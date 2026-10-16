@@ -28,7 +28,7 @@ describe('Electron window security', () => {
     })
     expect(options.titleBarStyle).toBe('hiddenInset')
     expect(options.trafficLightPosition).toEqual(MACOS_TRAFFIC_LIGHT_POSITION)
-    expect(MACOS_TRAFFIC_LIGHT_POSITION.y + CLIENT_WINDOW_LAYOUT.macOSTrafficLightSize / 2).toBe(CLIENT_WINDOW_LAYOUT.toolbarHeight / 2)
+    expect(Math.abs(MACOS_TRAFFIC_LIGHT_POSITION.y + CLIENT_WINDOW_LAYOUT.macOSTrafficLightSize / 2 - CLIENT_WINDOW_LAYOUT.toolbarHeight / 2)).toBeLessThanOrEqual(0.5)
   })
 
   it('accepts only the exact dev origin or packaged renderer', () => {

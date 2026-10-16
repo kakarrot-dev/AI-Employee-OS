@@ -19,7 +19,7 @@ export function createWindowOptions(preloadPath: string): BrowserWindowConstruct
     title: 'AI Employee OS',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: MACOS_TRAFFIC_LIGHT_POSITION,
-    backgroundColor: '#f4f5f2',
+    backgroundColor: '#fcfcfb',
     webPreferences: {
       preload: preloadPath,
       nodeIntegration: false,

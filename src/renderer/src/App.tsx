@@ -2,9 +2,9 @@ import { EMPTY_TEAMS_STATUS, type TeamsConnectionStatus } from '../../shared/tea
 import { TEAMS_CONNECTION_APPLICATION } from './ConnectionsCatalog'
 import { FEISHU_MEETING_TOOL_IDS } from '../../shared/feishu-meeting-contract'
 import { MeetingActions } from './MeetingActions'
+import { LocalDocumentActions } from './LocalDocumentActions'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowUp,
   Check,
   ChatBubble,
   Community,
@@ -24,7 +24,7 @@ import {
   Trash,
   UserPlus,
   Xmark
-} from 'iconoir-react'
+} from './components/cds-icons'
 import type { AttachmentView, ConversationMessageView, ConversationSummaryView, EmployeeSummary, ProviderStatus, RuntimeStatus, TaskDetailView } from '../../shared/runtime-contract'
 import { TeamModule } from './TeamModule'
 import { employeeAvatarSrc, supervisorIdentity, userIdentity } from './employee-avatar'
@@ -37,8 +37,13 @@ import type { FeishuConnectionStatus } from '../../shared/connection-contract'
 import type { ExpertGroupView } from '../../shared/expert-group-contract'
 import { ExpertGroupAvatar } from './ExpertGroupAvatar'
 import { DEFAULT_SUPERVISOR_CONFIG, type SupervisorConfigInput } from '../../shared/supervisor-contract'
-import { AppShell, Avatar, ClientModal, ContextPane, DetailListMark, DetailNote, DetailPage, DetailSectionHeader, DetailState, DetailSummaryPanel, IconButton, ListRow, PersonAvatar, Rail, SearchBox, SectionHeader, StatusLight, SummaryList, SummaryListItem, Toolbar, type ClientIcon, type DetailTone, type PersonIdentity } from './components/client-ui'
-import { ClientIconSystem } from './components/client-icon-system'
+import { Avatar, ClientModal, ContextPane, DetailListMark, DetailNote, DetailPage, DetailSectionHeader, DetailState, DetailSummaryPanel, IconButton, ListRow, PersonAvatar, SearchBox, SectionHeader, StatusLight, SummaryList, SummaryListItem, type ClientIcon, type DetailTone, type PersonIdentity } from './components/client-ui'
+import { DesktopShell } from './components/DesktopShell'
+import { DesktopComposer } from './components/DesktopComposer'
+import { useClaudeScrollPinning } from './open-claude-ui/useClaudeScrollPinning'
+import { CdsIconSystem } from './components/CdsIconSystem'
+import { CdsButton } from './open-claude-ui/primitives/CdsButton'
+import { CdsSegmentedControl } from './open-claude-ui/primitives/SegmentedControl'
 import { AgentActivityMessage, MessageActionCard, MessageConfirmationActions, ChatContentBlock, ChatMessage, MarkdownMessage, MatterRouteNote, MatterTeamAvatars, MessageAttachmentGroup, StreamingMarkdownMessage, TimelineSummary, fileDetail } from './components/message-ui'
 import { readClientProfile, SystemModule, systemSections, type ClientProfile, type SystemSectionId } from './SystemModule'
 import { formatClientTimestamp, formatRunDuration } from './client-time'
@@ -184,7 +189,7 @@ function taskSummary(task: TaskDetailView): { title: string; description: string
   if (task.state === 'succeeded') return { title: '所有完成要求均已通过', description: task.delivery ? `员工已完成处理，${artifacts} 个交付文件和 ${evidence} 条来源证据已保存。` : '员工已完成处理，任务结果已经保存。' }
   if (task.state === 'failed' && hasCreatedMeeting(task)) return { title: '会议已创建，后续处理未完成', description: '已有会议号和入会链接仍可使用，请核对下方邀请与处理结果。' }
   if (task.state === 'failed') return { title: '本次执行没有完成', description: '执行过程中遇到问题，请查看未解决事项后重新处理。' }
-  if (task.state === 'needs_attention' && task.approvals.some(approval => approval.decision === 'pending')) return { title: '等待确认操作', description: '请核对下方确认卡中的会议内容和参会名单，确认后继续办理。' }
+  if (task.state === 'needs_attention' && task.approvals.some(approval => approval.decision === 'pending')) return { title: '等待确认操作', description: '请核对下方确认卡中的操作内容，确认后继续办理。' }
   if (task.state === 'needs_attention') return { title: '当前步骤需要处理', description: '请查看待处理变更或结果核验信息；状态变化后页面会自动更新。' }
   if (task.state === 'cancelled') return { title: '本次任务已取消', description: '任务已经停止，当前记录会继续保留。' }
   if (task.state === 'draft') return { title: '任务内容等待确认', description: '确认目标和完成要求后，员工才会开始执行。' }
@@ -255,7 +260,7 @@ function MessageBlock({ message, user, supervisor, streamingActive = false }: { 
   const identity = isUser ? user : supervisor
   const attachments = message.attachments?.map((attachment) => ({ id: attachment.id, name: attachment.name, detail: fileDetail(attachment) })) ?? []
   const isStreamingReply = !isUser && message.id.startsWith('stream:')
-  return <ChatMessage source={isUser ? 'user' : 'agent'} name={identity.name} initials={identity.initials} color={identity.color} avatarSrc={identity.avatarSrc ?? undefined} time={formatClientTimestamp(message.createdAt)}>{isStreamingReply ? <StreamingMarkdownMessage active={streamingActive}>{message.content}</StreamingMarkdownMessage> : <MarkdownMessage>{message.content}</MarkdownMessage>}{attachments.length > 0 && <MessageAttachmentGroup source={isUser ? 'user' : 'agent'} embedded attachments={attachments} onOpen={(id) => void window.aiEmployeeOS.attachment.open(id)} onReveal={(id) => void window.aiEmployeeOS.attachment.reveal(id)} />}</ChatMessage>
+  return <ChatMessage source={isUser ? 'user' : 'agent'} name={identity.name} initials={identity.initials} color={identity.color} avatarSrc={identity.avatarSrc ?? undefined} modelName={isUser ? undefined : message.modelId} time={formatClientTimestamp(message.createdAt)} attachments={attachments.length > 0 ? <MessageAttachmentGroup source={isUser ? 'user' : 'agent'} attachments={attachments} onOpen={(id) => void window.aiEmployeeOS.attachment.open(id)} onReveal={(id) => void window.aiEmployeeOS.attachment.reveal(id)} /> : undefined}>{isStreamingReply ? <StreamingMarkdownMessage active={streamingActive}>{message.content}</StreamingMarkdownMessage> : <MarkdownMessage collapsible={false}>{message.content}</MarkdownMessage>}</ChatMessage>
 }
 
 const employeeColors = ['#9ebd79', '#d7b36a', '#85a9c7', '#bc91b1']
@@ -312,7 +317,7 @@ function DeliveryMessage({ task, supervisor, onOpen, onOpenArtifact, onRevealArt
   return <ChatMessage source="agent" variant="timeline" name={supervisor.name} initials={supervisor.initials} color={supervisor.color} avatarSrc={supervisor.avatarSrc ?? undefined} time={formatClientTimestamp(delivery.createdAt ?? task.timeline.at(-1)?.createdAt ?? new Date().toISOString())} status={<StatusLight state={completed ? 'success' : 'waiting'} label={completed ? '已交付' : '部分通过'} />}>
     <ChatContentBlock content={content} variant="delivery">
       <MessageAttachmentGroup source="agent" embedded attachments={delivery.artifacts.map((artifact) => ({ id: artifact.id, name: artifactDisplayName(artifact.relativePath), detail: artifactTypeLabel(artifact.mediaType) }))} onOpen={onOpenArtifact} onReveal={onRevealArtifact} />
-      <button type="button" className="text-action" onClick={onOpen}>查看完整验收记录 <NavArrowRight aria-hidden /></button>
+      <CdsButton variant="ghost" size="sm" type="button" className="text-action" onClick={onOpen}>查看完整验收记录 <NavArrowRight aria-hidden /></CdsButton>
     </ChatContentBlock>
   </ChatMessage>
 }
@@ -365,7 +370,7 @@ function MatterDetailModal({ task, retrying, error, onRetry, onClose }: { task?:
       {task.delivery.unresolvedIssues.length > 0 && <div className="boundary-note">仍需注意：{task.delivery.unresolvedIssues.join('；')}</div>}
     </section>}
     {error && <p className="inline-error" role="alert">{error}</p>}
-    {(task.state === 'failed' || task.state === 'succeeded') && <div className="detail-actions"><button type="button" className="button button--primary" disabled={retrying} onClick={() => onRetry(task)}>{retrying ? '正在重新执行' : task.state === 'failed' ? '按该事项原内容重试' : '按该事项原内容重新执行'}</button></div>}
+    {(task.state === 'failed' || task.state === 'succeeded') && <div className="detail-actions"><CdsButton variant="primary" size="md" type="button" disabled={retrying} onClick={() => onRetry(task)}>{retrying ? '正在重新执行' : task.state === 'failed' ? '按该事项原内容重试' : '按该事项原内容重新执行'}</CdsButton></div>}
   </div></ClientModal>
 }
 
@@ -373,10 +378,10 @@ function MatterEvent({ task, onOpen, onAnchor }: { task: TaskDetailView; onOpen:
   const summary = taskSummary(task)
   const tone = taskStateTone(task.state)
   return (
-    <button ref={onAnchor} type="button" className="matter-event message-stream-item" aria-label={`查看事项：${task.title}`} onClick={onOpen}>
+    <CdsButton variant="ghost" size="sm" ref={onAnchor} type="button" className="matter-event message-stream-item" aria-label={`查看事项：${task.title}`} onClick={onOpen}>
       <span className="matter-event__body"><strong>{task.title}</strong><span>{summary.description}</span></span>
       <span className="matter-event__meta"><span className={`matter-event__state matter-event__state--${tone}`} aria-live="polite"><i aria-hidden />{task.state === 'needs_attention' && task.meetingConfirmation && !task.meetingConfirmation.allConfirmed ? '等待参会人确认' : taskStateLabel(task.state)}</span><span className="matter-event__time"><time>{formatClientTimestamp(taskUpdatedAt(task))}</time><NavArrowRight aria-hidden /></span></span>
-    </button>
+    </CdsButton>
   )
 }
 
@@ -392,14 +397,16 @@ function MatterSidebar({ tasks, collapsed, onLocate }: { tasks: TaskDetailView[]
   const orderedTasks = [...tasks].sort((left, right) => new Date(taskUpdatedAt(right)).getTime() - new Date(taskUpdatedAt(left)).getTime())
   return (
     <aside className={`matter-sidebar${collapsed ? ' is-collapsed' : ''}`} aria-label="当前会话事项">
-      {!collapsed && <><div className="matter-sidebar__header"><span><strong>事项</strong><small>{tasks.length}</small></span></div><div className="matter-sidebar__list">{orderedTasks.map((task) => <button type="button" className="matter-sidebar__item" key={task.id} aria-label={`定位事项：${task.title}`} onClick={() => onLocate(task)}><span className={`matter-sidebar__status matter-sidebar__status--${task.state}`} aria-hidden /><span><strong>{task.title}</strong><small>{task.state === 'needs_attention' && task.meetingConfirmation && !task.meetingConfirmation.allConfirmed ? '等待参会人确认' : taskStateLabel(task.state)} · 运行 {formatRunDuration(task.runStartedAt, task.runCompletedAt, now)}</small></span></button>)}{tasks.length === 0 && <p className="matter-sidebar__empty">当前会话暂无事项</p>}</div></>}
+      {!collapsed && <><div className="matter-sidebar__header"><span><strong>事项</strong><small>{tasks.length}</small></span></div><div className="matter-sidebar__list">{orderedTasks.map((task) => <CdsButton variant="ghost" size="sm" type="button" className="matter-sidebar__item" key={task.id} aria-label={`定位事项：${task.title}`} onClick={() => onLocate(task)}><span className={`matter-sidebar__status matter-sidebar__status--${task.state}`} aria-hidden /><span className="matter-sidebar__copy"><strong>{task.title}</strong><small>{task.state === 'needs_attention' && task.meetingConfirmation && !task.meetingConfirmation.allConfirmed ? '等待参会人确认' : taskStateLabel(task.state)} · 运行 {formatRunDuration(task.runStartedAt, task.runCompletedAt, now)}</small></span></CdsButton>)}{tasks.length === 0 && <p className="matter-sidebar__empty">当前会话暂无事项</p>}</div></>}
     </aside>
   )
 }
 
-function Workbench({ runtimeStatus, providerStatus, conversationId, user, supervisor, matterSidebarCollapsed, initialDraft, onInitialDraftConsumed, onDataChanged }: { runtimeStatus: RuntimeStatus; providerStatus: ProviderStatus; conversationId: string; user: PersonIdentity; supervisor: PersonIdentity; matterSidebarCollapsed: boolean; initialDraft?: string; onInitialDraftConsumed?: () => void; onDataChanged: () => void }): React.JSX.Element {
+interface ConversationDraft { text: string; attachments: AttachmentView[] }
+
+function Workbench({ draftCache, runtimeStatus, providerStatus, conversationId, user, supervisor, supervisorModelId, matterSidebarCollapsed, initialDraft, onInitialDraftConsumed, onDataChanged }: { draftCache: Map<string, ConversationDraft>; runtimeStatus: RuntimeStatus; providerStatus: ProviderStatus; conversationId: string; user: PersonIdentity; supervisor: PersonIdentity; supervisorModelId: SupervisorConfigInput['modelId']; matterSidebarCollapsed: boolean; initialDraft?: string; onInitialDraftConsumed?: () => void; onDataChanged: () => void }): React.JSX.Element {
   const [messages, setMessages] = useState<ConversationMessageView[]>([])
-  const [draft, setDraft] = useState('')
+  const [draft, setDraft] = useState(() => draftCache.get(conversationId)?.text ?? '')
   const [sending, setSending] = useState(false)
   const [pendingResponseStartedAt, setPendingResponseStartedAt] = useState<string>()
   const [activeRequestId, setActiveRequestId] = useState<string>()
@@ -409,11 +416,13 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
   const [taskBusy, setTaskBusy] = useState(false)
   const [selectedMatterId, setSelectedMatterId] = useState<string>()
   const [composerPanel, setComposerPanel] = useState<ComposerPanel>(null)
-  const [draftAttachments, setDraftAttachments] = useState<AttachmentView[]>([])
-  const [isFileDragging, setIsFileDragging] = useState(false)
+  const [draftAttachments, setDraftAttachments] = useState<AttachmentView[]>(() => draftCache.get(conversationId)?.attachments ?? [])
   const [authorizedDirectories, setAuthorizedDirectories] = useState<string[]>([])
   const matterAnchors = useRef(new Map<string, HTMLButtonElement>())
   const composerInputRef = useRef<HTMLTextAreaElement>(null)
+  const draftSnapshot = useRef<ConversationDraft>({ text: draft, attachments: draftAttachments })
+  draftSnapshot.current = { text: draft, attachments: draftAttachments }
+  useEffect(() => () => { draftCache.set(conversationId, draftSnapshot.current) }, [conversationId, draftCache])
 
   useEffect(() => {
     if (!initialDraft) return
@@ -426,6 +435,7 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
   useEffect(() => {
     let mounted = true
     let refreshingTasks = false
+    let taskRefreshQueued = false
     let taskRetryTimer: number | undefined
     let taskRetryAttempt = 0
     const receiveTasks = (items: TaskDetailView[]): void => {
@@ -441,17 +451,22 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
     setActiveRequestId(undefined)
     setSelectedMatterId(undefined)
     setComposerPanel(null)
-    setDraftAttachments([])
     window.aiEmployeeOS.task.outputDirectory().then((directory) => { if (mounted) setAuthorizedDirectories([directory]) }).catch(() => { if (mounted) setError('下载目录读取失败') })
     window.aiEmployeeOS.conversation.history(conversationId).then((history) => { if (mounted) setMessages(history) }).catch(() => { if (mounted) setError('历史对话读取失败') })
     const refreshTasks = (): void => {
-      if (!mounted || refreshingTasks) return
+      if (!mounted) return
+      if (refreshingTasks) { taskRefreshQueued = true; return }
       refreshingTasks = true
       window.aiEmployeeOS.task.list().then(receiveTasks).catch(() => {
         if (!mounted) return
         setError('任务投影读取失败')
         if (taskRetryTimer === undefined && taskRetryAttempt < 3) taskRetryTimer = window.setTimeout(() => { taskRetryTimer = undefined; refreshTasks() }, 500 * 2 ** taskRetryAttempt++)
-      }).finally(() => { refreshingTasks = false })
+      }).finally(() => {
+        refreshingTasks = false
+        const queued = taskRefreshQueued
+        taskRefreshQueued = false
+        if (mounted && queued) refreshTasks()
+      })
     }
     refreshTasks()
     const unsubscribe = window.aiEmployeeOS.conversation.onEvent((event) => {
@@ -503,12 +518,13 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
     setActiveRequestId(undefined)
     const optimisticId = `local:${Date.now()}`
     const attachments = [...draftAttachments]
+    setDraftAttachments([])
+    scrollToBottom()
     setMessages((current) => [...current, { id: optimisticId, role: 'user', content: text, createdAt: new Date().toISOString(), attachments }])
     try {
       const directories = authorizedDirectories.length ? authorizedDirectories : [await window.aiEmployeeOS.task.outputDirectory()]
       const result = await window.aiEmployeeOS.conversation.send(conversationId, text, directories, attachments.map((attachment) => attachment.id))
       setMessages((current) => current.map((message) => message.id === optimisticId ? { ...message, id: result.messageId } : message))
-      setDraftAttachments([])
       setActiveRequestId(result.requestId)
       onDataChanged()
     } catch (error) {
@@ -523,12 +539,6 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
             ? '消息处理响应超时，请刷新会话核对进度，避免重复提交。'
             : '消息处理未能启动，请刷新会话核对消息状态后再继续。')
     }
-  }
-
-  const handleComposerKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing || event.keyCode === 229) return
-    event.preventDefault()
-    event.currentTarget.form?.requestSubmit()
   }
 
   const selectAttachments = async (): Promise<void> => {
@@ -556,7 +566,6 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
     }
   }
 
-  const isFileDrag = (event: React.DragEvent): boolean => Array.from(event.dataTransfer.types).includes('Files')
 
   const cancel = async (): Promise<void> => {
     if (!activeRequestId || cancelling) return
@@ -646,50 +655,46 @@ function Workbench({ runtimeStatus, providerStatus, conversationId, user, superv
   const hasActiveStreamMessage = activeStreamMessageId ? messages.some((message) => message.id === activeStreamMessageId) : false
   const showSupervisorThinking = sending && !hasActiveStreamMessage && Boolean(pendingResponseStartedAt)
 
+  const { containerRef, showJumpControl, markUserInput, handleScroll, scrollToBottom } = useClaudeScrollPinning([messages, tasks, sending], conversationId)
+
   return (
-    <div className="workspace-page message-page">
+    <div className={`workspace-page message-page${messages.length === 0 ? ' is-empty' : ''}`}>
       <div className={`conversation-workspace${matterSidebarCollapsed ? ' is-sidebar-collapsed' : ''}`}>
       <div className="conversation-column">
-      <div className="message-scroll" aria-label="对话">
+      <div ref={containerRef} className="message-scroll" aria-label="对话" tabIndex={0} onScroll={handleScroll} onWheel={markUserInput} onTouchStart={markUserInput} onPointerDown={(event) => { if (event.target === event.currentTarget) markUserInput() }} onKeyDown={(event) => { if (event.target === event.currentTarget && ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) markUserInput() }}>
         <div className="message-canvas">
           {messages.length === 0 ? (
             <div className="runtime-empty-state">
               <span className="runtime-empty-state__mark" aria-hidden="true"><Sparks /></span>
-              <h2 id="conversation-title">从一段对话开始</h2>
-              <p>描述目标。{supervisor.name}会先判断是直接回答、归入已有事项，还是创建新事项。</p>
+              <h2 id="conversation-title">今天，想一起完成什么？</h2>
+              <p>把目标交给{supervisor.name}，一起梳理思路、安排工作，直到交付结果。</p>
+              <div className="desktop-welcome-prompts">{[
+                { label: '梳理工作目标', text: '帮我梳理这个工作目标：', icon: Sparks },
+                { label: '整理资料', text: '请整理以下资料并生成报告：', icon: Page },
+                { label: '安排团队协作', text: '请根据以下要求安排员工协作：', icon: Group }
+              ].map(({ label, text, icon: Icon }) => <CdsButton variant="ghost" size="sm" type="button" key={label} onClick={() => { setDraft(text); composerInputRef.current?.focus() }}><Icon aria-hidden />{label}</CdsButton>)}</div>
             </div>
           ) : (
-            <div className="runtime-message-list" aria-live="polite"><div className="date-divider"><span>今天</span></div>{messages.map((message) => <MessageBlock key={message.id} message={message} user={user} supervisor={supervisor} streamingActive={sending && message.id === activeStreamMessageId} />)}{showSupervisorThinking && pendingResponseStartedAt && <AgentActivityMessage activity={{ state: 'thinking', agent: { name: supervisor.name, initials: supervisor.initials, color: supervisor.color, avatarSrc: supervisor.avatarSrc ?? undefined }, time: formatClientTimestamp(pendingResponseStartedAt) }} />}</div>
+            <div className="runtime-message-list" aria-live="polite"><div className="date-divider"><span>今天</span></div>{messages.map((message) => <MessageBlock key={message.id} message={message} user={user} supervisor={supervisor} streamingActive={sending && message.id === activeStreamMessageId} />)}{showSupervisorThinking && pendingResponseStartedAt && <AgentActivityMessage autoReveal={false} activity={{ state: 'thinking', agent: { name: supervisor.name, initials: supervisor.initials, color: supervisor.color, avatarSrc: supervisor.avatarSrc ?? undefined }, time: formatClientTimestamp(pendingResponseStartedAt) }} />}</div>
           )}
 
           {activeTask ? (
             <><MatterRouteNote title={activeTask.title} mode={activeRouteMode} busy={taskBusy} onOpenMatter={() => setSelectedMatterId(activeTask.id)} onCreateMatter={() => void createTaskDraft()} onRequestChange={activeTask.state === 'running' && !activeTask.pendingChange && latestChangeMessage ? () => void requestTaskChange() : undefined} />{conversationTasks.map((task) => <MatterEvent key={task.id} task={task} onOpen={() => setSelectedMatterId(task.id)} onAnchor={(element) => { if (element) matterAnchors.current.set(task.id, element); else matterAnchors.current.delete(task.id) }} />)}<TaskWorkTimeline task={activeTask} supervisor={supervisor} />
               {activeTask.pendingChange && <MessageActionCard title="确认事项变更" status={activeTask.state === 'needs_attention' ? '等待你确认' : '正在等待当前操作结束'} tone="waiting" actions={activeTask.state === 'needs_attention' ? <MessageConfirmationActions cancelLabel="保持原事项" confirmLabel="确认变更并继续" busy={taskBusy} onCancel={() => void decideTaskChange(false)} onConfirm={() => void decideTaskChange(true)} /> : undefined}><p>{String(activeTask.pendingChange.requestedDiff.goal ?? '需求已变化')}</p><small>{activeTask.state === 'needs_attention' ? '确认后将按更新后的要求继续办理。' : '当前操作结束后，你可以确认是否按新要求继续。'}</small></MessageActionCard>}
               {activeTask.pendingInput && !activeTask.pendingChange && <MessageActionCard title="需要补充信息" status="等待你回复" tone="waiting"><MarkdownMessage>{activeTask.pendingInput.question}</MarkdownMessage><small>在下方输入框补充信息，将沿用当前事项继续办理。</small></MessageActionCard>}
-              {activeTask.state === 'failed' && <section className="runtime-route-note message-stream-item"><Page aria-hidden /><span>{hasCreatedMeeting(activeTask) ? '会议已创建，后续处理未完成。请使用下方会议号和链接，并核对邀请结果；不会重新创建会议。' : '本次执行已失败；未完成的只读 Tool 已安全终止，结果未知的写入操作需要先核验。'}</span>{!hasCreatedMeeting(activeTask) && <button type="button" onClick={() => void retryTask()} disabled={taskBusy}>{taskBusy ? '正在重试' : '按原事项重试'}</button>}</section>}
-              {activeTask.state === 'draft' && <section className="runtime-route-note message-stream-item"><Page aria-hidden /><span>{activeTask.requiresDirectories && activeTask.directories.length === 0 ? '该事项尚未绑定固定下载目录。' : '事项已生成，Runtime 正在自动启动员工。'}</span>{activeTask.requiresDirectories && activeTask.directories.length === 0 && <button type="button" onClick={() => void startDraftInOutputDirectory()} disabled={taskBusy}>{taskBusy ? '正在启动' : '使用下载文件夹并开始'}</button>}</section>}
-              <MeetingActions task={activeTask} onUpdate={(updated) => setTasks((current) => current.map((task) => task.id === updated.id ? updated : task))} /><DeliveryMessage task={activeTask} supervisor={supervisor} onOpen={() => setSelectedMatterId(activeTask.id)} onOpenArtifact={(artifactId) => void performArtifactAction(activeTask.id, artifactId, 'open')} onRevealArtifact={(artifactId) => void performArtifactAction(activeTask.id, artifactId, 'reveal')} />{activeTask.toolActions.some((item) => item.state === 'result_unknown') && <div className="boundary-note message-stream-item">存在结果未知的 Tool Action。需要在 Runtime 记录真实外部结果后才能继续，客户端不会猜测成功或失败。</div>}</>
+              {activeTask.state === 'failed' && <section className="runtime-route-note message-stream-item"><Page aria-hidden /><span>{hasCreatedMeeting(activeTask) ? '会议已创建，后续处理未完成。请使用下方会议号和链接，并核对邀请结果；不会重新创建会议。' : '本次执行已失败；未完成的只读 Tool 已安全终止，结果未知的写入操作需要先核验。'}</span>{!hasCreatedMeeting(activeTask) && <CdsButton variant="ghost" size="sm" type="button" onClick={() => void retryTask()} disabled={taskBusy}>{taskBusy ? '正在重试' : '按原事项重试'}</CdsButton>}</section>}
+              {activeTask.state === 'draft' && <section className="runtime-route-note message-stream-item"><Page aria-hidden /><span>{activeTask.requiresDirectories && activeTask.directories.length === 0 ? '该事项尚未绑定固定下载目录。' : '事项已生成，Runtime 正在自动启动员工。'}</span>{activeTask.requiresDirectories && activeTask.directories.length === 0 && <CdsButton variant="ghost" size="sm" type="button" onClick={() => void startDraftInOutputDirectory()} disabled={taskBusy}>{taskBusy ? '正在启动' : '使用下载文件夹并开始'}</CdsButton>}</section>}
+              <MeetingActions task={activeTask} onUpdate={(updated) => setTasks((current) => current.map((task) => task.id === updated.id ? updated : task))} /><LocalDocumentActions task={activeTask} onUpdate={(updated) => setTasks((current) => current.map((task) => task.id === updated.id ? updated : task))} /><DeliveryMessage task={activeTask} supervisor={supervisor} onOpen={() => setSelectedMatterId(activeTask.id)} onOpenArtifact={(artifactId) => void performArtifactAction(activeTask.id, artifactId, 'open')} onRevealArtifact={(artifactId) => void performArtifactAction(activeTask.id, artifactId, 'reveal')} />{activeTask.toolActions.some((item) => item.state === 'result_unknown') && <div className="boundary-note message-stream-item">存在结果未知的 Tool Action。需要在 Runtime 记录真实外部结果后才能继续，客户端不会猜测成功或失败。</div>}</>
           ) : null}
         </div>
       </div>
-      <form className="composer" onSubmit={submit} onDragEnter={(event) => { if (!isFileDrag(event)) return; event.preventDefault(); setIsFileDragging(true) }} onDragOver={(event) => { if (!isFileDrag(event)) return; event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsFileDragging(false) }} onDrop={(event) => { if (!isFileDrag(event)) return; event.preventDefault(); setIsFileDragging(false); void importDroppedAttachments(Array.from(event.dataTransfer.files)) }}>
-        <div className={`composer__box${isFileDragging ? ' is-file-dragging' : ''}`}>
-          {isFileDragging && <div className="composer-drop-zone" role="status"><Page aria-hidden /><span><strong>松开以上传文件</strong><small>Word、PowerPoint、Excel、PDF 或图片</small></span></div>}
-          {draftAttachments.length > 0 && <div className="composer-attachment-tray"><MessageAttachmentGroup source="user" attachments={draftAttachments.map((attachment) => ({ id: attachment.id, name: attachment.name, detail: fileDetail(attachment) }))} onRemove={(id) => setDraftAttachments((items) => items.filter((attachment) => attachment.id !== id))} /></div>}
-          <textarea ref={composerInputRef} id="supervisor-input" aria-label="发送消息" rows={2} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder={`发送给${supervisor.name}，补充问题或事项信息`} disabled={runtimeStatus.state !== 'connected' || sending} />
-          <div className="composer__toolbar">
-            <div className="composer__group"><button type="button" className="attachment-upload-button icon-button" aria-label="添加附件" title="选择 Word、PowerPoint、Excel、PDF 或图片附件" onClick={() => void selectAttachments()}><Plus aria-hidden /></button></div>
-            <div className="composer__group">
-              <button type="button" className="composer__control" aria-expanded={composerPanel === 'model'} aria-controls="composer-model-panel" onClick={() => setComposerPanel((panel) => panel === 'model' ? null : 'model')}><Sparks aria-hidden /><span>deepseek-v4-pro</span><NavArrowDown aria-hidden /></button>
-              <IconButton label="语音输入" icon={Microphone} onClick={() => setComposerPanel((panel) => panel === 'voice' ? null : 'voice')} />
-              {sending && activeRequestId ? <button type="button" className="composer__control composer__cancel" onClick={cancel} disabled={cancelling}><Xmark aria-hidden />{cancelling ? '取消中' : '取消'}</button> : null}
-              <button type="submit" aria-label="发送" className="composer__send" disabled={(!draft.trim() && !draftAttachments.length) || sending || runtimeStatus.state !== 'connected'}><ArrowUp aria-hidden /></button>
-            </div>
-          </div>
-          {composerPanel && <div className={`composer-popover composer-popover--${composerPanel}`} id={`composer-${composerPanel}-panel`} role="dialog" aria-label={composerPanel === 'model' ? '当前会话模型' : '语音输入说明'}>{composerPanel === 'model' ? <><strong>当前会话模型</strong><div className="composer-popover__options">{providerStatus.models.filter((model) => model.modality === 'text').map((model) => <button type="button" key={`${model.provider}:${model.modelId}`} className={model.modelId === 'deepseek-v4-pro' ? 'is-active' : ''} onClick={() => setComposerPanel(null)}><span><b>{model.modelId}</b><small>{model.provider} · {model.verification === 'verified' ? '已验证' : '未验证'}</small></span>{model.modelId === 'deepseek-v4-pro' && <Check aria-hidden />}</button>)}</div><p>模型由当前 Runtime 会话固定；此处展示真实可用状态，不会静默切换。</p></> : <><strong>语音输入</strong><p>客户端尚未接入 macOS 麦克风权限与转写 Bridge，因此不会请求权限或伪造录音。入口交互已保留。</p><StatusLight state="muted" label="暂未开放" /></>}</div>}
-        </div>
-        {error && <small className="composer-error" role="alert">{error}</small>}
-      </form>
+      <div className="desktop-jump-anchor">{showJumpControl && <CdsButton variant="ghost" size="sm" type="button" className="desktop-jump-latest" onClick={() => scrollToBottom(true)}><NavArrowDown aria-hidden />回到最新消息</CdsButton>}</div>
+      <DesktopComposer value={draft} onChange={setDraft} inputRef={composerInputRef} placeholder={`发送给${supervisor.name}，补充问题或事项信息`} disabled={runtimeStatus.state !== 'connected'} sending={sending} cancelling={cancelling} canCancel={Boolean(activeRequestId)} hasAttachments={draftAttachments.length > 0} onSubmit={submit} onSelectAttachments={() => void selectAttachments()} onDropAttachments={(files) => void importDroppedAttachments(files)} onCancel={() => void cancel()} error={error}
+        attachments={draftAttachments.length > 0 && <div className="composer-attachment-tray"><MessageAttachmentGroup source="user" attachments={draftAttachments.map((attachment) => ({ id: attachment.id, name: attachment.name, detail: fileDetail(attachment) }))} onRemove={(id) => setDraftAttachments((items) => items.filter((attachment) => attachment.id !== id))} /></div>}
+        controls={<><CdsButton variant="ghost" size="sm" type="button" className="composer__control" title={supervisorModelId} aria-expanded={composerPanel === 'model'} aria-controls="composer-model-panel" onClick={() => setComposerPanel((panel) => panel === 'model' ? null : 'model')} icon={<Sparks aria-hidden />}><span className="composer__model-label">{supervisorModelId}</span><NavArrowDown aria-hidden /></CdsButton>
+              <IconButton label="语音输入" icon={Microphone} onClick={() => setComposerPanel((panel) => panel === 'voice' ? null : 'voice')} /></>}
+        panel={composerPanel && <div className={`composer-popover composer-popover--${composerPanel}`} id={`composer-${composerPanel}-panel`} role="dialog" aria-label={composerPanel === 'model' ? '总管模型' : '语音输入说明'}>{composerPanel === 'model' ? <><strong>总管模型</strong><div className="composer-popover__options">{providerStatus.models.filter((model) => model.modality === 'text').map((model) => <CdsButton variant="ghost" size="sm" type="button" key={`${model.provider}:${model.modelId}`} className={model.modelId === supervisorModelId ? 'is-active' : ''} onClick={() => setComposerPanel(null)}><span><b>{model.modelId}</b><small>{model.provider} · {model.verification === 'verified' ? '已验证' : '未验证'}</small></span>{model.modelId === supervisorModelId && <Check aria-hidden />}</CdsButton>)}</div><p>此处仅展示可用状态。切换模型请到系统的总管设置；已有事项继续使用启动时冻结的模型。</p></> : <><strong>语音输入</strong><p>语音输入暂未开放，请使用键盘输入消息。</p><StatusLight state="muted" label="暂未开放" /></>}</div>}
+      />
       </div>
       <MatterSidebar tasks={conversationTasks} collapsed={matterSidebarCollapsed} onLocate={locateMatter} />
       </div>
@@ -705,6 +710,9 @@ export function App(): React.JSX.Element {
   const [conversations, setConversations] = useState<ConversationSummaryView[]>([])
   const [selectedConversationId, setSelectedConversationId] = useState(readInitialConversationId)
   const [conversationQuery, setConversationQuery] = useState('')
+  const conversationDraftCache = useRef(new Map<string, ConversationDraft>())
+  const [creatingConversation, setCreatingConversation] = useState(false)
+  const [conversationCreationError, setConversationCreationError] = useState<string>()
   const [directoryTasks, setDirectoryTasks] = useState<TaskDetailView[]>([])
   const [directoryTasksLoading, setDirectoryTasksLoading] = useState(false)
   const [directoryTasksError, setDirectoryTasksError] = useState<string>()
@@ -745,7 +753,7 @@ export function App(): React.JSX.Element {
   const [connectionStatusLoading, setConnectionStatusLoading] = useState(true)
   const [connectionModalOpen, setConnectionModalOpen] = useState(false)
   const [contextCollapsed, setContextCollapsed] = useState(false)
-  const [matterSidebarCollapsed, setMatterSidebarCollapsed] = useState(false)
+  const [matterSidebarCollapsed, setMatterSidebarCollapsed] = useState(true)
   const resourceCatalogRef = useRef<ResourceCatalogView>(emptyResourceCatalog)
   const runtimeCatalogRefreshRef = useRef<Promise<void> | null>(null)
   const runtimeCatalogRetryRef = useRef<number | null>(null)
@@ -951,9 +959,16 @@ export function App(): React.JSX.Element {
   }
 
   const createConversation = async (): Promise<void> => {
-    const created = await window.aiEmployeeOS.conversation.create()
-    setConversations((items) => [created, ...items])
-    setSelectedConversationId(created.id)
+    if (creatingConversation) return
+    setCreatingConversation(true)
+    setConversationCreationError(undefined)
+    try {
+      const created = await window.aiEmployeeOS.conversation.create()
+      setConversations((items) => [created, ...items])
+      setSelectedConversationId(created.id)
+      setActiveId('workbench')
+    } catch { setConversationCreationError('会话创建失败，请重试') }
+    finally { setCreatingConversation(false) }
   }
 
   const enterRecruitmentConversation = async (name: string, kind: 'expert' | 'group'): Promise<void> => {
@@ -995,48 +1010,50 @@ export function App(): React.JSX.Element {
     if (!`${conversation.title} ${identityAwareConversationPreview(conversation, profile.name, supervisor.name)}`.toLocaleLowerCase().includes(conversationQuery.trim().toLocaleLowerCase())) return false
     return true
   })
+  const normalizedEmployeeQuery = employeeQuery.trim().toLocaleLowerCase()
+  const visibleEmployees = employees.filter((employee) => `${employee.name} ${employee.role ?? ''}`.toLocaleLowerCase().includes(normalizedEmployeeQuery))
+  const visibleExpertGroups = expertGroups.filter((group) => `${group.name} ${group.description} ${group.members.map((member) => member.name).join(' ')}`.toLocaleLowerCase().includes(normalizedEmployeeQuery))
+  const resourceItems = resourcesFor(resourceCatalog, resourceKind)
+  const visibleResourceItems = resourceItems.filter((item) => `${item.name} ${item.description}`.toLocaleLowerCase().includes(resourceQuery.trim().toLocaleLowerCase()))
 
   const context = <ContextPane>
-    <SectionHeader title={activeModule.contextTitle} action={activeId === 'workbench' ? <IconButton label="新建会话" icon={Plus} onClick={createConversation} /> : activeId === 'team' && teamView === 'directory' ? <IconButton label="招募" icon={Plus} onClick={() => setAgentEntryOpen(true)} /> : activeId === 'resources' ? <IconButton label="能力目录信息" icon={InfoCircle} onClick={() => setResourceInfoOpen(true)} /> : undefined} />
+    <SectionHeader title={activeId === 'workbench' ? '最近会话' : activeModule.contextTitle} action={activeId === 'team' && teamView === 'directory' ? <IconButton label="招募" icon={Plus} onClick={() => setAgentEntryOpen(true)} /> : activeId === 'resources' ? <IconButton label="能力目录信息" icon={InfoCircle} onClick={() => setResourceInfoOpen(true)} /> : undefined} />
     {activeId === 'workbench' ? <>
       <SearchBox label="搜索会话" placeholder="搜索会话" value={conversationQuery} onChange={setConversationQuery} />
-      {conversationLoadError && <p role="alert" className="context-list-empty">会话读取失败 <button type="button" onClick={() => { conversationRetryAttemptRef.current = 0; void refreshConversationData() }}>重试读取</button></p>}
+      {conversationLoadError && <p role="alert" className="context-list-empty">会话读取失败 <CdsButton variant="ghost" size="sm" type="button" onClick={() => { conversationRetryAttemptRef.current = 0; void refreshConversationData() }}>重试读取</CdsButton></p>}
       <div className="context-scroll">{visibleConversations.map((conversation) => {
         const unread = unreadCountFor(conversation)
         return <div className="conversation-row" key={conversation.id}><ListRow title={conversation.title} subtitle={identityAwareConversationPreview(conversation, profile.name, supervisor.name)} meta={formatClientTimestamp(conversation.updatedAt)} selected={selectedConversationId === conversation.id} identity="text" marker={unread > 0 ? <span className="unread-dot" aria-label="未读消息" /> : undefined} onClick={() => setSelectedConversationId(conversation.id)} /><IconButton label={`归档会话 ${conversation.title}`} icon={Trash} className="conversation-row__delete" onClick={() => archiveConversation(conversation.id)} /></div>
-      })}</div>
+      })}{!conversationLoadError && conversationQuery.trim() && conversations.length > 0 && visibleConversations.length === 0 && <p className="context-list-empty" role="status">没有匹配的会话</p>}</div>
     </> : activeId === 'tasks' ? <>
       <SearchBox label="搜索事项" placeholder="搜索事项或参与员工" value={taskQuery} onChange={setTaskQuery} />
-      <div className="system-navigation" role="group" aria-label="事项状态筛选">{taskFilters.map((filter) => <button type="button" key={filter.id} aria-pressed={taskFilter === filter.id} className={taskFilter === filter.id ? 'is-active' : ''} onClick={() => setTaskFilter(filter.id)}><span>{filter.label}</span><small className="quiet-meta">{filter.id === 'all' ? directoryMatters.length : directoryMatters.filter((task) => task.state === filter.id).length}</small><NavArrowRight aria-hidden /></button>)}</div>
+      <div className="system-navigation" role="group" aria-label="事项状态筛选">{taskFilters.map((filter) => <CdsButton variant="ghost" size="sm" type="button" key={filter.id} aria-pressed={taskFilter === filter.id} className={taskFilter === filter.id ? 'is-active' : ''} onClick={() => setTaskFilter(filter.id)}><span>{filter.label}</span><small className="quiet-meta">{filter.id === 'all' ? directoryMatters.length : directoryMatters.filter((task) => task.state === filter.id).length}</small><NavArrowRight aria-hidden /></CdsButton>)}</div>
     </> : activeId === 'team' ? <>
       <SearchBox label={teamDirectoryKind === 'experts' ? '搜索专家' : '搜索专家团'} placeholder={teamDirectoryKind === 'experts' ? '搜索专家' : '搜索专家团'} value={employeeQuery} onChange={setEmployeeQuery} />
-      <div className="filter-row capability-kind-switch" role="tablist" aria-label="通讯录类型">{([['experts', '专家'], ['groups', '专家团']] as const).map(([id, label]) => <button type="button" role="tab" id={`team-${id}-tab`} aria-controls="team-directory-panel" aria-selected={teamDirectoryKind === id} key={id} className={teamDirectoryKind === id ? 'is-active' : ''} onClick={() => { setTeamDirectoryKind(id); setTeamView('directory'); setEmployeeQuery('') }}>{label}</button>)}</div>
+      <CdsSegmentedControl className="capability-kind-switch" label="通讯录类型" size="sm" value={teamDirectoryKind} tabs={[{ id: 'experts', label: '专家', tabId: 'team-experts-tab', controls: 'team-directory-panel' }, { id: 'groups', label: '专家团', tabId: 'team-groups-tab', controls: 'team-directory-panel' }]} onChange={(id) => { setTeamDirectoryKind(id as TeamDirectoryKind); setTeamView('directory'); setEmployeeQuery('') }} />
       <div className="context-scroll context-scroll--flush" role="tabpanel" id="team-directory-panel" aria-labelledby={`team-${teamDirectoryKind}-tab`}>{teamDirectoryKind === 'experts'
-        ? employees.filter((employee) => `${employee.name} ${employee.role ?? ''}`.includes(employeeQuery.trim())).map((employee) => <ListRow key={employee.id} title={employee.name} subtitle={employee.role || '尚未填写职责'} selected={teamView === 'directory' && selectedEmployeeId === employee.id} avatar={<Avatar label={employee.name} initials={employee.name.slice(0, 1)} color="#c5b8e3" size="small" src={employeeAvatarSrc({ employeeId: employee.id, avatarDataUrl: employee.avatarDataUrl })} />} marker={<StatusLight state={employeeStatusTone(employee.status)} label={employeeStatusLabel(employee.status)} />} onClick={() => { setSelectedEmployeeId(employee.id); setTeamView('directory') }} />)
-        : expertGroups.filter((group) => `${group.name} ${group.description} ${group.members.map((member) => member.name).join(' ')}`.includes(employeeQuery.trim())).map((group) => <ListRow key={group.id} title={group.name} subtitle={`${group.members.length} 位专家`} selected={teamView === 'directory' && selectedExpertGroup?.id === group.id} avatar={<ExpertGroupAvatar name={group.name} members={group.members} size="small" />} marker={<StatusLight state="success" label="可调用" />} onClick={() => { setSelectedExpertGroupId(group.id); setTeamView('directory') }} />)}{teamDirectoryKind === 'groups' && expertGroups.length === 0 && <p className="context-list-empty">暂无已招募专家团</p>}</div>
+        ? visibleEmployees.map((employee) => <ListRow key={employee.id} title={employee.name} subtitle={employee.role || '尚未填写职责'} selected={teamView === 'directory' && selectedEmployeeId === employee.id} avatar={<Avatar label={employee.name} initials={employee.name.slice(0, 1)} color="#c5b8e3" size="small" src={employeeAvatarSrc({ employeeId: employee.id, avatarDataUrl: employee.avatarDataUrl })} />} marker={<StatusLight state={employeeStatusTone(employee.status)} label={employeeStatusLabel(employee.status)} />} onClick={() => { setSelectedEmployeeId(employee.id); setTeamView('directory') }} />)
+        : visibleExpertGroups.map((group) => <ListRow key={group.id} title={group.name} subtitle={`${group.members.length} 位专家`} selected={teamView === 'directory' && selectedExpertGroup?.id === group.id} avatar={<ExpertGroupAvatar name={group.name} members={group.members} size="small" />} marker={<StatusLight state="success" label="可调用" />} onClick={() => { setSelectedExpertGroupId(group.id); setTeamView('directory') }} />)}{normalizedEmployeeQuery && (teamDirectoryKind === 'experts' ? employees.length > 0 && visibleEmployees.length === 0 : expertGroups.length > 0 && visibleExpertGroups.length === 0) && <p className="context-list-empty" role="status">没有匹配的{teamDirectoryKind === 'experts' ? '专家' : '专家团'}</p>}{teamDirectoryKind === 'groups' && expertGroups.length === 0 && <p className="context-list-empty">暂无已招募专家团</p>}</div>
     </> : activeId === 'resources' ? <>
       <SearchBox label="搜索能力" placeholder="搜索能力" value={resourceQuery} onChange={setResourceQuery} />
-      <div className="filter-row capability-kind-switch">{([['skills', 'Skills'], ['tools', 'Tools']] as const).map(([id, label]) => <button type="button" key={id} className={resourceKind === id ? 'is-active' : ''} onClick={() => { setResourceKind(id); setSelectedResourceId(resourcesFor(resourceCatalog, id)[0]?.id) }}>{label}</button>)}</div>
-      <div className="context-scroll context-scroll--flush">{resourcesFor(resourceCatalog, resourceKind).filter((item) => `${item.name} ${item.description}`.includes(resourceQuery.trim())).map((item) => <ListRow key={item.id} title={item.name} subtitle={`v${item.version} · ${item.available ? '可用' : '不可用'}`} selected={selectedResourceId === item.id} marker={<StatusLight state={item.available ? 'success' : 'danger'} label={item.available ? '可用' : '不可用'} />} onClick={() => setSelectedResourceId(item.id)} />)}</div>
+      <CdsSegmentedControl className="capability-kind-switch" label="能力类型" size="sm" value={resourceKind} tabs={[{ id: 'skills', label: 'Skills' }, { id: 'tools', label: 'Tools' }]} onChange={(id) => { const kind = id as ResourceKind; setResourceKind(kind); setSelectedResourceId(resourcesFor(resourceCatalog, kind)[0]?.id) }} />
+      <div className="context-scroll context-scroll--flush">{visibleResourceItems.map((item) => <ListRow key={item.id} title={item.name} subtitle={`v${item.version} · ${item.available ? '可用' : '不可用'}`} selected={selectedResourceId === item.id} marker={<StatusLight state={item.available ? 'success' : 'danger'} label={item.available ? '可用' : '不可用'} />} onClick={() => setSelectedResourceId(item.id)} />)}{!resourceCatalogLoading && !resourceError && resourceQuery.trim() && resourceItems.length > 0 && visibleResourceItems.length === 0 && <p className="context-list-empty" role="status">没有匹配的能力</p>}</div>
     </> : activeId === 'connections' ? <div className="context-scroll context-scroll--flush" aria-label="已连接应用">
     {activeId === 'connections' && teamsStatus.state === 'connected' && <ListRow title={TEAMS_CONNECTION_APPLICATION.name} subtitle={TEAMS_CONNECTION_APPLICATION.description} selected={teamsModalOpen} avatar={<span className="connection-context-logo"><img alt="" src={TEAMS_CONNECTION_APPLICATION.icon} /></span>} marker={<StatusLight state="success" label="已连接" />} onClick={() => setTeamsModalOpen(true)} />}
       {connectionStatusLoading ? <p className="context-list-empty" role="status">正在读取连接状态</p> : feishuStatus.state === 'connected' ? <ListRow title={FEISHU_CONNECTION_APPLICATION.name} subtitle={FEISHU_CONNECTION_APPLICATION.description} selected={connectionModalOpen} avatar={<span className="connection-context-logo" role="img" aria-label="飞书官方图标"><img alt="" src={FEISHU_CONNECTION_APPLICATION.icon} /></span>} marker={<StatusLight state="success" label="已连接" />} onClick={() => setConnectionModalOpen(true)} /> : <>{teamsStatus.state !== 'connected' && <p className="context-list-empty">暂无已连接应用</p>}</>}
-    </div> : <div className="system-navigation">{systemSections.map((item) => { const Icon = item.icon; return <button type="button" key={item.id} className={systemSection === item.id ? 'is-active' : ''} onClick={() => setSystemSection(item.id)}><Icon aria-hidden /><span>{item.label}</span><NavArrowRight aria-hidden /></button> })}</div>}
+    </div> : <div className="system-navigation">{systemSections.map((item) => { const Icon = item.icon; return <CdsButton variant="ghost" size="sm" type="button" key={item.id} className={systemSection === item.id ? 'is-active' : ''} onClick={() => setSystemSection(item.id)}><Icon aria-hidden /><span>{item.label}</span><NavArrowRight aria-hidden /></CdsButton> })}</div>}
   </ContextPane>
 
   const toolbarSupport = activeId === 'team' && teamView === 'directory' && teamDirectoryKind === 'experts' && selectedEmployee ? <StatusLight state={employeeStatusTone(selectedEmployee.status)} label={employeeStatusLabel(selectedEmployee.status)} breathing={employeeStatusBreathing(selectedEmployee.status)} /> : activeId === 'resources' && selectedResource ? <StatusLight state={selectedResource.available ? 'success' : 'danger'} label={selectedResource.available ? '可用' : '不可用'} /> : undefined
   const toolbarTrailing = activeId === 'workbench'
-    ? <>{runtimeStatus.state !== 'connected' && <button type="button" className={`runtime-status runtime-status--${runtimeStatus.state}`} onClick={reconnect} disabled={runtimeStatus.state === 'connecting'}><span className="status-dot" />{runtimeLabel}</button>}<IconButton label={matterSidebarCollapsed ? '展开事项边栏' : '折叠事项边栏'} icon={matterSidebarCollapsed ? NavArrowLeft : NavArrowRight} className={`matter-toolbar-toggle${matterSidebarCollapsed ? '' : ' is-active'}`} onClick={() => setMatterSidebarCollapsed((value) => !value)} /></>
+    ? <>{runtimeStatus.state !== 'connected' && <CdsButton variant="ghost" size="sm" type="button" className={`runtime-status runtime-status--${runtimeStatus.state}`} onClick={reconnect} disabled={runtimeStatus.state === 'connecting'}><span className="status-dot" />{runtimeLabel}</CdsButton>}<IconButton label={matterSidebarCollapsed ? '展开事项边栏' : '折叠事项边栏'} icon={matterSidebarCollapsed ? NavArrowLeft : NavArrowRight} className={`matter-toolbar-toggle${matterSidebarCollapsed ? '' : ' is-active'}`} onClick={() => setMatterSidebarCollapsed((value) => !value)} /></>
     : activeId === 'resources'
       ? <span className="quiet-meta">只读 {resourceKind === 'skills' ? 'Skill' : 'Tool'} 目录</span>
       : undefined
 
-  return <ClientIconSystem><AppShell
-    contextCollapsed={contextCollapsed}
-    toolbar={<Toolbar title={activeId === 'workbench' ? selectedConversation?.title ?? '消息' : activeId === 'tasks' ? '我的事项' : activeId === 'team' ? teamView === 'recruitment' ? '招募专家' : teamDirectoryKind === 'groups' ? selectedExpertGroup?.name ?? '专家团' : selectedEmployee?.name ?? 'Agent 员工' : activeId === 'resources' ? selectedResource?.name ?? '能力目录' : activeId === 'connections' ? '连接' : systemSections.find((item) => item.id === systemSection)?.label ?? '系统'} icon={activeModule.icon} navigation={<IconButton label={contextCollapsed ? '展开左侧栏' : '折叠左侧栏'} icon={contextCollapsed ? NavArrowRight : NavArrowLeft} onClick={() => setContextCollapsed((value) => !value)} />} support={toolbarSupport} trailing={toolbarTrailing} />}
-    rail={<Rail active={activeId} items={mainRailModules.map((item) => item.id === 'workbench' && totalUnread > 0 ? { ...item, marker: String(totalUnread) } : item)} footerItems={footerRailModules} userProfile={profile} onProfile={() => { setConnectionModalOpen(false); setSystemSection('profile'); setActiveId('settings') }} onNavigate={(id) => { if (id !== 'connections') setConnectionModalOpen(false); setActiveId(id) }} />}
-    context={context}
-  >{activeId === 'workbench' ? selectedConversationId ? <Workbench runtimeStatus={runtimeStatus} providerStatus={providerStatus} conversationId={selectedConversationId} user={userIdentity(profile.name, profile.avatarUrl)} supervisor={supervisorIdentity(supervisor)} matterSidebarCollapsed={matterSidebarCollapsed} initialDraft={conversationDraftSeed?.conversationId === selectedConversationId ? conversationDraftSeed.text : undefined} onInitialDraftConsumed={() => setConversationDraftSeed(undefined)} onDataChanged={() => { void refreshConversationData() }} /> : <div className="runtime-empty-state"><h2>正在读取会话</h2></div> : activeId === 'tasks' ? <TaskModule tasks={visibleDirectoryMatters} total={directoryMatters.length} loading={directoryTasksLoading} error={directoryTasksError} onRefresh={() => directoryTasksRefreshRef.current()} onOpen={(task) => { setSelectedDirectoryTaskId(task.id); setDirectoryTaskRetryError(undefined) }} /> : activeId === 'team' ? teamView === 'recruitment' ? <RecruitmentCatalog employees={employees} expertGroups={expertGroups} skills={resourceCatalog.skills} initialKind={recruitmentKind} onEnterConversation={enterRecruitmentConversation} /> : teamDirectoryKind === 'groups' ? <ExpertGroupModule group={selectedExpertGroup} onGroupsChanged={(items) => { setExpertGroups(items); setSelectedExpertGroupId(items[0]?.id) }} /> : <TeamModule selectedEmployeeId={selectedEmployeeId} skills={resourceCatalog.skills} providerStatus={providerStatus} createRequest={employeeCreateRequest} editRequest={employeeEditRequest} onEmployeesChanged={(items) => { setEmployees(items); setSelectedEmployeeId((current) => current && items.some((employee) => employee.id === current) ? current : items[0]?.id) }} onSelectEmployee={setSelectedEmployeeId} onEditEmployee={() => setEmployeeEditRequest((value) => value + 1)} /> : activeId === 'resources' ? <ResourceModule catalog={resourceCatalog} kind={resourceKind} selectedId={selectedResourceId} loading={resourceCatalogLoading} probing={probingResources} error={resourceError} onProbe={() => void probeResources()} onOpenEmployee={(employeeId) => { setSelectedEmployeeId(employeeId); setTeamDirectoryKind('experts'); setTeamView('directory'); setActiveId('team') }} /> : activeId === 'connections' ? <ConnectionsCatalog teamsStatus={teamsStatus} teamsModalOpen={teamsModalOpen} onTeamsModalOpenChange={setTeamsModalOpen} onTeamsStatusChange={status => { setTeamsStatus(status); void refreshRuntimeCatalogs(() => mountedRef.current) }} feishuStatus={feishuStatus} loading={connectionStatusLoading} modalOpen={connectionModalOpen} onModalOpenChange={setConnectionModalOpen} onStatusChange={handleFeishuStatusChange} /> : <SystemModule section={systemSection} providerStatus={providerStatus} runtimeStatus={runtimeStatus} resourceCatalog={resourceCatalog} supervisor={supervisor} onReconnect={reconnect} onProbeResources={probeResources} onProfileChange={setProfile} onSupervisorChange={setSupervisor} onProviderStatusChange={setProviderStatus} />}</AppShell><MatterDetailModal task={activeId === 'tasks' ? selectedDirectoryTask : undefined} retrying={directoryTaskRetrying} error={directoryTaskRetryError} onRetry={(task) => void retryDirectoryTask(task)} onClose={() => setSelectedDirectoryTaskId(undefined)} /><ClientModal open={agentEntryOpen} title="招募" size="small" onClose={() => setAgentEntryOpen(false)}><div className="agent-entry-choice"><p>选择专家加入方式</p><div className="agent-entry-choice__options"><button type="button" onClick={() => { setAgentEntryOpen(false); setRecruitmentKind(teamDirectoryKind); setTeamView('recruitment') }}><span className="agent-entry-choice__icon"><Community aria-hidden /></span><span><strong>招募专家</strong><small>浏览专家与专家团候选目录</small></span><NavArrowRight aria-hidden /></button><button type="button" onClick={() => { setAgentEntryOpen(false); setTeamDirectoryKind('experts'); setTeamView('directory'); setEmployeeCreateRequest((value) => value + 1) }}><span className="agent-entry-choice__icon"><UserPlus aria-hidden /></span><span><strong>创建专家</strong><small>自定义身份、提示词、模型与能力</small></span><NavArrowRight aria-hidden /></button></div></div></ClientModal><ClientModal open={resourceInfoOpen} title="能力目录信息" eyebrow={<span className="quiet-meta">只读目录</span>} size="medium" onClose={() => setResourceInfoOpen(false)}><div className="detail-browser-content"><div className="detail-browser-intro"><h3>Runtime 能力目录</h3><p>客户端只展示 Runtime 已注册的不可变 Skill 与 Tool 版本，不在本地复制或改写能力事实。</p></div><section><div className="content-section-title"><h3>当前目录</h3><span>{resourceCatalog.skills.length + resourceCatalog.tools.length} 项</span></div><div className="detail-data-list"><div className="detail-data-row"><span><strong>Skills</strong><small>结构化步骤与 Tool 依赖</small></span><em>{resourceCatalog.skills.length}</em></div><div className="detail-data-row"><span><strong>Tools</strong><small>副作用、权限与健康状态</small></span><em>{resourceCatalog.tools.length}</em></div><div className="detail-data-row"><span><strong>健康检查</strong><small>由 Runtime 数据源探测提供</small></span><em>{resourceCatalog.healthChecks.length}</em></div></div></section><div className="resource-boundary">运行中的事项始终使用已冻结的能力版本；目录更新不会静默覆盖历史执行事实。</div></div></ClientModal></ClientIconSystem>
+  return <CdsIconSystem><DesktopShell active={activeId} items={mainRailModules.map((item) => item.id === 'workbench' && totalUnread > 0 ? { ...item, marker: String(totalUnread) } : item)} footerItems={footerRailModules} user={profile} collapsed={contextCollapsed} onToggleSidebar={() => setContextCollapsed((value) => !value)} creatingConversation={creatingConversation} creationError={conversationCreationError} onNewConversation={() => void createConversation()} onProfile={() => { setConnectionModalOpen(false); setSystemSection('profile'); setActiveId('settings') }} onNavigate={(id) => { if (id !== 'connections') setConnectionModalOpen(false); setActiveId(id) }}
+    title={activeId === 'workbench' ? selectedConversation?.title ?? '消息' : activeId === 'tasks' ? '我的事项' : activeId === 'team' ? teamView === 'recruitment' ? '招募专家' : teamDirectoryKind === 'groups' ? selectedExpertGroup?.name ?? '专家团' : selectedEmployee?.name ?? 'Agent 员工' : activeId === 'resources' ? selectedResource?.name ?? '能力目录' : activeId === 'connections' ? '连接' : systemSections.find((item) => item.id === systemSection)?.label ?? '系统'} support={toolbarSupport} actions={toolbarTrailing} context={context}
+  >{activeId === 'workbench' ? selectedConversationId ? <Workbench key={selectedConversationId} draftCache={conversationDraftCache.current} runtimeStatus={runtimeStatus} providerStatus={providerStatus} conversationId={selectedConversationId} user={userIdentity(profile.name, profile.avatarUrl)} supervisor={supervisorIdentity(supervisor)} supervisorModelId={supervisor.modelId} matterSidebarCollapsed={matterSidebarCollapsed} initialDraft={conversationDraftSeed?.conversationId === selectedConversationId ? conversationDraftSeed.text : undefined} onInitialDraftConsumed={() => setConversationDraftSeed(undefined)} onDataChanged={() => { void refreshConversationData() }} /> : <div className="runtime-empty-state"><h2>正在读取会话</h2></div> : activeId === 'tasks' ? <TaskModule tasks={visibleDirectoryMatters} total={directoryMatters.length} loading={directoryTasksLoading} error={directoryTasksError} onRefresh={() => directoryTasksRefreshRef.current()} onOpen={(task) => { setSelectedDirectoryTaskId(task.id); setDirectoryTaskRetryError(undefined) }} /> : activeId === 'team' ? teamView === 'recruitment' ? <RecruitmentCatalog employees={employees} expertGroups={expertGroups} skills={resourceCatalog.skills} initialKind={recruitmentKind} onEnterConversation={enterRecruitmentConversation} /> : teamDirectoryKind === 'groups' ? <ExpertGroupModule group={selectedExpertGroup} onGroupsChanged={(items) => { setExpertGroups(items); setSelectedExpertGroupId(items[0]?.id) }} /> : <TeamModule selectedEmployeeId={selectedEmployeeId} skills={resourceCatalog.skills} providerStatus={providerStatus} createRequest={employeeCreateRequest} editRequest={employeeEditRequest} onEmployeesChanged={(items) => { setEmployees(items); setSelectedEmployeeId((current) => current && items.some((employee) => employee.id === current) ? current : items[0]?.id) }} onSelectEmployee={setSelectedEmployeeId} onEditEmployee={() => setEmployeeEditRequest((value) => value + 1)} /> : activeId === 'resources' ? <ResourceModule catalog={resourceCatalog} kind={resourceKind} selectedId={selectedResourceId} loading={resourceCatalogLoading} probing={probingResources} error={resourceError} onProbe={() => void probeResources()} onOpenEmployee={(employeeId) => { setSelectedEmployeeId(employeeId); setTeamDirectoryKind('experts'); setTeamView('directory'); setActiveId('team') }} /> : activeId === 'connections' ? <ConnectionsCatalog teamsStatus={teamsStatus} teamsModalOpen={teamsModalOpen} onTeamsModalOpenChange={setTeamsModalOpen} onTeamsStatusChange={status => { setTeamsStatus(status); void refreshRuntimeCatalogs(() => mountedRef.current) }} feishuStatus={feishuStatus} loading={connectionStatusLoading} modalOpen={connectionModalOpen} onModalOpenChange={setConnectionModalOpen} onStatusChange={handleFeishuStatusChange} /> : <SystemModule section={systemSection} providerStatus={providerStatus} runtimeStatus={runtimeStatus} resourceCatalog={resourceCatalog} supervisor={supervisor} onReconnect={reconnect} onProbeResources={probeResources} onProfileChange={setProfile} onSupervisorChange={setSupervisor} onProviderStatusChange={setProviderStatus} />}</DesktopShell><MatterDetailModal task={activeId === 'tasks' ? selectedDirectoryTask : undefined} retrying={directoryTaskRetrying} error={directoryTaskRetryError} onRetry={(task) => void retryDirectoryTask(task)} onClose={() => setSelectedDirectoryTaskId(undefined)} /><ClientModal open={agentEntryOpen} title="招募" size="small" onClose={() => setAgentEntryOpen(false)}><div className="agent-entry-choice"><p>选择专家加入方式</p><div className="agent-entry-choice__options"><CdsButton variant="ghost" size="sm" type="button" onClick={() => { setAgentEntryOpen(false); setRecruitmentKind(teamDirectoryKind); setTeamView('recruitment') }}><span className="agent-entry-choice__icon"><Community aria-hidden /></span><span><strong>招募专家</strong><small>浏览专家与专家团候选目录</small></span><NavArrowRight aria-hidden /></CdsButton><CdsButton variant="ghost" size="sm" type="button" onClick={() => { setAgentEntryOpen(false); setTeamDirectoryKind('experts'); setTeamView('directory'); setEmployeeCreateRequest((value) => value + 1) }}><span className="agent-entry-choice__icon"><UserPlus aria-hidden /></span><span><strong>创建专家</strong><small>自定义身份、提示词、模型与能力</small></span><NavArrowRight aria-hidden /></CdsButton></div></div></ClientModal><ClientModal open={resourceInfoOpen} title="能力目录信息" eyebrow={<span className="quiet-meta">只读目录</span>} size="medium" onClose={() => setResourceInfoOpen(false)}><div className="detail-browser-content"><div className="detail-browser-intro"><h3>Runtime 能力目录</h3><p>客户端只展示 Runtime 已注册的不可变 Skill 与 Tool 版本，不在本地复制或改写能力事实。</p></div><section><div className="content-section-title"><h3>当前目录</h3><span>{resourceCatalog.skills.length + resourceCatalog.tools.length} 项</span></div><div className="detail-data-list"><div className="detail-data-row"><span><strong>Skills</strong><small>结构化步骤与 Tool 依赖</small></span><em>{resourceCatalog.skills.length}</em></div><div className="detail-data-row"><span><strong>Tools</strong><small>副作用、权限与健康状态</small></span><em>{resourceCatalog.tools.length}</em></div><div className="detail-data-row"><span><strong>健康检查</strong><small>由 Runtime 数据源探测提供</small></span><em>{resourceCatalog.healthChecks.length}</em></div></div></section><div className="resource-boundary">运行中的事项始终使用已冻结的能力版本；目录更新不会静默覆盖历史执行事实。</div></div></ClientModal></CdsIconSystem>
 }
 
 function hasCreatedMeeting(task: TaskDetailView): boolean {

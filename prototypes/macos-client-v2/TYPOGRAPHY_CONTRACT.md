@@ -6,15 +6,17 @@
 
 | 层级 | Token | 大小 | 使用边界 |
 | --- | --- | ---: | --- |
-| Badge | `--type-size-badge` | 8px | 未读数字等非句子信息 |
-| Meta | `--type-size-meta` | 10px | 时间、版本、数量等元数据 |
-| Secondary | `--type-size-secondary` | 11px | 描述、状态、帮助文字、按钮 |
-| Body | `--type-size-body` | 12px | 正文、列表标题、输入内容、导航 |
-| Heading | `--type-size-heading` | 14px | 工作区标题、卡片标题、确认弹窗标题 |
-| Title | `--type-size-title` | 18px | 页面、详情页和设置页主标题 |
+| Badge | `--type-size-badge` | 10px | 未读数字等非句子信息 |
+| Meta | `--type-size-meta` | 11px | 时间、版本、数量等元数据 |
+| Secondary | `--type-size-secondary` | 12px | 描述、状态、帮助文字、按钮 |
+| Body | `--type-size-body` | 14px | 正文、列表标题、输入内容、导航 |
+| Heading | `--type-size-heading` | 16px | 工作区标题、卡片标题、确认弹窗标题 |
+| Title | `--type-size-title` | 20px | 页面、详情页和设置页主标题 |
 | Metric | `--type-size-metric` | 21px | 金额和关键统计值，不用于普通标题 |
 
 持续显示的中文句子不得使用 Badge 或 Meta。Meta 只承载可快速略读的元数据。
+
+正文行高使用 1.5，连续阅读使用 1.65；中文标题保留自然字距，不使用负字距挤压笔画。表单标签与输入内容映射到 Body，帮助文字映射到 Secondary，避免基础刻度调整后表单随 Heading 放大。
 
 ## 2. 布局映射
 

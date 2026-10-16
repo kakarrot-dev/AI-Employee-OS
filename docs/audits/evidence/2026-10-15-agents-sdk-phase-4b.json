@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-15T06:56:04.897712+00:00",
+  "phase": "4B first measurement baseline",
+  "status": "measured; paid dispatch optimization not implemented",
+  "entryGate": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b/entry-gate.json",
+  "processProbe": {
+    "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b/process-baseline.json",
+    "sha256": "6a6b40e3ae4a1ead46749ffbd86f23feb29587f51560f0e65121a9572b9e58ed"
+  },
+  "processSummary": {
+    "runtime": {
+      "starts": 3,
+      "medianReadyMs": 118.07579199999964,
+      "minimumReadyMs": 111.98225000000002,
+      "maximumReadyMs": 199.39862499999998,
+      "peakObservedRssKiB": 110320,
+      "newModelRequests": 0
+    },
+    "provider": {
+      "starts": 3,
+      "medianReadyMs": 75.89033400000017,
+      "minimumReadyMs": 63.47658300000057,
+      "maximumReadyMs": 137.10999999999876,
+      "peakObservedRssKiB": 70160,
+      "newModelRequests": 0
+    }
+  },
+  "logicalBytes": {
+    "out/main/runtime/index.js": 2695984,
+    "out/main/provider/index.js": 36366,
+    "out/main/index.js": 10202355
+  },
+  "allocatedKiB": {
+    "out": 21284,
+    "spikes/deep-agents/.venv": 86192,
+    "spikes/local-memory/.venv": 175236,
+    "node_modules/@openai/agents-core": 13036
+  },
+  "observedTask": {
+    "report": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a-manager-repair/natural-live-2/live-results.json",
+    "runId": "eb1c5a8c-ffc0-4dc8-a53a-022aa0dca997",
+    "observedRequestsIncludingRoute": 14,
+    "runRequestsExcludingRoute": 13,
+    "runTokensExcludingRoute": 50864,
+    "elapsedRunSeconds": 72.424,
+    "stages": {
+      "manager_dispatch": {
+        "calls": 4,
+        "inputTokens": 9532,
+        "outputTokens": 295
+      },
+      "assignment_start": {
+        "calls": 2,
+        "inputTokens": 6064,
+        "outputTokens": 133
+      },
+      "tool_proposal": {
+        "calls": 2,
+        "inputTokens": 7067,
+        "outputTokens": 283
+      },
+      "after_tool": {
+        "calls": 3,
+        "inputTokens": 11864,
+        "outputTokens": 699
+      },
+      "manager_format_correction": {
+        "calls": 1,
+        "inputTokens": 7108,
+        "outputTokens": 1126
+      },
+      "manager_final": {
+        "calls": 1,
+        "inputTokens": 5286,
+        "outputTokens": 1407
+      }
+    },
+    "paidFrozenDispatchTokenShare": 0.1932014784523435,
+    "originalEmployees": 2,
+    "toolActions": 3,
+    "employeeReworks": 0
+  },
+  "scopeLimits": [
+    "3 independent process starts; OS caches not cleared",
+    "Runtime/Provider utility processes only; no GUI startup benchmark",
+    "RSS is sampled, includes shared resident pages; not exclusive heap",
+    "out is build output, not installed application size",
+    "du counts allocated development-environment blocks, not removable installed bytes",
+    "one representative Poe task; not a success-rate or latency distribution",
+    "actual Token receipts are available; currency cost and canceled billing are unverified"
+  ],
+  "sameEvidenceStaticReviewProjection": {
+    "source": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a/live/live-results.json",
+    "beforeBytes": 14305,
+    "afterBytes": 10950,
+    "reductionFraction": 0.2345333799370849,
+    "meaning": "Same historical request, removing extra SDK root history while retaining its complete Runtime evidence message. Byte-size comparison only, not measured billing reduction."
+  },
+  "nextOptimizationCandidate": {
+    "change": "replace paid execution-time dispatch with Runtime-controlled dispatch when only one frozen assignment is legal",
+    "observedPaidCalls": 4,
+    "observedTokens": 9827,
+    "implemented": false,
+    "requiredGates": [
+      "original SDK child graph and call/result binding",
+      "old paid dispatch receipts and native checkpoint recovery",
+      "approval, cancel, unknown-result and business rework regression",
+      "matched-scenario Poe comparison; no fake provider usage receipts"
+    ]
+  }
+}

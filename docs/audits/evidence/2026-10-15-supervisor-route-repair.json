@@ -1,0 +1,309 @@
+{
+  "stage": "natural_route_repair_before_4D",
+  "gate": "passed",
+  "provider": "poe",
+  "modelId": "claude-sonnet-4.6",
+  "naturalLanguageTasksPassed": 3,
+  "approvalSigkillRestartsPassed": 2,
+  "rejectCasesPassed": 2,
+  "cancelCasesPassed": 2,
+  "liveRouteCorrectionCalls": 0,
+  "formatCorrectionValidation": "deterministic retained-failure regression; live natural samples valid on first attempt",
+  "actualRequests": 42,
+  "knownTokens": 150919,
+  "requestsWithoutUsage": 3,
+  "fixtures": {
+    "natural-1": {
+      "status": "failed",
+      "requests": 1,
+      "knownTokens": 0,
+      "requestsWithoutUsage": [
+        "cd3b604d-0bc7-48fd-8a09-9151e1e8109b"
+      ],
+      "providerFailures": [
+        {
+          "requestId": "cd3b604d-0bc7-48fd-8a09-9151e1e8109b",
+          "code": "request_rejected",
+          "retryable": false,
+          "httpStatus": 400
+        }
+      ],
+      "cases": [],
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-route-repair/natural-1/live-results.json",
+      "rawSha256": "9876fd9e496b53a287ab747e1f61f47b0656d0261e6ffe0e03c7a3c81d77a5ac",
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "627925f71e75c130fb8f3732787f0a8931aed1cc36218a951d1551b3de0757ba"
+        }
+      ]
+    },
+    "natural-2": {
+      "status": "passed",
+      "requests": 16,
+      "knownTokens": 57746,
+      "requestsWithoutUsage": [
+        "1731f15f-e60a-4709-99e4-99f661837e94"
+      ],
+      "providerFailures": [
+        {
+          "requestId": "1731f15f-e60a-4709-99e4-99f661837e94",
+          "code": "cancelled",
+          "retryable": false
+        }
+      ],
+      "cases": [
+        {
+          "name": "supervisor-route-two-employees",
+          "state": "succeeded",
+          "requestCount": 8,
+          "actualTokens": 35288,
+          "requestIds": [
+            "40594964-f6b3-4f0c-92e6-b293399df956",
+            "03cead1c-7377-439d-a627-d032ad056fb2",
+            "59414cce-452d-48a8-8765-134f8a74e2f8",
+            "6d8e9f98-a85c-40d7-ad17-e97c5d2c9d51",
+            "13f6f611-e3f0-4b06-825e-b075773100b8",
+            "4b1229dc-2bf9-4fe7-bf82-f9b68cd30270",
+            "f9b275be-75b3-4e97-9c36-a8a48c0c1ff1",
+            "50643077-1a91-4608-bd79-a6e95f8efa05"
+          ],
+          "missingUsage": [],
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-route-repair/natural-2/fixtures/team-marker.md",
+            "sha256": "579c6cbd99c52bae0041d0660493e5467fb8fed6085ee9bf027d2b3f2036c9e6",
+            "size": 216
+          },
+          "waitingModelCalls": null
+        },
+        {
+          "name": "approval-sigkill-resume",
+          "state": "succeeded",
+          "requestCount": 5,
+          "actualTokens": 17692,
+          "requestIds": [
+            "b4c533e3-b166-4536-aab4-d5d3eb9daefd",
+            "7224eeee-a64d-4ba7-a691-78b11391b46b",
+            "86a64dcf-25bd-403c-b862-462b42486eaa",
+            "e1d53eb3-0e67-403d-8f0e-8792a1705ee9",
+            "d074a7a1-056d-4a59-ad21-6730c52854f3"
+          ],
+          "missingUsage": [],
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-route-repair/natural-2/fixtures/approval-marker.md",
+            "sha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8",
+            "size": 12
+          },
+          "waitingModelCalls": 0
+        },
+        {
+          "name": "approval-rejected-no-write",
+          "state": "failed",
+          "requestCount": 2,
+          "actualTokens": 4766,
+          "requestIds": [
+            "392f4fd1-3157-450e-998e-5997d8deb0dc",
+            "b0d83682-8b97-470b-8dc3-c3484867fb6a"
+          ],
+          "missingUsage": [],
+          "file": null,
+          "waitingModelCalls": null
+        },
+        {
+          "name": "cancel-before-downstream",
+          "state": "failed",
+          "requestCount": 1,
+          "actualTokens": 0,
+          "requestIds": [
+            "1731f15f-e60a-4709-99e4-99f661837e94"
+          ],
+          "missingUsage": [
+            "1731f15f-e60a-4709-99e4-99f661837e94"
+          ],
+          "file": null,
+          "waitingModelCalls": null
+        }
+      ],
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-route-repair/natural-2/live-results.json",
+      "rawSha256": "9b3eca194faae28d1d378fa45cc9874d119abbf4444b34d1e1faae64fc976e32",
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "627925f71e75c130fb8f3732787f0a8931aed1cc36218a951d1551b3de0757ba"
+        },
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "627925f71e75c130fb8f3732787f0a8931aed1cc36218a951d1551b3de0757ba"
+        }
+      ]
+    },
+    "natural-3": {
+      "status": "passed",
+      "requests": 17,
+      "knownTokens": 59200,
+      "requestsWithoutUsage": [
+        "cf1f73f6-20fd-48f0-9012-dd826f8efa12"
+      ],
+      "providerFailures": [
+        {
+          "requestId": "cf1f73f6-20fd-48f0-9012-dd826f8efa12",
+          "code": "cancelled",
+          "retryable": false
+        }
+      ],
+      "cases": [
+        {
+          "name": "supervisor-route-two-employees",
+          "state": "succeeded",
+          "requestCount": 9,
+          "actualTokens": 36768,
+          "requestIds": [
+            "52bcdda1-0ef4-4a33-a713-ee0c358bc50c",
+            "da1f8091-36c3-4821-bf76-905c2fcd5ab6",
+            "d0e30670-ad79-4eaf-bfbd-e94959dad30c",
+            "ba839987-49a9-44c8-b775-e004bd1d32c0",
+            "dc775153-c4fc-4ac0-86fc-4a1e042833c6",
+            "ac66d8dd-4c8b-4725-ba61-b939c2163abd",
+            "794d2795-555a-47df-9b31-45983bc51283",
+            "e7ac71ba-8a0c-456c-b795-29f9164b4d2e",
+            "b13f0909-b259-46ad-9858-29c7aaf95fbe"
+          ],
+          "missingUsage": [],
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-route-repair/natural-3/fixtures/team-marker.md",
+            "sha256": "28c526ee3781cfec880e9e45940009cbf35ed6642fb6073966f1e1d9c379ad76",
+            "size": 194
+          },
+          "waitingModelCalls": null
+        },
+        {
+          "name": "approval-sigkill-resume",
+          "state": "succeeded",
+          "requestCount": 5,
+          "actualTokens": 17666,
+          "requestIds": [
+            "a0ce026f-162b-4324-8632-69a49d482150",
+            "8291abd4-9fe1-4e9f-95f5-e3875fcab0b2",
+            "593c0747-0472-4125-8116-1c4274e8e6ae",
+            "1de57ef1-8b1e-4bfb-8ee4-987fb8017fec",
+            "4f388a55-47b5-4ee5-9866-972c4e8a23d1"
+          ],
+          "missingUsage": [],
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-route-repair/natural-3/fixtures/approval-marker.md",
+            "sha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8",
+            "size": 12
+          },
+          "waitingModelCalls": 0
+        },
+        {
+          "name": "approval-rejected-no-write",
+          "state": "failed",
+          "requestCount": 2,
+          "actualTokens": 4766,
+          "requestIds": [
+            "c04fdd3a-b7bd-4319-855d-87859587772d",
+            "e6028fbc-931b-4ec7-be3d-ec3cba4827a7"
+          ],
+          "missingUsage": [],
+          "file": null,
+          "waitingModelCalls": null
+        },
+        {
+          "name": "cancel-before-downstream",
+          "state": "failed",
+          "requestCount": 1,
+          "actualTokens": 0,
+          "requestIds": [
+            "cf1f73f6-20fd-48f0-9012-dd826f8efa12"
+          ],
+          "missingUsage": [
+            "cf1f73f6-20fd-48f0-9012-dd826f8efa12"
+          ],
+          "file": null,
+          "waitingModelCalls": null
+        }
+      ],
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-route-repair/natural-3/live-results.json",
+      "rawSha256": "61e8bed6e308b8bdbce5b6cea9acd021c66d3675b3216ff633a1bee2a8233e7f",
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "627925f71e75c130fb8f3732787f0a8931aed1cc36218a951d1551b3de0757ba"
+        },
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "627925f71e75c130fb8f3732787f0a8931aed1cc36218a951d1551b3de0757ba"
+        }
+      ]
+    },
+    "natural-4": {
+      "status": "passed",
+      "requests": 8,
+      "knownTokens": 33973,
+      "requestsWithoutUsage": [],
+      "providerFailures": [],
+      "cases": [
+        {
+          "name": "supervisor-route-two-employees",
+          "state": "succeeded",
+          "requestCount": 8,
+          "actualTokens": 33973,
+          "requestIds": [
+            "44bab0c9-1074-4a6a-8ed2-c8939b27c2c1",
+            "68df7624-2971-4d29-941f-15cd67b6219f",
+            "6dbc8dd5-f959-420a-99b7-ea5645cef531",
+            "2a8a9347-39ad-4803-8d8c-4f4852ee4345",
+            "57e08e42-ece8-4f6b-90d2-01af04db6e4f",
+            "b22ab4ff-3c73-429e-9d54-5bff84dc11ff",
+            "d22b10a8-8c94-4b26-93b6-b66712096f8a",
+            "af973823-ce14-4c22-9481-fcc6595f2949"
+          ],
+          "missingUsage": [],
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-route-repair/natural-4/fixtures/team-marker.md",
+            "sha256": "d8f1589d35db7f3fcd5191632df5e2960cb4cf39d3b6d241811c6682b27a3fb1",
+            "size": 144
+          },
+          "waitingModelCalls": null
+        }
+      ],
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-route-repair/natural-4/live-results.json",
+      "rawSha256": "73b1e9c09080e16990d932fd70c00722a31fe32350af59906107b923708ec55e",
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "627925f71e75c130fb8f3732787f0a8931aed1cc36218a951d1551b3de0757ba"
+        }
+      ]
+    }
+  },
+  "tests": {
+    "passed": 421,
+    "skipped": 3,
+    "failed": 0
+  },
+  "typecheck": "passed",
+  "build": "passed",
+  "worktreeIntegrity": {
+    "entryDirtyFiles": 88,
+    "intentionallyExtended": [
+      "src/provider/conversation-provider.test.ts",
+      "src/provider/poe-schema.ts",
+      "src/runtime/index.ts",
+      "src/runtime/supervisor-executor.test.ts",
+      "src/runtime/supervisor-executor.ts",
+      "src/runtime/supervisor-router.test.ts",
+      "src/runtime/supervisor-router.ts"
+    ],
+    "otherEntryFilesIdentical": 81,
+    "originalUserFilesByteIdentical": 27,
+    "nativeHelpersUnchanged": true,
+    "headUnchanged": true,
+    "indexUnchanged": true
+  },
+  "runtimeSha256": "627925f71e75c130fb8f3732787f0a8931aed1cc36218a951d1551b3de0757ba",
+  "providerSha256": "4f79fe3e7a62b51877349ee8740ad836b5476f450f518024133c749be4a85f9c",
+  "noFormalDatabaseOrInstalledClientChanges": true,
+  "pricing": "Provider tokens only; missing usage is unknown, no estimated dollars or Poe Points"
+}

@@ -1,0 +1,673 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-15",
+  "status": "passed_poe_scope",
+  "scope": "phase_3_supervisor_team_approval_recovery",
+  "sdk": {
+    "package": "@openai/agents-core",
+    "version": "0.20.0",
+    "zod": "4.6.7",
+    "runExecutor": "openai-agents-ts-v2",
+    "tracingDisabled": true
+  },
+  "activation": {
+    "newRunsOnly": true,
+    "supervisorModel": "claude-sonnet-4.6",
+    "allEmployeeModels": "claude-sonnet-4.6",
+    "provider": "poe",
+    "legacyAndDeepSeekPathsRetained": true
+  },
+  "runtimeAuthoritiesRetained": [
+    "TaskService",
+    "TaskRevision",
+    "Assignment",
+    "RunGrant",
+    "Approval",
+    "ToolGateway",
+    "Handoff",
+    "Delivery",
+    "BudgetLedgerEntry"
+  ],
+  "verification": {
+    "backendCommand": "npx vitest run src/runtime src/provider src/main src/shared --reporter=json",
+    "testFiles": 50,
+    "passed": 345,
+    "skipped": 3,
+    "failed": 0,
+    "teamExecutorTests": 27,
+    "supervisorExecutorTests": 2,
+    "typecheck": "passed",
+    "electronViteBuild": "passed",
+    "nativeHelpersRebuilt": false,
+    "buildBundle": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+    "buildBundleSha256": "905164d0c55837e6e6df707e4ce045e0be0147dfd4e9ccd5be715b24b4f324ee"
+  },
+  "liveReports": [
+    {
+      "buildScope": "phase3_before_final_shutdown_refinements",
+      "fixtureDirectory": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-3/acceptance-v2",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-3/acceptance-v2/live-results.json",
+      "rawReportSha256": "dd474a3d4e6a6e72f0707a1ec081dbe664063fedf8708e27d441fea89ecd7102",
+      "productionDatabaseUsed": false,
+      "relayErrors": [],
+      "providerFailures": [
+        {
+          "requestId": "53adadf9-8e96-4b45-9b26-1ee7587ff375",
+          "code": "cancelled",
+          "retryable": false
+        }
+      ],
+      "cases": [
+        {
+          "name": "supervisor-route-two-employees",
+          "taskId": "1df3f38d-5e46-4d15-b03c-3977010fcec3",
+          "runId": "c039dd6e-a0bc-4604-8a1e-43f3478bfe94",
+          "taskState": "succeeded",
+          "executor": "openai-agents-ts-v2",
+          "frozenEmployees": [
+            "version.live-team-reader",
+            "version.live-team-writer"
+          ],
+          "assignmentStates": [
+            "succeeded",
+            "succeeded"
+          ],
+          "deliveryId": "f9861b53-a19a-44c5-8bcb-e47f706ff60b",
+          "sdkModelCalls": 13,
+          "legacyModelCalls": 0,
+          "providerStepCount": 12,
+          "providerStages": {
+            "assignment_start": 2,
+            "manager_dispatch": 4,
+            "after_tool": 3,
+            "tool_proposal": 2,
+            "manager_final": 1
+          },
+          "actualTokenReceipts": {
+            "count": 12,
+            "inputTokens": 41614,
+            "outputTokens": 2450,
+            "requestIds": [
+              "5df2eee9-6e94-4f15-bd6b-897ee9a67bc2",
+              "efdd271d-39d2-4857-9774-8c6eef06a6bb",
+              "3d776434-86c8-4f90-8344-1fc830a296db",
+              "f503cba7-8595-4d98-a5ea-215c6d9809cf",
+              "1fa8c0ec-5105-4ddc-82b5-0ce97f37e1ef",
+              "1faf55b8-7055-4e92-9da9-8523f8a59523",
+              "ab152ac4-1a25-4467-9969-3905904522cc",
+              "78846d69-5cf7-46d5-92b9-4ddae6dda9fd",
+              "8210d02d-2793-4b5e-b750-9256160faf33",
+              "56339463-d6e7-4591-ae7e-b351ada9be61",
+              "3d222337-509e-4296-92ba-ce0713412fad",
+              "c1a126d6-c6cd-4494-b8dd-6a139678e101"
+            ],
+            "usdPricingVerified": false
+          },
+          "authorizationMode": "full_access",
+          "budget": {
+            "maxInputTokens": 32000,
+            "maxOutputTokens": 4096,
+            "maxAmountUsdMicros": 1000000,
+            "maxSteps": 64
+          },
+          "grantId": "bb2c9673-cb72-4922-8ebe-085eaa9d3d64",
+          "actions": [
+            {
+              "id": "916c83d0-3c86-4dea-845e-bfd27ae8c6b2",
+              "assignmentId": "c68353f0-0559-4c4f-9e1b-4e22486a35e5",
+              "toolVersionId": "tender.requirements.extract@document-analysis/v1",
+              "state": "succeeded",
+              "resultVerified": true,
+              "idempotencyKey": "b8d3709276e2addc1d328a129161fe640923ca24bdc30f392f781e4d4e9d2da4",
+              "parametersSha256": "197b692a084b8f59a2a6019a34d95b80d48afd6c965d65e0527c992c31a6baa9"
+            },
+            {
+              "id": "49f23679-ee68-4715-acba-826e8dccc2c5",
+              "assignmentId": "5de5ec08-e273-4017-8edf-dae5a8b1806d",
+              "toolVersionId": "document.create@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true,
+              "idempotencyKey": "7af016985c10d37a6a8bbc5e2b22b3f36c81a20b328cc8ceef17e773086eaaab",
+              "parametersSha256": "a04f6a54f226af0956c31d52ed95a1e7ab6b1384e38de14aaaa1c28f431eb6d7",
+              "resultSha256": "8fec354487c1c6f8eed863dd788331da24c5201ca1d28f57e7c5dd1291d91c6b"
+            },
+            {
+              "id": "ad23a26b-89b5-4d8c-8d5f-9288ceddb14f",
+              "assignmentId": "5de5ec08-e273-4017-8edf-dae5a8b1806d",
+              "toolVersionId": "document.read@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true,
+              "idempotencyKey": "9c91fdf0d1e7d69702fd77557293a44fa359f65df0821c57e5a2cd7807a1fe02",
+              "parametersSha256": "8bd606fcf36610b603862f98bc32b77870766c57b0b58343302b73ebbae21d12",
+              "resultSha256": "8fec354487c1c6f8eed863dd788331da24c5201ca1d28f57e7c5dd1291d91c6b"
+            }
+          ],
+          "nativeInterruptions": [],
+          "lastSdkCheckpointStatus": "completed",
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-3/acceptance-v2/fixtures/team-marker.md",
+            "sha256": "8fec354487c1c6f8eed863dd788331da24c5201ca1d28f57e7c5dd1291d91c6b",
+            "size": 143
+          }
+        },
+        {
+          "name": "approval-sigkill-resume",
+          "taskId": "ae364dfb-9aa2-48d0-bbdd-b84c2405b2b6",
+          "runId": "cc97361f-9c21-4d18-bd4d-72869c5d00e8",
+          "taskState": "succeeded",
+          "executor": "openai-agents-ts-v2",
+          "frozenEmployees": [
+            "version.live-team-writer"
+          ],
+          "assignmentStates": [
+            "succeeded"
+          ],
+          "deliveryId": "4791a558-ad4b-4776-9d81-c16b9fc1e8d4",
+          "sdkModelCalls": 7,
+          "legacyModelCalls": 0,
+          "providerStepCount": 7,
+          "providerStages": {
+            "assignment_start": 1,
+            "manager_dispatch": 2,
+            "tool_proposal": 1,
+            "after_tool": 2,
+            "manager_final": 1
+          },
+          "actualTokenReceipts": {
+            "count": 7,
+            "inputTokens": 21187,
+            "outputTokens": 945,
+            "requestIds": [
+              "102ba7cc-a398-46c1-95d2-4f0fe4c66853",
+              "bb0cc616-dff6-475d-a62d-3866dd57125e",
+              "a23ee5cb-d6a7-4a56-8290-f380f779c594",
+              "fbdffb92-0024-4740-aacb-99c0962087b0",
+              "55b8519e-538f-4faa-aa05-efa21191c1a3",
+              "f3cbd092-cfa8-4adf-9efd-e3946e30eac7",
+              "f6539b77-7c2f-46cc-b8a1-58683c094752"
+            ],
+            "usdPricingVerified": false
+          },
+          "authorizationMode": "approval_required",
+          "budget": {
+            "maxInputTokens": 32000,
+            "maxOutputTokens": 4096,
+            "maxAmountUsdMicros": 1000000,
+            "maxSteps": 64
+          },
+          "grantId": "ae7ccb56-fff7-4fc2-9e9e-aca8915fb9d0",
+          "actions": [
+            {
+              "id": "65b799d9-9a76-4eb7-a394-ac839c11cfb8",
+              "assignmentId": "ae30813c-a8ae-4245-b4c7-cfed6144051b",
+              "toolVersionId": "document.create@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true,
+              "approvalId": "1674cfb3-97f4-476e-b83c-857603e9fd8b",
+              "idempotencyKey": "512260e1228fe08db5cc7422bfd59ef2b9739bc13f44e6d02c0e598d3b13a20a",
+              "parametersSha256": "71fe95d61497615dd673ec974aac319bdcdcd6953f52e9503a20fe0aae3988b3",
+              "resultSha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8"
+            },
+            {
+              "id": "b0381402-ee46-47d1-9128-0b28446b0a25",
+              "assignmentId": "ae30813c-a8ae-4245-b4c7-cfed6144051b",
+              "toolVersionId": "document.read@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true,
+              "approvalId": "b95d5037-1a30-4357-950f-e62a5f9b3233",
+              "idempotencyKey": "fcbacc68336663e8eec559d10bdb63ae5bbb78f7eed69ea652907ee969dfe593",
+              "parametersSha256": "497b83d362ed0cab9b31223874d26859cc2bae8a405cdee1fb067aefafd6460a",
+              "resultSha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8"
+            }
+          ],
+          "nativeInterruptions": [
+            {
+              "checkpointId": "c8caf82f-994c-4bcc-a6b8-00e0d4990185",
+              "generation": 6,
+              "sdkVersion": "0.20.0",
+              "serializedSchemaVersion": "1.22",
+              "parentChildGraph": [
+                {
+                  "parent": "manager_cc97361f-9c21-4d18-bd4d-72869c5d00e8",
+                  "employeeVersionId": "version.live-team-writer",
+                  "child": "employee_87f51c59a137477a5e85"
+                }
+              ],
+              "bindingSha256": "acf6e87e07f9c85241564e7d186b14dc5c32a069668763ccb6264fbb41fc37f5",
+              "payloadSha256": "4ece19a25b8f23f8d9390d13b314f4564840db46543c7466dc57f43be873e9f6",
+              "nativeStateSha256": "d14d38b30589c5e51f867eca7a96a814007c9fbb2b002e2c623e9d5719dad186",
+              "callId": "toolu_01BaGCV9zKJe5Eptoie2xsyR",
+              "actionId": "65b799d9-9a76-4eb7-a394-ac839c11cfb8",
+              "resumedInputContainsOriginalCallResult": true
+            },
+            {
+              "checkpointId": "6b573846-e4e2-44c2-b6f7-2f1f72d6e033",
+              "generation": 11,
+              "sdkVersion": "0.20.0",
+              "serializedSchemaVersion": "1.22",
+              "parentChildGraph": [
+                {
+                  "parent": "manager_cc97361f-9c21-4d18-bd4d-72869c5d00e8",
+                  "employeeVersionId": "version.live-team-writer",
+                  "child": "employee_87f51c59a137477a5e85"
+                }
+              ],
+              "bindingSha256": "acf6e87e07f9c85241564e7d186b14dc5c32a069668763ccb6264fbb41fc37f5",
+              "payloadSha256": "bc0632254e24a9635bb7815f3a1419c319f3a2d7e70ef9243afaaa099cbaa5b9",
+              "nativeStateSha256": "53627735685efb6c559f331eabb4cec5434704fb218a58726adf4a61594d230f",
+              "callId": "toolu_017R8ZrboSnbU7DXBCucT2tZ",
+              "actionId": "b0381402-ee46-47d1-9128-0b28446b0a25",
+              "resumedInputContainsOriginalCallResult": true
+            }
+          ],
+          "lastSdkCheckpointStatus": "completed",
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-3/acceptance-v2/fixtures/approval-marker.md",
+            "sha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8",
+            "size": 12
+          },
+          "sigkillPid": 36485,
+          "approvalId": "1674cfb3-97f4-476e-b83c-857603e9fd8b",
+          "sdkCheckpointId": "c8caf82f-994c-4bcc-a6b8-00e0d4990185",
+          "noCallsWhileWaiting": true,
+          "waitingModelCalls": 0,
+          "grantUnchanged": true
+        },
+        {
+          "name": "approval-rejected-no-write",
+          "taskId": "7bf2a011-5e73-4a0c-bcdc-2558c849008c",
+          "runId": "db5b6fc0-3db1-421f-a20e-364d4c925a9c",
+          "taskState": "failed",
+          "executor": "openai-agents-ts-v2",
+          "frozenEmployees": [
+            "version.live-team-writer"
+          ],
+          "assignmentStates": [
+            "running"
+          ],
+          "deliveryId": null,
+          "sdkModelCalls": 4,
+          "legacyModelCalls": 0,
+          "providerStepCount": 4,
+          "providerStages": {
+            "assignment_start": 1,
+            "manager_dispatch": 2,
+            "tool_proposal": 1
+          },
+          "actualTokenReceipts": {
+            "count": 4,
+            "inputTokens": 7975,
+            "outputTokens": 286,
+            "requestIds": [
+              "671e66fb-6fd4-4029-a4f7-04368f6af677",
+              "086ba327-91c3-41ed-beca-b9eec2577482",
+              "82fd8c08-f11f-49e6-82d7-8888510dc32d",
+              "49f71d62-b9a6-4a37-819d-e072775e7490"
+            ],
+            "usdPricingVerified": false
+          },
+          "authorizationMode": "approval_required",
+          "budget": {
+            "maxInputTokens": 32000,
+            "maxOutputTokens": 4096,
+            "maxAmountUsdMicros": 1000000,
+            "maxSteps": 64
+          },
+          "grantId": "b763725e-ba73-4c94-a453-3e8e8a94b480",
+          "actions": [
+            {
+              "id": "3c0fed92-2c38-4ecc-b9df-2474db7bfa2d",
+              "assignmentId": "cf1111d3-f92a-434d-b668-a1761cc52179",
+              "toolVersionId": "document.create@local-document/v1",
+              "state": "blocked",
+              "resultVerified": false,
+              "failureCode": "approval_rejected",
+              "approvalId": "a29cbea6-31ae-4205-8388-376dc45728d7",
+              "idempotencyKey": "f458c0acc10c757026f9a0752ec6e7674c2816c4f75a3dd74fe5abcbff1c4526",
+              "parametersSha256": "6aee42527237185e75d39a8693196420e185a19c5640c65bd50ab50cba72cc1f"
+            }
+          ],
+          "nativeInterruptions": [
+            {
+              "checkpointId": "92f2df36-de5b-4b8a-bece-8d8d135618d3",
+              "generation": 6,
+              "sdkVersion": "0.20.0",
+              "serializedSchemaVersion": "1.22",
+              "parentChildGraph": [
+                {
+                  "parent": "manager_db5b6fc0-3db1-421f-a20e-364d4c925a9c",
+                  "employeeVersionId": "version.live-team-writer",
+                  "child": "employee_87f51c59a137477a5e85"
+                }
+              ],
+              "bindingSha256": "74934c26de7c2b944d70c4799c27d29a6a5ac20823f22d7002bd902a5c430964",
+              "payloadSha256": "c3e6562cd333d8aed57fa5efd4e1d0e375dc06ca896eacecb84fe2d7a5a9b6f1",
+              "nativeStateSha256": "38f4ac3cdab54049a189fe8d6dc65d307042db391936c65cac4260498d5650e3",
+              "callId": "toolu_01NdevPQiREqu9KpT2BAUTzs",
+              "actionId": "3c0fed92-2c38-4ecc-b9df-2474db7bfa2d",
+              "resumedInputContainsOriginalCallResult": false
+            }
+          ],
+          "lastSdkCheckpointStatus": "rejected",
+          "fileAbsent": true,
+          "nativeStatus": "rejected"
+        },
+        {
+          "name": "cancel-before-downstream",
+          "taskId": "2f4ebab8-85c0-406b-8c3a-2780a16451d4",
+          "runId": "8d1bf048-cfa0-467f-8dbe-689505e112a7",
+          "taskState": "failed",
+          "executor": "openai-agents-ts-v2",
+          "frozenEmployees": [
+            "version.live-team-reader",
+            "version.live-team-writer"
+          ],
+          "assignmentStates": [
+            "running",
+            "pending"
+          ],
+          "deliveryId": null,
+          "sdkModelCalls": 2,
+          "legacyModelCalls": 0,
+          "providerStepCount": 2,
+          "providerStages": {
+            "assignment_start": 1,
+            "manager_dispatch": 1
+          },
+          "actualTokenReceipts": {
+            "count": 1,
+            "inputTokens": 1504,
+            "outputTokens": 74,
+            "requestIds": [
+              "4143ffaf-ab6e-4c7f-9132-3ba050d0b57a"
+            ],
+            "usdPricingVerified": false
+          },
+          "authorizationMode": "full_access",
+          "budget": {
+            "maxInputTokens": 32000,
+            "maxOutputTokens": 4096,
+            "maxAmountUsdMicros": 1000000,
+            "maxSteps": 64
+          },
+          "grantId": "11986dc2-b887-4a4e-88bb-b911fbc56d38",
+          "actions": [],
+          "nativeInterruptions": [],
+          "lastSdkCheckpointStatus": "failed"
+        }
+      ]
+    },
+    {
+      "buildScope": "final_build",
+      "fixtureDirectory": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-3/final-restart",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-3/final-restart/live-results.json",
+      "rawReportSha256": "62ec27e6711b0aca872f7e08fbe54a6a2bc48b4c44dbc40159a5fdaf1d43fbd3",
+      "productionDatabaseUsed": false,
+      "relayErrors": [],
+      "providerFailures": [],
+      "cases": [
+        {
+          "name": "model-boundary-shutdown-restart",
+          "taskId": "ba7160c4-4272-475a-9c6e-9574d1a4f6b7",
+          "runId": "fd6210b5-093a-4af2-b7f7-0930bb140f31",
+          "taskState": "succeeded",
+          "executor": "openai-agents-ts-v2",
+          "frozenEmployees": [
+            "version.live-team-reader"
+          ],
+          "assignmentStates": [
+            "succeeded"
+          ],
+          "deliveryId": "4b2a9bab-3919-426a-b635-e7b303968a86",
+          "sdkModelCalls": 5,
+          "legacyModelCalls": 0,
+          "providerStepCount": 6,
+          "providerStages": {
+            "assignment_start": 2,
+            "manager_dispatch": 2,
+            "after_tool": 1,
+            "manager_final": 1
+          },
+          "actualTokenReceipts": {
+            "count": 5,
+            "inputTokens": 11214,
+            "outputTokens": 627,
+            "requestIds": [
+              "4b4eb1d2-fe80-4873-91ea-b4b5c9dc33ac",
+              "5ec2f5ce-9a96-42f8-86e8-a828e448ee80",
+              "34be4a3f-92d7-4947-a3af-f218c1ee5d91",
+              "09c62f6a-d869-4e88-9248-c598fbd722cf",
+              "31fdbd31-1da6-4851-9ef0-0b8530236528"
+            ],
+            "usdPricingVerified": false
+          },
+          "authorizationMode": "full_access",
+          "budget": {
+            "maxInputTokens": 32000,
+            "maxOutputTokens": 4096,
+            "maxAmountUsdMicros": 1000000,
+            "maxSteps": 64
+          },
+          "grantId": "1697d38f-134e-465b-9178-89c649356fb3",
+          "actions": [
+            {
+              "id": "e0bf2dd3-c0a6-4bf7-9672-639d4df808fb",
+              "assignmentId": "fc4e8b72-a12f-4a53-a9c2-f40b0d9fb951",
+              "toolVersionId": "tender.requirements.extract@document-analysis/v1",
+              "state": "succeeded",
+              "resultVerified": true,
+              "idempotencyKey": "bc5e995c0d9ebb4557684b71beaad0d19eb2e4304ebb8c847b869fccbda06e12",
+              "parametersSha256": "5f253a5dc28b536eac4bf641e65692c2f07493be57dd171cdf631f2c9afe7aa9"
+            }
+          ],
+          "nativeInterruptions": [],
+          "lastSdkCheckpointStatus": "completed",
+          "grantUnchanged": true,
+          "shutdownWaited": true,
+          "noToolBeforePause": true,
+          "consumedShutdown": true
+        }
+      ]
+    },
+    {
+      "buildScope": "final_build",
+      "fixtureDirectory": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-3/final-approval",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-3/final-approval/live-results.json",
+      "rawReportSha256": "6f1a0c74e42e9a379d8e283e681ce9a040ba1a2dc2c2887e261009eff9722b4d",
+      "productionDatabaseUsed": false,
+      "relayErrors": [],
+      "providerFailures": [],
+      "cases": [
+        {
+          "name": "approval-sigkill-resume",
+          "taskId": "e523561e-03a5-4a91-a61c-e8a169731d00",
+          "runId": "2a0ef030-7af0-4d2d-92bd-29f4434e79b0",
+          "taskState": "succeeded",
+          "executor": "openai-agents-ts-v2",
+          "frozenEmployees": [
+            "version.live-team-writer"
+          ],
+          "assignmentStates": [
+            "succeeded"
+          ],
+          "deliveryId": "dd4da114-7731-41fa-a48f-d83fd44b53ea",
+          "sdkModelCalls": 7,
+          "legacyModelCalls": 0,
+          "providerStepCount": 7,
+          "providerStages": {
+            "assignment_start": 1,
+            "manager_dispatch": 2,
+            "tool_proposal": 1,
+            "after_tool": 2,
+            "manager_final": 1
+          },
+          "actualTokenReceipts": {
+            "count": 7,
+            "inputTokens": 21162,
+            "outputTokens": 913,
+            "requestIds": [
+              "620b477c-c101-42f2-b2cf-41243e8e6a1c",
+              "c155d47e-9c04-427e-880d-e9762879e7e8",
+              "42dc5901-9fb7-489a-ae26-3e924b8e59c6",
+              "8fe040d2-4b48-43ad-a369-a7357555c5e6",
+              "88b53c75-1fd5-441f-9b83-5a9ec9f58e1b",
+              "b718f0ec-dc87-4f62-8b91-b8bc1d01f5a7",
+              "27657192-b758-4417-b920-1fdddbe7cca8"
+            ],
+            "usdPricingVerified": false
+          },
+          "authorizationMode": "approval_required",
+          "budget": {
+            "maxInputTokens": 32000,
+            "maxOutputTokens": 4096,
+            "maxAmountUsdMicros": 1000000,
+            "maxSteps": 64
+          },
+          "grantId": "ca087ee5-c26a-41a7-9bc8-6c34ada6d544",
+          "actions": [
+            {
+              "id": "560061a3-ee6c-4ad1-8718-98113b8bb84c",
+              "assignmentId": "7558d184-669f-4fdd-acd5-95d9bce9ee96",
+              "toolVersionId": "document.create@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true,
+              "approvalId": "20ecbb93-035c-45f8-8c83-a9223b24e45c",
+              "idempotencyKey": "cbbb877259c8536ac4c6900d83678672db9e5cb4f6ba2cb4217243d26b765a85",
+              "parametersSha256": "a6d6722c88c71411cd589aa428db2d7fa2168fda3690e863675aff59734ae014",
+              "resultSha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8"
+            },
+            {
+              "id": "ca7879e6-405b-4c70-aec3-f84baab18590",
+              "assignmentId": "7558d184-669f-4fdd-acd5-95d9bce9ee96",
+              "toolVersionId": "document.read@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true,
+              "approvalId": "a7c5cd17-38c4-4e1a-8182-8de6d61cfd99",
+              "idempotencyKey": "70bc45bafc11c34b7eda5ce6fd5b357d6e0279bf2e064019f76778949d69c776",
+              "parametersSha256": "983e8495b3398ba20591f287861edaa0d99cf46f4eddea1e55e25a76dbc03da5",
+              "resultSha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8"
+            }
+          ],
+          "nativeInterruptions": [
+            {
+              "checkpointId": "5974758d-8789-4071-808c-1b4f44831ebb",
+              "generation": 6,
+              "sdkVersion": "0.20.0",
+              "serializedSchemaVersion": "1.22",
+              "parentChildGraph": [
+                {
+                  "parent": "manager_2a0ef030-7af0-4d2d-92bd-29f4434e79b0",
+                  "employeeVersionId": "version.live-team-writer",
+                  "child": "employee_87f51c59a137477a5e85"
+                }
+              ],
+              "bindingSha256": "c43ece1dc7174ade609750e7da1e8c87214ec51725dead910de2e739e6a73c22",
+              "payloadSha256": "1dc1eabf91f6f73f4fad0c2322f98d3206b59a8fadc6ff86b4660fcdd6f57481",
+              "nativeStateSha256": "c4fb6516ace3fa9202b6dac8b2a8bf45a1e9204fea3437164a1622908f28b81a",
+              "callId": "toolu_01EKJMUrgY5ajs1xyTMM7Jvh",
+              "actionId": "560061a3-ee6c-4ad1-8718-98113b8bb84c",
+              "resumedInputContainsOriginalCallResult": true
+            },
+            {
+              "checkpointId": "ddf32797-b108-43b6-8186-e2f1400bf51f",
+              "generation": 11,
+              "sdkVersion": "0.20.0",
+              "serializedSchemaVersion": "1.22",
+              "parentChildGraph": [
+                {
+                  "parent": "manager_2a0ef030-7af0-4d2d-92bd-29f4434e79b0",
+                  "employeeVersionId": "version.live-team-writer",
+                  "child": "employee_87f51c59a137477a5e85"
+                }
+              ],
+              "bindingSha256": "c43ece1dc7174ade609750e7da1e8c87214ec51725dead910de2e739e6a73c22",
+              "payloadSha256": "f2be42171ec3754413e8ed047bdcacb660d5323dc3a68a8cf4b7d07005fab4e4",
+              "nativeStateSha256": "b8163e678fa0031a9ed73c0d67a21a5caa866ce99c417f17261e5a07e048640b",
+              "callId": "toolu_01RfenZvb8ynb4HYGWpBTkNd",
+              "actionId": "ca7879e6-405b-4c70-aec3-f84baab18590",
+              "resumedInputContainsOriginalCallResult": true
+            }
+          ],
+          "lastSdkCheckpointStatus": "completed",
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-3/final-approval/fixtures/approval-marker.md",
+            "sha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8",
+            "size": 12
+          },
+          "sigkillPid": 37770,
+          "approvalId": "20ecbb93-035c-45f8-8c83-a9223b24e45c",
+          "sdkCheckpointId": "5974758d-8789-4071-808c-1b4f44831ebb",
+          "noCallsWhileWaiting": true,
+          "waitingModelCalls": 0,
+          "grantUnchanged": true
+        }
+      ]
+    }
+  ],
+  "worktreePreservation": {
+    "originalUncommittedFiles": 27,
+    "originalUncommittedFilesChanged": [],
+    "phase3PreexistingFiles": 48,
+    "intentionallyExtendedPreexistingFiles": [
+      "docs/audits/2026-10-15-agents-sdk-migration.md",
+      "src/runtime/domain.ts",
+      "src/runtime/employee-executor.ts",
+      "src/runtime/index.ts",
+      "src/runtime/task-service.ts"
+    ],
+    "unrelatedPreexistingFilesChanged": [],
+    "headUnchanged": true,
+    "stagedUnchanged": true,
+    "committed": false,
+    "pushed": false
+  },
+  "sourceSha256": {
+    "src/runtime/domain.ts": "5cc0a4a98b28db3dee05043d5fbd038f46272f198209191c94f73621cf363e3e",
+    "src/runtime/index.ts": "c39d95b5ad14c45ee86052085d1f7edb65fa3c91c6de0f3cfbc3316b25510c3a",
+    "src/runtime/kernel.ts": "e8638f013a85b7d1df7711fefe33fe34447131d1b1b30febe4b8ed8c63ca733e",
+    "src/runtime/store.ts": "1fde1e57cd97bf4069c181d6639f5fdd86b118cda866cb1231fb3cc0435b789d",
+    "src/runtime/task-service.ts": "523b91d94cfccb873a7ede812fa6d6ee24cbf8385629e5e765b04840a79296e3",
+    "src/runtime/tool-gateway.ts": "12637782f3ec98ae906e737aa4a08ceb0ade4363b2083a67ce59b141782f9a86",
+    "src/runtime/employee-executor.ts": "963192c8e021149dd160ad2e40387642371978a02c55dee138b2f340bf0fc63a",
+    "src/runtime/sdk-checkpoints.ts": "432dc682438a3799d21a2f5b09920ba5a9e8075e47ba85ac3bef2b939b84d181",
+    "src/runtime/sdk-model-response.ts": "8940d4b8287059a23cd0867df902d03b6a0f9c6842053fe713fa639ce9e4fb28",
+    "src/runtime/supervisor-executor.ts": "909515ae711b1838920b0bdde81bd1498bcb26d09a0f004e5b1505e7f58bd688",
+    "src/runtime/supervisor-router.ts": "8d440a082d1aa88e179ff9e141a07b94004efd1a1384b74d395a9864863dfe4d",
+    "src/runtime/tool-proposal-errors.ts": "f6f1f1230342fec0491975e0aa3e4a872e0698fa69a47e3b72a8657e688a93e4",
+    "src/runtime/team-executor.ts": "c15bd368e73fab4f0d12194da8afef9afbe96c2ddca987be2d03aa148f73d96e",
+    "src/runtime/team-executor.test.ts": "747c724da3d138d77136126618e117f37ba80c4a5e9a84470f91f36fd63a214a",
+    "src/runtime/supervisor-executor.test.ts": "17fa20a571c4015031994336444e940b3b82c2fb7661165ced92c07952cc39bd",
+    "src/runtime/supervisor-router.test.ts": "14bb9becd345fc4677831ccaa2f2ff502085502396111094c490c72cfc15c8bb",
+    "src/runtime/tool-gateway.test.ts": "73976547c19698900f91fe99863e1250e153f0ff5e828ad2f6462aa695c93625"
+  },
+  "failedAttemptsRetained": [
+    {
+      "report": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-3/live-results-attempt-1.json",
+      "finding": "Frozen acceptance context was missing in a fresh child invocation; wrong filename and repeated unavailable tool were stopped."
+    },
+    {
+      "report": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-3/live-results-attempt-2.json",
+      "finding": "Manager result exposed technical metrics; unchanged Runtime delivery validation rejected them. SDK review now receives the existing copy contract in system instructions."
+    },
+    {
+      "report": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-3/acceptance/live-results.json",
+      "finding": "Route produced empty members/criteria and was rejected. Router now separates trusted system policy from user/attachment data."
+    }
+  ],
+  "remainingGates": [
+    "DeepSeek real-provider and team execution",
+    "actual third-party message/calendar side effects",
+    "large-document SDK history/compaction live acceptance",
+    "Poe monetary pricing and cancelled-request final billing",
+    "phase_4 legacy Python/DeepAgents removal and packaging release"
+  ],
+  "notPerformed": [
+    "production database migration",
+    "installed-client replacement",
+    "credential modification",
+    "commit",
+    "push",
+    "phase_4 dependency removal"
+  ],
+  "recordedAt": "2026-10-15T05:51:34.336606+00:00"
+}

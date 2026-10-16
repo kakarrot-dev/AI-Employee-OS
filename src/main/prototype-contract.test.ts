@@ -35,14 +35,15 @@ describe('macOS prototype visual contract', () => {
     expect(css).toMatch(/@media \(max-width: 1199px\)[\s\S]*--layout-rail-width: 56px;[\s\S]*--layout-context-width: 236px;/)
   })
 
-  it('keeps the canonical compact typography scale', () => {
+  it('keeps the canonical readable typography scale', () => {
     const css = source('prototypes/macos-client-v2/src/typography.css')
     for (const token of [
-      '--type-size-meta: 10px',
-      '--type-size-secondary: 11px',
-      '--type-size-body: 12px',
-      '--type-size-heading: 14px',
-      '--type-size-title: 18px'
+      '--type-size-badge: 10px',
+      '--type-size-meta: 11px',
+      '--type-size-secondary: 12px',
+      '--type-size-body: 14px',
+      '--type-size-heading: 16px',
+      '--type-size-title: 20px'
     ]) expect(css).toContain(token)
   })
 
@@ -80,7 +81,7 @@ describe('macOS prototype visual contract', () => {
     expect(adapter).toMatch(/\.prototype\.is-context-collapsed \.toolbar \{[\s\S]*?grid-template-columns:\s*var\(--layout-toolbar-collapsed-navigation-width\) minmax\(0, 1fr\);[\s\S]*?\}/)
     expect(adapter).not.toContain('.matter-toolbar-toggle svg { transform: scaleX(-1); }')
     expect(rendererApp).not.toMatch(/\n\s+Sidebar(?:Collapse|Expand),/)
-    expect(rendererApp).toContain("icon={contextCollapsed ? NavArrowRight : NavArrowLeft}")
+    expect(source('src/renderer/src/components/DesktopShell.tsx')).toContain('sidebarCollapsed ? NavArrowRight : NavArrowLeft')
     expect(rendererApp).toContain("icon={matterSidebarCollapsed ? NavArrowLeft : NavArrowRight}")
     expect(styles).toMatch(/\.prototype :is\(\.icon-button,[^}]+\) svg \{[\s\S]*?width:\s*var\(--icon-size-control\);[\s\S]*?height:\s*var\(--icon-size-control\);[\s\S]*?\}/)
     expect(adapter).not.toMatch(/\.window-controls-safe-area \{[^}]*-webkit-app-region: no-drag;[^}]*\}/)
@@ -108,7 +109,9 @@ describe('macOS prototype visual contract', () => {
 
     expect(iconSystem).toContain("library: 'iconoir-react'")
     expect(iconSystem).toContain('strokeWidth: 1.5')
-    expect(rendererApp).toContain('<ClientIconSystem>')
+    expect(rendererApp).toContain('<CdsIconSystem>')
+    expect(source('src/renderer/src/components/CdsIconSystem.tsx')).toContain("library: 'lucide-react'")
+    expect(source('src/renderer/src/components/cds-icons.ts')).toContain("from 'lucide-react'")
     expect(prototypeApp).toContain('<ClientIconSystem>')
     for (const token of ['inline', 'control', 'standard', 'navigation', 'feature']) expect(layout).toContain(`--icon-size-${token}:`)
     expect(styles).toContain('width: var(--icon-size-standard)')
@@ -154,12 +157,16 @@ describe('macOS prototype visual contract', () => {
     expect(styles).not.toContain('.matter-team-note')
   })
 
-  it('imports the prototype tokens after legacy styles and isolates retired prototype-class rules', () => {
+  it('gives the production desktop one CDS stylesheet chain independent of the Web prototype', () => {
     const entry = source('src/renderer/src/main.tsx')
-    expect(entry.indexOf("import './styles.css'")).toBeLessThan(entry.indexOf('prototypes/macos-client-v2/src/layout.css'))
-    expect(entry.indexOf('layout.css')).toBeLessThan(entry.indexOf('typography.css'))
-    expect(entry.indexOf('typography.css')).toBeLessThan(entry.indexOf('prototypes/macos-client-v2/src/styles.css'))
-    expect(entry.indexOf('prototypes/macos-client-v2/src/styles.css')).toBeLessThan(entry.indexOf("import './prototype-adapter.css'"))
+    expect(entry).not.toContain('prototypes/macos-client-v2/src/')
+    expect(entry).not.toContain("import './prototype-adapter.css'")
+    expect(entry.indexOf('open-claude-ui/cds-theme.css')).toBeGreaterThan(-1)
+    expect(entry.indexOf('open-claude-ui/cds-theme.css')).toBeLessThan(entry.indexOf('design-system/tokens.css'))
+    expect(entry).not.toContain('design-system/components.css')
+    expect(entry.indexOf('design-system/tokens.css')).toBeLessThan(entry.indexOf('design-system/primitives.css'))
+    expect(entry.indexOf('design-system/primitives.css')).toBeLessThan(entry.indexOf('design-system/business.css'))
+    expect(entry.indexOf('design-system/business.css')).toBeLessThan(entry.indexOf('design-system/desktop.css'))
     const legacy = source('src/renderer/src/styles.css')
     expect(legacy).not.toMatch(/^\.(?:composer|context-pane|delivery-card)(?:\s|\{|>)/m)
     expect(legacy).toMatch(/^\.legacy-composer\s*\{/m)

@@ -1,0 +1,43 @@
+{
+  "offline": true,
+  "providerCalls": 0,
+  "profile": "/tmp/ai-employee-open-claude-responsive-profile",
+  "cases": [
+    {
+      "id": "cds-ui-typography",
+      "title": "排版验收 · 消息与正文",
+      "user": "请用标题、段落、列表和引用展示结果。此消息为离线排版样例。",
+      "reply": "以下是**离线排版验收样例**，未调用模型。用于检查真实客户端的 Markdown 渲染。\n\n# 项目交付计划\n\n第一段正文包含 **重点内容**、*强调*、~~已取消事项~~、`inline_code` 和[上游仓库](https://github.com/Caho1/open-claude-ui)。第二句继续检查中文与 English 混排、标点和长段落换行。\n\n## 目标与验收\n\n- 第一项：确认布局、字体和组件来自 CDS。\n- 第二项：消息应完整展示。\n  - 子项：宽窗口限制阅读行长。\n  - 子项：窄窗口保留输入操作。\n\n1. 检查源码定义。\n2. 执行页面验收。\n   1. 确认浅色与深色。\n   2. 确认 600 × 400 窗口。\n\n> 引用内容保持独立缩进和左侧引导线。\n>\n> 第二段引用说明，不增加额外的闭合边框。\n\n### 交付清单\n\n- [x] 字体字阶与消息布局\n- [ ] 人工视觉验收\n\n#### 四级标题\n\n对应短段落和行内代码 `const ready = true`。\n\n##### 五级标题\n\n使用较紧凑的标题字阶。\n\n###### 六级标题\n\n保持层级和清晰的阅读顺序。\n\n---\n\n以上所有内容仅用于界面验收。"
+    },
+    {
+      "id": "cds-ui-code",
+      "title": "排版验收 · 表格与代码",
+      "user": "请展示表格、代码块与复制操作。此消息为离线排版样例。",
+      "reply": "以下是**离线代码与表格样例**，未调用模型。\n\n## 状态对照\n\n| 对象 | 当前状态 | 数量 | 处理方式 | 说明 |\n| :--- | :---: | ---: | :--- | :--- |\n| 桌面客户端 | 待验收 | 12 | 检查布局与字号 | 中文、English 与 123 混排 |\n| 消息渲染 | 已覆盖 | 8 | 检查表格横向滚动 | 包含很长的对象名称与路径信息，不应撑宽整个页面 |\n\n## 代码块\n\n```typescript\nfunction summarize(items: string[]) {\n  // 缩进、换行与空白应原样保留。\n  return items.map((item, index) => `${index + 1}. ${item}`).join(\"\\n\");\n}\n\nconst longLine = \"long_source_line_long_source_line_long_source_line_long_source_line_long_source_line_long_source_line_long_source_line_long_source_line_long_source_line_long_source_line_long_source_line_long_source_line_long_source_line_long_source_line_long_source_line_\";\n```\n\n无语言代码使用 `text` 标签：\n\n```\n  first line\n    second line\n```\n\n> 表格和代码只在自身容器内横向滚动。\n\n结束标记：完整结果应保持可见，不再截成六行。"
+    },
+    {
+      "id": "cds-ui-attachments",
+      "title": "排版验收 · 附件",
+      "user": "这两份资料用于离线附件样式验收。",
+      "reply": "已收到两份**界面样例附件**。以下文件仅用于测试真实的文件菜单和布局，未运行 Agent。",
+      "attachments": [
+        {
+          "id": "cds-fixture-attachment-0",
+          "name": "项目说明.md",
+          "path": "/tmp/ai-employee-cds-attachment-fixtures/项目说明.md",
+          "mediaType": "text/markdown",
+          "size": 44,
+          "sha256": "3f5d648d0c81400eb2c90a67d8511fb26d13c705ae621a6a10e153add3314f3e"
+        },
+        {
+          "id": "cds-fixture-attachment-1",
+          "name": "任务清单.csv",
+          "path": "/tmp/ai-employee-cds-attachment-fixtures/任务清单.csv",
+          "mediaType": "text/csv",
+          "size": 37,
+          "sha256": "539e7d0b9ef061f1f35a7e04d009e999923b8ad19dc5c1c33d3dbffaa09ee502"
+        }
+      ]
+    }
+  ]
+}

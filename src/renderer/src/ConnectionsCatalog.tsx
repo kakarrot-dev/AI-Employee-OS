@@ -1,8 +1,9 @@
+import { CdsButton } from './open-claude-ui/primitives/CdsButton'
 import { EMPTY_TEAMS_STATUS, type TeamsConnectionStatus } from '../../shared/teams-contract'
 import { TeamsConnectionModal } from './TeamsConnectionModal'
 import { FEISHU_MEETING_SCOPES } from '../../shared/feishu-meeting-contract'
 import { useEffect, useState } from 'react'
-import { CheckCircle, Link, OpenNewWindow, ShieldCheck, WarningTriangle } from 'iconoir-react'
+import { CheckCircle, Link, OpenNewWindow, ShieldCheck, WarningTriangle } from './components/cds-icons'
 import { ClientModal, DetailNote, DetailPage, DetailSectionHeader, DetailState, DetailSummaryPanel, SummaryCard, SummaryCardGrid } from './components/client-ui'
 import { FEISHU_REDIRECT_URI, type FeishuConnectionStatus } from '../../shared/connection-contract'
 import githubIcon from './assets/connections/github.svg'
@@ -212,13 +213,13 @@ function FeishuConnectionModal({ open, status, onClose, onStatusChange }: { open
     <div className="connection-modal">
       {connected && !upgrading ? <>
         <div className="connection-modal__hero is-connected"><CheckCircle aria-hidden /><div><h3>已连接飞书</h3><p>用户令牌有效；再次使用或检查状态时，客户端会按需自动刷新。</p></div></div>
-        <DetailNote icon={<ShieldCheck aria-hidden />}>会议能力：{meetingsReady ? '已授权。可创建会议并以你的身份发送邀请；发送前会展示确认。' : '未授权。文档读取仍可使用。'}</DetailNote>{!meetingsReady && <button type="button" className="button button--primary" onClick={() => { setEnableMeetings(true); setUpgrading(true); setRedirectConfigured(false) }}>开通会议能力</button>}
+        <DetailNote icon={<ShieldCheck aria-hidden />}>会议能力：{meetingsReady ? '已授权。可创建会议并以你的身份发送邀请；发送前会展示确认。' : '未授权。文档读取仍可使用。'}</DetailNote>{!meetingsReady && <CdsButton variant="primary" size="md" type="button" onClick={() => { setEnableMeetings(true); setUpgrading(true); setRedirectConfigured(false) }}>开通会议能力</CdsButton>}
         <dl className="connection-facts"><div><dt>App ID</dt><dd>{status.appId}</dd></div><div><dt>凭证存储</dt><dd>macOS 钥匙串</dd></div><div className="connection-facts__permissions"><dt>当前权限</dt><dd>{status.scopes.length ? <ul className="connection-permission-list">{status.scopes.map((scope) => <li key={scope} title={scope}>{feishuPermissionNames[scope] ?? scope}</li>)}</ul> : '由飞书授权结果决定'}</dd></div></dl>
         <DetailNote icon={<ShieldCheck aria-hidden />}>App Secret 与用户令牌不会返回 Renderer，也不会写入客户端配置文件。</DetailNote>
         <DetailNote icon={<ShieldCheck aria-hidden />}>执行飞书资料任务时，命中文档的纯文本会作为受控 ToolResult 交给该 Agent 当前配置的模型服务；仅连接或检查状态不会读取文档。</DetailNote>
         {confirmingDisconnect && <div className="connection-disconnect-confirm" role="alert"><WarningTriangle aria-hidden /><span>断开后将从本机钥匙串删除飞书凭证，恢复连接需要重新授权。</span></div>}
         {feedback && <p className="provider-feedback is-error" role="alert">{feedback}</p>}
-        <div className="connection-modal__actions">{confirmingDisconnect ? <><button type="button" className="button button--quiet" disabled={busy} onClick={() => setConfirmingDisconnect(false)}>取消</button><button type="button" className="button button--danger" disabled={busy} onClick={() => void disconnect()}>{busy ? '正在断开' : '确认断开'}</button></> : <button type="button" className="button button--quiet danger-action" onClick={() => setConfirmingDisconnect(true)}>断开连接</button>}</div>
+        <div className="connection-modal__actions">{confirmingDisconnect ? <><CdsButton variant="ghost" size="md" type="button" disabled={busy} onClick={() => setConfirmingDisconnect(false)}>取消</CdsButton><CdsButton variant="danger" size="md" isLoading={busy} type="button" disabled={busy} onClick={() => void disconnect()}>{busy ? '正在断开' : '确认断开'}</CdsButton></> : <CdsButton variant="danger" size="sm" type="button" onClick={() => setConfirmingDisconnect(true)}>断开连接</CdsButton>}</div>
       </> : <form onSubmit={(event) => { event.preventDefault(); void connect() }}>
         <div className="connection-modal__hero"><span className="connection-modal__logo"><img src={feishuIcon} alt="" /></span><div><h3>{upgrading ? '开通飞书会议' : status.state === 'reauthorization_required' ? '重新授权飞书' : '连接自建应用'}</h3><p>使用你的飞书身份连接。文档读取与会议邀请按所选范围申请授权。</p></div></div>
         <label className="connection-redirect-confirm"><input type="checkbox" checked={enableMeetings} disabled={busy} onChange={(event) => { setEnableMeetings(event.target.checked); setRedirectConfigured(false) }} /><span>开通会议：搜索组织内联系人、创建会议并以我的身份发送邀请</span></label>
@@ -239,7 +240,7 @@ function FeishuConnectionModal({ open, status, onClose, onStatusChange }: { open
           </li>
           <li className="connection-flow__content connection-setup-list">
             <code>{FEISHU_REDIRECT_URI}</code>
-            <button type="button" className="button button--quiet" disabled={busy || openingConsole || !validAppId} onClick={() => void openDeveloperConsole()}><OpenNewWindow aria-hidden />{openingConsole ? '正在打开' : '打开安全设置'}</button>
+            <CdsButton variant="secondary" size="sm" isLoading={openingConsole} type="button" disabled={busy || openingConsole || !validAppId} onClick={() => void openDeveloperConsole()} icon={<OpenNewWindow aria-hidden />}>{openingConsole ? '正在打开' : '打开安全设置'}</CdsButton>
             <label className="connection-redirect-confirm"><input type="checkbox" checked={redirectConfigured} disabled={busy} onChange={(event) => { setRedirectConfigured(event.target.checked); setFeedback(undefined) }} /><span>{enableMeetings ? '我已添加文档和会议所需权限、发布版本，并保存上述重定向 URL' : '我已添加三个只读权限、发布版本，并保存上述重定向 URL'}</span></label>
           </li>
           <li className="connection-flow__step">
@@ -253,7 +254,7 @@ function FeishuConnectionModal({ open, status, onClose, onStatusChange }: { open
         </div>
         <DetailNote icon={<ShieldCheck aria-hidden />}>{busy ? '正在等待浏览器回调。若浏览器仍显示错误码 20029，请取消授权，返回第 2 步检查地址。' : '客户端使用 OAuth state 校验一次性回调，并以 App Secret 完成令牌交换；关闭弹窗或点击取消会终止本次授权。'}</DetailNote>
         {feedback && <p className="provider-feedback is-error" role="alert">{feedback}</p>}
-        <div className="connection-modal__actions"><button type="button" className="button button--quiet" onClick={() => { if (busy) void cancelAuthorization(); else onClose() }}>{busy ? '取消授权' : '取消'}</button><button type="submit" className="button button--primary" disabled={busy || !readyToAuthorize}><OpenNewWindow aria-hidden />{busy ? '等待飞书授权' : '开始用户授权'}</button></div>
+        <div className="connection-modal__actions"><CdsButton variant="ghost" size="md" type="button" onClick={() => { if (busy) void cancelAuthorization(); else onClose() }}>{busy ? '取消授权' : '取消'}</CdsButton><CdsButton variant="primary" size="md" isLoading={busy} type="submit" disabled={busy || !readyToAuthorize} icon={<OpenNewWindow aria-hidden />}>{busy ? '等待飞书授权' : '开始用户授权'}</CdsButton></div>
       </form>}
     </div>
   </ClientModal>
@@ -284,7 +285,7 @@ export function ConnectionsCatalog({ teamsStatus = EMPTY_TEAMS_STATUS, teamsModa
               const isTeams = application.id === 'teams'
               const appState = isTeams ? { label: teamsStatus.state === 'connected' ? '已连接' : teamsStatus.state === 'error' ? '连接异常' : '未连接', tone: teamsStatus.state === 'connected' ? 'success' as const : teamsStatus.state === 'error' ? 'danger' as const : 'muted' as const } : isFeishu ? currentState : { label: '未连接', tone: 'muted' as const }
               return <div className={`recruitment-card connection-card${isFeishu || isTeams ? ' connection-card--available' : ''}`} role="listitem" key={application.id}>
-                <SummaryCard leading={<ApplicationLogo application={application} />} title={application.name} description={application.description} tone={(isFeishu && feishuStatus.state === 'connected') || (isTeams && teamsStatus.state === 'connected') ? 'success' : 'muted'} trailing={<div className="connection-card__trailing"><DetailState tone={appState.tone}>{appState.label}</DetailState>{isTeams && <button type="button" className="connection-card__action" disabled={loading} onClick={() => onTeamsModalOpenChange(true)}>{teamsStatus.state === 'connected' ? '管理' : '连接'}</button>}{isFeishu && <button type="button" className="connection-card__action" disabled={loading} onClick={() => onModalOpenChange(true)}>{feishuStatus.state === 'connected' ? '管理' : feishuStatus.state === 'reauthorization_required' ? '重新授权' : '连接'}</button>}</div>} />
+                <SummaryCard leading={<ApplicationLogo application={application} />} title={application.name} description={application.description} tone={(isFeishu && feishuStatus.state === 'connected') || (isTeams && teamsStatus.state === 'connected') ? 'success' : 'muted'} trailing={<div className="connection-card__trailing"><DetailState tone={appState.tone}>{appState.label}</DetailState>{isTeams && <CdsButton variant={teamsStatus.state === 'connected' ? 'secondary' : 'primary'} size="sm" type="button" className="connection-card__action" disabled={loading} onClick={() => onTeamsModalOpenChange(true)}>{teamsStatus.state === 'connected' ? '管理' : '连接'}</CdsButton>}{isFeishu && <CdsButton variant={feishuStatus.state === 'connected' ? 'secondary' : 'primary'} size="sm" type="button" className="connection-card__action" disabled={loading} onClick={() => onModalOpenChange(true)}>{feishuStatus.state === 'connected' ? '管理' : feishuStatus.state === 'reauthorization_required' ? '重新授权' : '连接'}</CdsButton>}</div>} />
               </div>
             })}
           </SummaryCardGrid>

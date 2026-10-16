@@ -1,0 +1,1196 @@
+{
+  "schemaVersion": 1,
+  "phase": "4A",
+  "recordedAt": "2026-10-15T06:25:38.506862+00:00",
+  "gates": {
+    "sdkDeepAgentsDependencyRemoval": "passed",
+    "historicalRunCompatibility": "passed",
+    "poeFixedContractCollaborationAndApproval": "passed",
+    "conversationalDeliveryReliability": "not_passed",
+    "phase4B": "not_started"
+  },
+  "scope": {
+    "provider": "poe",
+    "modelId": "claude-sonnet-4.6",
+    "sdkVersion": "0.20.0",
+    "runtimeAuthorityPreserved": [
+      "Task",
+      "RunGrant",
+      "Approval",
+      "ToolGateway",
+      "Delivery"
+    ],
+    "productionDatabaseUsed": false,
+    "installedClientReplaced": false,
+    "credentialChanged": false,
+    "legacyWorkerDeleted": false
+  },
+  "head": "1f1909d92f7eaf372993c7537390a101012929f9",
+  "sourceSha256": {
+    "src/runtime/handoff-validation.ts": "7752ac53f740a57044d56693661116f913e8f33c50078c33309034b6a8cfcb8e",
+    "src/runtime/handoff-validation.test.ts": "7d8266e0911e2af32d705c8209574b77e2a64a3fc476df329828f67814a504d6",
+    "src/runtime/task-service.ts": "880162cf01aa747c4a831152e6d83d1510113cc932cc6408080c00e701c5fa06",
+    "src/runtime/index.ts": "2f941cce17aeb28bf9001e7d5e3ab2da2be1959b7158799e7449e5bc8bf437f8",
+    "src/runtime/domain.ts": "64e3bfc6e5739ccb5152c1f12ad61ef6a0f428c29b36468a62e4e03b6f58fa99",
+    "src/main/bundled-runtime.ts": "77ebafef3831eda9a31341f948f235705e3501973030e4b7848d746e65f434ef",
+    "src/main/bundled-runtime.test.ts": "6aeae8f90329a88ca89f33017fb4d0843d47bacdd4b426d11bb17ee97ea1a5e3",
+    "spikes/deep-agents/formal_worker.py": "3f33a1b3dfab1ddd4d4e811a569a315d2ed3c8913b2ef352dca8583f1dfa7b3a"
+  },
+  "finalBuildSha256": {
+    "out/main/runtime/index.js": "37cf52995d3a2c711f43dd81bb30c8bd75df43dcf23c28fee1a9314418372edb",
+    "out/main/index.js": "1604638df61af321278bdd45ac153416295701d820e554f156a091a0a0e950a0",
+    "out/main/provider/index.js": "731a2e9d43698beae26c7cebe49dfed1a7f809729c2b3cc576bf728df1208aaf"
+  },
+  "deterministic": {
+    "files": 51,
+    "passed": 371,
+    "skipped": 3,
+    "failed": 0,
+    "report": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a/backend-test-results.json",
+    "reportSha256": "1342696ee4e67edcb38dbcf8b6942b1f7f0435d3c7d46b6849e31107d47d4679",
+    "typecheck": "passed",
+    "electronViteBuild": "passed"
+  },
+  "recovery": {
+    "report": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a/recovery/results.json",
+    "reportSha256": "f14ec42a50c4599a81325955d91ce767a65202cfb5cc4ffebf6c0536a1dad19b",
+    "cases": [
+      {
+        "name": "sdk-no-worker",
+        "executor": "openai-agents-team",
+        "worker": false,
+        "directory": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a/recovery/sdk-no-worker",
+        "runId": "6ab2c61c-22f1-4d4c-aca0-17901007ddf1",
+        "taskId": "88024026-0698-4521-9a90-7dbae236bb32",
+        "source": "deterministic fixture; no model call",
+        "runState": "running",
+        "requests": [
+          {
+            "requestId": "cdf37450-d90f-48da-bffe-38f2deeb9a1c",
+            "schema": "manager_review",
+            "typed": true
+          }
+        ],
+        "handoffCheckpointIds": [
+          "72b0925a-e436-4955-bb6f-fb31dc739a3c"
+        ],
+        "legacyCheckpointIds": [],
+        "legacyCheckpointFiles": [],
+        "stderr": [],
+        "passed": true
+      },
+      {
+        "name": "sdk-old-worker-checkpoint",
+        "executor": "openai-agents-team",
+        "worker": false,
+        "directory": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a/recovery/sdk-old-worker-checkpoint",
+        "runId": "a1a1fead-dd0c-463c-b981-48e76eb73610",
+        "taskId": "aaa25550-2193-422e-8367-18f8bc249d3b",
+        "source": "deterministic fixture; no model call",
+        "runState": "running",
+        "requests": [
+          {
+            "requestId": "223f3258-9b07-45b3-86ff-696fc8968eff",
+            "schema": "manager_review",
+            "typed": true
+          }
+        ],
+        "handoffCheckpointIds": [
+          "a5b6d8b7-9ce9-4a77-bff3-91ac90930901"
+        ],
+        "legacyCheckpointIds": [
+          "84e2aa6e-8c6d-41ae-bbef-6b659f0ffc64"
+        ],
+        "legacyCheckpointFiles": [],
+        "stderr": [],
+        "passed": true
+      },
+      {
+        "name": "sdk-v1-safe-shutdown",
+        "executor": "openai-agents",
+        "worker": false,
+        "directory": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a/recovery/sdk-v1-safe-shutdown",
+        "runId": "8ce4a998-36c8-41f3-bf2d-4c41b3c9e5ae",
+        "taskId": "4a4ad48f-41b1-42f0-a184-502a918c6dc7",
+        "source": "deterministic fixture; no model call",
+        "runState": "running",
+        "requests": [
+          {
+            "requestId": "0c63771f-91ec-4b34-89c5-c8ca2a7853ab",
+            "schema": "manager_review",
+            "typed": false
+          }
+        ],
+        "handoffCheckpointIds": [
+          "51e6d400-d694-49f6-a999-cfef5af84d45"
+        ],
+        "legacyCheckpointIds": [],
+        "legacyCheckpointFiles": [],
+        "stderr": [],
+        "passed": true
+      },
+      {
+        "name": "sdk-corrupt-hash",
+        "executor": "openai-agents-team",
+        "worker": false,
+        "failure": "handoff_integrity_failed",
+        "directory": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a/recovery/sdk-corrupt-hash",
+        "runId": "94cb8462-63b4-49f8-92d3-176a95d054e4",
+        "taskId": "9a56848a-c762-4e49-bf0f-c2c0f5d6ccfc",
+        "source": "deterministic fixture; no model call",
+        "runState": "failed",
+        "requests": [],
+        "handoffCheckpointIds": [],
+        "legacyCheckpointIds": [],
+        "legacyCheckpointFiles": [],
+        "stderr": [],
+        "passed": true
+      },
+      {
+        "name": "sdk-unauthorized-recipient",
+        "executor": "openai-agents-team",
+        "worker": false,
+        "failure": "handoff_recipient_not_authorized",
+        "directory": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a/recovery/sdk-unauthorized-recipient",
+        "runId": "cb2b8351-4102-4a85-aaea-f53bf335a9dc",
+        "taskId": "3282ef0c-b31d-4757-a53e-d3507c967ee6",
+        "source": "deterministic fixture; no model call",
+        "runState": "failed",
+        "requests": [],
+        "handoffCheckpointIds": [],
+        "legacyCheckpointIds": [],
+        "legacyCheckpointFiles": [],
+        "stderr": [],
+        "passed": true
+      },
+      {
+        "name": "sdk-missing-evidence",
+        "executor": "openai-agents-team",
+        "worker": false,
+        "failure": "handoff_evidence_not_found",
+        "directory": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a/recovery/sdk-missing-evidence",
+        "runId": "64efabd8-92db-4a90-acaa-202af6ec5100",
+        "taskId": "821c2d95-94e3-4157-ad0c-fd218a1beb65",
+        "source": "deterministic fixture; no model call",
+        "runState": "failed",
+        "requests": [],
+        "handoffCheckpointIds": [],
+        "legacyCheckpointIds": [],
+        "legacyCheckpointFiles": [],
+        "stderr": [],
+        "passed": true
+      },
+      {
+        "name": "legacy-real-worker",
+        "executor": "legacy",
+        "worker": true,
+        "directory": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a/recovery/legacy-real-worker",
+        "runId": "0fb38e22-5410-4b19-bd0f-a64daa85c385",
+        "taskId": "b3f338f3-20a1-4886-a9d0-eb6e086adc6b",
+        "source": "deterministic fixture; no model call",
+        "runState": "running",
+        "requests": [
+          {
+            "requestId": "973b1198-de75-4182-a3ae-165e1a2ef5ae",
+            "schema": "manager_review",
+            "typed": false
+          }
+        ],
+        "handoffCheckpointIds": [],
+        "legacyCheckpointIds": [
+          "4f6c403b-c4bb-4649-8ac1-2cffc3ab16af"
+        ],
+        "legacyCheckpointFiles": [
+          "0fb38e22-5410-4b19-bd0f-a64daa85c385.sqlite"
+        ],
+        "stderr": [],
+        "passed": true
+      },
+      {
+        "name": "legacy-missing-worker",
+        "executor": "legacy",
+        "worker": false,
+        "failure": "missing_worker_python",
+        "directory": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a/recovery/legacy-missing-worker",
+        "runId": "6d01b5fa-2be4-43ee-b004-65476636b817",
+        "taskId": "0f89a845-c835-4e99-a860-f78da46dc151",
+        "source": "deterministic fixture; no model call",
+        "runState": "failed",
+        "requests": [],
+        "handoffCheckpointIds": [],
+        "legacyCheckpointIds": [],
+        "legacyCheckpointFiles": [],
+        "stderr": [],
+        "passed": true
+      }
+    ]
+  },
+  "liveSuites": [
+    {
+      "name": "live",
+      "buildScope": "pre-final edge-case fixes; initial four-case pass",
+      "report": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a/live/live-results.json",
+      "reportSha256": "34c88f28736b8d9e8c563d8bf3e6c6f20dee4214a81c6dc3c8d61000d5a2d93f",
+      "status": "passed",
+      "harnessFailure": null,
+      "deepAgentsArgumentsProvided": false,
+      "deepAgentsCheckpointDirectoryCreated": false,
+      "cases": [
+        {
+          "name": "supervisor-route-two-employees",
+          "taskId": "e8d7b8db-7d07-4946-9638-ead3be4d1a2c",
+          "runId": "7d0dcfca-0c06-44b4-9bf7-aa7d240ad67b",
+          "executor": "openai-agents-ts-v2",
+          "taskState": "succeeded",
+          "deliveryId": "c160ab24-b80c-4bbe-a54b-95da87a6827d",
+          "sdkModelCalls": 13,
+          "legacyCalls": 0,
+          "assignments": [
+            {
+              "id": "3bd336d9-a3fa-4542-95d2-9880f73a3b41",
+              "employeeVersionId": "version.live-team-reader",
+              "state": "succeeded",
+              "reworkOfAssignmentId": null
+            },
+            {
+              "id": "1ec4f53e-6917-40d3-93be-950dcfaf1926",
+              "employeeVersionId": "version.live-team-writer",
+              "state": "succeeded",
+              "reworkOfAssignmentId": null
+            }
+          ],
+          "handoffValidations": [
+            {
+              "checkpointId": "da2a4cd6-263b-45f2-821d-f92584e01c95",
+              "assignmentId": "1ec4f53e-6917-40d3-93be-950dcfaf1926",
+              "validation": {
+                "schemaVersion": 1,
+                "validator": "runtime-handoff-v1",
+                "executor": "openai-agents-ts-v2",
+                "runId": "7d0dcfca-0c06-44b4-9bf7-aa7d240ad67b",
+                "taskRevisionId": "6d45b83c-99cf-4a4e-aaf9-b99d49a5c595",
+                "runGrantId": "fcfe5d85-310c-43cc-9821-e08ce4761d0b",
+                "bindingSha256": "c118ed81939b1144f46e110732aee3d12034209af3b3cce8e86174fe0d265fe8",
+                "allowedToolVersionIds": [
+                  "document.create@local-document/v1",
+                  "document.edit@local-document/v1",
+                  "document.read@local-document/v1",
+                  "tender.requirements.extract@document-analysis/v1"
+                ],
+                "assignments": [
+                  {
+                    "id": "3bd336d9-a3fa-4542-95d2-9880f73a3b41",
+                    "employeeVersionId": "version.live-team-reader",
+                    "sequence": 1,
+                    "outputSha256": "8f62f8ff8b047ec40abd7c359af03bc62e4b261cec753c257c3f18e5fb7aeb9d"
+                  },
+                  {
+                    "id": "1ec4f53e-6917-40d3-93be-950dcfaf1926",
+                    "employeeVersionId": "version.live-team-writer",
+                    "sequence": 2,
+                    "outputSha256": "ccc27dd72a341ab5a998b4b75fbcc8ad528d7c47cb587d67385937fcaad934fd"
+                  }
+                ],
+                "handoffs": [
+                  {
+                    "id": "243ec442-f2e4-4c69-9e28-ed3633f56756",
+                    "assignmentId": "3bd336d9-a3fa-4542-95d2-9880f73a3b41",
+                    "sha256": "6007e5a33b1c8dc5cb6fa5dec39739aa3772b86f60dc06f1d19c3f32a12e8012"
+                  },
+                  {
+                    "id": "59bd631d-b66d-49e4-b272-e8bddefef381",
+                    "assignmentId": "1ec4f53e-6917-40d3-93be-950dcfaf1926",
+                    "sha256": "e46f0b2b0fc042bf078aa41c76e9ee1dd56844032bdb142729b24ec122303462"
+                  }
+                ],
+                "toolActions": [
+                  {
+                    "id": "b196b7f2-38a7-48e6-a4e0-fda2ef81474d",
+                    "sha256": "703c9e3f370bea707d6665ef379a2a4e83f32b15d1f7db5f588b315e50d1e3af"
+                  },
+                  {
+                    "id": "e2443bae-68c6-4206-85af-cd5e5db5ec7a",
+                    "sha256": "fffc4c1e1c6cf2ee8b8c8bb6f7fb55b453da408c0febc0e66361a18c557a56c2"
+                  },
+                  {
+                    "id": "4a9b6bf2-e30b-4424-b209-574c0fa41e06",
+                    "sha256": "03d998f94bc119ee8a67790e9b6bbacf9f8d6efe802201d613019f38cd9c147d"
+                  }
+                ],
+                "sha256": "5e1c5bcd39a61887d20c9a6e6141f245faafd8f57677b94c1477b1571b9d06fa"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "id": "b196b7f2-38a7-48e6-a4e0-fda2ef81474d",
+              "toolVersionId": "tender.requirements.extract@document-analysis/v1",
+              "state": "succeeded",
+              "resultVerified": true
+            },
+            {
+              "id": "e2443bae-68c6-4206-85af-cd5e5db5ec7a",
+              "toolVersionId": "document.create@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true
+            },
+            {
+              "id": "4a9b6bf2-e30b-4424-b209-574c0fa41e06",
+              "toolVersionId": "document.read@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true
+            }
+          ],
+          "actualRunReceiptCount": 12,
+          "actualRunTokens": 37297,
+          "currencyCostVerified": false,
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a/live/fixtures/team-marker.md",
+            "sha256": "4d5563267f51c1b6f514579f62f4e0ace0244a2729b1ed90cc38f1c36c4de95d",
+            "size": 95
+          }
+        },
+        {
+          "name": "approval-sigkill-resume",
+          "taskId": "f32d1a13-fcca-42c5-90db-44390a346e9c",
+          "runId": "1185aacb-075f-4d9c-8e0a-f14cf62f3128",
+          "executor": "openai-agents-ts-v2",
+          "taskState": "succeeded",
+          "deliveryId": "e730ada1-6834-4ee3-b18c-00578d737500",
+          "sdkModelCalls": 7,
+          "legacyCalls": 0,
+          "assignments": [
+            {
+              "id": "4447a44a-07d6-47ef-a981-b3d35acfb2db",
+              "employeeVersionId": "version.live-team-writer",
+              "state": "succeeded",
+              "reworkOfAssignmentId": null
+            }
+          ],
+          "handoffValidations": [
+            {
+              "checkpointId": "f041d837-c039-483e-9a11-97d8b69a13b0",
+              "assignmentId": "4447a44a-07d6-47ef-a981-b3d35acfb2db",
+              "validation": {
+                "schemaVersion": 1,
+                "validator": "runtime-handoff-v1",
+                "executor": "openai-agents-ts-v2",
+                "runId": "1185aacb-075f-4d9c-8e0a-f14cf62f3128",
+                "taskRevisionId": "853d2a6b-3ec2-44f7-82e0-9e9ce6b21135",
+                "runGrantId": "804494dc-172d-45cd-a3db-64d2e8f0a67f",
+                "bindingSha256": "d09db291a30599c1b40ce4dcacd114a1791d7565b90d932c8b6f0450c58f8ddb",
+                "allowedToolVersionIds": [
+                  "document.create@local-document/v1",
+                  "document.edit@local-document/v1",
+                  "document.read@local-document/v1"
+                ],
+                "assignments": [
+                  {
+                    "id": "4447a44a-07d6-47ef-a981-b3d35acfb2db",
+                    "employeeVersionId": "version.live-team-writer",
+                    "sequence": 1,
+                    "outputSha256": "cbe4f6738803c101b9ac699433d146bfa6152d89d8060c37c6925853096206dd"
+                  }
+                ],
+                "handoffs": [
+                  {
+                    "id": "84e1c9d7-2fd2-41ff-a2ae-6f09bde5f8a7",
+                    "assignmentId": "4447a44a-07d6-47ef-a981-b3d35acfb2db",
+                    "sha256": "980bf99b5cf115af8d8a4c627f2bfcd3504a101f5ee0091293743c6274f5ea9a"
+                  }
+                ],
+                "toolActions": [
+                  {
+                    "id": "1950288b-128c-49be-86f3-7a3af22f2fe3",
+                    "sha256": "8b3421dd7000103f777c6a4b0250bfc2e7464a861f16ec0d5d8bb4d7e7ac15f6"
+                  },
+                  {
+                    "id": "4f49d053-fcda-45e3-86d4-cb5f10ae9549",
+                    "sha256": "a7a38e7beb55b914be843518061dd7c0ca5e4464fa09e4d671fadfc3b2bdea57"
+                  }
+                ],
+                "sha256": "6c0f6d9577c15267288d692c4894471d5615d2e8a97868f1e6ef46b2b38e3c59"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "id": "1950288b-128c-49be-86f3-7a3af22f2fe3",
+              "toolVersionId": "document.create@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true
+            },
+            {
+              "id": "4f49d053-fcda-45e3-86d4-cb5f10ae9549",
+              "toolVersionId": "document.read@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true
+            }
+          ],
+          "actualRunReceiptCount": 7,
+          "actualRunTokens": 22143,
+          "currencyCostVerified": false,
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a/live/fixtures/approval-marker.md",
+            "sha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8",
+            "size": 12
+          },
+          "approvalId": "a4835cfd-5dcf-415d-8a33-1eed3b83825a",
+          "sdkCheckpointId": "73a914dc-abb9-43a4-8338-0f8634965cab",
+          "noCallsWhileWaiting": true,
+          "waitingModelCalls": 0,
+          "grantUnchanged": true
+        },
+        {
+          "name": "approval-rejected-no-write",
+          "taskId": "690da4bf-1781-4523-86e5-5efd0ce1f593",
+          "runId": "0637b420-c398-417b-b0d5-faf75226b5e1",
+          "executor": "openai-agents-ts-v2",
+          "taskState": "failed",
+          "deliveryId": null,
+          "sdkModelCalls": 4,
+          "legacyCalls": 0,
+          "assignments": [
+            {
+              "id": "0b751698-ff61-46f2-a872-833a4c12832c",
+              "employeeVersionId": "version.live-team-writer",
+              "state": "running",
+              "reworkOfAssignmentId": null
+            }
+          ],
+          "handoffValidations": [],
+          "tools": [
+            {
+              "id": "8f3562f7-38a5-4be7-a7f7-887b95eae641",
+              "toolVersionId": "document.create@local-document/v1",
+              "state": "blocked",
+              "resultVerified": false
+            }
+          ],
+          "actualRunReceiptCount": 4,
+          "actualRunTokens": 8233,
+          "currencyCostVerified": false,
+          "fileAbsent": true,
+          "nativeStatus": "rejected"
+        },
+        {
+          "name": "cancel-before-downstream",
+          "taskId": "8d7c7b83-ea6b-4945-84fa-df0d8f22f6ec",
+          "runId": "9d180305-7921-434c-ad6e-1479be34440a",
+          "executor": "openai-agents-ts-v2",
+          "taskState": "failed",
+          "deliveryId": null,
+          "sdkModelCalls": 2,
+          "legacyCalls": 0,
+          "assignments": [
+            {
+              "id": "561c5b25-ffeb-4e5f-ba59-a8f5e26544f1",
+              "employeeVersionId": "version.live-team-reader",
+              "state": "running",
+              "reworkOfAssignmentId": null
+            },
+            {
+              "id": "cd3e61f0-652b-4710-8084-b80293db0f3f",
+              "employeeVersionId": "version.live-team-writer",
+              "state": "pending",
+              "reworkOfAssignmentId": null
+            }
+          ],
+          "handoffValidations": [],
+          "tools": [],
+          "actualRunReceiptCount": 1,
+          "actualRunTokens": 1582,
+          "currencyCostVerified": false
+        }
+      ]
+    },
+    {
+      "name": "final-live",
+      "buildScope": "final build; conversational route failure retained",
+      "report": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a/final-live/live-results.json",
+      "reportSha256": "67cadd8dacb86b4dcaf918db09eedc63e39001a1084e2fc434b53e8be05febf8",
+      "status": "failed",
+      "harnessFailure": "frozen_group_routing_failed",
+      "deepAgentsArgumentsProvided": false,
+      "deepAgentsCheckpointDirectoryCreated": false,
+      "cases": [
+        {
+          "name": "supervisor-route-two-employees",
+          "taskId": "cb9aa725-fd5c-42f2-be8a-d17b5ccfa6cc",
+          "runId": "9fcdc2ae-70eb-40b9-9139-79fdec2126f1",
+          "executor": "openai-agents-ts-v2",
+          "taskState": "failed",
+          "deliveryId": null,
+          "sdkModelCalls": 39,
+          "legacyCalls": 0,
+          "assignments": [
+            {
+              "id": "f44f3fe7-db26-4f11-bc45-7c5332e4a4d3",
+              "employeeVersionId": "version.live-team-reader",
+              "state": "succeeded",
+              "reworkOfAssignmentId": null
+            },
+            {
+              "id": "9bfb52bb-678d-4b13-97c8-7fa1f400e9aa",
+              "employeeVersionId": "version.live-team-writer",
+              "state": "succeeded",
+              "reworkOfAssignmentId": null
+            },
+            {
+              "id": "9d992d4c-99bb-4574-9696-f1630acdd759",
+              "employeeVersionId": "version.live-team-writer",
+              "state": "succeeded",
+              "reworkOfAssignmentId": "9bfb52bb-678d-4b13-97c8-7fa1f400e9aa"
+            },
+            {
+              "id": "da3eebd1-63f4-472d-9912-fa5f049e12f4",
+              "employeeVersionId": "version.live-team-writer",
+              "state": "succeeded",
+              "reworkOfAssignmentId": "9bfb52bb-678d-4b13-97c8-7fa1f400e9aa"
+            }
+          ],
+          "handoffValidations": [
+            {
+              "checkpointId": "2f8bef75-792b-402c-9a8d-b1324eefc70f",
+              "assignmentId": "9bfb52bb-678d-4b13-97c8-7fa1f400e9aa",
+              "validation": {
+                "schemaVersion": 1,
+                "validator": "runtime-handoff-v1",
+                "executor": "openai-agents-ts-v2",
+                "runId": "9fcdc2ae-70eb-40b9-9139-79fdec2126f1",
+                "taskRevisionId": "1753f7a7-c29a-4093-b7e0-9b52b330992e",
+                "runGrantId": "0b30c504-b75e-410d-8800-4a9ca569eb1f",
+                "bindingSha256": "7c2b34e4735fd9bcd3025e42c0409f174131b76e2ab1d50805bbcb05fc1d70c0",
+                "allowedToolVersionIds": [
+                  "document.create@local-document/v1",
+                  "document.edit@local-document/v1",
+                  "document.read@local-document/v1",
+                  "tender.requirements.extract@document-analysis/v1"
+                ],
+                "assignments": [
+                  {
+                    "id": "f44f3fe7-db26-4f11-bc45-7c5332e4a4d3",
+                    "employeeVersionId": "version.live-team-reader",
+                    "sequence": 1,
+                    "outputSha256": "9b86c5868589ea695d566fa98597c8205a085f530817c34120ed5bc156de6e9a"
+                  },
+                  {
+                    "id": "9bfb52bb-678d-4b13-97c8-7fa1f400e9aa",
+                    "employeeVersionId": "version.live-team-writer",
+                    "sequence": 2,
+                    "outputSha256": "8ab3fcea89e154004a84d9c3db449228b063d5944e602442f461f846b43afb82"
+                  }
+                ],
+                "handoffs": [
+                  {
+                    "id": "87c0db19-cd65-4e61-9a06-96a5b6af475a",
+                    "assignmentId": "f44f3fe7-db26-4f11-bc45-7c5332e4a4d3",
+                    "sha256": "07fc21b9fc8cb381fc69f25af49e1933ceb6d4a94121e425dda995d47b354403"
+                  },
+                  {
+                    "id": "f706ab94-7c05-4892-b12e-5d2edce2f517",
+                    "assignmentId": "9bfb52bb-678d-4b13-97c8-7fa1f400e9aa",
+                    "sha256": "196aa1ce3ea4db42c461933fa3a0c07c66965446dd1eff3b8767a70eb3b661b7"
+                  }
+                ],
+                "toolActions": [
+                  {
+                    "id": "fedb9b57-573f-4426-b96e-8d2a212dc866",
+                    "sha256": "6d213763ad0b41125e1048e14e83c5193bb013199173d44653b6c7d95ffa29ed"
+                  },
+                  {
+                    "id": "78c45359-ff0a-4895-96aa-d104036310ca",
+                    "sha256": "49f8a06122071358e3d8cebf2adaef22ab6e2f7174c0cae8de113cdc116c75f2"
+                  },
+                  {
+                    "id": "15c49630-5efa-4b6b-9988-c6dc0ac0036b",
+                    "sha256": "6d76b229d2ec71fa43015027c5f916705fdb7610bd052f64810af644c355c15d"
+                  }
+                ],
+                "sha256": "5bc7365a51812939662cbfe5921d3da6a4622f72c5b7be0ef40e2e9f3cfb8f3f"
+              }
+            },
+            {
+              "checkpointId": "d1f786cd-1b50-4e42-bb82-e937dfdc39db",
+              "assignmentId": "9d992d4c-99bb-4574-9696-f1630acdd759",
+              "validation": {
+                "schemaVersion": 1,
+                "validator": "runtime-handoff-v1",
+                "executor": "openai-agents-ts-v2",
+                "runId": "9fcdc2ae-70eb-40b9-9139-79fdec2126f1",
+                "taskRevisionId": "1753f7a7-c29a-4093-b7e0-9b52b330992e",
+                "runGrantId": "0b30c504-b75e-410d-8800-4a9ca569eb1f",
+                "bindingSha256": "7c2b34e4735fd9bcd3025e42c0409f174131b76e2ab1d50805bbcb05fc1d70c0",
+                "allowedToolVersionIds": [
+                  "document.create@local-document/v1",
+                  "document.edit@local-document/v1",
+                  "document.read@local-document/v1",
+                  "tender.requirements.extract@document-analysis/v1"
+                ],
+                "assignments": [
+                  {
+                    "id": "f44f3fe7-db26-4f11-bc45-7c5332e4a4d3",
+                    "employeeVersionId": "version.live-team-reader",
+                    "sequence": 1,
+                    "outputSha256": "9b86c5868589ea695d566fa98597c8205a085f530817c34120ed5bc156de6e9a"
+                  },
+                  {
+                    "id": "9bfb52bb-678d-4b13-97c8-7fa1f400e9aa",
+                    "employeeVersionId": "version.live-team-writer",
+                    "sequence": 2,
+                    "outputSha256": "8ab3fcea89e154004a84d9c3db449228b063d5944e602442f461f846b43afb82"
+                  },
+                  {
+                    "id": "9d992d4c-99bb-4574-9696-f1630acdd759",
+                    "employeeVersionId": "version.live-team-writer",
+                    "sequence": 3,
+                    "reworkOfAssignmentId": "9bfb52bb-678d-4b13-97c8-7fa1f400e9aa",
+                    "outputSha256": "1ab8a9477aa8e43e9b9f0627e182f86b24aada38b6aad066af2a8cf1f0e208a8"
+                  }
+                ],
+                "handoffs": [
+                  {
+                    "id": "87c0db19-cd65-4e61-9a06-96a5b6af475a",
+                    "assignmentId": "f44f3fe7-db26-4f11-bc45-7c5332e4a4d3",
+                    "sha256": "07fc21b9fc8cb381fc69f25af49e1933ceb6d4a94121e425dda995d47b354403"
+                  },
+                  {
+                    "id": "f706ab94-7c05-4892-b12e-5d2edce2f517",
+                    "assignmentId": "9bfb52bb-678d-4b13-97c8-7fa1f400e9aa",
+                    "sha256": "196aa1ce3ea4db42c461933fa3a0c07c66965446dd1eff3b8767a70eb3b661b7"
+                  },
+                  {
+                    "id": "26209237-8d27-4e8f-9258-3b5104a1c3f7",
+                    "assignmentId": "9d992d4c-99bb-4574-9696-f1630acdd759",
+                    "sha256": "f1e886c7de2fc548bc17286cf8bfd2bed8dd449cab2762e7d8d3a0aee9827585"
+                  }
+                ],
+                "toolActions": [
+                  {
+                    "id": "fedb9b57-573f-4426-b96e-8d2a212dc866",
+                    "sha256": "6d213763ad0b41125e1048e14e83c5193bb013199173d44653b6c7d95ffa29ed"
+                  },
+                  {
+                    "id": "78c45359-ff0a-4895-96aa-d104036310ca",
+                    "sha256": "49f8a06122071358e3d8cebf2adaef22ab6e2f7174c0cae8de113cdc116c75f2"
+                  },
+                  {
+                    "id": "15c49630-5efa-4b6b-9988-c6dc0ac0036b",
+                    "sha256": "6d76b229d2ec71fa43015027c5f916705fdb7610bd052f64810af644c355c15d"
+                  },
+                  {
+                    "id": "a2e19128-2871-4948-b409-3a1c79d6d85c",
+                    "sha256": "87b41449621dbd5d946e0f92108b4f583bedd8ecf2dc879783f54e587caafa10"
+                  },
+                  {
+                    "id": "00a7f1e9-d8f2-471f-be1d-cdd9130bf931",
+                    "sha256": "e2fffa9ebd7f73e0380a2f1d78aa344c9cc76aed5fa819b23892b3f8f37eac8b"
+                  },
+                  {
+                    "id": "123ad945-096b-441f-8779-f63058dd3ec6",
+                    "sha256": "c501636a7e460a7ccd2d1bea6597af4784992c95fad03273128cbb614a651208"
+                  },
+                  {
+                    "id": "fb16a3da-882d-4595-81e5-e00461437718",
+                    "sha256": "bd1cdde28132b00e760f99357c727e8d67eac623d7bb65d54086edf1aa19c227"
+                  }
+                ],
+                "sha256": "50492b4286dfd2466f54664aa7245ea789b66068a822e6299979e84cfc07a9c7"
+              }
+            },
+            {
+              "checkpointId": "c6459d71-6d5f-4fb2-ad9b-c07d25525047",
+              "assignmentId": "da3eebd1-63f4-472d-9912-fa5f049e12f4",
+              "validation": {
+                "schemaVersion": 1,
+                "validator": "runtime-handoff-v1",
+                "executor": "openai-agents-ts-v2",
+                "runId": "9fcdc2ae-70eb-40b9-9139-79fdec2126f1",
+                "taskRevisionId": "1753f7a7-c29a-4093-b7e0-9b52b330992e",
+                "runGrantId": "0b30c504-b75e-410d-8800-4a9ca569eb1f",
+                "bindingSha256": "7c2b34e4735fd9bcd3025e42c0409f174131b76e2ab1d50805bbcb05fc1d70c0",
+                "allowedToolVersionIds": [
+                  "document.create@local-document/v1",
+                  "document.edit@local-document/v1",
+                  "document.read@local-document/v1",
+                  "tender.requirements.extract@document-analysis/v1"
+                ],
+                "assignments": [
+                  {
+                    "id": "f44f3fe7-db26-4f11-bc45-7c5332e4a4d3",
+                    "employeeVersionId": "version.live-team-reader",
+                    "sequence": 1,
+                    "outputSha256": "9b86c5868589ea695d566fa98597c8205a085f530817c34120ed5bc156de6e9a"
+                  },
+                  {
+                    "id": "9bfb52bb-678d-4b13-97c8-7fa1f400e9aa",
+                    "employeeVersionId": "version.live-team-writer",
+                    "sequence": 2,
+                    "outputSha256": "8ab3fcea89e154004a84d9c3db449228b063d5944e602442f461f846b43afb82"
+                  },
+                  {
+                    "id": "9d992d4c-99bb-4574-9696-f1630acdd759",
+                    "employeeVersionId": "version.live-team-writer",
+                    "sequence": 3,
+                    "reworkOfAssignmentId": "9bfb52bb-678d-4b13-97c8-7fa1f400e9aa",
+                    "outputSha256": "1ab8a9477aa8e43e9b9f0627e182f86b24aada38b6aad066af2a8cf1f0e208a8"
+                  },
+                  {
+                    "id": "da3eebd1-63f4-472d-9912-fa5f049e12f4",
+                    "employeeVersionId": "version.live-team-writer",
+                    "sequence": 4,
+                    "reworkOfAssignmentId": "9bfb52bb-678d-4b13-97c8-7fa1f400e9aa",
+                    "outputSha256": "7627f580f711117f599b24a235a1721a182852751ea625b5416ff03a63f60730"
+                  }
+                ],
+                "handoffs": [
+                  {
+                    "id": "87c0db19-cd65-4e61-9a06-96a5b6af475a",
+                    "assignmentId": "f44f3fe7-db26-4f11-bc45-7c5332e4a4d3",
+                    "sha256": "07fc21b9fc8cb381fc69f25af49e1933ceb6d4a94121e425dda995d47b354403"
+                  },
+                  {
+                    "id": "f706ab94-7c05-4892-b12e-5d2edce2f517",
+                    "assignmentId": "9bfb52bb-678d-4b13-97c8-7fa1f400e9aa",
+                    "sha256": "196aa1ce3ea4db42c461933fa3a0c07c66965446dd1eff3b8767a70eb3b661b7"
+                  },
+                  {
+                    "id": "26209237-8d27-4e8f-9258-3b5104a1c3f7",
+                    "assignmentId": "9d992d4c-99bb-4574-9696-f1630acdd759",
+                    "sha256": "f1e886c7de2fc548bc17286cf8bfd2bed8dd449cab2762e7d8d3a0aee9827585"
+                  },
+                  {
+                    "id": "bd16bf39-00c9-44cf-8fd6-3516f339057d",
+                    "assignmentId": "da3eebd1-63f4-472d-9912-fa5f049e12f4",
+                    "sha256": "0fed30a02041643645b1b4a18095c3688cb24786fbf11defef3049c2813a47d8"
+                  }
+                ],
+                "toolActions": [
+                  {
+                    "id": "fedb9b57-573f-4426-b96e-8d2a212dc866",
+                    "sha256": "6d213763ad0b41125e1048e14e83c5193bb013199173d44653b6c7d95ffa29ed"
+                  },
+                  {
+                    "id": "78c45359-ff0a-4895-96aa-d104036310ca",
+                    "sha256": "49f8a06122071358e3d8cebf2adaef22ab6e2f7174c0cae8de113cdc116c75f2"
+                  },
+                  {
+                    "id": "15c49630-5efa-4b6b-9988-c6dc0ac0036b",
+                    "sha256": "6d76b229d2ec71fa43015027c5f916705fdb7610bd052f64810af644c355c15d"
+                  },
+                  {
+                    "id": "a2e19128-2871-4948-b409-3a1c79d6d85c",
+                    "sha256": "87b41449621dbd5d946e0f92108b4f583bedd8ecf2dc879783f54e587caafa10"
+                  },
+                  {
+                    "id": "00a7f1e9-d8f2-471f-be1d-cdd9130bf931",
+                    "sha256": "e2fffa9ebd7f73e0380a2f1d78aa344c9cc76aed5fa819b23892b3f8f37eac8b"
+                  },
+                  {
+                    "id": "123ad945-096b-441f-8779-f63058dd3ec6",
+                    "sha256": "c501636a7e460a7ccd2d1bea6597af4784992c95fad03273128cbb614a651208"
+                  },
+                  {
+                    "id": "fb16a3da-882d-4595-81e5-e00461437718",
+                    "sha256": "bd1cdde28132b00e760f99357c727e8d67eac623d7bb65d54086edf1aa19c227"
+                  },
+                  {
+                    "id": "bc8b4837-1e43-49e2-9528-33d5d93b9102",
+                    "sha256": "22f09906324caad2021bd5542aef66e3245d9a023e9b39deb095e62867235e92"
+                  },
+                  {
+                    "id": "d9824b93-e6c4-4778-9f30-5999b5ee0565",
+                    "sha256": "add7f4107b2235da0d11f64039ea1d10aa335bc6ecca8ff478e549011cb8cb77"
+                  },
+                  {
+                    "id": "75a72caf-6001-4e07-81bb-b5f4889cc852",
+                    "sha256": "ec9911b0cfeadb0ca75291ad305fe91895c76db3c3a8830ffdbe186e21528ae4"
+                  },
+                  {
+                    "id": "b7ce1d5d-f539-4360-b680-eb059f4f9fd6",
+                    "sha256": "7c32a537b4590046bc59d7083434e630f9c26e36552ef8fcc9048f6b18c1839c"
+                  }
+                ],
+                "sha256": "d8074b9e3f25f530a79482f67e45dfc8cb1af892a008e188dff0e67c8611b470"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "id": "fedb9b57-573f-4426-b96e-8d2a212dc866",
+              "toolVersionId": "tender.requirements.extract@document-analysis/v1",
+              "state": "succeeded",
+              "resultVerified": true
+            },
+            {
+              "id": "78c45359-ff0a-4895-96aa-d104036310ca",
+              "toolVersionId": "document.create@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true
+            },
+            {
+              "id": "15c49630-5efa-4b6b-9988-c6dc0ac0036b",
+              "toolVersionId": "document.read@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true
+            },
+            {
+              "id": "a2e19128-2871-4948-b409-3a1c79d6d85c",
+              "toolVersionId": "document.create@local-document/v1",
+              "state": "failed",
+              "resultVerified": true
+            },
+            {
+              "id": "00a7f1e9-d8f2-471f-be1d-cdd9130bf931",
+              "toolVersionId": "document.read@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true
+            },
+            {
+              "id": "123ad945-096b-441f-8779-f63058dd3ec6",
+              "toolVersionId": "document.edit@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true
+            },
+            {
+              "id": "fb16a3da-882d-4595-81e5-e00461437718",
+              "toolVersionId": "document.read@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true
+            },
+            {
+              "id": "bc8b4837-1e43-49e2-9528-33d5d93b9102",
+              "toolVersionId": "document.create@local-document/v1",
+              "state": "failed",
+              "resultVerified": true
+            },
+            {
+              "id": "d9824b93-e6c4-4778-9f30-5999b5ee0565",
+              "toolVersionId": "document.read@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true
+            },
+            {
+              "id": "75a72caf-6001-4e07-81bb-b5f4889cc852",
+              "toolVersionId": "document.edit@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true
+            },
+            {
+              "id": "b7ce1d5d-f539-4360-b680-eb059f4f9fd6",
+              "toolVersionId": "document.read@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true
+            }
+          ],
+          "actualRunReceiptCount": 38,
+          "actualRunTokens": 173901,
+          "currencyCostVerified": false
+        }
+      ]
+    },
+    {
+      "name": "final-core",
+      "buildScope": "final build; frozen task contract plus approvals",
+      "report": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a/final-core/live-results.json",
+      "reportSha256": "eb0a91e3cea914ff6726fe3cdc4bfb44e60e68de075b481be5d4393737ecf667",
+      "status": "passed",
+      "harnessFailure": null,
+      "deepAgentsArgumentsProvided": false,
+      "deepAgentsCheckpointDirectoryCreated": false,
+      "cases": [
+        {
+          "name": "fixed-contract-two-employees",
+          "taskId": "b2245966-54d7-487d-9a37-32ac71a022e7",
+          "runId": "bc1d6ec6-0c39-457c-975a-0887ab67057e",
+          "executor": "openai-agents-ts-v2",
+          "taskState": "succeeded",
+          "deliveryId": "2ebd55e8-55db-4ed6-8418-0fb6ad9a942c",
+          "sdkModelCalls": 12,
+          "legacyCalls": 0,
+          "assignments": [
+            {
+              "id": "821e4d42-a7da-468e-aac0-85cadfa4026a",
+              "employeeVersionId": "version.live-team-reader",
+              "state": "succeeded",
+              "reworkOfAssignmentId": null
+            },
+            {
+              "id": "e9d85ebe-6426-4cc0-bb48-2aca7ac4ac59",
+              "employeeVersionId": "version.live-team-writer",
+              "state": "succeeded",
+              "reworkOfAssignmentId": null
+            }
+          ],
+          "handoffValidations": [
+            {
+              "checkpointId": "8e08dd8d-4986-44a1-99b6-c8d5b8565493",
+              "assignmentId": "e9d85ebe-6426-4cc0-bb48-2aca7ac4ac59",
+              "validation": {
+                "schemaVersion": 1,
+                "validator": "runtime-handoff-v1",
+                "executor": "openai-agents-ts-v2",
+                "runId": "bc1d6ec6-0c39-457c-975a-0887ab67057e",
+                "taskRevisionId": "96d9a196-1576-4b91-8405-b063eb7b6de1",
+                "runGrantId": "9a47608b-517d-483f-b177-27306477e029",
+                "bindingSha256": "e039d7900bb16560f9f77f1cdf0ac2f942b3712aac92edd7611fff6eba377429",
+                "allowedToolVersionIds": [
+                  "document.create@local-document/v1",
+                  "document.edit@local-document/v1",
+                  "document.read@local-document/v1",
+                  "tender.requirements.extract@document-analysis/v1"
+                ],
+                "assignments": [
+                  {
+                    "id": "821e4d42-a7da-468e-aac0-85cadfa4026a",
+                    "employeeVersionId": "version.live-team-reader",
+                    "sequence": 1,
+                    "outputSha256": "45ff05202909ad37918ba0a571907056ff49a96fef0aa0ffc71beb967f932fae"
+                  },
+                  {
+                    "id": "e9d85ebe-6426-4cc0-bb48-2aca7ac4ac59",
+                    "employeeVersionId": "version.live-team-writer",
+                    "sequence": 2,
+                    "outputSha256": "8f58c30f028137443675690016d29b2100c452e12d187032d4b3c167a8c54532"
+                  }
+                ],
+                "handoffs": [
+                  {
+                    "id": "a3d273ee-5eab-42a8-ad19-44e2e59dddea",
+                    "assignmentId": "821e4d42-a7da-468e-aac0-85cadfa4026a",
+                    "sha256": "60658a5eab41744af9b57f9582cdd8f9728664e7cca19d23b4671aa7524eec48"
+                  },
+                  {
+                    "id": "14f2ebb6-17e0-40ad-992a-4075b8dbdfb8",
+                    "assignmentId": "e9d85ebe-6426-4cc0-bb48-2aca7ac4ac59",
+                    "sha256": "0013152c284aa047a7e857b9d70ac1791b65a5e2332b519373d23450ed7ce0ab"
+                  }
+                ],
+                "toolActions": [
+                  {
+                    "id": "f9f43c40-fe8c-4fe7-82e1-ebdffa9009b2",
+                    "sha256": "1179517895aaa4b6b63b8b7c8b955bdb83d1f2842ee5178dc8f17a369dfb933f"
+                  },
+                  {
+                    "id": "2f222e3d-1b7c-4029-86c8-13fda7b6f688",
+                    "sha256": "6e2c188f312f79e421ce1ed16b1504f09f39ba5c7a6aeae42277db1730e0578e"
+                  },
+                  {
+                    "id": "61315872-edf1-4e8e-bba6-5bdb634d8ed7",
+                    "sha256": "130835aa9166ec48f4dce221c602c5da7224381284e505f5c523e77206f823b1"
+                  }
+                ],
+                "sha256": "de9644b6672dbffbc23942b3dbee402d814943cb0b396bcc71a73bd4787accc7"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "id": "f9f43c40-fe8c-4fe7-82e1-ebdffa9009b2",
+              "toolVersionId": "tender.requirements.extract@document-analysis/v1",
+              "state": "succeeded",
+              "resultVerified": true
+            },
+            {
+              "id": "2f222e3d-1b7c-4029-86c8-13fda7b6f688",
+              "toolVersionId": "document.create@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true
+            },
+            {
+              "id": "61315872-edf1-4e8e-bba6-5bdb634d8ed7",
+              "toolVersionId": "document.read@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true
+            }
+          ],
+          "actualRunReceiptCount": 12,
+          "actualRunTokens": 36282,
+          "currencyCostVerified": false,
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a/final-core/fixtures/team-marker.md",
+            "sha256": "63b59376f69cea5adf6838dbc8551c6ba2732f4a300ef2101b82e04bc758c20b",
+            "size": 233
+          }
+        },
+        {
+          "name": "approval-sigkill-resume",
+          "taskId": "b7223873-a9fd-4184-ba07-e75bea392a76",
+          "runId": "5bb3250c-a96c-4573-b9d3-9c3a32d25e48",
+          "executor": "openai-agents-ts-v2",
+          "taskState": "succeeded",
+          "deliveryId": "1c90034e-25c1-4e2d-8d7e-e8f2283dae44",
+          "sdkModelCalls": 7,
+          "legacyCalls": 0,
+          "assignments": [
+            {
+              "id": "9f1721fb-c42f-4a41-9b4e-d1d44a0033b3",
+              "employeeVersionId": "version.live-team-writer",
+              "state": "succeeded",
+              "reworkOfAssignmentId": null
+            }
+          ],
+          "handoffValidations": [
+            {
+              "checkpointId": "7ad3e71b-f62e-40a7-bfcd-d906ec45ded9",
+              "assignmentId": "9f1721fb-c42f-4a41-9b4e-d1d44a0033b3",
+              "validation": {
+                "schemaVersion": 1,
+                "validator": "runtime-handoff-v1",
+                "executor": "openai-agents-ts-v2",
+                "runId": "5bb3250c-a96c-4573-b9d3-9c3a32d25e48",
+                "taskRevisionId": "a8b0b0eb-814b-453f-8d5c-fbe16bb7b895",
+                "runGrantId": "4a1f3190-9ef9-44b5-af18-9cb269a924b5",
+                "bindingSha256": "7d0ca496cc2d7d962208cf8774745c077743fb6c5d4585a43a1635bd6ae7942d",
+                "allowedToolVersionIds": [
+                  "document.create@local-document/v1",
+                  "document.edit@local-document/v1",
+                  "document.read@local-document/v1"
+                ],
+                "assignments": [
+                  {
+                    "id": "9f1721fb-c42f-4a41-9b4e-d1d44a0033b3",
+                    "employeeVersionId": "version.live-team-writer",
+                    "sequence": 1,
+                    "outputSha256": "13e07789ad343d1cfb821ad69139ba80dfd2b59681da09ae388861fb74faa599"
+                  }
+                ],
+                "handoffs": [
+                  {
+                    "id": "83babe3a-1f1f-41e3-a4d0-aa41aefc6b97",
+                    "assignmentId": "9f1721fb-c42f-4a41-9b4e-d1d44a0033b3",
+                    "sha256": "0ff92b29aa35c995e24fce36502784b9d6d5cfdd3b68cc6f00e9e32a21f3b936"
+                  }
+                ],
+                "toolActions": [
+                  {
+                    "id": "e7becd72-3e55-4b93-80b7-810adef13e86",
+                    "sha256": "da36ebc41dff561c38bfd65af61b40af80c4b7fa565aee911c1d812457d79cb3"
+                  },
+                  {
+                    "id": "4007b91b-ffda-4cd8-9d59-84c304b84d77",
+                    "sha256": "7f26b258978b19217aece715178c0b89a28aefc962d97a810c76c8d942ba0884"
+                  }
+                ],
+                "sha256": "69768e50c4dbe26a4b17e8d66cc437b9070a5995a6f78c330d9106ec093b6c7f"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "id": "e7becd72-3e55-4b93-80b7-810adef13e86",
+              "toolVersionId": "document.create@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true
+            },
+            {
+              "id": "4007b91b-ffda-4cd8-9d59-84c304b84d77",
+              "toolVersionId": "document.read@local-document/v1",
+              "state": "succeeded",
+              "resultVerified": true
+            }
+          ],
+          "actualRunReceiptCount": 7,
+          "actualRunTokens": 22066,
+          "currencyCostVerified": false,
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a/final-core/fixtures/approval-marker.md",
+            "sha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8",
+            "size": 12
+          },
+          "approvalId": "b2941067-036f-4cb1-ad7a-9ce093e4b40e",
+          "sdkCheckpointId": "bbb57f93-fbae-48c1-a05e-31e77960b739",
+          "noCallsWhileWaiting": true,
+          "waitingModelCalls": 0,
+          "grantUnchanged": true
+        },
+        {
+          "name": "approval-rejected-no-write",
+          "taskId": "67aba280-9bb5-453d-a832-b4f9feae84dc",
+          "runId": "d5ccc335-bfa6-486a-b2bd-10e5534ef837",
+          "executor": "openai-agents-ts-v2",
+          "taskState": "failed",
+          "deliveryId": null,
+          "sdkModelCalls": 4,
+          "legacyCalls": 0,
+          "assignments": [
+            {
+              "id": "bacc9737-f56e-41f8-97c3-848ba1891eb2",
+              "employeeVersionId": "version.live-team-writer",
+              "state": "running",
+              "reworkOfAssignmentId": null
+            }
+          ],
+          "handoffValidations": [],
+          "tools": [
+            {
+              "id": "b95cf670-fcfb-4ea3-aec2-ef2f490f85c5",
+              "toolVersionId": "document.create@local-document/v1",
+              "state": "blocked",
+              "resultVerified": false
+            }
+          ],
+          "actualRunReceiptCount": 4,
+          "actualRunTokens": 8263,
+          "currencyCostVerified": false,
+          "fileAbsent": true,
+          "nativeStatus": "rejected"
+        },
+        {
+          "name": "cancel-before-downstream",
+          "taskId": "6c24bc44-f3de-4416-96bb-250effaf920b",
+          "runId": "31bae27d-b8be-4a85-8b52-535533fdd766",
+          "executor": "openai-agents-ts-v2",
+          "taskState": "failed",
+          "deliveryId": null,
+          "sdkModelCalls": 2,
+          "legacyCalls": 0,
+          "assignments": [
+            {
+              "id": "18defaa3-093d-491d-a0ba-57d459ad22fa",
+              "employeeVersionId": "version.live-team-reader",
+              "state": "running",
+              "reworkOfAssignmentId": null
+            },
+            {
+              "id": "9eec8539-e7a1-48e6-b4f1-e4ee70df5900",
+              "employeeVersionId": "version.live-team-writer",
+              "state": "pending",
+              "reworkOfAssignmentId": null
+            }
+          ],
+          "handoffValidations": [],
+          "tools": [],
+          "actualRunReceiptCount": 1,
+          "actualRunTokens": 1569,
+          "currencyCostVerified": false
+        }
+      ]
+    }
+  ],
+  "worktree": {
+    "originalUserFiles": 27,
+    "originalUserFilesByteIdentical": true,
+    "phase4aStartFiles": 64,
+    "intentionallyExtended": [
+      "src/runtime/domain.ts",
+      "src/runtime/index.ts",
+      "src/runtime/task-service.ts"
+    ],
+    "otherPriorFilesByteIdentical": 61,
+    "headUnchanged": true,
+    "indexUnchanged": true,
+    "committed": false,
+    "pushed": false
+  },
+  "retainedFailure": {
+    "suite": "final-live",
+    "runtimeCode": "manager_rework_limit_reached",
+    "modelRequests": 39,
+    "handoffValidationPassedBeforeEachReview": true,
+    "cause": "Poe put marker and technical verification fields into deliveryResult.keyResults; original Runtime Delivery contract rejected it, then employee rework exhausted the limit.",
+    "deliveryCommitted": false,
+    "scopeDecision": "No delivery contract relaxation or manager retry redesign in 4A. Do not advance to 4B until the failed end-to-end gate is addressed.",
+    "historicalReference": "docs/audits/2026-10-15-agents-sdk-phase-3.md"
+  }
+}

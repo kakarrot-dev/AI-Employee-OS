@@ -1,4 +1,4 @@
-import { Community, Sparks } from 'iconoir-react'
+import { Community, Sparks } from './components/cds-icons'
 import type { AgentCapabilityVersionView, EmployeeDetail } from '../../shared/employee-contract'
 import type { ExpertGroupView } from '../../shared/expert-group-contract'
 import type { ResourceCatalogView } from '../../shared/resource-contract'

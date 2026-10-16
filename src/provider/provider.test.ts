@@ -173,7 +173,7 @@ describe('provider adapters', () => {
   it('normalizes Poe Responses streaming output', async () => {
     const sse = [
       'event: response.output_text.delta\ndata: {"delta":"OK"}\n\n',
-      'event: response.completed\ndata: {"response":{"id":"poe-stream","usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3}}}\n\n'
+      'event: response.completed\ndata: {"response":{"id":"poe-stream","status":"completed","usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3}}}\n\n'
     ].join('')
     const events = []
     for await (const event of new PoeAdapter(credentials, vi.fn().mockResolvedValue(new Response(sse, { status: 200 }))).execute({ requestId: 'poe-stream-request', provider: 'poe', modelId: 'claude-sonnet-4.6', input: 'work', maxOutputTokens: 32, stream: true })) events.push(event)

@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Assignment, EmployeeVersion, Run, RunGrant, Task, ToolVersion } from './domain'
+import type { Assignment, EmployeeVersion, Run, RunGrant, Task, ToolAction, ToolVersion } from './domain'
 import { RuntimeKernel } from './kernel'
 import { ManagedResearchService } from './managed-research-service'
 import { managedResearchRunner } from './managed-research-runner'
@@ -33,6 +33,32 @@ function setup(mode: 'approval_required' | 'full_access', runner: ToolRunner, to
 afterEach(() => { vi.restoreAllMocks(); while (directories.length) rmSync(directories.pop()!, { recursive: true, force: true }) })
 
 describe('ToolGateway', () => {
+  it('prepares without I/O and consumes a durable full-access reservation only once', async () => {
+    let release!: (value: Record<string, unknown>) => void
+    const runner = vi.fn<ToolRunner>(() => new Promise((resolve) => { release = resolve }))
+    const { gateway, store } = setup('full_access', runner)
+    const action = gateway.prepare({ runId: 'run-1', assignmentId: 'assignment-1', toolVersionId: 'github.repositories.search@research-source/v1', parameters: { query: 'agents' }, parameterSources: { query: { kind: 'task_input', sourceRef: 'task' } } })
+    expect(action.state).toBe('pending'); expect(runner).not.toHaveBeenCalled()
+    const first = gateway.executePrepared(action.id)
+    expect(store.get<ToolAction>('ToolAction', action.id)?.state).toBe('running')
+    expect((await gateway.executePrepared(action.id)).state).toBe('running')
+    release({ value: 'once' }); expect((await first).state).toBe('succeeded')
+    expect((await gateway.executePrepared(action.id)).state).toBe('succeeded')
+    expect(runner).toHaveBeenCalledTimes(1); store.close()
+  })
+
+  it('keeps a returned external write uncertain if its result/checkpoint transaction cannot commit', async () => {
+    const runner = vi.fn<ToolRunner>().mockResolvedValue({ receipt: 'write happened' })
+    const { kernel, gateway, store } = setup('full_access', runner, ['fixture.external-write'])
+    const tool: ToolVersion = { schemaVersion: 1, id: 'fixture.external-write', createdAt: new Date().toISOString(), name: 'fixture', description: '', version: 1, source: 'built_in', inputSchema: {}, sideEffect: 'external_write', risk: 'high', timeoutMs: 1000, networkOrigins: [], available: true, health: 'available', credentialStatus: 'not_required' }
+    kernel.save({ entityType: 'ToolVersion', entity: tool, immutable: true }, 'fixture', {})
+    const prepared = gateway.prepare({ runId: 'run-1', assignmentId: 'assignment-1', toolVersionId: tool.id, parameters: { value: 'once' }, parameterSources: { value: { kind: 'task_input', sourceRef: 'task' } } })
+    const action = await gateway.executePrepared(prepared.id, (updated) => { if (updated.state === 'succeeded') throw new Error('checkpoint_disk_failure') })
+    expect(action.state).toBe('result_unknown')
+    expect((await gateway.executePrepared(action.id)).state).toBe('result_unknown')
+    expect(runner).toHaveBeenCalledTimes(1); store.close()
+  })
+
   it('requires per-action approval and deduplicates the same idempotency key', async () => {
     const runner = vi.fn<ToolRunner>().mockResolvedValue({ ok: true })
     const { gateway, store } = setup('approval_required', runner)

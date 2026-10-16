@@ -11,6 +11,7 @@ import { ResourceService } from './resource-service'
 import { ToolGateway } from './tool-gateway'
 import { localDocumentRunner } from './local-document-runner'
 import { FEISHU_DOCUMENT_TOOL_IDS } from '../shared/connection-contract'
+import { serializeProviderInput } from '../provider/contract'
 
 const directories: string[] = []
 
@@ -193,9 +194,8 @@ describe('TaskService', () => {
     })
     expect(completed.detail.assignments[0].presentation).not.toHaveProperty('detail')
     expect(completed.request?.input).not.toContain('这是不应在会话时间线中重写的客户原文')
-    const review = tasks.beginManagerReview(started.run!.id)
-    expect(review.input).toContain('完整 Manifest 和 source_batch 检查点')
-    expect(review.input).not.toContain('这是不应在会话时间线中重写的客户原文')
+    expect(() => tasks.beginManagerReview(started.run!.id)).toThrow('handoff_assignment_incomplete')
+    expect(tasks.detailByRun(started.run!.id).checkpoints.some((item) => item.phase === 'manager_review')).toBe(false)
     store.close()
   })
 
@@ -299,7 +299,7 @@ describe('TaskService', () => {
     expect(completed).toMatchObject({ event: 'assignment_completed', detail: { assignments: [{ state: 'succeeded' }] } })
     expect(completed.detail.toolActions.filter((action) => action.toolVersionId === 'document.read@local-document/v1')).toHaveLength(2)
     const review = tasks.beginManagerReview(started.run!.id)
-    expect(review.input.split('# 新报告\\n有效内容\\n')).toHaveLength(2)
+    expect(serializeProviderInput(review.input).split('# 新报告\\n有效内容\\n')).toHaveLength(2)
     store.close()
   })
 
@@ -347,7 +347,7 @@ describe('TaskService', () => {
     expect(turn.request?.input).toContain('用途：assignment_context')
     expect(turn.detail.assignments[1].sourceBatchState).toMatchObject({ purpose: 'assignment_context', phase: 'map' })
     expect(turn.detail.assignments[1].sourceBatchState!.sourceCharacterCount).toBeGreaterThanOrEqual(largeHandoff.length)
-    for (let guard = 0; guard < 12 && !turn.request!.input.includes('CompressedHandoffContext'); guard += 1) {
+    for (let guard = 0; guard < 12 && !serializeProviderInput(turn.request!.input).includes('CompressedHandoffContext'); guard += 1) {
       tasks.handleProviderEvent(turn.request!.requestId, { type: 'output_delta', requestId: turn.request!.requestId, delta: `## 范围\n- 批次 ${guard + 1}\n## 关键事实\n- 批次 ${guard + 1} 关键事实\n## 强制与否决项\n- 无\n## 标段与交付物\n- 无\n## 日期与阈值\n- 无\n## 来源\n- https://example.com\n## 冲突\n- 无\n## 未知项\n- 外部信息待核验\n## 下游写作约束\n- 无` })
       turn = tasks.handleProviderEvent(turn.request!.requestId, { type: 'completed', requestId: turn.request!.requestId, ...(guard === 0 ? { incomplete: true } : {}) })!
     }
@@ -443,11 +443,9 @@ describe('TaskService', () => {
     const started = tasks.confirmAndStart(tasks.createDraft({ conversationId: 'evidence-gate', sourceMessageIds: ['message'], goal: '创建报告文件', acceptanceCriteria: ['文件已写入并可核验'], employeeVersionIds: ['employee-version.document-writer.v2'], directories: [root], authorizationMode: 'full_access' }).draft.id)
     tasks.handleProviderEvent(started.request.requestId, { type: 'output_delta', requestId: started.request.requestId, delta: '报告已经写入，可以交付。' })
     tasks.handleProviderEvent(started.request.requestId, { type: 'completed', requestId: started.request.requestId })
-    const review = tasks.beginManagerReview(started.run!.id)
-    tasks.handleProviderEvent(review.requestId, { type: 'structured_result', requestId: review.requestId, value: managerReview(1, true, '验收通过') })
-    const rejected = tasks.handleProviderEvent(review.requestId, { type: 'completed', requestId: review.requestId })!
-    expect(rejected).toMatchObject({ event: 'progress', detail: { delivery: undefined, run: { state: 'running' } } })
-    expect(rejected.request?.input).toContain('Runtime 证据门禁未通过：文档任务没有经过 Runtime 核验的写入或编辑结果')
+    expect(() => tasks.beginManagerReview(started.run!.id)).toThrow('handoff_assignment_incomplete')
+    expect(tasks.detailByRun(started.run!.id).delivery).toBeUndefined()
+    expect(tasks.detailByRun(started.run!.id).checkpoints.some((item) => item.phase === 'manager_review')).toBe(false)
     store.close()
   })
 
@@ -633,7 +631,7 @@ describe('TaskService', () => {
     reopened.close()
   })
 
-  it('upgrades a legacy in-flight step budget through a new immutable revision and grant before recovery', () => {
+  it('preserves a legacy in-flight step budget, immutable revision and grant during recovery', () => {
     const { employees, tasks, store, databasePath, kernel } = setup()
     const employeeVersionId = publishEmployee(employees)
     const created = tasks.createDraft({ conversationId: 'legacy-budget', sourceMessageIds: ['m'], goal: '完整处理长内容', acceptanceCriteria: ['不得截断'], employeeVersionIds: [employeeVersionId] })
@@ -647,9 +645,9 @@ describe('TaskService', () => {
     const detail = recoveredTasks.detailByTask(started.task!.id)
     expect(requests).toHaveLength(1)
     expect(detail.run?.id).toBe(started.run!.id)
-    expect(detail.revision).toMatchObject({ revision: 2, budget: { maxSteps: 64 } })
-    expect(detail.revision?.id).not.toBe(started.revision!.id)
-    expect(reopened.get<any>('RunGrant', detail.run!.runGrantId)?.budget.maxSteps).toBe(64)
+    expect(detail.revision).toEqual(started.revision)
+    expect(detail.run!.runGrantId).toBe(started.run!.runGrantId)
+    expect(reopened.get<any>('RunGrant', detail.run!.runGrantId)?.budget.maxSteps).toBe(8)
     expect(reopened.get<any>('TaskRevision', started.revision!.id)?.budget.maxSteps).toBe(8)
     reopened.close()
   })
@@ -779,7 +777,7 @@ describe('TaskService', () => {
     store.close()
   })
 
-  it('supersedes an active legacy approval run before startup recovery', async () => {
+  it('preserves an active legacy approval run and performs no calls while its original approval is pending', async () => {
     const { employees, tasks, store, kernel, resources } = setup()
     const employeeVersionId = publishResearchEmployee(employees)
     const legacyDraft = tasks.createDraft({ conversationId: 'legacy-active-policy', sourceMessageIds: ['message'], goal: '调研公开信息', acceptanceCriteria: ['保留来源'], employeeVersionIds: [employeeVersionId], authorizationMode: 'approval_required' }).draft
@@ -792,20 +790,15 @@ describe('TaskService', () => {
     const waiting = tasks.handleProviderEvent(started.request.requestId, { type: 'completed', requestId: started.request.requestId })!
     expect(waiting.detail.run?.state).toBe('paused')
 
-    const [migration] = tasks.migrateLegacyAuthorizationRuns()
-    const migrated = tasks.detailByTask(started.task!.id)
-
-    expect(migration).toMatchObject({ runId: migrated.run?.id, request: { requestId: expect.any(String) } })
-    expect(migrated.revision).toMatchObject({ revision: 2, authorizationMode: 'full_access' })
-    expect(migrated.revision?.resourceScope.skillVersionIds).toEqual(['skill.managed-research.v2'])
-    expect(migrated.revision?.resourceScope.skillDigests?.['skill.managed-research.v2']).toMatch(/^[a-f0-9]{64}$/)
-    expect(migrated.run).toMatchObject({ state: 'running', supersedesRunId: started.run!.id })
-    expect(store.get<any>('RunGrant', migrated.run!.runGrantId)).toMatchObject({ authorizationMode: 'full_access' })
-    expect(store.get<any>('Run', started.run!.id)).toMatchObject({ state: 'cancelled' })
-    expect(store.get<any>('ToolAction', action.id)).toMatchObject({ state: 'cancelled', failureCode: 'authorization_policy_superseded' })
-    expect(store.get<any>('Approval', action.approvalId!)).toMatchObject({ decision: 'rejected' })
-    expect(tasks.recoverPendingRequests(new Set([migration.request.requestId]))).toEqual([])
-    expect(tasks.migrateLegacyAuthorizationRuns()).toEqual([])
+    const before = tasks.detailByTask(started.task!.id)
+    const grant = store.get('RunGrant', started.run!.runGrantId)
+    expect(tasks.recoverPendingRequests()).toEqual([])
+    const restored = tasks.detailByTask(started.task!.id)
+    expect(restored).toEqual(before)
+    expect(restored.revision?.authorizationMode).toBe('approval_required')
+    expect(store.get('RunGrant', started.run!.runGrantId)).toEqual(grant)
+    expect(store.get<any>('ToolAction', action.id)?.state).toBe('pending')
+    expect(store.get<any>('Approval', action.approvalId!)?.decision).toBe('pending')
     store.close()
   })
 

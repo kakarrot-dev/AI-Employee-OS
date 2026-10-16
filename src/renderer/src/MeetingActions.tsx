@@ -1,4 +1,4 @@
-import { Button } from 'react-aria-components'
+import { CdsButton } from './open-claude-ui/primitives/CdsButton'
 import { TeamsParticipantList } from './TeamsParticipantList'
 import type { TeamsParticipantConfirmation } from '../../shared/teams-contract'
 import { TEAMS_TOOL_IDS, isTeamsTool } from '../../shared/teams-contract'
@@ -67,7 +67,7 @@ export function MeetingActions({ task, onUpdate }: { task: TaskDetailView; onUpd
         </>}
       </MessageActionCard>
     })}
-    {participants.length > 0 && <MessageActionCard title="参会人员确认" status={`已确认 ${confirmedCount} / ${participants.length} 人`} tone={confirmedCount === participants.length ? 'success' : 'waiting'} actions={hasCreatedMeeting && participants.some(person => person.state === 'not_sent') ? <Button className="button button--primary" isDisabled={Boolean(busy)} onPress={() => void sendCards()}>{busy === 'cards' ? '正在发送' : '发送未发送的确认卡'}</Button> : undefined}>
+    {participants.length > 0 && <MessageActionCard title="参会人员确认" status={`已确认 ${confirmedCount} / ${participants.length} 人`} tone={confirmedCount === participants.length ? 'success' : 'waiting'} actions={hasCreatedMeeting && participants.some(person => person.state === 'not_sent') ? <CdsButton variant="primary" size="sm" isLoading={busy === 'cards'} type="button" disabled={Boolean(busy)} onClick={() => void sendCards()}>{busy === 'cards' ? '正在发送' : '发送未发送的确认卡'}</CdsButton> : undefined}>
       <TeamsParticipantList participants={participants} />
       <small>{hasCreatedMeeting ? '只有参会人在 Teams 卡片中点击确认才计入已确认；日历接受不会替代卡片回执。' : '会议尚未创建；确认创建后将发送卡片。'}{participants.some(person => person.state === 'not_sent') && hasCreatedMeeting ? ' 卡片未发送时，请检查 Bot 回调连接和参会人的 Bot 私聊是否可用。' : ''}</small>
     </MessageActionCard>}

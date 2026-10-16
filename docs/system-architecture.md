@@ -1,14 +1,16 @@
 # AI Employee OS 系统架构方案
 
 版本：v0.1
-状态：目标架构；Phase 0–9 的本地运行边界已完成；Apple 签名与公开分发门禁未执行
+状态：目标架构；Phase 0–9 的本地运行边界已完成；2026-10-15 起分阶段迁移员工执行层至 OpenAI Agents SDK TS；Apple 签名与公开分发门禁未执行
+
+2026-10-15 实现边界：新建、单员工、Poe `claude-sonnet-4.6`、`full_access` 且授权工具不含写操作的 Run 使用 `@openai/agents-core@0.20.0`。执行器版本保存在 Run，历史 Run 保留原执行路径。总管路由、多员工编排、审批/写操作、DeepSeek 和 Python 交接检查仍保留现有实现。下文 Deep Agents 图示描述原有完整目标；当前落地与阶段门禁见 [SDK 迁移验收](audits/2026-10-15-agents-sdk-migration.md)。
 
 ## 1. 架构目标
 
 系统必须同时满足：
 
 - 用户只与总管交互。
-- Deep Agents 负责 Agent 编排，但不是权限内核。
+- Agent 执行器负责模型与工具循环；Runtime 独占任务、权限、审批、预算、交付和恢复。OpenAI Agents SDK TS 正在替换员工执行层，Deep Agents 按阶段保留。
 - 所有 Tool 副作用经过可验证的本地安全边界。
 - Secret 不进入 Agent、Tool、数据库、日志和记忆。
 - 本地记忆子系统只负责 L0–L3 记忆，不接管产品实体；Phase 0 已排除 MemoryCore，采用产品自有最小实现。
@@ -151,6 +153,22 @@ UserMessage
 ```
 
 ### 4.2 Assignment 执行
+
+当前 SDK 单员工路径：
+
+```text
+Runtime 冻结 TaskRevision + RunGrant + EmployeeVersion + Run.employeeExecutor
+→ EmployeeExecutor 创建 SDK Agent/Runner（关闭 SDK 云端 tracing）
+→ 将 SDK 消息、函数调用和结果映射为 Provider input schemaVersion=2
+→ Runtime 以完整消息历史重新校验冻结预算，绑定 provider_step 检查点
+→ 既有 Main → Provider utilityProcess → Keychain helper → Poe
+→ SDK propose_tool_action 回调
+→ 既有 TaskService.toolProposalContext + ToolGateway
+→ 已验证 ToolAction 结果作为 function_call_result 回到 SDK
+→ Runtime 决定续跑、暂停、交接和最终验收
+```
+
+SDK 文本结束只代表本轮模型输出结束。总管验收、Delivery、权限收窄、幂等和失败处理继续由 Runtime 决定；截断输出按 Runtime 要求续写。重启时使用现有 Runtime 检查点及已保存 ToolAction 重建员工上下文；SDK RunState 持久化属于后续多员工/审批迁移阶段。
 
 ```text
 Runtime 启动 Assignment

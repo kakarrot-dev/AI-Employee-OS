@@ -1,4 +1,5 @@
-import { NavArrowRight } from 'iconoir-react'
+import { CdsButton } from './open-claude-ui/primitives/CdsButton'
+import { NavArrowRight } from './components/cds-icons'
 import type { TaskDetailView } from '../../shared/runtime-contract'
 import { formatClientTimestamp } from './client-time'
 import { DetailPage, DetailSectionHeader, StatusLight, SummaryList, SummaryListItem } from './components/client-ui'
@@ -33,7 +34,7 @@ export function TaskModule({ tasks, total, loading, error, onRefresh, onOpen }: 
   return <DetailPage width="wide" className="matter-list-page">
     <section aria-label="我的事项列表" aria-busy={loading}>
       <DetailSectionHeader title="我的事项" description="查看各会话的事项与当前进展" meta={loading ? '正在更新' : `${tasks.length} / ${total} 项`} />
-      {error && <div className="inline-error" role="alert">{error} <button type="button" className="text-action" onClick={onRefresh} disabled={loading}>重新读取</button></div>}
+      {error && <div className="inline-error" role="alert">{error} <CdsButton variant="secondary" size="sm" type="button" onClick={onRefresh} disabled={loading}>重新读取</CdsButton></div>}
       {loading && total === 0 ? <p className="empty-state" role="status">正在读取事项</p> : tasks.length > 0 ? <SummaryList emptyMessage="" variant="outlined">{tasks.map((task) => {
         const employees = [...new Set(task.assignments.map((assignment) => assignment.employeeName ?? `员工 ${assignment.sequence}`))]
         const updatedAt = task.runCompletedAt ?? task.delivery?.createdAt ?? task.timeline.at(-1)?.createdAt ?? task.runStartedAt ?? task.createdAt

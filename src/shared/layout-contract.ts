@@ -1,11 +1,11 @@
 export const CLIENT_WINDOW_LAYOUT = Object.freeze({
-  defaultWidth: 1280,
-  defaultHeight: 820,
-  minWidth: 960,
-  minHeight: 640,
-  toolbarHeight: 40,
-  macOSTrafficLightLeft: 18,
-  macOSTrafficLightSize: 14
+  defaultWidth: 1200,
+  defaultHeight: 800,
+  minWidth: 600,
+  minHeight: 400,
+  toolbarHeight: 45,
+  macOSTrafficLightLeft: 17,
+  macOSTrafficLightSize: 12
 })
 
 export const MACOS_TRAFFIC_LIGHT_POSITION = Object.freeze({

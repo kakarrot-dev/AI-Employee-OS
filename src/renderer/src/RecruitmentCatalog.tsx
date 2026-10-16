@@ -1,5 +1,7 @@
+import { CdsButton } from './open-claude-ui/primitives/CdsButton'
+import { CdsSegmentedControl } from './open-claude-ui/primitives/SegmentedControl'
 import { useState } from 'react'
-import { Community, NavArrowRight, UserPlus } from 'iconoir-react'
+import { Community, NavArrowRight, UserPlus } from './components/cds-icons'
 import type { AgentCapabilityVersionView, EmployeeDetail, EmployeeSummary } from '../../shared/runtime-contract'
 import type { ExpertGroupView } from '../../shared/expert-group-contract'
 import type { ResourceCatalogView } from '../../shared/resource-contract'
@@ -11,7 +13,7 @@ import { ExpertGroupProfileContent, ExpertProfileContent, skillsForExpert } from
 import { employeeStatusLabel, employeeStatusTone } from './employee-status'
 import recruitmentAgentAvatars from './assets/employee-avatars/recruitment-agents.png'
 
-interface RecruitmentEmployee {
+export interface RecruitmentEmployee {
   id: string
   name: string
   description: string
@@ -27,7 +29,7 @@ interface RecruitmentCategory {
   employees: RecruitmentEmployee[]
 }
 
-const recruitmentCategories: RecruitmentCategory[] = [
+export const recruitmentCategories: RecruitmentCategory[] = [
   {
     id: 'meetings', name: '会议与协作', description: '查询组织内联系人，安排 Teams 或飞书会议并发送邀请。',
     employees: [
@@ -140,13 +142,13 @@ const recruitmentCategories: RecruitmentCategory[] = [
   }
 ]
 
-function RecruitmentAvatar({ employee, avatarDataUrl }: { employee: RecruitmentEmployee; avatarDataUrl?: string }): React.JSX.Element {
+export function RecruitmentAvatar({ employee, avatarDataUrl }: { employee: RecruitmentEmployee; avatarDataUrl?: string }): React.JSX.Element {
   if (avatarDataUrl || !employee.avatarPosition) {
     return <Avatar label={employee.name} initials={employee.name.slice(0, 1)} color={employee.color} size="medium" src={employeeAvatarSrc({ employeeId: employee.id, avatarDataUrl })} />
   }
 
   return <span
-    aria-label={employee.name}
+   aria-label={employee.name}
     className="avatar avatar--medium recruitment-avatar"
     role="img"
     style={{ backgroundImage: `url(${recruitmentAgentAvatars})`, backgroundPosition: employee.avatarPosition }}
@@ -275,18 +277,10 @@ export function RecruitmentCatalog({ employees, expertGroups = [], skills = [], 
 
   return <DetailPage className="recruitment-page" width="wide">
     <section className="recruitment-catalog" aria-label="招募专家">
-      <div className="filter-row capability-kind-switch recruitment-kind-switch" role="tablist" aria-label="招募类型">
-        <button type="button" role="tab" id="recruitment-experts-tab" aria-label="专家" aria-controls="recruitment-experts-panel" aria-selected={kind === 'experts'} className={kind === 'experts' ? 'is-active' : ''} onClick={() => setKind('experts')}>
-          <span className="recruitment-kind-switch__icon"><UserPlus aria-hidden /></span>
-          <span className="recruitment-kind-switch__copy"><strong>专家</strong><small>单个 Agent</small></span>
-          <span className="recruitment-kind-switch__count">{employeeCount} 位</span>
-        </button>
-        <button type="button" role="tab" id="recruitment-groups-tab" aria-label="专家团" aria-controls="recruitment-groups-panel" aria-selected={kind === 'groups'} className={kind === 'groups' ? 'is-active' : ''} onClick={() => setKind('groups')}>
-          <span className="recruitment-kind-switch__icon"><Community aria-hidden /></span>
-          <span className="recruitment-kind-switch__copy"><strong>专家团</strong><small>多个 Agent 协作</small></span>
-          <span className="recruitment-kind-switch__count">{groupEntries.length} 个</span>
-        </button>
-      </div>
+      <CdsSegmentedControl className="recruitment-kind-switch" label="招募类型" value={kind} tabs={[
+        { id: 'experts', label: '专家', icon: <UserPlus aria-hidden />, badge: `${employeeCount} 位`, tabId: 'recruitment-experts-tab', controls: 'recruitment-experts-panel' },
+        { id: 'groups', label: '专家团', icon: <Community aria-hidden />, badge: `${groupEntries.length} 个`, tabId: 'recruitment-groups-tab', controls: 'recruitment-groups-panel' }
+      ]} onChange={(id) => setKind(id as RecruitmentKind)} />
       {kind === 'experts' ? <div className="recruitment-kind-panel" role="tabpanel" id="recruitment-experts-panel" aria-labelledby="recruitment-experts-tab">
       <RecruitmentOverview kind="experts" itemCount={employeeCount} recruitedCount={recruitedCount} />
       <div className="recruitment-catalog__categories">
@@ -301,7 +295,7 @@ export function RecruitmentCatalog({ employees, expertGroups = [], skills = [], 
                 tone={recruitedEmployeeIds.has(employee.id) ? 'success' : 'muted'}
                 trailing={<span className="recruitment-card__trailing">{recruitedEmployeeIds.has(employee.id) ? <DetailState tone="success">已招募</DetailState> : <DetailState tone="muted">候选</DetailState>}<NavArrowRight aria-hidden /></span>}
                 label={`查看专家 ${displayName}`}
-                onClick={() => void openExpert(employee, category.name)}
+               onClick={() => void openExpert(employee, category.name)}
               />
             </div>})}
           </SummaryCardGrid>
@@ -320,7 +314,7 @@ export function RecruitmentCatalog({ employees, expertGroups = [], skills = [], 
                 tone={mode === 'directory' ? 'success' : 'muted'}
                 trailing={<span className="recruitment-card__trailing">{mode === 'directory' ? <DetailState tone="success">已招募</DetailState> : <DetailState tone="muted">候选</DetailState>}<NavArrowRight aria-hidden /></span>}
                 label={`查看专家团 ${group.name}`}
-                onClick={() => setSelection({ kind: 'group', group, mode })}
+               onClick={() => setSelection({ kind: 'group', group, mode })}
               />
             </div>)}
           </SummaryCardGrid>
@@ -333,7 +327,7 @@ export function RecruitmentCatalog({ employees, expertGroups = [], skills = [], 
           {detailLoading ? <div className="recruitment-detail-skeleton" role="status" aria-label="正在读取专家详情"><span /><span /><span /></div> : selection?.kind === 'expert' ? expertDetail ? <ExpertProfileContent detail={expertDetail} skills={expertSkills} /> : <CandidateExpertProfile employee={selection.employee} categoryName={selection.categoryName} summary={selection.summary} /> : selection?.kind === 'group' ? <ExpertGroupProfileContent group={selection.group} mode={selection.mode} /> : null}
           {detailError && <p className="inline-error" role="alert">{detailError}</p>}
         </div>
-        <div className="recruitment-detail-modal__actions"><p>{canEnterConversation ? `选择后将新建会话，并由悟空优先安排${selectionName}。` : '该对象尚未加入通讯录或当前不可调用，暂时不能进入会话。'}</p><div><button type="button" className="button button--quiet" onClick={closeDetail}>关闭</button><button type="button" className="button button--primary" disabled={!canEnterConversation || !onEnterConversation || enteringConversation} onClick={() => void enterConversation()}>{enteringConversation ? '正在进入' : canEnterConversation ? '选择并进入会话' : '尚未招募'}</button></div></div>
+        <div className="recruitment-detail-modal__actions"><p>{canEnterConversation ? `选择后将新建会话，并由悟空优先安排${selectionName}。` : '该对象尚未加入通讯录或当前不可调用，暂时不能进入会话。'}</p><div><CdsButton variant="ghost" size="md" type="button" onClick={closeDetail}>关闭</CdsButton><CdsButton variant="primary" size="md" isLoading={enteringConversation} type="button" disabled={!canEnterConversation || !onEnterConversation || enteringConversation} onClick={() => void enterConversation()}>{enteringConversation ? '正在进入' : canEnterConversation ? '选择并进入会话' : '尚未招募'}</CdsButton></div></div>
       </div>
     </ClientModal>
   </DetailPage>

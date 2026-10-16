@@ -73,8 +73,8 @@ body,
 }
 
 .rail-button.is-active {
-  color: var(--text-primary);
-  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
 }
 
 .rail-button:active,
@@ -124,7 +124,8 @@ body,
 }
 
 .filter-row button.is-active {
-  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
 }
 
 .context-scroll {
@@ -155,7 +156,7 @@ body,
 }
 
 .list-row.is-selected {
-  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  background: var(--accent-soft);
 }
 
 .workspace,
@@ -194,9 +195,9 @@ body,
 .create-selection-card:focus-visible { box-shadow: 0 0 0 2px var(--focus); }
 .icon-button:disabled { opacity: .32; }
 .list-row:focus-visible { box-shadow: inset 0 0 0 2px var(--focus); }
-.search-box:focus-within { box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus), transparent 72%); }
+.search-box:focus-within { box-shadow: 0 0 0 2px var(--focus); }
 .form-field:focus-within input,
-.form-field:focus-within textarea { box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus), transparent 74%); }
+.form-field:focus-within textarea { box-shadow: 0 0 0 2px var(--focus); }
 
 .form-field input[aria-invalid="true"],
 .form-field textarea[aria-invalid="true"] { border-color: color-mix(in srgb, var(--danger) 58%, var(--line)); }

@@ -1,0 +1,19 @@
+{
+  "verifiedFiles": [
+    "out/main/chunks/agent-DUYlVfkT.js",
+    "out/main/chunks/connection-contract-BOg7hSuO.js",
+    "out/main/chunks/contract-Bauc4cNq.js",
+    "out/main/chunks/conversation-input-BWV10-E5.js",
+    "out/main/chunks/index-CLCq60FY.js",
+    "out/main/chunks/protocol-BuvUv__t.js",
+    "out/main/index.js",
+    "out/main/provider/index.js",
+    "out/main/runtime/index.js",
+    "out/preload/index.cjs",
+    "out/renderer/assets/index-CX7iwQWN.js",
+    "out/renderer/assets/index-Db9tY_lR.css",
+    "out/renderer/index.html",
+    "out/web-catalog/export-catalog.mjs"
+  ],
+  "mismatches": []
+}

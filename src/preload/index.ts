@@ -1,9 +1,14 @@
 import { TEAMS_IPC, type TeamsConnectionInput } from '../shared/teams-contract'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { DESKTOP_IPC, type DesktopClipboardBridge } from '../shared/desktop-contract'
 import { ATTACHMENT_IPC, CONVERSATION_IPC, EMPLOYEE_IPC, EXPERT_GROUP_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, SUPERVISOR_IPC, TASK_IPC, USAGE_IPC, type AttachmentBridge, type ConversationBridge, type ConversationStreamEvent, type EmployeeBridge, type EmployeeDraftInput, type EmployeeEvent, type ExpertGroupBridge, type MemoryBridge, type ProviderBridge, type ResourceBridge, type RuntimeBridge, type RuntimeStatus, type SupervisorBridge, type SupervisorConfigInput, type TaskBridge, type TaskDraftInputView, type TaskEvent, type UsageBridge } from '../shared/runtime-contract'
 import type { MemoryCategoryView, MemoryScopeTypeView, MemoryStatusView, MemoryViewModel } from '../shared/memory-contract'
 import type { MemorySearchResultView } from '../shared/memory-contract'
 import { CONNECTION_IPC, type ConnectionBridge, type FeishuConnectionInput } from '../shared/connection-contract'
+
+const clipboardBridge: DesktopClipboardBridge = Object.freeze({
+  writeText: (text: string) => ipcRenderer.invoke(DESKTOP_IPC.copyText, text)
+})
 
 const runtimeBridge: RuntimeBridge = Object.freeze({
   getStatus: () => ipcRenderer.invoke(RUNTIME_IPC.getStatus),
@@ -119,4 +124,4 @@ const connectionBridge: ConnectionBridge = Object.freeze({
   disconnectFeishu: () => ipcRenderer.invoke(CONNECTION_IPC.disconnectFeishu)
 })
 
-contextBridge.exposeInMainWorld('aiEmployeeOS', Object.freeze({ runtime: runtimeBridge, provider: providerBridge, conversation: conversationBridge, attachment: attachmentBridge, supervisor: supervisorBridge, employee: employeeBridge, expertGroup: expertGroupBridge, task: taskBridge, resource: resourceBridge, memory: memoryBridge, usage: usageBridge, connection: connectionBridge }))
+contextBridge.exposeInMainWorld('aiEmployeeOS', Object.freeze({ clipboard: clipboardBridge, runtime: runtimeBridge, provider: providerBridge, conversation: conversationBridge, attachment: attachmentBridge, supervisor: supervisorBridge, employee: employeeBridge, expertGroup: expertGroupBridge, task: taskBridge, resource: resourceBridge, memory: memoryBridge, usage: usageBridge, connection: connectionBridge }))

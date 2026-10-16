@@ -1,0 +1,11 @@
+{
+  "package": "/Users/kakarrot/Dev/AI Employee OS/build/local-release/dist/AI Employee OS-darwin-arm64/AI Employee OS.app",
+  "runtimeFilesCompared": 3656,
+  "runtimeDifferences": [],
+  "generatedPythonCachesExcluded": 660,
+  "generatedPythonCachesChanged": 90,
+  "themeByteIdentical": true,
+  "licenseByteIdentical": true,
+  "provenanceMatches": true,
+  "asarSha256": "e99b601733938963318a4404d2a05ac27159cf326926fb48d3a04550ea322505"
+}

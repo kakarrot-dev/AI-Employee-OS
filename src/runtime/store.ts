@@ -115,14 +115,28 @@ export class RuntimeStore {
     return row.version
   }
 
+  /** Synchronous state transitions only; never keep a transaction open across tool I/O. */
+  transaction<T>(work: () => T): T {
+    if (this.database.isTransaction) return work()
+    this.database.exec('BEGIN IMMEDIATE')
+    try {
+      const result = work()
+      if (result instanceof Promise) throw new Error('async_runtime_transaction')
+      this.database.exec('COMMIT')
+      return result
+    } catch (error) {
+      this.database.exec('ROLLBACK')
+      throw error
+    }
+  }
+
   save(record: EntityRecord, event: AuditEvent): number {
     assertEntityRecord(record)
     const now = new Date().toISOString()
     const existing = this.database.prepare('SELECT immutable FROM entity_records WHERE entity_type = ? AND entity_id = ?').get(record.entityType, record.entity.id) as { immutable: number } | undefined
     if (existing?.immutable) throw new Error('immutable_entity_exists')
 
-    this.database.exec('BEGIN IMMEDIATE')
-    try {
+    return this.transaction(() => {
       this.database.prepare(`
         INSERT INTO entity_records(entity_type, entity_id, schema_version, payload_json, immutable, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -138,12 +152,8 @@ export class RuntimeStore {
       `).run(event.eventId, event.schemaVersion, event.occurredAt, event.eventType, event.aggregateType, event.aggregateId, JSON.stringify(event.payload))
       const sequence = Number(result.lastInsertRowid)
       this.database.prepare('UPDATE runtime_projection SET last_event_sequence = ? WHERE singleton_id = 1').run(sequence)
-      this.database.exec('COMMIT')
       return sequence
-    } catch (error) {
-      this.database.exec('ROLLBACK')
-      throw error
-    }
+    })
   }
 
   deleteMutable(entityType: EntityRecord['entityType'], entityId: string, event: AuditEvent): number {

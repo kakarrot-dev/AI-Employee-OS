@@ -1,0 +1,888 @@
+{
+  "stage": "4B Runtime frozen-plan dispatch",
+  "status": "passed",
+  "provider": "poe",
+  "modelId": "claude-sonnet-4.6",
+  "sdkVersion": "0.20.0",
+  "productionDatabaseUsed": false,
+  "installedClientReplaced": false,
+  "contractBuilderCheck": "nothing important left",
+  "beforeRuntimeSha256": "5d7b790ff2cd812ea1afdaf201377d0b06e4f63fd7caee8b736333ca54fe15dd",
+  "afterRuntimeSha256": "34cd101a4470ddf72dc85283ac22690a6d3636b275e4281382a341b41949e010",
+  "sourceSha256": {
+    "src/runtime/sdk-checkpoints.ts": "2ad32707246823517fabdc6129535a310c5267dbc2adacaf6504795a20f4230d",
+    "src/runtime/sdk-model-response.ts": "fa0a0639ee1409465cc67748d17bff68220215311f1280f2d79593e023ea5427",
+    "src/runtime/task-service.ts": "9e9b9802302d229b679f49d7698adfccbe9d0d74e5678e7ab332577b177c4305",
+    "src/runtime/team-executor.test.ts": "cd7a28f1b84ebce065003afa4987c938f4721bada5e601adf7310926249820d1",
+    "src/runtime/team-executor.ts": "6616022e67528e7e216854a529999a0d1d0dd15424e30681c0557e7e05f02474"
+  },
+  "validation": {
+    "typecheck": "passed",
+    "electronViteBuild": "passed",
+    "backendTests": {
+      "passed": 405,
+      "skipped": 3,
+      "failed": 0,
+      "reportSha256": "dfa70c8870d51ed636aac253dff4922c1d7cb606897ffa6f0e5af6f75e7cc91c"
+    },
+    "failingRegressionPreserved": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/failing-test.json"
+  },
+  "comparison": {
+    "samplesPerBuild": 2,
+    "beforeActualRequests": 27,
+    "afterActualRequests": 17,
+    "beforeTokensIncludingRoute": 102951,
+    "afterTokensIncludingRoute": 67188,
+    "beforeRunTokens": 91312,
+    "afterRunTokens": 55762,
+    "removedPaidDispatchRequests": 8,
+    "observedBaselineDispatchTokens": 20688
+  },
+  "fixtures": {
+    "before-natural-1": {
+      "status": "passed",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/before-natural-1/live-results.json",
+      "rawReportSha256": "0b021270c877e81715c97766e8e8845419cc016ea88a4eb7f3aa5fa9c3e48944",
+      "databaseSha256": "e2917832d65dc74d7872cbc190fa0bc126d0977793f87f63e44e6d3899fdfe64",
+      "runtimeLaunches": null,
+      "resumedProviderRequests": null,
+      "resumedPaidDispatchRequests": null,
+      "cases": [
+        {
+          "name": "supervisor-route-two-employees",
+          "runId": "77937874-8172-4979-ad0b-42a48bd5610f",
+          "state": "succeeded",
+          "actualRequests": 13,
+          "runRequests": 12,
+          "routeRequests": 1,
+          "knownUsageRequests": 13,
+          "requestsWithoutUsage": [],
+          "actualTokenUsage": {
+            "inputTokens": 45201,
+            "outputTokens": 2654,
+            "totalTokens": 47855
+          },
+          "runTokenUsage": {
+            "inputTokens": 39977,
+            "outputTokens": 2044,
+            "totalTokens": 42021
+          },
+          "routeTokenUsage": {
+            "inputTokens": 5224,
+            "outputTokens": 610,
+            "totalTokens": 5834
+          },
+          "stages": {
+            "after_tool": {
+              "calls": 3,
+              "inputTokens": 11671,
+              "outputTokens": 588,
+              "totalTokens": 12259
+            },
+            "assignment_start": {
+              "calls": 2,
+              "inputTokens": 6027,
+              "outputTokens": 115,
+              "totalTokens": 6142
+            },
+            "manager_dispatch": {
+              "calls": 4,
+              "inputTokens": 9993,
+              "outputTokens": 305,
+              "totalTokens": 10298
+            },
+            "manager_final": {
+              "calls": 1,
+              "inputTokens": 5219,
+              "outputTokens": 754,
+              "totalTokens": 5973
+            },
+            "tool_proposal": {
+              "calls": 2,
+              "inputTokens": 7067,
+              "outputTokens": 282,
+              "totalTokens": 7349
+            }
+          },
+          "runtimeControlDispatches": 0,
+          "assignmentCount": 2,
+          "toolActionCount": 3,
+          "noCallsWhileWaiting": null,
+          "grantUnchanged": null,
+          "oldUntaggedDispatch": null,
+          "trimmedPrepared": null,
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/before-natural-1/fixtures/team-marker.md",
+            "sha256": "39c4b6012b778e95f5e13e856f781f66f2e16fcbc5bbf0830752225675b9caff",
+            "size": 94
+          }
+        },
+        {
+          "name": "approval-sigkill-resume",
+          "runId": "ad3d959e-ae1a-4196-97c2-83d7f1fe6f10",
+          "state": "succeeded",
+          "actualRequests": 7,
+          "runRequests": 7,
+          "routeRequests": 0,
+          "knownUsageRequests": 7,
+          "requestsWithoutUsage": [],
+          "actualTokenUsage": {
+            "inputTokens": 20674,
+            "outputTokens": 727,
+            "totalTokens": 21401
+          },
+          "runTokenUsage": {
+            "inputTokens": 20674,
+            "outputTokens": 727,
+            "totalTokens": 21401
+          },
+          "routeTokenUsage": {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "totalTokens": 0
+          },
+          "stages": {
+            "after_tool": {
+              "calls": 2,
+              "inputTokens": 7931,
+              "outputTokens": 222,
+              "totalTokens": 8153
+            },
+            "assignment_start": {
+              "calls": 1,
+              "inputTokens": 1846,
+              "outputTokens": 7,
+              "totalTokens": 1853
+            },
+            "manager_dispatch": {
+              "calls": 2,
+              "inputTokens": 3517,
+              "outputTokens": 146,
+              "totalTokens": 3663
+            },
+            "manager_final": {
+              "calls": 1,
+              "inputTokens": 4440,
+              "outputTokens": 211,
+              "totalTokens": 4651
+            },
+            "tool_proposal": {
+              "calls": 1,
+              "inputTokens": 2940,
+              "outputTokens": 141,
+              "totalTokens": 3081
+            }
+          },
+          "runtimeControlDispatches": 0,
+          "assignmentCount": 1,
+          "toolActionCount": 2,
+          "noCallsWhileWaiting": true,
+          "grantUnchanged": true,
+          "oldUntaggedDispatch": null,
+          "trimmedPrepared": null,
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/before-natural-1/fixtures/approval-marker.md",
+            "sha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8",
+            "size": 12
+          }
+        },
+        {
+          "name": "approval-rejected-no-write",
+          "runId": "e3c4a536-37b3-40c6-98b0-99d3ba5fa091",
+          "state": "failed",
+          "actualRequests": 4,
+          "runRequests": 4,
+          "routeRequests": 0,
+          "knownUsageRequests": 4,
+          "requestsWithoutUsage": [],
+          "actualTokenUsage": {
+            "inputTokens": 8053,
+            "outputTokens": 296,
+            "totalTokens": 8349
+          },
+          "runTokenUsage": {
+            "inputTokens": 8053,
+            "outputTokens": 296,
+            "totalTokens": 8349
+          },
+          "routeTokenUsage": {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "totalTokens": 0
+          },
+          "stages": {
+            "assignment_start": {
+              "calls": 1,
+              "inputTokens": 1782,
+              "outputTokens": 7,
+              "totalTokens": 1789
+            },
+            "manager_dispatch": {
+              "calls": 2,
+              "inputTokens": 3395,
+              "outputTokens": 148,
+              "totalTokens": 3543
+            },
+            "tool_proposal": {
+              "calls": 1,
+              "inputTokens": 2876,
+              "outputTokens": 141,
+              "totalTokens": 3017
+            }
+          },
+          "runtimeControlDispatches": 0,
+          "assignmentCount": 1,
+          "toolActionCount": 1,
+          "noCallsWhileWaiting": null,
+          "grantUnchanged": null,
+          "oldUntaggedDispatch": null,
+          "trimmedPrepared": null,
+          "file": null
+        },
+        {
+          "name": "cancel-before-downstream",
+          "runId": "de2ad9fd-bf81-417d-855b-6308808cc9f2",
+          "state": "failed",
+          "actualRequests": 2,
+          "runRequests": 2,
+          "routeRequests": 0,
+          "knownUsageRequests": 1,
+          "requestsWithoutUsage": [
+            "72ff3860-6aa2-4b5d-8244-988fe21a7995"
+          ],
+          "actualTokenUsage": {
+            "inputTokens": 1499,
+            "outputTokens": 72,
+            "totalTokens": 1571
+          },
+          "runTokenUsage": {
+            "inputTokens": 1499,
+            "outputTokens": 72,
+            "totalTokens": 1571
+          },
+          "routeTokenUsage": {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "totalTokens": 0
+          },
+          "stages": {
+            "manager_dispatch": {
+              "calls": 1,
+              "inputTokens": 1499,
+              "outputTokens": 72,
+              "totalTokens": 1571
+            }
+          },
+          "runtimeControlDispatches": 0,
+          "assignmentCount": 2,
+          "toolActionCount": 0,
+          "noCallsWhileWaiting": null,
+          "grantUnchanged": null,
+          "oldUntaggedDispatch": null,
+          "trimmedPrepared": null,
+          "file": null
+        }
+      ]
+    },
+    "before-natural-2": {
+      "status": "passed",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/before-natural-2/live-results.json",
+      "rawReportSha256": "44deafcd40aad9da26131ae6e5abf058151cae0dade14196f3b8ec8f9897c3e8",
+      "databaseSha256": "159941f13eb70f6bf88c87719baf434848f79157d04f04e0c36aa902f94afc99",
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/baseline-build/main/runtime/index.js",
+          "sha256": "5d7b790ff2cd812ea1afdaf201377d0b06e4f63fd7caee8b736333ca54fe15dd"
+        }
+      ],
+      "resumedProviderRequests": null,
+      "resumedPaidDispatchRequests": null,
+      "cases": [
+        {
+          "name": "supervisor-route-two-employees",
+          "runId": "756a16ba-6bdf-4b7c-93c4-801f28b1c315",
+          "state": "succeeded",
+          "actualRequests": 14,
+          "runRequests": 13,
+          "routeRequests": 1,
+          "knownUsageRequests": 14,
+          "requestsWithoutUsage": [],
+          "actualTokenUsage": {
+            "inputTokens": 51511,
+            "outputTokens": 3585,
+            "totalTokens": 55096
+          },
+          "runTokenUsage": {
+            "inputTokens": 46281,
+            "outputTokens": 3010,
+            "totalTokens": 49291
+          },
+          "routeTokenUsage": {
+            "inputTokens": 5230,
+            "outputTokens": 575,
+            "totalTokens": 5805
+          },
+          "stages": {
+            "after_tool": {
+              "calls": 3,
+              "inputTokens": 11473,
+              "outputTokens": 613,
+              "totalTokens": 12086
+            },
+            "assignment_start": {
+              "calls": 2,
+              "inputTokens": 5871,
+              "outputTokens": 128,
+              "totalTokens": 5999
+            },
+            "manager_dispatch": {
+              "calls": 4,
+              "inputTokens": 10100,
+              "outputTokens": 290,
+              "totalTokens": 10390
+            },
+            "manager_final": {
+              "calls": 1,
+              "inputTokens": 5211,
+              "outputTokens": 1002,
+              "totalTokens": 6213
+            },
+            "manager_format_correction": {
+              "calls": 1,
+              "inputTokens": 6595,
+              "outputTokens": 694,
+              "totalTokens": 7289
+            },
+            "tool_proposal": {
+              "calls": 2,
+              "inputTokens": 7031,
+              "outputTokens": 283,
+              "totalTokens": 7314
+            }
+          },
+          "runtimeControlDispatches": 0,
+          "assignmentCount": 2,
+          "toolActionCount": 3,
+          "noCallsWhileWaiting": null,
+          "grantUnchanged": null,
+          "oldUntaggedDispatch": null,
+          "trimmedPrepared": null,
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/before-natural-2/fixtures/team-marker.md",
+            "sha256": "05684705e88d622190f80d4d5c7111a47eaaad37b8522865e46e9c6b73047111",
+            "size": 187
+          }
+        }
+      ]
+    },
+    "after-natural-1": {
+      "status": "passed",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/after-natural-1/live-results.json",
+      "rawReportSha256": "5719fa054d2814c127b3c3576172d8b09427384abbf507f3f6e859f23e2cd4a8",
+      "databaseSha256": "0e7fa7685a15a8dd544552939bca91bef324314d5cfbbda3147384f21afea4e0",
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "34cd101a4470ddf72dc85283ac22690a6d3636b275e4281382a341b41949e010"
+        },
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "34cd101a4470ddf72dc85283ac22690a6d3636b275e4281382a341b41949e010"
+        }
+      ],
+      "resumedProviderRequests": null,
+      "resumedPaidDispatchRequests": null,
+      "cases": [
+        {
+          "name": "supervisor-route-two-employees",
+          "runId": "fcef2215-3757-4c8d-9dad-3ef24be76dde",
+          "state": "succeeded",
+          "actualRequests": 8,
+          "runRequests": 7,
+          "routeRequests": 1,
+          "knownUsageRequests": 8,
+          "requestsWithoutUsage": [],
+          "actualTokenUsage": {
+            "inputTokens": 31380,
+            "outputTokens": 2249,
+            "totalTokens": 33629
+          },
+          "runTokenUsage": {
+            "inputTokens": 26148,
+            "outputTokens": 1668,
+            "totalTokens": 27816
+          },
+          "routeTokenUsage": {
+            "inputTokens": 5232,
+            "outputTokens": 581,
+            "totalTokens": 5813
+          },
+          "stages": {
+            "after_tool": {
+              "calls": 3,
+              "inputTokens": 11906,
+              "outputTokens": 702,
+              "totalTokens": 12608
+            },
+            "assignment_start": {
+              "calls": 2,
+              "inputTokens": 5695,
+              "outputTokens": 146,
+              "totalTokens": 5841
+            },
+            "manager_final": {
+              "calls": 1,
+              "inputTokens": 5051,
+              "outputTokens": 679,
+              "totalTokens": 5730
+            },
+            "tool_proposal": {
+              "calls": 1,
+              "inputTokens": 3496,
+              "outputTokens": 141,
+              "totalTokens": 3637
+            }
+          },
+          "runtimeControlDispatches": 3,
+          "assignmentCount": 2,
+          "toolActionCount": 3,
+          "noCallsWhileWaiting": null,
+          "grantUnchanged": null,
+          "oldUntaggedDispatch": null,
+          "trimmedPrepared": null,
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/after-natural-1/fixtures/team-marker.md",
+            "sha256": "7d16533ae6367a2809975c93371be1df24341a3138b79dd96d181d87df9e3e4e",
+            "size": 117
+          }
+        },
+        {
+          "name": "approval-sigkill-resume",
+          "runId": "922da933-d59f-4204-bec2-d101e0e6a476",
+          "state": "succeeded",
+          "actualRequests": 5,
+          "runRequests": 5,
+          "routeRequests": 0,
+          "knownUsageRequests": 5,
+          "requestsWithoutUsage": [],
+          "actualTokenUsage": {
+            "inputTokens": 17145,
+            "outputTokens": 653,
+            "totalTokens": 17798
+          },
+          "runTokenUsage": {
+            "inputTokens": 17145,
+            "outputTokens": 653,
+            "totalTokens": 17798
+          },
+          "routeTokenUsage": {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "totalTokens": 0
+          },
+          "stages": {
+            "after_tool": {
+              "calls": 2,
+              "inputTokens": 7924,
+              "outputTokens": 229,
+              "totalTokens": 8153
+            },
+            "assignment_start": {
+              "calls": 1,
+              "inputTokens": 1846,
+              "outputTokens": 7,
+              "totalTokens": 1853
+            },
+            "manager_final": {
+              "calls": 1,
+              "inputTokens": 4435,
+              "outputTokens": 276,
+              "totalTokens": 4711
+            },
+            "tool_proposal": {
+              "calls": 1,
+              "inputTokens": 2940,
+              "outputTokens": 141,
+              "totalTokens": 3081
+            }
+          },
+          "runtimeControlDispatches": 2,
+          "assignmentCount": 1,
+          "toolActionCount": 2,
+          "noCallsWhileWaiting": true,
+          "grantUnchanged": true,
+          "oldUntaggedDispatch": false,
+          "trimmedPrepared": false,
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/after-natural-1/fixtures/approval-marker.md",
+            "sha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8",
+            "size": 12
+          }
+        },
+        {
+          "name": "approval-rejected-no-write",
+          "runId": "c50e3899-5e9d-441b-9d95-27e1f62c2e8b",
+          "state": "failed",
+          "actualRequests": 2,
+          "runRequests": 2,
+          "routeRequests": 0,
+          "knownUsageRequests": 2,
+          "requestsWithoutUsage": [],
+          "actualTokenUsage": {
+            "inputTokens": 4658,
+            "outputTokens": 148,
+            "totalTokens": 4806
+          },
+          "runTokenUsage": {
+            "inputTokens": 4658,
+            "outputTokens": 148,
+            "totalTokens": 4806
+          },
+          "routeTokenUsage": {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "totalTokens": 0
+          },
+          "stages": {
+            "assignment_start": {
+              "calls": 1,
+              "inputTokens": 1782,
+              "outputTokens": 7,
+              "totalTokens": 1789
+            },
+            "tool_proposal": {
+              "calls": 1,
+              "inputTokens": 2876,
+              "outputTokens": 141,
+              "totalTokens": 3017
+            }
+          },
+          "runtimeControlDispatches": 2,
+          "assignmentCount": 1,
+          "toolActionCount": 1,
+          "noCallsWhileWaiting": null,
+          "grantUnchanged": null,
+          "oldUntaggedDispatch": null,
+          "trimmedPrepared": null,
+          "file": null
+        },
+        {
+          "name": "cancel-before-downstream",
+          "runId": "e5a8e21e-43f7-46dd-8d00-e893776abbff",
+          "state": "failed",
+          "actualRequests": 1,
+          "runRequests": 1,
+          "routeRequests": 0,
+          "knownUsageRequests": 0,
+          "requestsWithoutUsage": [
+            "6e46bb43-5bc5-4240-8338-0fa9d3397725"
+          ],
+          "actualTokenUsage": {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "totalTokens": 0
+          },
+          "runTokenUsage": {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "totalTokens": 0
+          },
+          "routeTokenUsage": {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "totalTokens": 0
+          },
+          "stages": {},
+          "runtimeControlDispatches": 1,
+          "assignmentCount": 2,
+          "toolActionCount": 0,
+          "noCallsWhileWaiting": null,
+          "grantUnchanged": null,
+          "oldUntaggedDispatch": null,
+          "trimmedPrepared": null,
+          "file": null
+        }
+      ]
+    },
+    "after-natural-2": {
+      "status": "passed",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/after-natural-2/live-results.json",
+      "rawReportSha256": "cfa31c8c6f2b008d8e1d73c5954428d4864ee08eee363ec5a4b7e19cd7155f6f",
+      "databaseSha256": "dc633f15fbdb0c7f5e9d94bc63c481c545f534a2c04ae4b3fe18db958368c7dc",
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "34cd101a4470ddf72dc85283ac22690a6d3636b275e4281382a341b41949e010"
+        }
+      ],
+      "resumedProviderRequests": null,
+      "resumedPaidDispatchRequests": null,
+      "cases": [
+        {
+          "name": "supervisor-route-two-employees",
+          "runId": "e4b97121-91db-4363-bf0e-e1d89896de7a",
+          "state": "succeeded",
+          "actualRequests": 9,
+          "runRequests": 8,
+          "routeRequests": 1,
+          "knownUsageRequests": 9,
+          "requestsWithoutUsage": [],
+          "actualTokenUsage": {
+            "inputTokens": 31532,
+            "outputTokens": 2027,
+            "totalTokens": 33559
+          },
+          "runTokenUsage": {
+            "inputTokens": 26302,
+            "outputTokens": 1644,
+            "totalTokens": 27946
+          },
+          "routeTokenUsage": {
+            "inputTokens": 5230,
+            "outputTokens": 383,
+            "totalTokens": 5613
+          },
+          "stages": {
+            "after_tool": {
+              "calls": 3,
+              "inputTokens": 10290,
+              "outputTokens": 389,
+              "totalTokens": 10679
+            },
+            "assignment_start": {
+              "calls": 2,
+              "inputTokens": 5029,
+              "outputTokens": 188,
+              "totalTokens": 5217
+            },
+            "manager_final": {
+              "calls": 1,
+              "inputTokens": 4924,
+              "outputTokens": 784,
+              "totalTokens": 5708
+            },
+            "tool_proposal": {
+              "calls": 2,
+              "inputTokens": 6059,
+              "outputTokens": 283,
+              "totalTokens": 6342
+            }
+          },
+          "runtimeControlDispatches": 4,
+          "assignmentCount": 2,
+          "toolActionCount": 3,
+          "noCallsWhileWaiting": null,
+          "grantUnchanged": null,
+          "oldUntaggedDispatch": null,
+          "trimmedPrepared": null,
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/after-natural-2/fixtures/team-marker.md",
+            "sha256": "96aae868336bf395be31380759d20291b7effa4f8239b6199673b0804c1ffdf7",
+            "size": 114
+          }
+        }
+      ]
+    },
+    "legacy-native": {
+      "status": "passed",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/legacy-native/live-results.json",
+      "rawReportSha256": "1b6652733c711b7f4794b7b881cc4a83a02140ed16be8ab1cd438cc2f89c0657",
+      "databaseSha256": "0a695d6e65a738ca9df99bee239aba44586ebc56d7c7c82251317e8ad19b9548",
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/baseline-build/main/runtime/index.js",
+          "sha256": "5d7b790ff2cd812ea1afdaf201377d0b06e4f63fd7caee8b736333ca54fe15dd"
+        },
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "34cd101a4470ddf72dc85283ac22690a6d3636b275e4281382a341b41949e010"
+        }
+      ],
+      "resumedProviderRequests": 3,
+      "resumedPaidDispatchRequests": 0,
+      "cases": [
+        {
+          "name": "approval-sigkill-resume",
+          "runId": "bb8a799f-7d97-4712-b3a3-9d4aa85208fe",
+          "state": "succeeded",
+          "actualRequests": 7,
+          "runRequests": 7,
+          "routeRequests": 0,
+          "knownUsageRequests": 7,
+          "requestsWithoutUsage": [],
+          "actualTokenUsage": {
+            "inputTokens": 20721,
+            "outputTokens": 916,
+            "totalTokens": 21637
+          },
+          "runTokenUsage": {
+            "inputTokens": 20721,
+            "outputTokens": 916,
+            "totalTokens": 21637
+          },
+          "routeTokenUsage": {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "totalTokens": 0
+          },
+          "stages": {
+            "after_tool": {
+              "calls": 2,
+              "inputTokens": 7948,
+              "outputTokens": 343,
+              "totalTokens": 8291
+            },
+            "assignment_start": {
+              "calls": 1,
+              "inputTokens": 1838,
+              "outputTokens": 7,
+              "totalTokens": 1845
+            },
+            "manager_dispatch": {
+              "calls": 2,
+              "inputTokens": 3507,
+              "outputTokens": 146,
+              "totalTokens": 3653
+            },
+            "manager_final": {
+              "calls": 1,
+              "inputTokens": 4494,
+              "outputTokens": 281,
+              "totalTokens": 4775
+            },
+            "tool_proposal": {
+              "calls": 1,
+              "inputTokens": 2934,
+              "outputTokens": 139,
+              "totalTokens": 3073
+            }
+          },
+          "runtimeControlDispatches": 0,
+          "assignmentCount": 1,
+          "toolActionCount": 2,
+          "noCallsWhileWaiting": true,
+          "grantUnchanged": true,
+          "oldUntaggedDispatch": true,
+          "trimmedPrepared": false,
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/legacy-native/fixtures/approval-marker.md",
+            "sha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8",
+            "size": 12
+          }
+        }
+      ]
+    },
+    "legacy-prepared": {
+      "status": "passed",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/legacy-prepared/live-results.json",
+      "rawReportSha256": "27f0651d76683d83205ccae34b2a2c7a0534b7a54e4063719941c3e99c2cf546",
+      "databaseSha256": "aad3c8daba0b93787f4c9613f9fed78d824a8ea49e9a19dd4b9a17d44a48fcaf",
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/baseline-build/main/runtime/index.js",
+          "sha256": "5d7b790ff2cd812ea1afdaf201377d0b06e4f63fd7caee8b736333ca54fe15dd"
+        },
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "34cd101a4470ddf72dc85283ac22690a6d3636b275e4281382a341b41949e010"
+        }
+      ],
+      "resumedProviderRequests": 3,
+      "resumedPaidDispatchRequests": 0,
+      "cases": [
+        {
+          "name": "approval-sigkill-resume",
+          "runId": "8938e7c5-a176-4ce3-9663-0c47b769ad5a",
+          "state": "succeeded",
+          "actualRequests": 7,
+          "runRequests": 7,
+          "routeRequests": 0,
+          "knownUsageRequests": 7,
+          "requestsWithoutUsage": [],
+          "actualTokenUsage": {
+            "inputTokens": 20617,
+            "outputTokens": 799,
+            "totalTokens": 21416
+          },
+          "runTokenUsage": {
+            "inputTokens": 20617,
+            "outputTokens": 799,
+            "totalTokens": 21416
+          },
+          "routeTokenUsage": {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "totalTokens": 0
+          },
+          "stages": {
+            "after_tool": {
+              "calls": 2,
+              "inputTokens": 7891,
+              "outputTokens": 219,
+              "totalTokens": 8110
+            },
+            "assignment_start": {
+              "calls": 1,
+              "inputTokens": 1838,
+              "outputTokens": 7,
+              "totalTokens": 1845
+            },
+            "manager_dispatch": {
+              "calls": 2,
+              "inputTokens": 3519,
+              "outputTokens": 150,
+              "totalTokens": 3669
+            },
+            "manager_final": {
+              "calls": 1,
+              "inputTokens": 4435,
+              "outputTokens": 284,
+              "totalTokens": 4719
+            },
+            "tool_proposal": {
+              "calls": 1,
+              "inputTokens": 2934,
+              "outputTokens": 139,
+              "totalTokens": 3073
+            }
+          },
+          "runtimeControlDispatches": 0,
+          "assignmentCount": 1,
+          "toolActionCount": 2,
+          "noCallsWhileWaiting": true,
+          "grantUnchanged": true,
+          "oldUntaggedDispatch": true,
+          "trimmedPrepared": true,
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/legacy-prepared/fixtures/approval-marker.md",
+            "sha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8",
+            "size": 12
+          }
+        }
+      ]
+    }
+  },
+  "worktreeIntegrity": {
+    "entryDirtyFiles": 77,
+    "intentionallyExtended": [
+      "src/runtime/sdk-checkpoints.ts",
+      "src/runtime/sdk-model-response.ts",
+      "src/runtime/task-service.ts",
+      "src/runtime/team-executor.test.ts",
+      "src/runtime/team-executor.ts"
+    ],
+    "otherEntryFilesByteIdentical": 72,
+    "originalUserFilesByteIdentical": 27,
+    "noMissingEntryFiles": true,
+    "indexUnchanged": true,
+    "headUnchanged": true,
+    "nativeHelpersByteIdentical": true
+  },
+  "limitations": [
+    "Two natural-language cases per build are observations, not population success-rate or latency evidence.",
+    "Prompts and frozen employee/tool contracts are equivalent; fixture paths and model-generated output differ.",
+    "Total Token changes also include one fewer tool-proposal turn and one fewer manager format correction; removed dispatch Token is listed separately.",
+    "Cancelled requests without usage have unknown provider billing; known usage of zero is not a zero-cost claim.",
+    "No currency pricing, full-GUI acceptance, installation size or RSS improvement is claimed."
+  ]
+}

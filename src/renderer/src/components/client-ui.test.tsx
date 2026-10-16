@@ -1,11 +1,36 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ChatBubble, Check, ShieldCheck } from 'iconoir-react'
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { CLIENT_ICON_CONTRACT, ClientIconSystem } from './client-icon-system'
-import { AppShell, Avatar, ClientModal, ContextPane, DetailListMark, DetailNote, DetailPage, DetailSectionHeader, DetailState, DetailSummaryPanel, ListRow, ProfileFacts, ProfileSummary, ProfileValueTags, Rail, SelectionCatalog, SelectionOption, SummaryCard, SummaryCardGrid, SummaryList, SummaryListItem, Toolbar } from './client-ui'
+import { AppShell, Avatar, CdsButton, CdsSegmentedControl, ClientModal, ContextPane, DetailListMark, DetailNote, DetailPage, DetailSectionHeader, DetailState, DetailSummaryPanel, IconButton, ListRow, ProfileFacts, ProfileSummary, ProfileValueTags, Rail, SearchBox, SelectionCatalog, SelectionOption, SettingRow, SettingsBlock, SummaryCard, SummaryCardGrid, SummaryList, SummaryListItem, Toolbar } from './client-ui'
+import { CdsDialog } from '../open-claude-ui/primitives/ConfirmationDialog'
+import { AttachmentOpenMenu } from './message-ui'
 
 describe('client UI contracts', () => {
+  it('clears a search and returns keyboard focus to its input', () => {
+    function SearchExample(): React.JSX.Element {
+      const [value, setValue] = useState('没有匹配的关键词')
+      return <SearchBox label="搜索专家" placeholder="搜索专家" value={value} onChange={setValue} />
+    }
+    render(<SearchExample />)
+    fireEvent.click(screen.getByRole('button', { name: '清除搜索' }))
+    const input = screen.getByRole('textbox', { name: '搜索专家' })
+    expect(input).toHaveValue('')
+    expect(input).toHaveFocus()
+    expect(screen.queryByRole('button', { name: '清除搜索' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the direct profile entry available when no user menu is configured', () => {
+    const onProfile = vi.fn()
+    render(<Rail active="messages" items={[]} footerItems={[]} userProfile={{ name: '用户' }} onProfile={onProfile} onNavigate={() => undefined} />)
+    const profile = screen.getByRole('button', { name: '用户 个人信息' })
+    expect(profile).not.toHaveAttribute('aria-haspopup')
+    fireEvent.click(profile)
+    expect(onProfile).toHaveBeenCalledOnce()
+  })
+
   it('applies the shared minimal icon family and stroke contract', () => {
     const { container } = render(<ClientIconSystem><Check aria-label="完成" /></ClientIconSystem>)
     expect(CLIENT_ICON_CONTRACT).toEqual({ library: 'iconoir-react', strokeWidth: 1.5 })
@@ -43,6 +68,8 @@ describe('client UI contracts', () => {
   it('represents selection through the shared list-row contract', () => {
     render(<ListRow title="总管" subtitle="在线" selected onClick={() => undefined} />)
     expect(screen.getByRole('button', { name: /总管在线/ })).toHaveClass('list-row', 'is-selected')
+    expect(screen.getByRole('button', { name: /总管在线/ })).toHaveAttribute('data-cds', 'Button')
+    expect(screen.getByRole('button', { name: /总管在线/ })).toHaveAttribute('data-cds-primitive', 'ListRow')
   })
 
   it('makes avatar visibility an explicit shared list-row contract', () => {
@@ -125,7 +152,7 @@ describe('client UI contracts', () => {
     expect(screen.getByText('所有完成要求均已通过').closest('.detail-summary-panel')).toHaveClass('detail-summary-panel--success')
     expect(screen.getByText('交付文件与证据').closest('.detail-section-header')).toBeInTheDocument()
     expect(screen.getByText('新闻整理.md').closest('.summary-list')).toHaveClass('summary-list--outlined')
-    expect(screen.getByText('已保存 20 条来源证据')).toHaveClass('detail-note--success')
+    expect(screen.getByText('已保存 20 条来源证据').closest('.detail-note')).toHaveClass('detail-note--success')
     expect(container.querySelector('.detail-list-mark--success')).toBeInTheDocument()
   })
 
@@ -160,5 +187,230 @@ describe('client UI contracts', () => {
 
     expect(screen.getByRole('dialog', { name: '员工设置' })).toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: '确认删除' })).not.toBeInTheDocument()
+  })
+
+  it('uses the upstream button for icon actions without implicitly submitting a surrounding form', () => {
+    const onSubmit = vi.fn((event: React.FormEvent) => event.preventDefault())
+    const onAction = vi.fn()
+    render(<form onSubmit={onSubmit}><IconButton label="重新读取" icon={Check} onClick={onAction} /></form>)
+    const action = screen.getByRole('button', { name: '重新读取' })
+    expect(action).toHaveAttribute('data-cds', 'Button')
+    expect(action).toHaveAttribute('data-cds-size', 'icon')
+    expect(action).toHaveAttribute('title', '重新读取')
+    fireEvent.click(action)
+    expect(onAction).toHaveBeenCalledOnce()
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('blocks a loading upstream button instead of firing its business callback twice', () => {
+    const onClick = vi.fn()
+    const { rerender } = render(<CdsButton type="button" variant="primary" size="sm" isLoading onClick={onClick}>发布员工</CdsButton>)
+    const button = screen.getByRole('button', { name: '发布员工' })
+    expect(button).toBeDisabled()
+    fireEvent.click(button)
+    expect(onClick).not.toHaveBeenCalled()
+    rerender(<CdsButton type="button" variant="primary" size="sm" onClick={onClick}>发布员工</CdsButton>)
+    fireEvent.click(button)
+    expect(onClick).toHaveBeenCalledOnce()
+  })
+
+  it('moves segmented focus and selection with arrows, Home and End while skipping disabled options', () => {
+    const onChange = vi.fn()
+    render(<CdsSegmentedControl label="员工视图" defaultValue="all" onChange={onChange} tabs={[
+      { id: 'all', label: '全部', tabId: 'employees-all', controls: 'employees-panel' },
+      { id: 'unavailable', label: '不可选', disabled: true },
+      { id: 'active', label: '已启用' }
+    ]} />)
+    const first = screen.getByRole('tab', { name: '全部' })
+    const last = screen.getByRole('tab', { name: '已启用' })
+    expect(first).toHaveAttribute('id', 'employees-all')
+    expect(first).toHaveAttribute('aria-controls', 'employees-panel')
+    first.focus()
+    fireEvent.keyDown(first, { key: 'ArrowRight' })
+    expect(last).toHaveFocus()
+    expect(last).toHaveAttribute('aria-selected', 'true')
+    expect(first).toHaveAttribute('tabindex', '-1')
+    expect(onChange).toHaveBeenLastCalledWith('active', 2)
+    fireEvent.keyDown(last, { key: 'ArrowRight' })
+    expect(first).toHaveFocus()
+    fireEvent.keyDown(first, { key: 'End' })
+    expect(last).toHaveFocus()
+    fireEvent.keyDown(last, { key: 'Home' })
+    expect(first).toHaveFocus()
+  })
+
+  it('leaves controlled segmented selection to its caller and isolates the generated ids of separate controls', () => {
+    const onChange = vi.fn()
+    const tabs = [{ id: 'first', label: '第一项' }, { id: 'second', label: '第二项' }]
+    const { rerender } = render(<><CdsSegmentedControl label="首组" tabs={tabs} value="first" onChange={onChange} /><CdsSegmentedControl label="第二组" tabs={tabs} /></>)
+    const firstControl = screen.getByRole('tablist', { name: '首组' })
+    const secondControl = screen.getByRole('tablist', { name: '第二组' })
+    fireEvent.click(within(firstControl).getByRole('tab', { name: '第二项' }))
+    expect(onChange).toHaveBeenCalledWith('second', 1)
+    expect(within(firstControl).getByRole('tab', { name: '第一项' })).toHaveAttribute('aria-selected', 'true')
+    expect(within(firstControl).getByRole('tab', { name: '第一项' }).id).not.toBe(within(secondControl).getByRole('tab', { name: '第一项' }).id)
+    rerender(<><CdsSegmentedControl label="首组" tabs={tabs} value="second" onChange={onChange} /><CdsSegmentedControl label="第二组" tabs={tabs} /></>)
+    expect(within(firstControl).getByRole('tab', { name: '第二项' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('keeps modal focus inside the surface, wraps both directions and restores its opener after backdrop dismissal', async () => {
+    function Harness() {
+      const [open, setOpen] = useState(false)
+      return <><button type="button" onClick={() => setOpen(true)}>打开详情</button><ClientModal open={open} title="详情" size="medium" onClose={() => setOpen(false)}><button type="button" disabled>不可用</button><div hidden><button type="button">隐藏操作</button></div><button type="button">末尾操作</button></ClientModal></>
+    }
+    render(<Harness />)
+    const opener = screen.getByRole('button', { name: '打开详情' })
+    opener.focus()
+    fireEvent.click(opener)
+    const dialog = screen.getByRole('dialog', { name: '详情' })
+    const first = within(dialog).getByRole('button', { name: '关闭' })
+    const last = within(dialog).getByRole('button', { name: '末尾操作' })
+    await waitFor(() => expect(first).toHaveFocus())
+    first.focus()
+    fireEvent.keyDown(first, { key: 'Tab', shiftKey: true })
+    expect(last).toHaveFocus()
+    fireEvent.keyDown(last, { key: 'Tab' })
+    expect(first).toHaveFocus()
+    opener.focus()
+    expect(first).toHaveFocus()
+    fireEvent.mouseDown(last)
+    expect(dialog).toBeInTheDocument()
+    fireEvent.mouseDown(dialog.closest('.modal-overlay')!)
+    expect(screen.queryByRole('dialog', { name: '详情' })).not.toBeInTheDocument()
+    expect(opener).toHaveFocus()
+  })
+
+  it('returns focus through each nested modal instead of sending it behind an open parent', async () => {
+    function Harness() {
+      const [parentOpen, setParentOpen] = useState(false)
+      const [childOpen, setChildOpen] = useState(false)
+      return <><button type="button" onClick={() => setParentOpen(true)}>打开员工</button><ClientModal open={parentOpen} title="员工" onClose={() => setParentOpen(false)}><button type="button" onClick={() => setChildOpen(true)}>删除员工</button><ClientModal open={childOpen} title="确认删除员工" nested onClose={() => setChildOpen(false)}><button type="button">确认删除</button></ClientModal></ClientModal></>
+    }
+    render(<Harness />)
+    const opener = screen.getByRole('button', { name: '打开员工' })
+    opener.focus()
+    fireEvent.click(opener)
+    const trigger = screen.getByRole('button', { name: '删除员工' })
+    trigger.focus()
+    fireEvent.click(trigger)
+    const child = screen.getByRole('dialog', { name: '确认删除员工' })
+    await waitFor(() => expect(within(child).getByRole('button', { name: '关闭' })).toHaveFocus())
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.getByRole('dialog', { name: '员工' })).toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(opener).toHaveFocus()
+  })
+
+  it('keeps a dialog focusable even when its content has no controls', () => {
+    render(<CdsDialog open title="只读信息" onClose={() => undefined}><p>没有交互项</p></CdsDialog>)
+    const dialog = screen.getByRole('dialog', { name: '只读信息' })
+    fireEvent.keyDown(window, { key: 'Tab' })
+    expect(dialog).toHaveFocus()
+  })
+
+  it('preserves a user-selected control while the dialog initial-focus frame is pending', () => {
+    const frames: FrameRequestCallback[] = []
+    const schedule = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => { frames.push(callback); return frames.length })
+    try {
+      render(<CdsDialog open title="快速操作" onClose={() => undefined}><button type="button">默认操作</button><button type="button">用户已选操作</button></CdsDialog>)
+      const selected = screen.getByRole('button', { name: '用户已选操作' })
+      selected.focus()
+      act(() => frames[0](0))
+      expect(selected).toHaveFocus()
+    } finally { schedule.mockRestore() }
+  })
+
+  it('keeps attachment menu keyboard focus in its dialog and dismisses the menu before the dialog', async () => {
+    const onClose = vi.fn()
+    const onReveal = vi.fn()
+    function Harness() {
+      const [open, setOpen] = useState(false)
+      return <><button type="button" onClick={() => setOpen(true)}>打开交付详情</button>{createPortal(<button type="button" data-react-aria-top-layer>无关弹层操作</button>, document.body)}<ClientModal open={open} title="交付详情" onClose={() => { onClose(); setOpen(false) }}><AttachmentOpenMenu attachment={{ id: 'report', name: 'report.md', detail: 'Markdown' }} onOpen={() => undefined} onReveal={onReveal} /></ClientModal></>
+    }
+    render(<Harness />)
+    const opener = screen.getByRole('button', { name: '打开交付详情' })
+    opener.focus()
+    fireEvent.click(opener)
+    const dialog = screen.getByRole('dialog', { name: '交付详情' })
+    const close = within(dialog).getByRole('button', { name: '关闭' })
+    await waitFor(() => expect(close).toHaveFocus())
+    const trigger = within(dialog).getByRole('button', { name: '打开方式 report.md' })
+    act(() => trigger.focus())
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+    const first = await screen.findByRole('menuitem', { name: /使用系统默认应用打开/ })
+    await waitFor(() => expect(first).toHaveFocus())
+    fireEvent.keyDown(first, { key: 'ArrowDown' })
+    const reveal = screen.getByRole('menuitem', { name: /打开所在文件夹/ })
+    expect(reveal).toHaveFocus()
+    fireEvent.keyDown(reveal, { key: 'Enter' })
+    fireEvent.keyUp(reveal, { key: 'Enter' })
+    expect(onReveal).toHaveBeenCalledExactlyOnceWith('report')
+    await waitFor(() => expect(trigger).toHaveFocus())
+
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+    const item = await screen.findByRole('menuitem', { name: /使用系统默认应用打开/ })
+    await waitFor(() => expect(item).toHaveFocus())
+    fireEvent.keyDown(item, { key: 'Tab' })
+    expect(document.activeElement?.closest('[data-cds="DialogPortal"]')).not.toBeNull()
+    fireEvent.keyDown(document.activeElement!, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement?.closest('[data-cds="DialogPortal"]')).not.toBeNull()
+    fireEvent.keyDown(item, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    expect(dialog).toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+    await waitFor(() => expect(trigger).toHaveFocus())
+    screen.getByRole('button', { name: '无关弹层操作' }).focus()
+    expect(close).toHaveFocus()
+    fireEvent.keyDown(close, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(opener).toHaveFocus()
+  })
+
+  it('restores focus through an attachment menu, its nested dialog and the outer dialog in Escape order', async () => {
+    function Harness() {
+      const [parentOpen, setParentOpen] = useState(false)
+      const [childOpen, setChildOpen] = useState(false)
+      return <><button type="button" onClick={() => setParentOpen(true)}>打开事项</button><ClientModal open={parentOpen} title="事项" onClose={() => setParentOpen(false)}><button type="button" onClick={() => setChildOpen(true)}>查看交付</button><ClientModal open={childOpen} title="交付文件" nested onClose={() => setChildOpen(false)}><AttachmentOpenMenu attachment={{ id: 'report', name: 'report.md', detail: 'Markdown' }} onOpen={() => undefined} /></ClientModal></ClientModal></>
+    }
+    render(<Harness />)
+    const opener = screen.getByRole('button', { name: '打开事项' })
+    opener.focus()
+    fireEvent.click(opener)
+    const parent = screen.getByRole('dialog', { name: '事项' })
+    await waitFor(() => expect(within(parent).getByRole('button', { name: '关闭' })).toHaveFocus())
+    const childTrigger = within(parent).getByRole('button', { name: '查看交付' })
+    childTrigger.focus()
+    fireEvent.click(childTrigger)
+    const child = screen.getByRole('dialog', { name: '交付文件' })
+    await waitFor(() => expect(within(child).getByRole('button', { name: '关闭' })).toHaveFocus())
+    const menuTrigger = within(child).getByRole('button', { name: '打开方式 report.md' })
+    act(() => menuTrigger.focus())
+    fireEvent.keyDown(menuTrigger, { key: 'ArrowDown' })
+    const item = await screen.findByRole('menuitem', { name: /使用系统默认应用打开/ })
+    await waitFor(() => expect(item).toHaveFocus())
+    fireEvent.keyDown(item, { key: 'Escape' })
+    await waitFor(() => expect(menuTrigger).toHaveFocus())
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(child).toBeInTheDocument()
+    expect(parent).toBeInTheDocument()
+    fireEvent.keyDown(menuTrigger, { key: 'Escape' })
+    expect(child).not.toBeInTheDocument()
+    expect(childTrigger).toHaveFocus()
+    fireEvent.keyDown(childTrigger, { key: 'Escape' })
+    expect(parent).not.toBeInTheDocument()
+    expect(opener).toHaveFocus()
+  })
+
+  it('preserves setting control labels and callbacks inside the new CDS section', () => {
+    function Harness() {
+      const [enabled, setEnabled] = useState(false)
+      return <SettingsBlock title="启动偏好" description="控制本机启动行为"><SettingRow title="恢复会话" description="打开上次会话"><input type="checkbox" aria-label="恢复上次会话" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} /></SettingRow></SettingsBlock>
+    }
+    render(<Harness />)
+    const section = screen.getByRole('region', { name: '启动偏好' })
+    expect(section).toHaveAttribute('data-cds', 'SettingsSection')
+    fireEvent.click(within(section).getByRole('checkbox', { name: '恢复上次会话' }))
+    expect(screen.getByRole('checkbox', { name: '恢复上次会话' })).toBeChecked()
   })
 })

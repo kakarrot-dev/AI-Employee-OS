@@ -1,6 +1,7 @@
 import type { ChatContentView } from '../shared/chat-content-contract'
 import type { DeliveryResultContract } from '../shared/delivery-result-contract'
 import type { AgentHandoffEnvelope } from './handoff-contract'
+import type { SupervisorConfigInput } from '../shared/supervisor-contract'
 
 export const RUNTIME_SCHEMA_VERSION = 1 as const
 
@@ -239,6 +240,9 @@ export interface Run extends VersionedEntity {
   runGrantId: string
   state: RunState
   supersedesRunId?: string
+  /** Frozen for new, eligible runs. Missing values retain the legacy executor. */
+  employeeExecutor?: 'openai-agents-ts-v1' | 'openai-agents-ts-v2'
+  sdkSupervisor?: SupervisorConfigInput
 }
 
 export interface Assignment extends VersionedEntity {
@@ -475,7 +479,7 @@ export interface Checkpoint extends VersionedEntity {
   sequence: number
   assignmentId?: string
   workerThreadId: string
-  phase: 'created' | 'memory_loaded' | 'provider_step' | 'tool_waiting' | 'user_input_waiting' | 'participants_waiting' | 'source_batch' | 'employee_completed' | 'deep_agents_safe_pause' | 'manager_review' | 'manager_rework' | 'delivery_committed' | 'shutdown_requested' | 'safe_paused'
+  phase: 'created' | 'memory_loaded' | 'provider_step' | 'tool_waiting' | 'user_input_waiting' | 'participants_waiting' | 'source_batch' | 'employee_completed' | 'deep_agents_safe_pause' | 'handoff_validated' | 'manager_review' | 'manager_rework' | 'delivery_committed' | 'shutdown_requested' | 'safe_paused' | 'sdk_execution'
   nextNode?: 'employee' | 'manager' | 'delivery'
   committed: true
   unsettledToolActionIds: string[]

@@ -64,6 +64,16 @@ export class ToolGateway {
   constructor(private readonly kernel: RuntimeKernel, private readonly resources: ResourceService, private readonly runner: ToolRunner) {}
 
   async propose(proposal: ToolProposal): Promise<ToolAction> {
+    const action = this.prepare(proposal)
+    return action.state === 'pending' && !action.approvalId ? this.executePrepared(action.id) : action
+  }
+
+  /** Same policy as propose, with side effects deferred until the execution receipt is durable. */
+  prepare(proposal: ToolProposal): ToolAction {
+    return this.kernel.transaction(() => this.prepareAction(proposal))
+  }
+
+  private prepareAction(proposal: ToolProposal): ToolAction {
     const { run, grant, assignment, tool } = this.validateProposal(proposal)
     const idempotencyKey = createHash('sha256').update(canonical({ runId: run.id, assignmentId: assignment.id, toolVersionId: tool.id, parameters: proposal.parameters, idempotencyScope: proposal.idempotencyScope ?? 'default' })).digest('hex')
     const existing = this.kernel.store.list<ToolAction>('ToolAction').find((action) => action.idempotencyKey === idempotencyKey)
@@ -88,23 +98,27 @@ export class ToolGateway {
       this.kernel.save({ entityType: 'ToolAction', entity: awaiting, immutable: false }, 'tool_action.awaiting_approval', { approvalId: approval.id })
       return awaiting
     }
-    return this.execute(action.id)
+    return action
   }
 
-  async decide(actionId: string, approved: boolean): Promise<ToolAction> {
-    const action = this.requireAction(actionId)
-    if (action.state !== 'pending' || !action.approvalId) throw new Error('tool_action_not_awaiting_approval')
-    const approval = this.kernel.store.get<Approval>('Approval', action.approvalId)
-    if (!approval || approval.decision !== 'pending') throw new Error('approval_not_pending')
-    if (approved) this.assertActionAuthorized(action)
-    const now = new Date().toISOString()
-    this.kernel.save({ entityType: 'Approval', entity: { ...approval, decision: approved ? 'approved' : 'rejected', decidedAt: now }, immutable: false }, approved ? 'approval.approved' : 'approval.rejected', { toolActionId: action.id })
-    if (!approved) {
-      const rejected = { ...action, state: 'blocked' as const, completedAt: now, failureCode: 'approval_rejected', resultVerified: false }
-      this.kernel.save({ entityType: 'ToolAction', entity: rejected, immutable: false }, 'tool_action.blocked', { code: 'approval_rejected' })
-      return rejected
-    }
-    return this.execute(action.id)
+  async decide(actionId: string, approved: boolean, onCommit?: (action: ToolAction) => void): Promise<ToolAction> {
+    const prepared = this.kernel.transaction(() => {
+      const action = this.requireAction(actionId)
+      if (action.state !== 'pending' || !action.approvalId) throw new Error('tool_action_not_awaiting_approval')
+      const approval = this.kernel.store.get<Approval>('Approval', action.approvalId)
+      if (!approval || approval.decision !== 'pending') throw new Error('approval_not_pending')
+      if (approved) this.assertActionAuthorized(action)
+      const now = new Date().toISOString()
+      this.kernel.save({ entityType: 'Approval', entity: { ...approval, decision: approved ? 'approved' : 'rejected', decidedAt: now }, immutable: false }, approved ? 'approval.approved' : 'approval.rejected', { toolActionId: action.id })
+      if (!approved) {
+        const rejected: ToolAction = { ...action, state: 'blocked', completedAt: now, failureCode: 'approval_rejected', resultVerified: false }
+        this.kernel.save({ entityType: 'ToolAction', entity: rejected, immutable: false }, 'tool_action.blocked', { code: 'approval_rejected' })
+        onCommit?.(rejected)
+        return rejected
+      }
+      return this.beginExecution(action, onCommit)
+    })
+    return prepared.state === 'running' ? this.perform(prepared, onCommit) : prepared
   }
 
   resolveUnknown(actionId: string, outcome: 'succeeded' | 'failed', evidence: Record<string, unknown>): ToolAction {
@@ -116,27 +130,49 @@ export class ToolGateway {
     return resolved
   }
 
-  private async execute(actionId: string): Promise<ToolAction> {
-    const action = this.requireAction(actionId)
-    if (action.state !== 'pending') return action
+  async executePrepared(actionId: string, onCommit?: (action: ToolAction) => void): Promise<ToolAction> {
+    const reservation = this.kernel.transaction(() => {
+      const action = this.requireAction(actionId)
+      if (action.state !== 'pending') return { action, started: false }
+      if (action.approvalId && this.kernel.store.get<Approval>('Approval', action.approvalId)?.decision !== 'approved') throw new Error('tool_action_not_approved')
+      return { action: this.beginExecution(action, onCommit), started: true }
+    })
+    return reservation.started ? this.perform(reservation.action, onCommit) : reservation.action
+  }
+
+  private beginExecution(action: ToolAction, onCommit?: (action: ToolAction) => void): ToolAction {
     this.assertActionAuthorized(action)
-    const tool = this.resources.tool(action.toolVersionId)
     const running: ToolAction = { ...action, state: 'running', startedAt: new Date().toISOString() }
     this.kernel.save({ entityType: 'ToolAction', entity: running, immutable: false }, 'tool_action.started', {})
+    onCommit?.(running)
+    return running
+  }
+
+  private async perform(running: ToolAction, onCommit?: (action: ToolAction) => void): Promise<ToolAction> {
+    const action = running
+    const tool = this.resources.tool(action.toolVersionId)
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort('timeout'), action.timeoutMs)
+    let resultReturned = false
     try {
       const grant = this.requireGrantForAction(action)
       const result = await this.runner(tool, { ...structuredClone(action.parameters), ...((isFeishuMeetingTool(tool.id) || isTeamsTool(tool.id)) ? { actionId: action.id } : {}) }, { actionId: action.id, signal: controller.signal, grantedDirectories: [...grant.resourceScope.directories], grantedFiles: [...(grant.resourceScope.files ?? [])] })
+      resultReturned = true
       if (controller.signal.aborted) throw new Error('tool_timeout')
       const completed: ToolAction = { ...running, state: 'succeeded', completedAt: new Date().toISOString(), result, resultVerified: true }
-      this.kernel.save({ entityType: 'ToolAction', entity: completed, immutable: false }, 'tool_action.succeeded', {})
+      this.kernel.transaction(() => {
+        this.kernel.save({ entityType: 'ToolAction', entity: completed, immutable: false }, 'tool_action.succeeded', {})
+        onCommit?.(completed)
+      })
       return completed
     } catch (error) {
       const code = controller.signal.aborted ? 'tool_timeout' : error instanceof Error ? error.message.split(':')[0] : 'tool_failed'
-      const uncertain = (code === 'tool_timeout' || code === 'feishu_write_result_unknown' || code === 'teams_write_result_unknown') && tool.sideEffect === 'external_write'
+      const uncertain = (resultReturned || code === 'tool_timeout' || code === 'feishu_write_result_unknown' || code === 'teams_write_result_unknown') && tool.sideEffect === 'external_write'
       const failed: ToolAction = { ...running, state: uncertain ? 'result_unknown' : 'failed', completedAt: new Date().toISOString(), failureCode: code, resultVerified: !uncertain }
-      this.kernel.save({ entityType: 'ToolAction', entity: failed, immutable: false }, uncertain ? 'tool_action.result_unknown' : 'tool_action.failed', { code })
+      this.kernel.transaction(() => {
+        this.kernel.save({ entityType: 'ToolAction', entity: failed, immutable: false }, uncertain ? 'tool_action.result_unknown' : 'tool_action.failed', { code })
+        onCommit?.(failed)
+      })
       return failed
     } finally {
       clearTimeout(timer)

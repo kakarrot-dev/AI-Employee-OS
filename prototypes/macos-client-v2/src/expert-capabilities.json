@@ -1,0 +1,245 @@
+[
+  {
+    "id": "capability.managed-research.v2",
+    "name": "受管网络调研",
+    "description": "查找 GitHub 项目和订阅资讯，整理成附带来源的调研结果。",
+    "kind": "skill",
+    "versions": [
+      "2"
+    ],
+    "actions": [
+      {
+        "id": "github.repositories.search@research-source/v1",
+        "name": "搜索 GitHub 仓库",
+        "write": false
+      },
+      {
+        "id": "rss.read@research-source/v1",
+        "name": "读取 RSS",
+        "write": false
+      }
+    ]
+  },
+  {
+    "id": "capability.text-analysis.v1",
+    "name": "文本分析与结构化表达",
+    "description": "阅读用户提供的文本，提炼重点、归纳问题，整理成清晰的结构化内容。",
+    "kind": "tool",
+    "versions": [
+      "1"
+    ],
+    "actions": [
+      {
+        "id": "read",
+        "name": "读取与分析",
+        "write": false
+      }
+    ]
+  },
+  {
+    "id": "capability.local-document.v2",
+    "name": "本机文档编写",
+    "description": "查看、创建或修改已授权目录中的文字文档，适合整理材料和撰写报告。",
+    "kind": "skill",
+    "versions": [
+      "2"
+    ],
+    "actions": [
+      {
+        "id": "document.read@local-document/v1",
+        "name": "读取本机文档",
+        "write": false
+      },
+      {
+        "id": "document.create@local-document/v1",
+        "name": "创建本机文档",
+        "write": true
+      },
+      {
+        "id": "document.edit@local-document/v1",
+        "name": "编辑本机文档",
+        "write": true
+      }
+    ]
+  },
+  {
+    "id": "capability.network-intelligence.v2",
+    "name": "网络情报采集",
+    "description": "搜索公开网络资料、近期动态和社交平台讨论，汇总发现并保留来源。",
+    "kind": "skill",
+    "versions": [
+      "2"
+    ],
+    "actions": [
+      {
+        "id": "agent-reach.search@network-intelligence/v1",
+        "name": "搜索网络资料",
+        "write": false
+      },
+      {
+        "id": "last30days.research@network-intelligence/v1",
+        "name": "调研近期动态",
+        "write": false
+      },
+      {
+        "id": "opencli.social-search@network-intelligence/v1",
+        "name": "搜索社交平台",
+        "write": false
+      }
+    ]
+  },
+  {
+    "id": "capability.tender-analysis.v2",
+    "name": "招投标文件分析",
+    "description": "阅读招投标文件，提取客户要求、核对材料，并标明原文位置。",
+    "kind": "skill",
+    "versions": [
+      "2"
+    ],
+    "actions": [
+      {
+        "id": "tender.requirements.extract@document-analysis/v1",
+        "name": "提取招投标材料要求",
+        "write": false
+      }
+    ]
+  },
+  {
+    "id": "capability.feishu-documents.v2",
+    "name": "飞书文档读取",
+    "description": "搜索并阅读使用者有权访问的飞书文档，供专家查找资料和回答问题。只读，不修改文档。",
+    "kind": "skill",
+    "versions": [
+      "2"
+    ],
+    "actions": [
+      {
+        "id": "feishu.documents.search@feishu-documents/v1",
+        "name": "搜索飞书文档",
+        "write": false
+      },
+      {
+        "id": "feishu.documents.read@feishu-documents/v1",
+        "name": "读取飞书文档",
+        "write": false
+      },
+      {
+        "id": "feishu.wiki.count@feishu-wiki/v1",
+        "name": "查询知识库信息",
+        "write": false
+      }
+    ]
+  },
+  {
+    "id": "capability.feishu-meetings.v2",
+    "name": "飞书会议办理",
+    "description": "查找联系人、创建飞书会议，并在确认后发送邀请。",
+    "kind": "skill",
+    "versions": [
+      "2"
+    ],
+    "actions": [
+      {
+        "id": "feishu.contacts.search@feishu-meetings/v1",
+        "name": "搜索联系人",
+        "write": false
+      },
+      {
+        "id": "feishu.meetings.create@feishu-meetings/v1",
+        "name": "创建会议",
+        "write": true
+      },
+      {
+        "id": "feishu.meetings.send_invitation@feishu-meetings/v1",
+        "name": "发送会议邀请",
+        "write": true
+      }
+    ]
+  },
+  {
+    "id": "calendar",
+    "name": "校内日程",
+    "description": "查看校内日程，安排会议并在确认后发送参会邀请。",
+    "kind": "tool",
+    "versions": [
+      "2.1",
+      "2.0"
+    ],
+    "actions": [
+      {
+        "id": "read",
+        "name": "读取与分析",
+        "write": false
+      },
+      {
+        "id": "write",
+        "name": "发送会议邀请",
+        "write": true
+      }
+    ]
+  },
+  {
+    "id": "notice",
+    "name": "通知下发",
+    "description": "把整理好的通知或会议摘要发送给指定人员，发送前需要人工确认。",
+    "kind": "tool",
+    "versions": [
+      "1.2",
+      "1.1"
+    ],
+    "actions": [
+      {
+        "id": "read",
+        "name": "读取与分析",
+        "write": false
+      },
+      {
+        "id": "write",
+        "name": "下发会议摘要",
+        "write": true
+      }
+    ]
+  },
+  {
+    "id": "directory",
+    "name": "组织与人员查询",
+    "description": "查找部门与联系人，了解组织关系；只查询，不修改信息。",
+    "kind": "tool",
+    "versions": [
+      "1.0"
+    ],
+    "actions": [
+      {
+        "id": "read",
+        "name": "读取与分析",
+        "write": false
+      }
+    ]
+  },
+  {
+    "id": "capability.mcp.local-document.v1",
+    "name": "校内文档 MCP 服务",
+    "description": "连接校内文档系统，按需要查看、新建或修改获准的文字文档。",
+    "kind": "mcp",
+    "versions": [
+      "1"
+    ],
+    "actions": [
+      {
+        "id": "document.read@local-document/v1",
+        "name": "读取本机文档",
+        "write": false
+      },
+      {
+        "id": "document.create@local-document/v1",
+        "name": "创建本机文档",
+        "write": true
+      },
+      {
+        "id": "document.edit@local-document/v1",
+        "name": "编辑本机文档",
+        "write": true
+      }
+    ]
+  }
+]

@@ -1,0 +1,256 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-15",
+  "baseCommit": "1f1909d92f7eaf372993c7537390a101012929f9",
+  "status": "stages_1_and_2_passed",
+  "dependencies": {
+    "@openai/agents-core": "0.20.0",
+    "zod": "4.6.7"
+  },
+  "stage1": {
+    "status": "passed",
+    "provider": "poe",
+    "modelId": "claude-sonnet-4.6",
+    "realCases": [
+      "tool-proposal",
+      "typed-tool-result-roundtrip",
+      "streamed-text",
+      "structured-result",
+      "truncation",
+      "cancel-after-first-delta"
+    ],
+    "deepseekLive": "deferred_by_user"
+  },
+  "stage2": {
+    "stage": 2,
+    "status": "passed",
+    "scope": "bounded single-employee Poe executor; existing Runtime authority retained",
+    "cases": [
+      {
+        "name": "single-employee-text",
+        "expectedTaskState": "succeeded",
+        "actualTaskState": "succeeded",
+        "runId": "41e0c031-3511-419c-850c-5cb62796fcf7",
+        "executor": "openai-agents-ts-v1",
+        "sdkModelCalls": 1,
+        "existingControlModelCalls": 1,
+        "deliveryCreated": true,
+        "elapsedMs": 7527,
+        "toolActions": [],
+        "actualUsageReceipts": [
+          {
+            "requestId": "6e0f263d-e09d-470b-bead-f1efbcdf0d39",
+            "inputTokens": 446,
+            "outputTokens": 24,
+            "totalTokens": 470
+          },
+          {
+            "requestId": "5e451d6e-5672-434f-8391-2a6a80ecc6b4",
+            "inputTokens": 3061,
+            "outputTokens": 124,
+            "totalTokens": 3185
+          }
+        ],
+        "providerCheckpoints": [
+          {
+            "requestId": "6e0f263d-e09d-470b-bead-f1efbcdf0d39",
+            "stage": "assignment_start",
+            "executor": "openai-agents-ts-v1",
+            "inputSha256": "a68b1e4b05e7f47b04e2887b337f06031cf1bd8a64bf8ebbe8e6d0e9ef49f303",
+            "estimatedInputTokens": 605
+          },
+          {
+            "requestId": "5e451d6e-5672-434f-8391-2a6a80ecc6b4",
+            "stage": "manager_final",
+            "executor": null,
+            "inputSha256": "e4912767501d19cdd71715c5c1af40725941437d97de02d5a6bd1956c6052117",
+            "estimatedInputTokens": 2832
+          }
+        ]
+      },
+      {
+        "name": "single-employee-authorized-local-document",
+        "expectedTaskState": "succeeded",
+        "actualTaskState": "succeeded",
+        "runId": "90fb4f87-0a66-4b80-b8c1-111d057d6289",
+        "executor": "openai-agents-ts-v1",
+        "sdkModelCalls": 2,
+        "existingControlModelCalls": 1,
+        "deliveryCreated": true,
+        "elapsedMs": 11545,
+        "toolActions": [
+          {
+            "toolVersionId": "tender.requirements.extract@document-analysis/v1",
+            "state": "succeeded",
+            "resultVerified": true,
+            "documents": [
+              {
+                "name": "marker-fixture.docx",
+                "sha256": "500119c6b2eaf0171ba4ff71626983c76b84fc190e92191271a3b24bb1408c32",
+                "truncated": false
+              }
+            ]
+          }
+        ],
+        "actualUsageReceipts": [
+          {
+            "requestId": "cb0e6c03-7643-4086-8979-c40acc6d6494",
+            "inputTokens": 1732,
+            "outputTokens": 132,
+            "totalTokens": 1864
+          },
+          {
+            "requestId": "a46df201-0cfd-44c6-84d7-1c48bd21c4b3",
+            "inputTokens": 1869,
+            "outputTokens": 30,
+            "totalTokens": 1899
+          },
+          {
+            "requestId": "f493570d-e4d3-4871-922f-d40830f6084d",
+            "inputTokens": 3341,
+            "outputTokens": 283,
+            "totalTokens": 3624
+          }
+        ],
+        "providerCheckpoints": [
+          {
+            "requestId": "cb0e6c03-7643-4086-8979-c40acc6d6494",
+            "stage": "assignment_start",
+            "executor": "openai-agents-ts-v1",
+            "inputSha256": "5b54dac7e177c9a808dcdca130b9941e0584022435100b254946e9f05fd4297e",
+            "estimatedInputTokens": 1975
+          },
+          {
+            "requestId": "a46df201-0cfd-44c6-84d7-1c48bd21c4b3",
+            "stage": "after_tool",
+            "executor": "openai-agents-ts-v1",
+            "inputSha256": "02a1206f4070cef884480624ad0f2bee8f40662c461239290107e35b7eb4d9f6",
+            "estimatedInputTokens": 3377
+          },
+          {
+            "requestId": "f493570d-e4d3-4871-922f-d40830f6084d",
+            "stage": "manager_final",
+            "executor": null,
+            "inputSha256": "3695258bc78e998e90bf3e2df03c89ffe1e120186f769683acd712f3aa43daed",
+            "estimatedInputTokens": 3432
+          }
+        ]
+      },
+      {
+        "name": "single-employee-cancel",
+        "expectedTaskState": "failed",
+        "actualTaskState": "failed",
+        "runId": "3c52c952-85d5-49a6-8df7-5c3fa08ad5ab",
+        "executor": "openai-agents-ts-v1",
+        "sdkModelCalls": 1,
+        "existingControlModelCalls": 0,
+        "deliveryCreated": false,
+        "elapsedMs": 2140,
+        "toolActions": [],
+        "actualUsageReceipts": [],
+        "providerCheckpoints": [
+          {
+            "requestId": "7510402b-aeb9-4892-a9e1-311ae4997667",
+            "stage": "assignment_start",
+            "executor": "openai-agents-ts-v1",
+            "inputSha256": "7e1d3ae39e769224947c5bc418eab4fdd3332cd2e8ea6f7a3068f344a7448bbe",
+            "estimatedInputTokens": 622
+          }
+        ]
+      }
+    ],
+    "cancellation": {
+      "requestedAfterFirstDelta": true,
+      "providerCode": "cancelled",
+      "hiddenRetries": 0,
+      "deliveryCreated": false
+    },
+    "limitations": [
+      "DeepSeek live verification deferred by user; SDK remains disabled for DeepSeek",
+      "multi-employee orchestration and SDK approval state migration not started",
+      "public GitHub probe rejected by existing SSRF guard; proxy configuration unchanged",
+      "document-number metric fixture rejected by existing delivery source validation; text result fixture passed",
+      "Poe Points and USD conversion not verified"
+    ]
+  },
+  "verification": {
+    "backendTestFiles": 42,
+    "passedTests": 289,
+    "skippedTests": 3,
+    "failedTests": 0,
+    "typecheck": "passed",
+    "electronViteBuild": "passed",
+    "nativeHelperRebuilt": false,
+    "productionDatabaseUsed": false,
+    "fixtureEmployees": true,
+    "preexistingWorktree": {
+      "preexistingCount": 27,
+      "preexistingChangedSinceStart": [],
+      "cachedDiffUnchanged": true,
+      "headUnchanged": true
+    }
+  },
+  "evidenceFiles": [
+    {
+      "relativePath": "stage-1/live-results-attempt-1.json",
+      "sha256": "898db7c748abb9e61dd051bc454587ecb5f7eaf7efe1e8bbb3eb7d30a4f3ee89"
+    },
+    {
+      "relativePath": "stage-1/instructions-probe.json",
+      "sha256": "c5a74fe3053883604736df28f5651e0a48780d1c4060de64d1045993cf1a1b4d"
+    },
+    {
+      "relativePath": "stage-1/live-results-attempt-2.json",
+      "sha256": "0fe98f26d4c3417b646d95911d59d629de925e593dfdc8c612e71d7ebb952547"
+    },
+    {
+      "relativePath": "stage-1/live-results-boundaries.json",
+      "sha256": "2bc808f9df10f9ea065ff07365d5969a48bc833d60599ad8750dbde893967448"
+    },
+    {
+      "relativePath": "stage-1/raw-truncation.sse",
+      "sha256": "69fd77deb554ae1c9beb01cea6df562138864bbcf36fc9997b122c941fd82dd8"
+    },
+    {
+      "relativePath": "stage-2/live-results-attempt-1.json",
+      "sha256": "bd67d88d904aef0a5ebc5b71b6244f2c0941546596efa4bd7e49acfa58f66325"
+    },
+    {
+      "relativePath": "stage-2/manager-response.json",
+      "sha256": "030ceadade238a0b06d91e2c62d8be348351d7186051a9bff632da1297a7f76d"
+    },
+    {
+      "relativePath": "stage-2/manager-response-normalized.json",
+      "sha256": "70a0ce6a4d3decf0805d0d696119b831d1d444e61c9ce4c932067bdef16edee3"
+    },
+    {
+      "relativePath": "stage-2/live-results-attempt-2.json",
+      "sha256": "fcfd8350b80b4ab68449b6c70c5b0f317aa9bbbaa38de236cfc2738378f3d67e"
+    },
+    {
+      "relativePath": "stage-2/live-local-document-results-attempt-1.json",
+      "sha256": "500b4cbcaba7d0efc900fe61142e07e4a3e71d12d25e6754cc4d75631aacad3c"
+    },
+    {
+      "relativePath": "stage-2/live-local-document-results-attempt-2.json",
+      "sha256": "1cf4c98b84ff8af4b49df3d8abbcbe88ac9344f66d0d1c59a676a66c825e7cce"
+    },
+    {
+      "relativePath": "stage-2/live-local-document-results.json",
+      "sha256": "743e17e577972ac3e5b78232f007a75abd7917875fe79ce281be7dd32d0d3355"
+    },
+    {
+      "relativePath": "stage-2/live-cancellation-results.json",
+      "sha256": "ba49afb3b6ef31aa5ee20c17d56e39be0e722c7ba194871e6e6144fa0a6ac65a"
+    },
+    {
+      "relativePath": "backend-test-results.json",
+      "sha256": "eb3a66bb6493ed793f7d9d39c7ebdc48c191d20f4d41ea8afc3cc9f6aee1ab4b"
+    },
+    {
+      "relativePath": "worktree-integrity.json",
+      "sha256": "9e5f0ebf9e6e91732b94ec54ddef4a8a3d12abe454be6f526edb1705a8d67ec7"
+    }
+  ],
+  "recordedAt": "2026-10-15T03:44:13.979849+00:00"
+}

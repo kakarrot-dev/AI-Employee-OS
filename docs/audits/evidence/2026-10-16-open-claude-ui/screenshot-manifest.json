@@ -1,0 +1,34 @@
+[
+  {
+    "file": "screenshots/packaged-welcome-light-1200.png",
+    "sha256": "62aada50729c21d88001b6b8264324e9b4743458d0a1175ce349d80fe4c541a1"
+  },
+  {
+    "file": "screenshots/packaged-profile-light-1200.png",
+    "sha256": "8da37034a0f2072ca1d39761e1e5e817c4fe6263739297170fef81eca811c22b"
+  },
+  {
+    "file": "screenshots/cds-markdown-light-1200.png",
+    "sha256": "5f7f0118c4734249e64464adac509acf1c6373b56adeab6dfa5fa75ffab0f6da"
+  },
+  {
+    "file": "screenshots/cds-message-attachments-light-1200.png",
+    "sha256": "1b7e215a1b43d76878b3a95cd004279a94e6a51b659e205d6efaebff47b0ee0f"
+  },
+  {
+    "file": "screenshots/cds-directory-drawer-600.png",
+    "sha256": "9e87023cadc73ddafa0e6f1df4314427af9ae077c9e13d82e9812c581f7c4d59"
+  },
+  {
+    "file": "screenshots/cds-connection-dialog-bottom-600.png",
+    "sha256": "f053f78c523b5079bc4055549536032b6084f5a00cb2e299a81c07c1a857c0d7"
+  },
+  {
+    "file": "screenshots/cds-conversation-draft-dark-960.png",
+    "sha256": "bd22ba8a6a1863a3c07b1a914820482c2bb3ca6d834ed709b65115f6c2aa3771"
+  },
+  {
+    "file": "screenshots/cds-welcome-dark-1600.png",
+    "sha256": "635df6171af9ccadd64e2a1af44cea19c4d4e0fed9f254db1afcc4b759cbebb5"
+  }
+]

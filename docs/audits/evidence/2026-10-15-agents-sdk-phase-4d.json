@@ -1,0 +1,300 @@
+{
+  "stage": "4D packaged resources and Runtime",
+  "gate": "passed",
+  "preconditionRouteGate": "passed",
+  "provider": "poe",
+  "modelId": "claude-sonnet-4.6",
+  "sdkVersion": "0.20.0",
+  "productionDatabaseUsed": false,
+  "installedClientReplaced": false,
+  "commitOrPush": false,
+  "typecheck": "passed",
+  "electronViteBuild": "passed",
+  "backendTests": {
+    "passed": 421,
+    "skipped": 3,
+    "failed": 0,
+    "reportSha256": "c2a22cbe5fe5885f764dd9bb4ffdfb6063a66692946b07d26cd19985eac3b7a3"
+  },
+  "releasePathNodeTests": "passed",
+  "package": {
+    "status": "passed",
+    "candidate": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4d-packaging/candidate/AI Employee OS.app",
+    "repositoryAncestorFallbackPrevented": true,
+    "runtimeBytesOnDisk": 376094720,
+    "appBytesOnDisk": 761118720,
+    "manifest": {
+      "schemaVersion": 1,
+      "architecture": "arm64",
+      "platform": "darwin",
+      "memoryPython": "3.13.15",
+      "memoryPythonAbi": "3.13",
+      "localMemoryLockSha256": "1f93a43e6c7d528ca345d3dd995e34d4be3171fc0ae611b6186b5528bb16c709",
+      "workerSha256": {
+        "localMemory": "630e21969e535ff1027edf02f35a142645f2aee38bb2b07738938cc0886af919",
+        "keychainHelper": "1fb9928f90d8e74eb3c2784776b3e268ee9faf0b0b74f4834fad8cbde5fdae33",
+        "providerKeychainHelper": "dc8e6832be6959b5620581a01a587f8f94b615d9fb99583a74347c099b872828",
+        "imageTextExtractor": "966c7b9ae9074bac1d1a9a5c3beec8293082b93d9e52ccf3904f23e643b64e92"
+      },
+      "embedding": {
+        "model": "BAAI/bge-small-zh-v1.5",
+        "dimensions": 512,
+        "onnxSha256": "1294ea4b6331115a353d81f96b85e8c8d7fdcc284453d5b2fab5b016230aad38"
+      }
+    },
+    "componentCount": 319,
+    "pythonComponentCount": 31,
+    "deepAgentsAssetsAbsent": true,
+    "originalHelpersByteIdentical": true,
+    "appAsarSha256": "c2c1653df27dfa63cc3c32b489c8f3d6e7140ffb8708dcb49de750aa97a301b4"
+  },
+  "offlineMemory": {
+    "status": "passed",
+    "network": "socket connections denied before model initialization",
+    "dimensions": 512,
+    "modelSha256": "1294ea4b6331115a353d81f96b85e8c8d7fdcc284453d5b2fab5b016230aad38",
+    "embedding": "actual fixed model",
+    "encryptedMemoryWriteReadSearch": true,
+    "scopeIsolation": true,
+    "plaintextAbsentFromDatabase": true,
+    "keySource": "known synthetic fixture key; no Keychain call",
+    "productionDatabaseUsed": false
+  },
+  "modelInitialization": {
+    "status": "passed",
+    "first": {
+      "installed": true,
+      "fileCount": 9,
+      "modelSha256": "1294ea4b6331115a353d81f96b85e8c8d7fdcc284453d5b2fab5b016230aad38"
+    },
+    "recovered": {
+      "installed": true,
+      "fileCount": 9,
+      "modelSha256": "1294ea4b6331115a353d81f96b85e8c8d7fdcc284453d5b2fab5b016230aad38"
+    },
+    "verifiedFileUnchangedOnRepeat": true,
+    "interruptedCopyRecovered": true,
+    "manifest": {
+      "schemaVersion": 1,
+      "state": "ready",
+      "model": "BAAI/bge-small-zh-v1.5",
+      "modelSha256": "1294ea4b6331115a353d81f96b85e8c8d7fdcc284453d5b2fab5b016230aad38",
+      "fileCount": 9,
+      "completedAt": "2026-10-15T08:46:58.293Z"
+    }
+  },
+  "assemblyInvalidInputPreflight": {
+    "status": "passed",
+    "invalidInputExitCode": 1,
+    "existingOutputPreserved": true,
+    "stderr": "Would use project environment at: spikes/local-memory/.venv\nResolved 34 packages in 10ms\nChecked 31 packages in 3ms\nWould make no changes\nnode:fs:1956\n  const result = binding.readdir(\n                         ^\n\nError: ENOENT: no such file or directory, scandir '/Users/kakarrot/Dev/AI Employee OS/build/nonexistent-model-input'\n    at readdirSync (node:fs:1956:26)\n    at filesBelow (file:///Users/kakarrot/Dev/AI%20Employee%20OS/scripts/assemble_bundled_runtime.mjs:22:10)\n    at file:///Users/kakarrot/Dev/AI%20Employee%20OS/scripts/assemble_bundled_runtime.mjs:43:22\n    at ModuleJob.run (node:internal/modules/esm/module_job:569:25)\n    at async node:internal/modules/esm/loader:650:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:105:5) {\n  errno: -2,\n  code: 'ENOENT',\n  syscall: 'scandir',\n  path: '/Users/kakarrot/Dev/AI Employee OS/build/nonexistent-model-input'\n}\n\nNode.js v26.11.1\n"
+  },
+  "experiment": {
+    "providerExecuteRequests": 23,
+    "confirmedTokens": 76921,
+    "requestsWithUnknownBilledUsage": 1
+  },
+  "entireUserRequestExperiment": {
+    "providerExecuteRequests": 65,
+    "confirmedTokens": 227840,
+    "requestsWithUnknownBilledUsage": 4
+  },
+  "fixtures": {
+    "packaged-all": {
+      "status": "passed",
+      "requests": 17,
+      "confirmedTokens": 59689,
+      "requestsWithoutUsage": [
+        "c68ea8aa-f7b9-4be5-9fc9-9d803e3873fc"
+      ],
+      "cases": [
+        {
+          "name": "supervisor-route-two-employees",
+          "state": "succeeded",
+          "requestCount": 9,
+          "confirmedTokens": 37192,
+          "requestsWithoutUsage": [],
+          "requestIds": [
+            "15202da9-6069-499d-9c0d-69bc599c52e3",
+            "71171d6e-cfca-4975-810b-8f395032833a",
+            "6347f15a-034a-4c53-ba72-710fa1de5eef",
+            "23603304-e08f-4a98-b73b-9581f4609ad7",
+            "cc25f3eb-4f12-4a62-8477-1900d98be6cf",
+            "7b00cfc4-23a1-47cf-816f-4afe6ea582f9",
+            "0f0d0975-0a29-4a17-b568-52a6af9b483f",
+            "842f2ce4-ea00-4cd3-92cb-c47df123de40",
+            "50dc4176-c369-4dd6-97f7-0fc7f3a458fd"
+          ],
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4d-packaging/packaged-all/fixtures/team-marker.md",
+            "sha256": "f9e39a74c17972df74ccbcac9d201e227e4a96a26dce360349030fa386a369fa",
+            "size": 178
+          },
+          "waitingModelCalls": null,
+          "grantUnchanged": null,
+          "revisionUnchanged": null,
+          "oldCheckpointUnchanged": null
+        },
+        {
+          "name": "approval-sigkill-resume",
+          "state": "succeeded",
+          "requestCount": 5,
+          "confirmedTokens": 17715,
+          "requestsWithoutUsage": [],
+          "requestIds": [
+            "e335510c-888c-43f3-a6aa-fd35a7d10c65",
+            "531c98d2-2b3b-4cee-b7e0-aed058e4617d",
+            "bb3f8a9e-ec38-4f70-bd30-d23c03e9fcbc",
+            "f9bef386-da0e-4a2e-8b9d-a3366bfd0c1c",
+            "f783d94b-65a1-4a9a-b418-20461bfd3081"
+          ],
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4d-packaging/packaged-all/fixtures/approval-marker.md",
+            "sha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8",
+            "size": 12
+          },
+          "waitingModelCalls": 0,
+          "grantUnchanged": true,
+          "revisionUnchanged": null,
+          "oldCheckpointUnchanged": null
+        },
+        {
+          "name": "approval-rejected-no-write",
+          "state": "failed",
+          "requestCount": 2,
+          "confirmedTokens": 4782,
+          "requestsWithoutUsage": [],
+          "requestIds": [
+            "90a301b4-c9f1-4842-95c8-2b7bb4fe9ba5",
+            "82e88213-bf12-46bf-b0aa-230b1a47df9f"
+          ],
+          "file": null,
+          "waitingModelCalls": null,
+          "grantUnchanged": null,
+          "revisionUnchanged": null,
+          "oldCheckpointUnchanged": null
+        },
+        {
+          "name": "cancel-before-downstream",
+          "state": "failed",
+          "requestCount": 1,
+          "confirmedTokens": 0,
+          "requestsWithoutUsage": [
+            "c68ea8aa-f7b9-4be5-9fc9-9d803e3873fc"
+          ],
+          "requestIds": [
+            "c68ea8aa-f7b9-4be5-9fc9-9d803e3873fc"
+          ],
+          "file": null,
+          "waitingModelCalls": null,
+          "grantUnchanged": null,
+          "revisionUnchanged": null,
+          "oldCheckpointUnchanged": null
+        }
+      ],
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4d-packaging/candidate/AI Employee OS.app/Contents/Resources/app.asar/out/main/runtime/index.js",
+          "sha256": "627925f71e75c130fb8f3732787f0a8931aed1cc36218a951d1551b3de0757ba"
+        },
+        {
+          "entry": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4d-packaging/candidate/AI Employee OS.app/Contents/Resources/app.asar/out/main/runtime/index.js",
+          "sha256": "627925f71e75c130fb8f3732787f0a8931aed1cc36218a951d1551b3de0757ba"
+        }
+      ],
+      "providerEntry": {
+        "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4d-packaging/candidate/AI Employee OS.app/Contents/Resources/app.asar/out/main/provider/index.js",
+        "sha256": "4f79fe3e7a62b51877349ee8740ad836b5476f450f518024133c749be4a85f9c"
+      },
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4d-packaging/packaged-all/live-results.json",
+      "rawSha256": "1a32eb4b616f836d8f3664f9aab45edb56406e7cbaefba532c220af752e298c7",
+      "usageMatchesLedgerPerRequest": true
+    },
+    "packaged-legacy": {
+      "status": "passed",
+      "requests": 6,
+      "confirmedTokens": 17232,
+      "requestsWithoutUsage": [],
+      "cases": [
+        {
+          "name": "legacy-poe-approval-restart",
+          "state": "succeeded",
+          "requestCount": 6,
+          "confirmedTokens": 17232,
+          "requestsWithoutUsage": [],
+          "requestIds": [
+            "50300707-27ef-425f-a869-b420178e06bf",
+            "e11f0fb2-5853-4921-846e-e691c99bef0b",
+            "46c9b77f-794b-48ee-b071-3c7944f6bdf9",
+            "0adc891e-a227-4530-aa89-c913b1803da8",
+            "3f5fe76a-c43a-43ab-bce2-627cdf17750f",
+            "f0f80126-452a-4ea3-920b-42bbc49f2fe9"
+          ],
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4d-packaging/packaged-legacy/fixtures/legacy-approval-marker.md",
+            "sha256": "0c2008ee45cf9b3109b666713fd9d309c3020ffa7dfe4ea4eadc120316042de4",
+            "size": 31
+          },
+          "waitingModelCalls": 0,
+          "grantUnchanged": true,
+          "revisionUnchanged": true,
+          "oldCheckpointUnchanged": true
+        }
+      ],
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/baseline-build/main/runtime/index.js",
+          "sha256": "34cd101a4470ddf72dc85283ac22690a6d3636b275e4281382a341b41949e010"
+        },
+        {
+          "entry": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4d-packaging/candidate/AI Employee OS.app/Contents/Resources/app.asar/out/main/runtime/index.js",
+          "sha256": "627925f71e75c130fb8f3732787f0a8931aed1cc36218a951d1551b3de0757ba"
+        }
+      ],
+      "providerEntry": {
+        "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4d-packaging/candidate/AI Employee OS.app/Contents/Resources/app.asar/out/main/provider/index.js",
+        "sha256": "4f79fe3e7a62b51877349ee8740ad836b5476f450f518024133c749be4a85f9c"
+      },
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4d-packaging/packaged-legacy/live-results.json",
+      "rawSha256": "223ab286ee94ba9a6722e1555defb64cfece2c40e60203a8afd774a88131f22a",
+      "usageMatchesLedgerPerRequest": true
+    }
+  },
+  "worktreeIntegrity": {
+    "entryDirtyFiles": 92,
+    "intentionallyExtended": [
+      "docs/audits/2026-10-15-agents-sdk-phase-4d-contract.md",
+      "docs/storage-and-recovery.md",
+      "src/main/bundled-runtime.test.ts",
+      "src/main/bundled-runtime.ts"
+    ],
+    "otherEntryFilesByteIdentical": 88,
+    "originalUserFilesByteIdentical": 27,
+    "oldPartialReleaseFilesByteIdentical": 3441,
+    "nativeHelpersByteIdentical": true,
+    "sourceElectronFrameworkByteIdenticalToInputArchive": true,
+    "runtimeCodeHashSameAsPre4D": true,
+    "headUnchanged": true,
+    "indexUnchanged": true
+  },
+  "sourceSha256": {
+    "scripts/assemble_bundled_runtime.mjs": "42ee5a3694e963486c49ad8fa480d8951293f16c351e3613ad80d43ed55ccbde",
+    "scripts/generate_release_metadata.mjs": "db5f456d02887320358c1070a0dd6b8c006de30224fc001e2b3ffcb18656cf9e",
+    "scripts/package_local_app.mjs": "63acacd5db5aa32b12be5dd32371ed9e573b84b49176316c616b1041bcda7a53",
+    "scripts/release_paths.mjs": "cf978f1a589b7f51f353d0b710c4d98ad8ada787af7adf6b0b8e1af49a19fefa",
+    "scripts/release_paths.test.mjs": "b24a0b508d02bb64dc84f64684f977580923df6a6c67e6733b95869e1118ef3b",
+    "src/main/bundled-runtime.ts": "8f78e26e14ea8ec407ae36effc4d25db2a554c7d8cb30848a92b2eac83c46c69",
+    "src/main/bundled-runtime.test.ts": "7b05f15032e376a23532708ded1e929e3a528c9510baf26f828949e769819583",
+    "README.md": "7d478780447076b24dc2fc3f46c0b06bf5b2a748be2a4020433b15f5111f8a62",
+    "docs/storage-and-recovery.md": "cb96c749e164b39ff9c2a4639536703670cac0a2b0ddd546b9c859ec6e197368"
+  },
+  "runtimeSha256": "627925f71e75c130fb8f3732787f0a8931aed1cc36218a951d1551b3de0757ba",
+  "scopeLimits": [
+    "Packaged Runtime and Provider run under same-version development Electron utilityProcess, from a full candidate copied outside the repository. No GUI, installer upgrade, production release signing or notarization acceptance is claimed.",
+    "Legacy DeepAgents SQLite preservation uses a synthetic sentinel; no LangGraph state recovery claim.",
+    "The current production node dependency lock includes declared optional platform components; Python inventory is from the actual candidate interpreter.",
+    "No working old app baseline exists; only actual complete candidate disk usage is reported, without percentage reduction.",
+    "Poe receipt tokens only. Missing usage remains unknown; no currency or Poe Points estimate.",
+    "Intermediate dependency-copy, interrupted Electron download and AppleDouble archive failures are retained. Packager ad-hoc signs only the candidate Electron Framework for ASAR integrity; existing helpers, source Electron and installed app stay unchanged."
+  ]
+}

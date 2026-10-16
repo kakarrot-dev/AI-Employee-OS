@@ -1,0 +1,364 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-15T06:56:04.872544+00:00",
+  "phase": "4A manager format repair",
+  "gates": {
+    "deterministic": "passed",
+    "retainedFormatFailureWithRealPoeCorrection": "passed",
+    "naturalMultiEmployeeWithActualFormatCorrection": "passed",
+    "approvalRecovery": "passed",
+    "rejectAndCancel": "passed",
+    "phase4B": "entered; first measurement baseline completed"
+  },
+  "runtimeAuthorityPreserved": [
+    "Task",
+    "RunGrant",
+    "Approval",
+    "ToolGateway",
+    "Delivery"
+  ],
+  "sourceSha256": {
+    "src/provider/conversation-provider.test.ts": "259521fd310ca4618b961ff3ebe1efce8be342782e371e198f0ee00d5b7f3b2b",
+    "src/provider/poe-adapter.ts": "7ac18cfa211215664e88ca5d046f4da62eb0f00df95eb94797f6e5cd96b61f94",
+    "src/runtime/task-service.ts": "2ff559ccaeb3cd30433a3604ae337f8c6892f7f8d340ce7b2ddf179ece402b0b",
+    "src/runtime/team-executor.test.ts": "ac628e1ee18a43099be40edb91b0abeaeb5d5d91ed02a0fb54bf70bbe08436b5",
+    "src/runtime/team-executor.ts": "0005cb0985fa291d95692d5d6290ad8f628cbb636b7a056395207a9eb701b541",
+    "src/runtime/manager-review-repair.test.ts": "be6093c8e292d8af5d0b4b49a8da541c2e450ab9411691967e6f89830c1443ea"
+  },
+  "buildSha256": {
+    "out/main/runtime/index.js": "5d7b790ff2cd812ea1afdaf201377d0b06e4f63fd7caee8b736333ca54fe15dd",
+    "out/main/provider/index.js": "e4729769d7f415ac391d9c66b2397509d52b34a8d01874cd40cd95d720433257",
+    "out/main/index.js": "1604638df61af321278bdd45ac153416295701d820e554f156a091a0a0e950a0"
+  },
+  "tests": {
+    "files": 52,
+    "passed": 396,
+    "skipped": 3,
+    "failed": 0,
+    "report": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a-manager-repair/backend-test-results.json",
+    "sha256": "baa8b0d9e113c6245c048310ea44fdde4f5dafbbdfeeafe6b39d355667f18d6b",
+    "typecheck": "passed",
+    "electronViteBuild": "passed"
+  },
+  "worktree": {
+    "baselineFiles": 71,
+    "intentionallyExtended": [
+      "src/provider/conversation-provider.test.ts",
+      "src/provider/poe-adapter.ts",
+      "src/runtime/task-service.ts",
+      "src/runtime/team-executor.test.ts",
+      "src/runtime/team-executor.ts"
+    ],
+    "otherBaselineFilesByteIdentical": 66,
+    "originalUserFilesByteIdentical": 27,
+    "headUnchanged": true,
+    "indexUnchanged": true,
+    "committed": false,
+    "pushed": false
+  },
+  "live": [
+    {
+      "name": "natural-live-2",
+      "provider": "poe",
+      "modelId": "claude-sonnet-4.6",
+      "report": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a-manager-repair/natural-live-2/live-results.json",
+      "sha256": "02c7de2c4c56667ec1c6ce2678c1d1e6d39b59b308288eb322c213dda576bf34",
+      "cases": [
+        {
+          "name": "supervisor-route-two-employees",
+          "taskId": "1b7a7ad4-3d7d-49c7-abad-007cdee0abde",
+          "runId": "eb1c5a8c-ffc0-4dc8-a53a-022aa0dca997",
+          "taskState": "succeeded",
+          "deliveryId": "54c40830-8635-4c7b-9dde-89db130b83cd",
+          "observedSdkRequests": 14,
+          "legacyRequests": 0,
+          "newActualReceipts": 14,
+          "newActualTokens": 56748,
+          "runActualTokens": 50864,
+          "conversationActualTokens": 5884,
+          "assignments": [
+            {
+              "id": "7ed783b1-4b7f-4798-bd01-e7f0e3c68833",
+              "state": "succeeded",
+              "employeeVersionId": "version.live-team-reader",
+              "reworkOfAssignmentId": null
+            },
+            {
+              "id": "8dff92d1-aaff-4f16-832f-261033c84078",
+              "state": "succeeded",
+              "employeeVersionId": "version.live-team-writer",
+              "reworkOfAssignmentId": null
+            }
+          ],
+          "tools": [
+            {
+              "id": "83a049f5-1076-4138-8172-23137a6e3f77",
+              "toolVersionId": "tender.requirements.extract@document-analysis/v1",
+              "state": "succeeded"
+            },
+            {
+              "id": "66a7a804-9c4a-4c1c-a0d6-57dd879a395a",
+              "toolVersionId": "document.create@local-document/v1",
+              "state": "succeeded"
+            },
+            {
+              "id": "76af02e3-a760-4125-8cde-b8b8d6824368",
+              "toolVersionId": "document.read@local-document/v1",
+              "state": "succeeded"
+            }
+          ],
+          "managerContexts": [
+            {
+              "checkpointId": "a201ef2a-ca63-4fa5-b461-e67ed74bd9fb",
+              "requestId": "2ddd7cb3-3585-4e4f-ba35-12042c7b9f0b",
+              "attempt": 0,
+              "evidenceSha256": "2f32b56c931f6f3d90d687fb78fe2f0ccd9f90111606b139d83a61f86d94f159",
+              "contextSha256": "7127fce9ce2303d956f3a082ca137932b539ea56524fd8662719c8cd4ded2c2f",
+              "formatError": "delivery_key_result_unverified",
+              "completed": true
+            },
+            {
+              "checkpointId": "0b775084-dc1a-4030-a499-5371d3221864",
+              "requestId": "b80a9893-c5df-41be-bcc2-8812230c3fca",
+              "attempt": 1,
+              "evidenceSha256": "2f32b56c931f6f3d90d687fb78fe2f0ccd9f90111606b139d83a61f86d94f159",
+              "contextSha256": "66906c199d114b1d89948f5a422df3fbeaf2f3e3224e94e9da66bbd0c23a2795",
+              "formatError": null,
+              "completed": true
+            }
+          ],
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a-manager-repair/natural-live-2/fixtures/team-marker.md",
+            "sha256": "b1a0973f001716283468d728f0ec8f598489e7dac9116a145584b41c1e2458ab",
+            "size": 132
+          }
+        },
+        {
+          "name": "approval-sigkill-resume",
+          "taskId": "c497abbf-a259-4b4f-bf96-125b270889ac",
+          "runId": "6bb8829e-d99e-4109-8638-e4d2f6c7cd20",
+          "taskState": "succeeded",
+          "deliveryId": "dc946347-31a1-4997-aa4d-5c3953373561",
+          "observedSdkRequests": 9,
+          "legacyRequests": 0,
+          "newActualReceipts": 9,
+          "newActualTokens": 26265,
+          "runActualTokens": 26265,
+          "conversationActualTokens": 0,
+          "assignments": [
+            {
+              "id": "19ab00d0-d373-4c5c-b5ec-19445b0c5b4b",
+              "state": "succeeded",
+              "employeeVersionId": "version.live-team-writer",
+              "reworkOfAssignmentId": null
+            }
+          ],
+          "tools": [
+            {
+              "id": "ed38d7de-01c0-4bd7-8348-23489b7bc248",
+              "toolVersionId": "document.create@local-document/v1",
+              "state": "succeeded"
+            },
+            {
+              "id": "726812d4-73ec-489f-b066-35a21d545f81",
+              "toolVersionId": "document.read@local-document/v1",
+              "state": "succeeded"
+            }
+          ],
+          "managerContexts": [
+            {
+              "checkpointId": "49f49d50-65f8-403b-9dbd-235a1bcf7d18",
+              "requestId": "56b5c600-9b69-4d78-9191-0f86d97e8906",
+              "attempt": 0,
+              "evidenceSha256": "3ed797785538d1643a4c4f88cb7d5863766d80130a2f3f98c82da177a434cb9c",
+              "contextSha256": "546a990e87f8b932d8830f496d964a4488c9e7e6ae981be76d990ec860ef2697",
+              "formatError": null,
+              "completed": true
+            }
+          ],
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a-manager-repair/natural-live-2/fixtures/approval-marker.md",
+            "sha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8",
+            "size": 12
+          },
+          "noCallsWhileWaiting": true,
+          "waitingModelCalls": 0,
+          "grantUnchanged": true,
+          "approvalId": "bb8883d7-6e04-42ec-b8db-48ae730cba91",
+          "sdkCheckpointId": "7031de73-b667-4e0e-b4fd-e8c7f8bb4366"
+        },
+        {
+          "name": "approval-rejected-no-write",
+          "taskId": "0e9fd18e-37af-40db-9df6-f637de5bbcd0",
+          "runId": "59c83576-5b8c-4738-b5b4-abd90b4ff8f1",
+          "taskState": "failed",
+          "deliveryId": null,
+          "observedSdkRequests": 4,
+          "legacyRequests": 0,
+          "newActualReceipts": 4,
+          "newActualTokens": 8357,
+          "runActualTokens": 8357,
+          "conversationActualTokens": 0,
+          "assignments": [
+            {
+              "id": "51bb52e3-e967-41a9-ad55-065e44bfb9d8",
+              "state": "running",
+              "employeeVersionId": "version.live-team-writer",
+              "reworkOfAssignmentId": null
+            }
+          ],
+          "tools": [
+            {
+              "id": "61d795d3-f98d-4906-9d18-c5984c88f9ab",
+              "toolVersionId": "document.create@local-document/v1",
+              "state": "blocked"
+            }
+          ],
+          "managerContexts": [],
+          "fileAbsent": true,
+          "nativeStatus": "rejected"
+        },
+        {
+          "name": "cancel-before-downstream",
+          "taskId": "bd113b3d-e012-462d-962a-7ecc50b09f56",
+          "runId": "d2fc4a01-48b0-46ac-b6c5-3d733a512fc0",
+          "taskState": "failed",
+          "deliveryId": null,
+          "observedSdkRequests": 2,
+          "legacyRequests": 0,
+          "newActualReceipts": 1,
+          "newActualTokens": 1584,
+          "runActualTokens": 1584,
+          "conversationActualTokens": 0,
+          "assignments": [
+            {
+              "id": "859eec1f-d3c2-44d7-9235-5642f3eda830",
+              "state": "running",
+              "employeeVersionId": "version.live-team-reader",
+              "reworkOfAssignmentId": null
+            },
+            {
+              "id": "8b4b6972-65ee-4a61-b184-29afdadb7488",
+              "state": "pending",
+              "employeeVersionId": "version.live-team-writer",
+              "reworkOfAssignmentId": null
+            }
+          ],
+          "tools": [],
+          "managerContexts": []
+        }
+      ]
+    },
+    {
+      "name": "format-live-2",
+      "provider": "poe",
+      "modelId": "claude-sonnet-4.6",
+      "report": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a-manager-repair/format-live-2/live-results.json",
+      "sha256": "f220139e5a6eaaaad5d4d2aa97170774b23eb3c83d3bdd7fd08fb2ccca8c7438",
+      "cases": [
+        {
+          "name": "retained-poe-format-failure-repaired",
+          "taskId": "b2245966-54d7-487d-9a37-32ac71a022e7",
+          "runId": "bc1d6ec6-0c39-457c-975a-0887ab67057e",
+          "taskState": "succeeded",
+          "deliveryId": "0b632c2b-b250-4d0b-a222-22cbc663e722",
+          "observedSdkRequests": 1,
+          "legacyRequests": 0,
+          "newActualReceipts": 1,
+          "newActualTokens": 5812,
+          "runActualTokens": 5812,
+          "conversationActualTokens": 0,
+          "assignments": [
+            {
+              "id": "821e4d42-a7da-468e-aac0-85cadfa4026a",
+              "state": "succeeded",
+              "employeeVersionId": "version.live-team-reader",
+              "reworkOfAssignmentId": null
+            },
+            {
+              "id": "e9d85ebe-6426-4cc0-bb48-2aca7ac4ac59",
+              "state": "succeeded",
+              "employeeVersionId": "version.live-team-writer",
+              "reworkOfAssignmentId": null
+            }
+          ],
+          "tools": [
+            {
+              "id": "f9f43c40-fe8c-4fe7-82e1-ebdffa9009b2",
+              "toolVersionId": "tender.requirements.extract@document-analysis/v1",
+              "state": "succeeded"
+            },
+            {
+              "id": "2f222e3d-1b7c-4029-86c8-13fda7b6f688",
+              "toolVersionId": "document.create@local-document/v1",
+              "state": "succeeded"
+            },
+            {
+              "id": "61315872-edf1-4e8e-bba6-5bdb634d8ed7",
+              "toolVersionId": "document.read@local-document/v1",
+              "state": "succeeded"
+            }
+          ],
+          "managerContexts": [
+            {
+              "checkpointId": "de47d619-bd72-40f0-ab3f-f6a6a6bfe2ee",
+              "requestId": "252c3f2d-3e8d-432c-af55-e3246710988c",
+              "attempt": 0,
+              "evidenceSha256": "dfb23893cb3cd10ff7be1376f9950a8f53060334861991807870ac58b57089a0",
+              "contextSha256": "9be02ce3ae0ea83b4bcc3e856b54259447f18581db435b4f0d365045edef8703",
+              "formatError": "delivery_key_result_unverified",
+              "completed": true
+            },
+            {
+              "checkpointId": "71f09ab3-2dbd-4e6b-8bf9-1ebf9c6b6dd6",
+              "requestId": "492f96be-35c1-45e7-a268-13d9898db855",
+              "attempt": 1,
+              "evidenceSha256": "dfb23893cb3cd10ff7be1376f9950a8f53060334861991807870ac58b57089a0",
+              "contextSha256": "6dc1e8460a5bb4403d240f341d80a4a59ca41686507743fa2e0bfab1deda6346",
+              "formatError": null,
+              "completed": true
+            },
+            {
+              "checkpointId": "eaf244ec-8224-42ad-a4fe-45bff37df1d3",
+              "requestId": "93c0c136-47db-4b0b-b9a2-dbf9ee6bee1e",
+              "attempt": 1,
+              "evidenceSha256": "dfb23893cb3cd10ff7be1376f9950a8f53060334861991807870ac58b57089a0",
+              "contextSha256": "6dc1e8460a5bb4403d240f341d80a4a59ca41686507743fa2e0bfab1deda6346",
+              "formatError": null,
+              "completed": true
+            }
+          ],
+          "grantUnchanged": true,
+          "noAssignmentOrToolChanges": true,
+          "sourceFailure": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a/final-live/live-results.json",
+            "sha256": "67cadd8dacb86b4dcaf918db09eedc63e39001a1084e2fc434b53e8be05febf8",
+            "requestId": "ad52c17b-1c83-436e-b317-74c7f3bfeadc",
+            "note": "Retained real Poe invalid delivery; adapted criterion count and source IDs to this cloned successful fixture. Initial rejection is deterministic replay, subsequent correction uses real Poe. No synthetic usage recorded."
+          },
+          "exactPendingInputReused": true,
+          "deterministicReplayThenRealPoeCorrection": true
+        }
+      ]
+    }
+  ],
+  "retainedFailures": [
+    {
+      "kind": "model route output rejected before task creation",
+      "report": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a-manager-repair/natural-live/live-results.json",
+      "sha256": "f31a9539c27877056d70d63076de50c914d52ca6400c3d996985b5da527fa95f",
+      "code": "invalid_supervisor_route",
+      "reason": "empty employeeVersionIds and acceptanceCriteria",
+      "toolActions": 0,
+      "taskCreated": false,
+      "silentlyRetriedOrRepaired": false
+    },
+    {
+      "kind": "diagnostic probe did not preserve checkpoint sequence continuity",
+      "report": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a-manager-repair/format-live/live-results.json",
+      "sha256": "e64586a0c02255258058af7bb0b5be9ede6c03ad4c0a365a68b1c2022663ab13",
+      "acceptedAsCorrectionEvidence": false,
+      "replacement": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4a-manager-repair/format-live-2/live-results.json"
+    }
+  ]
+}

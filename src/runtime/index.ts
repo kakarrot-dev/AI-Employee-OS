@@ -1,15 +1,20 @@
 import { isTeamsTool } from '../shared/teams-contract'
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { spawnSync } from 'node:child_process'
 import { RuntimeKernel } from './kernel'
 import { RuntimeStore } from './store'
 import { SIDECAR_PROTOCOL_VERSION, parseRuntimeCommand, type RuntimeOutboundEvent, type RuntimeResponse } from '../shared/runtime-sidecar-protocol'
-import type { BudgetLedgerEntry, Conversation, Message, MessageAttachmentReference, Run, RunGrant, ToolAction } from './domain'
+import type { BudgetLedgerEntry, Conversation, Message, MessageAttachmentReference, ToolAction } from './domain'
 import { summarizeUsage } from './usage-service'
 import { EmployeeService } from './employee-service'
 import { ExpertGroupService } from './expert-group-service'
 import { TaskService } from './task-service'
+import { EmployeeExecutor } from './employee-executor'
+import { TeamExecutor } from './team-executor'
+import { isRecoverableToolProposalError } from './tool-proposal-errors'
+import { SupervisorExecutor } from './supervisor-executor'
+import { EmployeeProviderTransport } from './employee-provider-transport'
+import type { ProviderEvent } from '../provider/contract'
 import { ResourceService } from './resource-service'
 import { ToolGateway } from './tool-gateway'
 import { createToolRunner } from './tool-runner'
@@ -70,9 +75,6 @@ const connectionRunner: ToolRunner = async (tool, parameters, context) => {
 }
 const toolGateway = new ToolGateway(kernel, resources, createToolRunner(imageTextExtractorPath, connectionRunner, connectionRunner))
 const research = new ManagedResearchService(kernel, toolGateway)
-const workerPython = requiredPathArgument('worker-python')
-const workerScript = requiredPathArgument('worker-script')
-const checkpointDirectory = requiredPathArgument('checkpoint-directory')
 const exportDirectory = requiredPathArgument('export-directory')
 const memory = new MemoryService({ pythonPath: requiredPathArgument('memory-python'), scriptPath: requiredPathArgument('memory-script'), databasePath: requiredPathArgument('memory-database'), modelCachePath: requiredPathArgument('memory-model-cache'), keychainHelperPath: requiredPathArgument('memory-keychain-helper') })
 const supervisor = new SupervisorService(kernel)
@@ -97,31 +99,13 @@ const tasks = new TaskService(kernel, employees, (request) => memory.search(requ
   const bundle = research.createBundle({ taskId: revision.taskId, runId: assignment.runId, assignmentId: assignment.id, employeeVersionId: version.id, question: revision.goal, githubQuery: '', feedUrl: '' }, actions)
   const handoff = { schemaVersion: 1, type: 'ResearchHandoff', researchBundleId: bundle.id, contentHash: bundle.contentHash, question: bundle.question, claims: bundle.claims, conflicts: bundle.conflicts, informationGaps: bundle.informationGaps, sources: bundle.items.map((item, index) => ({ index, sourceType: item.sourceType, title: item.title, url: item.url, publishedAt: item.publishedAt, summary: item.summary, contentHash: item.contentHash, trust: item.trust, injectionSignals: item.injectionSignals })), researcherSynthesis: output }
   return { parts: [{ kind: 'data', name: '网络调研交接', mediaType: 'application/json', schemaId: 'ai-employee-os/ResearchHandoff/v1', value: normalizeHandoffJsonValue(handoff) }], researchBundleId: bundle.id }
-}, (detail) => deliveryExporter.materialize(detail), () => supervisor.get())
+}, (detail) => deliveryExporter.materialize(detail), () => supervisor.get(), 'openai-agents-team')
 const supervisorRouter = new SupervisorRouter(employees, tasks, () => supervisor.get(), (request) => memory.search(request), createAttachmentContentInspector(nativeImageTextRecognizer(imageTextExtractorPath)), expertGroups)
 
 function enqueueMemorySafely(input: Parameters<MemoryService['enqueueAsync']>[0]): void {
   void memory.enqueueAsync(input).catch(() => { /* memory processing must not fail the primary conversation or task */ })
 }
 
-function validateDeepAgentHandoff(runId: string, assignmentId: string, employeeOutput: string): Record<string, unknown> {
-  const run = store.get<Run>('Run', runId)
-  const grant = run && store.get<RunGrant>('RunGrant', run.runGrantId)
-  if (!run || !grant) throw new Error('run_grant_not_found')
-  const allowedToolVersionIds = [...grant.resourceScope.toolVersionIds].sort()
-  const child = spawnSync(workerPython, [workerScript, 'handoff', checkpointDirectory], {
-    input: JSON.stringify({ runId, assignmentId, employeeOutput, allowedToolVersionIds }),
-    encoding: 'utf8',
-    timeout: 30_000,
-    maxBuffer: 1_000_000,
-    env: { PATH: '/usr/bin:/bin', LANG: 'en_US.UTF-8', PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1' }
-  })
-  if (child.error || child.status !== 0) throw new Error('deep_agents_worker_failed')
-  const result = JSON.parse(child.stdout) as Record<string, unknown>
-  const expectedEmployeeTools = allowedToolVersionIds.length > 0 ? '["propose_tool_action"]' : '[]'
-  if (result.schemaVersion !== 1 || result.runId !== runId || result.assignmentId !== assignmentId || JSON.stringify(result.rootTools) !== '["task"]' || JSON.stringify(result.employeeTools) !== expectedEmployeeTools || JSON.stringify(result.allowedToolVersionIds) !== JSON.stringify(allowedToolVersionIds) || result.proposalOnly !== true || JSON.stringify(result.next) !== '["model"]') throw new Error('deep_agents_worker_contract_rejected')
-  return result
-}
 const pendingConversations = new Map<string, {
   conversationId: string
   sourceMessageId: string
@@ -142,7 +126,126 @@ function respond(response: RuntimeResponse): void {
 }
 
 function emit(event: RuntimeOutboundEvent): void {
+  if (event.type === 'runtime.provider.execute' && (teamExecutor.submit(event.request) || employeeExecutor.submit(event.request) || (pendingConversations.has(event.request.requestId) && supervisorExecutor.submit(event.request)))) return
   parentPort.postMessage(event)
+}
+
+const employeeTransport = new EmployeeProviderTransport(
+  (request) => parentPort.postMessage({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: request.requestId, request }),
+  (providerRequestId) => parentPort.postMessage({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.cancel', requestId: randomUUID(), providerRequestId })
+)
+const employeeExecutor = new EmployeeExecutor(tasks, {
+  execute: (request, onEvent, signal) => employeeTransport.execute(request, onEvent, signal),
+  event: (requestId, event) => { applyTaskProviderEvent(requestId, event) },
+  propose: applyTaskToolProposal,
+  failed: (requestId, code) => { applyTaskProviderFailure(requestId, code) }
+})
+const teamExecutor = new TeamExecutor(kernel, tasks, toolGateway, {
+  execute: (request, onEvent, signal) => employeeTransport.execute(request, onEvent, signal),
+  event: (requestId, event) => { applyTaskProviderEvent(requestId, event) },
+  failed: (runId) => {
+    const detail = tasks.detailByRun(runId)
+    emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId: randomUUID(), event: { type: 'failed', taskId: detail.task!.id, runId } })
+  }
+})
+const supervisorExecutor = new SupervisorExecutor({
+  execute: (request, onEvent, signal) => employeeTransport.execute(request, onEvent, signal),
+  event: applyConversationProviderEvent,
+  validate: (value) => { supervisorRouter.validateDecision(value) },
+  failed: (requestId, code) => {
+    pendingConversations.delete(requestId)
+    emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.conversation.event', requestId, event: { type: 'failed', requestId, code } })
+  }
+})
+
+async function applyTaskToolProposal(providerRequestId: string, providerEvent: Extract<ProviderEvent, { type: 'tool_proposal' }>): Promise<Record<string, unknown>> {
+  if (!tasks.canAcceptToolProposal(providerRequestId)) {
+    return { state: 'ignored' }
+  }
+  let proposal: ReturnType<TaskService['toolProposalContext']>
+  let action: ToolAction
+  try {
+    proposal = tasks.toolProposalContext(providerRequestId, providerEvent)
+    action = await toolGateway.propose(proposal)
+  } catch (error) {
+    const code = error instanceof Error ? error.message.split(':')[0] : 'invalid_tool_proposal'
+    if (isRecoverableToolProposalError(code)) {
+      const detail = tasks.recordInvalidToolProposal(providerRequestId, code)
+      emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId: providerRequestId, event: { type: 'progress', taskId: detail.task!.id, runId: detail.run?.id } })
+      return { state: 'rejected', failureCode: code }
+    }
+    throw error
+  }
+  const detail = tasks.attachToolAction(proposal.assignmentId, action.id)
+  emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId: providerRequestId, event: { type: ['pending', 'blocked', 'result_unknown'].includes(action.state) ? 'needs_attention' : 'progress', taskId: detail.task!.id, runId: detail.run?.id } })
+  return { actionId: action.id, state: action.state, resultVerified: action.resultVerified ?? false, result: action.result ?? null, failureCode: action.failureCode }
+}
+
+function applyTaskProviderEvent(providerRequestId: string, providerEvent: ProviderEvent): boolean {
+  const taskResult = tasks.handleProviderEvent(providerRequestId, providerEvent)
+  if (!taskResult) return false
+  if (taskResult.event === 'assignment_completed' && !taskResult.request && taskResult.detail.handoffs.at(-1)?.toSupervisor) {
+    try {
+      const managerRequest = tasks.beginManagerReview(taskResult.detail.run!.id)
+      emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: managerRequest.requestId, request: managerRequest })
+    } catch (error) {
+      const failed = tasks.failRun(taskResult.detail.run!.id, error instanceof Error ? error.message : 'handoff_validation_failed')
+      emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId: providerRequestId, event: { type: 'failed', taskId: failed.task!.id, runId: failed.run?.id } })
+      return true
+    }
+  } else if (taskResult.request) {
+    emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: taskResult.request.requestId, request: taskResult.request })
+  }
+  if (taskResult.event === 'delivery_completed') {
+    const output = taskResult.detail.assignments.map((assignment) => assignment.output ?? '').filter(Boolean).join('\n')
+    enqueueMemorySafely({ sourceType: 'task', sourceRef: `task:${taskResult.detail.task!.id}`, scopeType: 'task', scopeId: taskResult.detail.task!.id, content: `目标：${taskResult.detail.revision!.goal}\n结果：${output}`.slice(0, 50_000) })
+  }
+  emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId: providerRequestId, event: { type: taskResult.event, taskId: taskResult.detail.task!.id, runId: taskResult.detail.run?.id } })
+  return true
+}
+
+function applyTaskProviderFailure(providerRequestId: string, code: string): boolean {
+  const taskResult = tasks.handleProviderFailure(providerRequestId, code)
+  if (!taskResult) return false
+  if (taskResult.request) {
+    emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: taskResult.request.requestId, request: taskResult.request })
+    emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId: providerRequestId, event: { type: 'progress', taskId: taskResult.detail.task!.id, runId: taskResult.detail.run?.id } })
+    return true
+  }
+  const output = taskResult.detail.assignments.map((assignment) => assignment.output ?? '').filter(Boolean).join('\n')
+  enqueueMemorySafely({ sourceType: 'task', sourceRef: `task:${taskResult.detail.task!.id}`, scopeType: 'task', scopeId: taskResult.detail.task!.id, content: `任务失败经验：${code}\n${output}`.slice(0, 50_000) })
+  emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId: providerRequestId, event: { type: 'failed', taskId: taskResult.detail.task!.id, runId: taskResult.detail.run?.id } })
+
+  return true
+}
+
+
+function applyConversationProviderEvent(providerRequestId: string, providerEvent: ProviderEvent): void {
+  const pending = pendingConversations.get(providerRequestId)
+  if (!pending) throw new Error('unknown_provider_request')
+  if (providerEvent.type === 'output_delta') pending.text += providerEvent.delta
+  if (providerEvent.type === 'structured_result') pending.routeValue = providerEvent.value
+  if (providerEvent.type === 'completed') pending.providerRequestId = providerEvent.providerRequestId
+  if (providerEvent.type === 'usage') {
+    const ledger: BudgetLedgerEntry = { schemaVersion: 1, id: randomUUID(), createdAt: new Date().toISOString(), runId: `conversation:${pending.conversationId}`, requestId: providerEvent.requestId, provider: pending.provider, modelId: pending.modelId, inputTokens: providerEvent.inputTokens, outputTokens: providerEvent.outputTokens, amountUsdMicros: 0, source: 'provider_actual' }
+    kernel.save({ entityType: 'BudgetLedgerEntry', entity: ledger, immutable: true }, 'provider.usage.recorded', { inputTokens: ledger.inputTokens, outputTokens: ledger.outputTokens, source: ledger.source })
+  }
+  if (providerEvent.type === 'usage') emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.conversation.event', requestId: providerRequestId, event: { ...providerEvent, requestId: providerRequestId } })
+  if (providerEvent.type === 'completed') {
+    try {
+      const route = supervisorRouter.applyDecision({ requestId: providerRequestId, conversationId: pending.conversationId, sourceMessageId: pending.sourceMessageId, text: pending.userText, history: pending.history, directories: pending.directories, attachments: pending.attachments }, pending.routeValue ?? JSON.parse(pending.text))
+      const assistantMessage: Message = { schemaVersion: 1, id: pending.assistantMessageId, createdAt: new Date().toISOString(), conversationId: pending.conversationId, role: 'assistant', content: route.response, provider: pending.provider, modelId: pending.modelId, providerRequestId: pending.providerRequestId }
+      kernel.save({ entityType: 'Message', entity: assistantMessage, immutable: true }, 'message.created', { role: 'assistant', provider: pending.provider, modelId: pending.modelId, routeMode: route.mode, taskDraftId: route.task?.draft.id, missingInputs: route.missingInputs })
+      if (route.startRequest) emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: route.startRequest.requestId, request: route.startRequest })
+      enqueueMemorySafely({ sourceType: 'conversation', sourceRef: `conversation:${pending.conversationId}:message:${assistantMessage.id}`, scopeType: 'global', scopeId: 'global:local-owner', content: `${pending.userText}\n${assistantMessage.content}`.trim().slice(0, 50_000) })
+      emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.conversation.event', requestId: providerRequestId, event: { type: 'output_delta', requestId: providerRequestId, delta: route.response } })
+      emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.conversation.event', requestId: providerRequestId, event: { ...providerEvent, requestId: providerRequestId } })
+    } catch (error) {
+      emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.conversation.event', requestId: providerRequestId, event: { type: 'failed', requestId: providerRequestId, code: error instanceof Error ? error.message.split(':')[0] : 'invalid_supervisor_route' } })
+    } finally {
+      pendingConversations.delete(providerRequestId)
+    }
+  }
 }
 
 parentPort.on('message', async (event) => {
@@ -251,7 +354,7 @@ parentPort.on('message', async (event) => {
     }
     if (command.type === 'conversation.cancel') {
       if (!pendingConversations.has(command.payload.providerRequestId)) throw new Error('unknown_provider_request')
-      emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.cancel', requestId, providerRequestId: command.payload.providerRequestId })
+      if (!supervisorExecutor.cancel(command.payload.providerRequestId)) emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.cancel', requestId, providerRequestId: command.payload.providerRequestId })
       respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
       return
     }
@@ -361,9 +464,14 @@ parentPort.on('message', async (event) => {
     if (command.type === 'tool.approve' || command.type === 'tool.reject' || command.type === 'tool.resolve_unknown') {
       let action: ToolAction
       try {
+        if (command.type !== 'tool.resolve_unknown') teamExecutor.assertApprovalReady(command.payload.actionId, command.type === 'tool.approve')
         action = command.type === 'tool.resolve_unknown'
-          ? toolGateway.resolveUnknown(command.payload.actionId, command.payload.outcome, command.payload.evidence)
-          : await toolGateway.decide(command.payload.actionId, command.type === 'tool.approve')
+          ? kernel.transaction(() => {
+            const resolved = toolGateway.resolveUnknown(command.payload.actionId, command.payload.outcome, command.payload.evidence)
+            teamExecutor.actionCommitted(resolved)
+            return resolved
+          })
+          : await toolGateway.decide(command.payload.actionId, command.type === 'tool.approve', (updated) => teamExecutor.actionCommitted(updated))
       } catch (error) {
         const code = error instanceof Error ? error.message.split(':')[0] : 'tool_decision_failed'
         if (command.type !== 'tool.approve' || code !== 'run_grant_expired') throw error
@@ -374,9 +482,12 @@ parentPort.on('message', async (event) => {
         respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: detail })
         return
       }
-      let resumed = tasks.resumeAfterTool(action)
-      if (resumed.request) emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: resumed.request.requestId, request: resumed.request })
-      else resumed = { detail: tasks.settleToolGate(action.runId) }
+      const resumed = kernel.transaction(() => {
+        teamExecutor.afterDecision(action)
+        const result = tasks.resumeAfterTool(action)
+        if (result.request) emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: result.request.requestId, request: result.request })
+        return result.request ? result : { detail: tasks.settleToolGate(action.runId) }
+      })
       respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: resumed.detail })
       return
     }
@@ -414,39 +525,21 @@ parentPort.on('message', async (event) => {
     if (command.type === 'task.reject_change') {
       const resumed = tasks.rejectChange(command.payload.changeRequestId)
       if (resumed.request) {
-        if (resumed.request.outputSchema?.name === 'manager_review' && !resumed.detail.checkpoints.some((checkpoint) => checkpoint.phase === 'deep_agents_safe_pause')) {
-          try {
-            const assignment = resumed.detail.assignments.at(-1)!
-            const evidence = validateDeepAgentHandoff(resumed.detail.run!.id, assignment.id, assignment.output ?? '')
-            tasks.recordWorkerCheckpoint(resumed.detail.run!.id, assignment.id, evidence)
-          } catch (error) {
-            const failed = tasks.failRun(resumed.detail.run!.id, error instanceof Error ? error.message : 'deep_agents_worker_failed')
-            respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: failed })
-            return
-          }
-        }
         emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: resumed.request.requestId, request: resumed.request })
       }
       respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: resumed.detail })
       return
     }
     if (command.type === 'provider.failed') {
+      if (employeeTransport.fail(command.payload.providerRequestId, command.payload.code)) {
+        respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
+        return
+      }
       if (pendingConversations.has(command.payload.providerRequestId)) {
         pendingConversations.delete(command.payload.providerRequestId)
         emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.conversation.event', requestId: command.payload.providerRequestId, event: { type: 'failed', requestId: command.payload.providerRequestId, code: command.payload.code } })
       } else {
-        const taskResult = tasks.handleProviderFailure(command.payload.providerRequestId, command.payload.code)
-        if (taskResult) {
-          if (taskResult.request) {
-            emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: taskResult.request.requestId, request: taskResult.request })
-            emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId: command.payload.providerRequestId, event: { type: 'progress', taskId: taskResult.detail.task!.id, runId: taskResult.detail.run?.id } })
-            respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
-            return
-          }
-          const output = taskResult.detail.assignments.map((assignment) => assignment.output ?? '').filter(Boolean).join('\n')
-          enqueueMemorySafely({ sourceType: 'task', sourceRef: `task:${taskResult.detail.task!.id}`, scopeType: 'task', scopeId: taskResult.detail.task!.id, content: `任务失败经验：${command.payload.code}\n${output}`.slice(0, 50_000) })
-          emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId: command.payload.providerRequestId, event: { type: 'failed', taskId: taskResult.detail.task!.id, runId: taskResult.detail.run?.id } })
-        } else {
+        if (!applyTaskProviderFailure(command.payload.providerRequestId, command.payload.code)) {
           const testRun = employees.handleProviderFailure(command.payload.providerRequestId, command.payload.code)
           if (!testRun) throw new Error('unknown_provider_request')
           emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.employee.event', requestId: command.payload.providerRequestId, event: { type: 'test_failed', employeeId: testRun.employeeId, testRunId: testRun.id, code: command.payload.code } })
@@ -457,56 +550,18 @@ parentPort.on('message', async (event) => {
     }
 
     if (command.type !== 'provider.event') throw new Error('unexpected_command')
-
-    if (command.payload.event.type === 'tool_proposal') {
-      if (!tasks.canAcceptToolProposal(command.payload.providerRequestId)) {
-        respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
-        return
-      }
-      let proposal: ReturnType<TaskService['toolProposalContext']>
-      let action: ToolAction
-      try {
-        proposal = tasks.toolProposalContext(command.payload.providerRequestId, command.payload.event)
-        action = await toolGateway.propose(proposal)
-      } catch (error) {
-        const code = error instanceof Error ? error.message.split(':')[0] : 'invalid_tool_proposal'
-        if (['teams_attendee_not_from_search', 'teams_event_not_from_task', 'invalid_teams_parameters', 'invalid_tool_parameters', 'parameter_source_required', 'invalid_parameter_source', 'invalid_tool_proposal_name', 'invalid_tool_proposal_arguments', 'invalid_tool_proposal_schema', 'tool_not_available_for_assignment', 'invalid_document_create_path', 'invalid_document_create_filename', 'document_draft_required_before_create', 'document_write_or_existing_create_required_before_read', 'document_draft_required_before_edit', 'document_read_required_before_edit'].includes(code)) {
-          const detail = tasks.recordInvalidToolProposal(command.payload.providerRequestId, code)
-          emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId: command.payload.providerRequestId, event: { type: 'progress', taskId: detail.task!.id, runId: detail.run?.id } })
-          respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
-          return
-        }
-        throw error
-      }
-      const detail = tasks.attachToolAction(proposal.assignmentId, action.id)
-      emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId: command.payload.providerRequestId, event: { type: ['pending', 'blocked', 'result_unknown'].includes(action.state) ? 'needs_attention' : 'progress', taskId: detail.task!.id, runId: detail.run?.id } })
+    if (employeeTransport.accept(command.payload.providerRequestId, command.payload.event)) {
       respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
       return
     }
 
-    const taskResult = tasks.handleProviderEvent(command.payload.providerRequestId, command.payload.event)
-    if (taskResult) {
-      if (taskResult.event === 'assignment_completed' && !taskResult.request && taskResult.detail.handoffs.at(-1)?.toSupervisor) {
-        try {
-          const assignment = taskResult.detail.assignments.at(-1)!
-          const evidence = validateDeepAgentHandoff(taskResult.detail.run!.id, assignment.id, assignment.output ?? '')
-          tasks.recordWorkerCheckpoint(taskResult.detail.run!.id, assignment.id, evidence)
-          const managerRequest = tasks.beginManagerReview(taskResult.detail.run!.id)
-          emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: managerRequest.requestId, request: managerRequest })
-        } catch (error) {
-          const failed = tasks.failRun(taskResult.detail.run!.id, error instanceof Error ? error.message : 'deep_agents_worker_failed')
-          emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId: command.payload.providerRequestId, event: { type: 'failed', taskId: failed.task!.id, runId: failed.run?.id } })
-          respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
-          return
-        }
-      } else if (taskResult.request) {
-        emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: taskResult.request.requestId, request: taskResult.request })
-      }
-      if (taskResult.event === 'delivery_completed') {
-        const output = taskResult.detail.assignments.map((assignment) => assignment.output ?? '').filter(Boolean).join('\n')
-        enqueueMemorySafely({ sourceType: 'task', sourceRef: `task:${taskResult.detail.task!.id}`, scopeType: 'task', scopeId: taskResult.detail.task!.id, content: `目标：${taskResult.detail.revision!.goal}\n结果：${output}`.slice(0, 50_000) })
-      }
-      emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.task.event', requestId: command.payload.providerRequestId, event: { type: taskResult.event, taskId: taskResult.detail.task!.id, runId: taskResult.detail.run?.id } })
+    if (command.payload.event.type === 'tool_proposal') {
+      await applyTaskToolProposal(command.payload.providerRequestId, command.payload.event)
+      respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
+      return
+    }
+
+    if (applyTaskProviderEvent(command.payload.providerRequestId, command.payload.event)) {
       respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
       return
     }
@@ -520,32 +575,7 @@ parentPort.on('message', async (event) => {
       return
     }
 
-    const pending = pendingConversations.get(command.payload.providerRequestId)
-    if (!pending) throw new Error('unknown_provider_request')
-    const providerEvent = command.payload.event
-    if (providerEvent.type === 'output_delta') pending.text += providerEvent.delta
-    if (providerEvent.type === 'structured_result') pending.routeValue = providerEvent.value
-    if (providerEvent.type === 'completed') pending.providerRequestId = providerEvent.providerRequestId
-    if (providerEvent.type === 'usage') {
-      const ledger: BudgetLedgerEntry = { schemaVersion: 1, id: randomUUID(), createdAt: new Date().toISOString(), runId: `conversation:${pending.conversationId}`, requestId: command.payload.providerRequestId, provider: pending.provider, modelId: pending.modelId, inputTokens: providerEvent.inputTokens, outputTokens: providerEvent.outputTokens, amountUsdMicros: 0, source: 'provider_actual' }
-      kernel.save({ entityType: 'BudgetLedgerEntry', entity: ledger, immutable: true }, 'provider.usage.recorded', { inputTokens: ledger.inputTokens, outputTokens: ledger.outputTokens, source: ledger.source })
-    }
-    if (providerEvent.type === 'usage') emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.conversation.event', requestId: command.payload.providerRequestId, event: providerEvent })
-    if (providerEvent.type === 'completed') {
-      try {
-        const route = supervisorRouter.applyDecision({ requestId: command.payload.providerRequestId, conversationId: pending.conversationId, sourceMessageId: pending.sourceMessageId, text: pending.userText, history: pending.history, directories: pending.directories, attachments: pending.attachments }, pending.routeValue ?? JSON.parse(pending.text))
-        const assistantMessage: Message = { schemaVersion: 1, id: pending.assistantMessageId, createdAt: new Date().toISOString(), conversationId: pending.conversationId, role: 'assistant', content: route.response, provider: pending.provider, modelId: pending.modelId, providerRequestId: pending.providerRequestId }
-        kernel.save({ entityType: 'Message', entity: assistantMessage, immutable: true }, 'message.created', { role: 'assistant', provider: pending.provider, modelId: pending.modelId, routeMode: route.mode, taskDraftId: route.task?.draft.id, missingInputs: route.missingInputs })
-        if (route.startRequest) emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: route.startRequest.requestId, request: route.startRequest })
-        enqueueMemorySafely({ sourceType: 'conversation', sourceRef: `conversation:${pending.conversationId}:message:${assistantMessage.id}`, scopeType: 'global', scopeId: 'global:local-owner', content: `${pending.userText}\n${assistantMessage.content}`.trim().slice(0, 50_000) })
-        emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.conversation.event', requestId: command.payload.providerRequestId, event: { type: 'output_delta', requestId: command.payload.providerRequestId, delta: route.response } })
-        emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.conversation.event', requestId: command.payload.providerRequestId, event: providerEvent })
-      } catch (error) {
-        emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.conversation.event', requestId: command.payload.providerRequestId, event: { type: 'failed', requestId: command.payload.providerRequestId, code: error instanceof Error ? error.message.split(':')[0] : 'invalid_supervisor_route' } })
-      } finally {
-        pendingConversations.delete(command.payload.providerRequestId)
-      }
-    }
+    applyConversationProviderEvent(command.payload.providerRequestId, command.payload.event)
     respond({ schemaVersion: SIDECAR_PROTOCOL_VERSION, requestId, ok: true, result: { accepted: true } })
   } catch (error) {
     const response: RuntimeResponse = {
@@ -559,21 +589,11 @@ parentPort.on('message', async (event) => {
 })
 
 tasks.reconcileFailedRunToolActions()
-const authorizationPolicyMigrations = tasks.migrateLegacyAuthorizationRuns()
 parentPort.postMessage({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.ready', health: kernel.recover() })
-setTimeout(() => {
+setTimeout(async () => {
   try {
-    for (const detail of tasks.pendingHarnessHandoffs()) {
-      try {
-        const assignment = detail.assignments.at(-1)!
-        tasks.recordWorkerCheckpoint(detail.run!.id, assignment.id, validateDeepAgentHandoff(detail.run!.id, assignment.id, assignment.output ?? ''))
-      } catch (error) {
-        tasks.failRun(detail.run!.id, error instanceof Error ? error.message : 'deep_agents_worker_failed')
-      }
-    }
-    const migratedRequestIds = new Set(authorizationPolicyMigrations.map(({ request }) => request.requestId))
-    for (const request of tasks.recoverPendingRequests(migratedRequestIds)) emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: request.requestId, request })
-    for (const { request } of authorizationPolicyMigrations) emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: request.requestId, request })
+    const sdkRecoveredRunIds = await teamExecutor.recover()
+    for (const request of tasks.recoverPendingRequests(new Set(), sdkRecoveredRunIds)) emit({ schemaVersion: SIDECAR_PROTOCOL_VERSION, type: 'runtime.provider.execute', requestId: request.requestId, request })
   } catch (error) {
     console.error('[startup-recovery]', error instanceof Error ? error.stack ?? error.message : String(error))
   }

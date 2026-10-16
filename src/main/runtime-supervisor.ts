@@ -36,7 +36,6 @@ export class RuntimeSupervisor {
   constructor(
     private readonly runtimeEntry: string,
     private readonly databasePath: string,
-    private readonly deepAgentWorker: { pythonPath: string; scriptPath: string; checkpointDirectory: string },
     private readonly memoryWorker: { pythonPath: string; scriptPath: string; databasePath: string; modelCachePath: string; keychainHelperPath: string },
     private readonly imageTextExtractorPath: string,
     private readonly exportDirectory: string,
@@ -58,7 +57,7 @@ export class RuntimeSupervisor {
       this.rejectReady = reject
     })
 
-    const child = utilityProcess.fork(this.runtimeEntry, [`--database=${this.databasePath}`, `--worker-python=${this.deepAgentWorker.pythonPath}`, `--worker-script=${this.deepAgentWorker.scriptPath}`, `--checkpoint-directory=${this.deepAgentWorker.checkpointDirectory}`, `--memory-python=${this.memoryWorker.pythonPath}`, `--memory-script=${this.memoryWorker.scriptPath}`, `--memory-database=${this.memoryWorker.databasePath}`, `--memory-model-cache=${this.memoryWorker.modelCachePath}`, `--memory-keychain-helper=${this.memoryWorker.keychainHelperPath}`, `--image-text-extractor=${this.imageTextExtractorPath}`, `--export-directory=${this.exportDirectory}`], {
+    const child = utilityProcess.fork(this.runtimeEntry, [`--database=${this.databasePath}`, `--memory-python=${this.memoryWorker.pythonPath}`, `--memory-script=${this.memoryWorker.scriptPath}`, `--memory-database=${this.memoryWorker.databasePath}`, `--memory-model-cache=${this.memoryWorker.modelCachePath}`, `--memory-keychain-helper=${this.memoryWorker.keychainHelperPath}`, `--image-text-extractor=${this.imageTextExtractorPath}`, `--export-directory=${this.exportDirectory}`], {
       serviceName: 'com.kakarrot.ai-employee-os.runtime',
       stdio: 'pipe'
     })

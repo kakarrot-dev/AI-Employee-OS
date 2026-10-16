@@ -363,10 +363,10 @@ describe('App shell', () => {
     expect(conversationButton).toHaveClass('list-row--text')
     expect(conversationButton.querySelector('.avatar')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '折叠左侧栏' }))
-    expect(document.querySelector('.prototype')).toHaveClass('is-context-collapsed')
+    expect(document.querySelector('.desktop-app')).toHaveClass('is-sidebar-collapsed')
     fireEvent.click(screen.getByRole('button', { name: '展开左侧栏' }))
-    expect(document.querySelector('.prototype')).not.toHaveClass('is-context-collapsed')
-    expect(within(screen.getByRole('banner', { name: '窗口拖拽区' })).getByRole('button', { name: '折叠事项边栏' })).toBeInTheDocument()
+    expect(document.querySelector('.desktop-app')).not.toHaveClass('is-sidebar-collapsed')
+    expect(within(screen.getByRole('banner', { name: '窗口拖拽区' })).getByRole('button', { name: '展开事项边栏' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '通讯录' }))
     expect(screen.queryByRole('button', { name: /事项边栏/ })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '消息' }))
@@ -377,13 +377,109 @@ describe('App shell', () => {
     expect(screen.getByLabelText('添加附件')).toBeEnabled()
   })
 
+  it('keeps unsent text and managed attachments when navigating away and back', async () => {
+    vi.mocked(window.aiEmployeeOS.attachment.select).mockResolvedValue([{ id: 'draft-file', name: '草稿资料.pdf', mediaType: 'application/pdf', size: 2048, sha256: 'a'.repeat(64) }])
+    render(<App />)
+    const input = await screen.findByRole('textbox', { name: '发送消息' })
+    fireEvent.change(input, { target: { value: '暂未发送的工作要求' } })
+    fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
+    await screen.findByText('草稿资料.pdf')
+    fireEvent.click(screen.getByRole('button', { name: '事项' }))
+    fireEvent.click(screen.getByRole('button', { name: '消息' }))
+    expect(await screen.findByRole('textbox', { name: '发送消息' })).toHaveValue('暂未发送的工作要求')
+    expect(screen.getByText('草稿资料.pdf')).toBeInTheDocument()
+    expect(window.aiEmployeeOS.conversation.send).not.toHaveBeenCalled()
+  })
+
+  it('separates drafts by conversation instead of carrying them into a new conversation', async () => {
+    render(<App />)
+    fireEvent.change(await screen.findByRole('textbox', { name: '发送消息' }), { target: { value: '原会话草稿' } })
+    fireEvent.click(screen.getByRole('button', { name: '新建会话' }))
+    await screen.findByRole('heading', { name: '新会话', level: 1 })
+    expect(screen.getByRole('textbox', { name: '发送消息' })).toHaveValue('')
+    fireEvent.click(screen.getByRole('button', { name: /与总管的对话尚无消息/ }))
+    expect(await screen.findByRole('textbox', { name: '发送消息' })).toHaveValue('原会话草稿')
+  })
+
+  it('does not restore submitted attachments when the send acknowledgement arrives after navigation', async () => {
+    vi.mocked(window.aiEmployeeOS.runtime.getStatus).mockResolvedValue({ state: 'connected', checkedAt: '', message: 'Ready' })
+    vi.mocked(window.aiEmployeeOS.attachment.select).mockResolvedValue([{ id: 'submitted-file', name: '已提交资料.pdf', mediaType: 'application/pdf', size: 2048, sha256: 'a'.repeat(64) }])
+    let acknowledge!: (value: Awaited<ReturnType<typeof window.aiEmployeeOS.conversation.send>>) => void
+    vi.mocked(window.aiEmployeeOS.conversation.send).mockReturnValueOnce(new Promise((resolve) => { acknowledge = resolve }))
+    render(<App />)
+    await screen.findByRole('textbox', { name: '发送消息' })
+    fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
+    await screen.findByRole('button', { name: '移除 已提交资料.pdf' })
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(window.aiEmployeeOS.conversation.send).toHaveBeenCalledOnce())
+    fireEvent.click(screen.getByRole('button', { name: '事项' }))
+    await act(async () => acknowledge({ accepted: true, requestId: 'delayed-request', messageId: 'delayed-message' }))
+    fireEvent.click(screen.getByRole('button', { name: '消息' }))
+    await screen.findByRole('textbox', { name: '发送消息' })
+    expect(screen.queryByRole('button', { name: '移除 已提交资料.pdf' })).not.toBeInTheDocument()
+  })
+
+  it('follows the user’s own new message after they have scrolled up to read history', async () => {
+    vi.mocked(window.aiEmployeeOS.runtime.getStatus).mockResolvedValue({ state: 'connected', checkedAt: '', message: 'Ready' })
+    render(<App />)
+    const input = await screen.findByRole('textbox', { name: '发送消息' })
+    const scroll = screen.getByLabelText('对话')
+    Object.defineProperties(scroll, { scrollHeight: { configurable: true, value: 2000 }, clientHeight: { configurable: true, value: 400 }, scrollTop: { configurable: true, writable: true, value: 1600 } })
+    const scrollTo = vi.fn((options: ScrollToOptions) => { scroll.scrollTop = options.top ?? 0 })
+    Object.defineProperty(scroll, 'scrollTo', { configurable: true, value: scrollTo })
+    fireEvent.wheel(scroll, { deltaY: -800 })
+    scroll.scrollTop = 100
+    fireEvent.scroll(scroll)
+    fireEvent.change(input, { target: { value: '继续处理我的新问题' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1600, behavior: 'auto' })
+    expect(scroll.scrollTop).toBe(1600)
+  })
+
+  it('keeps the current conversation available if creating a new one fails', async () => {
+    vi.mocked(window.aiEmployeeOS.conversation.create).mockRejectedValueOnce(new Error('runtime_disconnected'))
+    render(<App />)
+    await screen.findByRole('textbox', { name: '发送消息' })
+    fireEvent.click(screen.getByRole('button', { name: '新建会话' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('会话创建失败，请重试')
+    expect(screen.getByRole('heading', { name: '与总管的对话', level: 1 })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '新建会话' })).toBeEnabled()
+  })
+
+  it('shows the saved Poe supervisor model without claiming to switch a frozen Run', async () => {
+    const configuration = await window.aiEmployeeOS.supervisor.get()
+    vi.mocked(window.aiEmployeeOS.supervisor.get).mockResolvedValue({ ...configuration, modelId: 'claude-sonnet-4.6' })
+    vi.mocked(window.aiEmployeeOS.provider.getStatus).mockResolvedValue({ state: 'ready', credentialStatus: { deepseek: 'configured', poe: 'configured' }, checkedAt: '', models: [{ provider: 'deepseek', modelId: 'deepseek-v4-pro', modality: 'text', verification: 'verified' }, { provider: 'poe', modelId: 'claude-sonnet-4.6', modality: 'text', verification: 'verified' }] })
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'claude-sonnet-4.6' }))
+    const panel = screen.getByRole('dialog', { name: '总管模型' })
+    expect(within(panel).getByRole('button', { name: /claude-sonnet-4.6/ })).toHaveClass('is-active')
+    expect(within(panel).getByRole('button', { name: /deepseek-v4-pro/ })).not.toHaveClass('is-active')
+    expect(panel).toHaveTextContent('已有事项继续使用启动时冻结的模型')
+    expect(window.aiEmployeeOS.supervisor.update).not.toHaveBeenCalled()
+  })
+
+  it('exposes an existing document approval in its conversation using the Runtime command', async () => {
+    const task = directoryTask({ conversationId: 'local-supervisor', state: 'needs_attention', toolActions: [{ id: 'write', toolVersionId: 'document.create@local-document/v1', state: 'pending', risk: 'medium', approvalId: 'approval-write', parameters: { path: '/Users/kakarrot/Downloads/approval.md', content: '# 验收\n\namber_orchid' } }], approvals: [{ id: 'approval-write', toolActionId: 'write', decision: 'pending' }] })
+    vi.mocked(window.aiEmployeeOS.task.list).mockResolvedValue([task])
+    vi.mocked(window.aiEmployeeOS.task.approveTool).mockResolvedValue({ ...task, approvals: [], toolActions: [] })
+    render(<App />)
+    const card = await screen.findByRole('article', { name: '新建本机文档' })
+    expect(card).toHaveTextContent('/Users/kakarrot/Downloads/approval.md')
+    expect(card).toHaveTextContent('amber_orchid')
+    expect(screen.queryByText(/会议内容和参会名单/)).not.toBeInTheDocument()
+    expect(window.aiEmployeeOS.task.approveTool).not.toHaveBeenCalled()
+    fireEvent.click(within(card).getByRole('button', { name: '确认新建文档' }))
+    await waitFor(() => expect(window.aiEmployeeOS.task.approveTool).toHaveBeenCalledWith('write'))
+  })
+
   it('keeps model and voice composer controls without exposing the removed access control', async () => {
     render(<App />)
     expect(await screen.findByRole('heading', { name: '与总管的对话', level: 1 })).toBeInTheDocument()
     expect(screen.queryByText('总管会判断是直接回答、归入已有事项，还是创建新事项。')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '受控访问' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /deepseek-v4-pro/ }))
-    expect(await screen.findByRole('dialog', { name: '当前会话模型' })).toBeInTheDocument()
+    expect(await screen.findByRole('dialog', { name: '总管模型' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '语音输入' }))
     expect(await screen.findByRole('dialog', { name: '语音输入说明' })).toHaveTextContent('暂未开放')
   })
@@ -640,7 +736,8 @@ describe('App shell', () => {
     const catalog = screen.getByRole('region', { name: '招募专家' })
     const recruitmentTabs = within(catalog).getByRole('tablist', { name: '招募类型' })
     expect(within(recruitmentTabs).getByRole('tab', { name: '专家' })).toHaveAttribute('aria-selected', 'true')
-    expect(within(recruitmentTabs).getByText('单个 Agent')).toBeInTheDocument()
+    expect(recruitmentTabs).toHaveAttribute('data-cds', 'SegmentedControl')
+    expect(within(recruitmentTabs).getByRole('tab', { name: '专家' })).toHaveAttribute('aria-controls', 'recruitment-experts-panel')
     expect(catalog.querySelector('.recruitment-overview--experts')).toBeInTheDocument()
     for (const category of ['信息与分析', '内容与交付', '产品与研究', '工程与质量', '方案与业务']) expect(within(catalog).getByText(category)).toBeInTheDocument()
     for (const employee of [
@@ -678,7 +775,7 @@ describe('App shell', () => {
 
     fireEvent.click(within(recruitmentTabs).getByRole('tab', { name: '专家团' }))
     expect(within(catalog).getByRole('heading', { name: '候选专家团目录' })).toBeInTheDocument()
-    expect(within(recruitmentTabs).getByText('多个 Agent 协作')).toBeInTheDocument()
+    expect(within(recruitmentTabs).getByRole('tab', { name: '专家团' })).toHaveAttribute('aria-selected', 'true')
     expect(within(catalog).getByText('会议专家团')).toBeInTheDocument()
     expect(within(catalog).getByText('报销专家团')).toBeInTheDocument()
     expect(catalog.querySelector('.recruitment-card__members')).not.toBeInTheDocument()
@@ -1091,6 +1188,7 @@ describe('App shell', () => {
 
     render(<App />)
     expect(await screen.findByLabelText('当前会话事项')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '展开事项边栏' }))
     expect(screen.queryByRole('tab', { name: /事项/ })).not.toBeInTheDocument()
     expect(await screen.findAllByRole('button', { name: /^定位事项：/ })).toHaveLength(2)
     expect(screen.getByRole('button', { name: '定位事项：复核竞争对手信息' })).toHaveTextContent('执行失败 · 运行 1分0秒')
@@ -1284,7 +1382,7 @@ describe('App shell', () => {
     expect(screen.queryByText(/Error invoking remote method/)).not.toBeInTheDocument()
   })
 
-  it('uses the prototype Skills and Tools directory backed by the Runtime catalog', async () => {
+  it('uses the CDS Skills and Tools directory backed by the Runtime catalog', async () => {
     vi.mocked(window.aiEmployeeOS.runtime.getStatus).mockResolvedValue({ state: 'connected', checkedAt: '2026-08-31T00:00:00Z', message: 'Runtime 已连接' })
     vi.mocked(window.aiEmployeeOS.resource.list).mockResolvedValue({
       skills: [{ id: 'skill-1', createdAt: '2026-08-31T00:00:00Z', name: '多源调研', description: '保留来源和信息缺口', version: 2, steps: ['拆分查询', '形成证据包'], toolVersionIds: ['tool-1'], instructionsMarkdown: '# 多源调研\n\n保留来源和信息缺口。', instructionDigest: 'digest-1', available: true }],
@@ -1295,11 +1393,54 @@ describe('App shell', () => {
     fireEvent.click(screen.getByRole('button', { name: '能力' }))
     expect((await screen.findAllByRole('heading', { name: '多源调研', level: 1 })).length).toBeGreaterThanOrEqual(2)
     expect(screen.getByRole('heading', { name: 'SKILL.md', level: 3 })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Tools' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Tools' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'MCP' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '能力目录信息' }))
     expect(screen.getByRole('dialog', { name: '能力目录信息' })).toHaveTextContent('2 项')
     expect(window.aiEmployeeOS.resource.list).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    { module: '消息', search: '搜索会话', match: '与总管的对话', message: '没有匹配的会话' },
+    { module: '通讯录', search: '搜索专家', match: 'Client Writer', message: '没有匹配的专家' },
+    { module: '通讯录', search: '搜索专家团', match: 'Research Team', message: '没有匹配的专家团' },
+    { module: '能力', search: '搜索能力', match: 'Agent-Reach', message: '没有匹配的能力' }
+  ])('explains unmatched $search and restores the list after clearing', async ({ module, search, match, message }) => {
+    vi.mocked(window.aiEmployeeOS.runtime.getStatus).mockResolvedValue({ state: 'connected', checkedAt: '2026-10-16T01:00:00Z', message: 'Runtime 已连接' })
+    vi.mocked(window.aiEmployeeOS.employee.list).mockResolvedValue([{ id: 'writer', name: 'Client Writer', role: '文档编写员', status: 'active', activeVersionId: 'writer-v1', capabilityVersionIds: [], activeCapabilityVersionIds: [] }])
+    vi.mocked(window.aiEmployeeOS.employee.detail).mockResolvedValue({ employee: { schemaVersion: 1, id: 'writer', name: 'Client Writer', createdAt: '2026-10-16T01:00:00Z', disabled: false, archived: false }, status: 'active', versions: [], testCases: [], testRuns: [], formalReferences: [] })
+    vi.mocked(window.aiEmployeeOS.expertGroup.list).mockResolvedValue([{ id: 'research', name: 'Research Team', description: '研究团队', createdAt: '2026-10-16T01:00:00Z', status: 'active', members: [] }])
+    vi.mocked(window.aiEmployeeOS.resource.list).mockResolvedValue({ skills: [{ id: 'research-skill', name: 'Agent-Reach', description: '公开资料检索', createdAt: '2026-10-16T01:00:00Z', version: 1, steps: [], toolVersionIds: [], instructionsMarkdown: '# 公开资料检索', instructionDigest: 'research-digest', available: true }], tools: [], mcps: [], healthChecks: [] })
+    render(<App />)
+    await screen.findByLabelText('当前会话事项')
+    fireEvent.click(screen.getByRole('button', { name: module }))
+    if (search === '搜索专家团') fireEvent.click(screen.getByRole('tab', { name: '专家团' }))
+    const context = within(screen.getByRole('textbox', { name: search }).closest('aside')!)
+    await context.findByRole('button', { name: new RegExp(`^${match}`) })
+    const input = context.getByRole('textbox', { name: search })
+    fireEvent.change(input, { target: { value: '无匹配的中文关键词' } })
+    expect(context.getByRole('status')).toHaveTextContent(message)
+    expect(context.queryByRole('button', { name: new RegExp(`^${match}`) })).not.toBeInTheDocument()
+    fireEvent.click(context.getByRole('button', { name: '清除搜索' }))
+    expect(input).toHaveValue('')
+    expect(input).toHaveFocus()
+    expect(context.getByRole('button', { name: new RegExp(`^${match}`) })).toBeInTheDocument()
+    if (search !== '搜索会话') {
+      fireEvent.change(input, { target: { value: match.toLocaleLowerCase() } })
+      expect(context.getByRole('button', { name: new RegExp(`^${match}`) })).toBeInTheDocument()
+      expect(context.queryByRole('status')).not.toBeInTheDocument()
+    }
+    expect(window.aiEmployeeOS.conversation.send).not.toHaveBeenCalled()
+  })
+
+  it('keeps conversation read failures distinct from unmatched searches', async () => {
+    vi.mocked(window.aiEmployeeOS.conversation.list).mockRejectedValue(new Error('runtime_request_timeout'))
+    render(<App />)
+    const context = within(screen.getByRole('textbox', { name: '搜索会话' }).closest('aside')!)
+    await context.findByRole('alert')
+    fireEvent.change(context.getByRole('textbox', { name: '搜索会话' }), { target: { value: '不存在的会话' } })
+    expect(context.getByRole('alert')).toHaveTextContent('会话读取失败')
+    expect(context.queryByText('没有匹配的会话')).not.toBeInTheDocument()
   })
 
   it('loads employees and capabilities only after Runtime becomes connected', async () => {
@@ -1327,7 +1468,7 @@ describe('App shell', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(window.aiEmployeeOS.resource.list).toHaveBeenCalledTimes(1)
     expect(window.aiEmployeeOS.employee.list).toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Tools' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Tools' }))
     expect(await screen.findByRole('heading', { name: '连接后恢复的 Tool', level: 2 })).toBeInTheDocument()
   })
 
@@ -1430,12 +1571,60 @@ describe('App shell', () => {
 
   it('coalesces focus refreshes while the initial task projection is still loading', async () => {
     let resolve!: (items: never[]) => void
-    vi.mocked(window.aiEmployeeOS.task.list).mockReturnValue(new Promise(done => { resolve = done }))
+    vi.mocked(window.aiEmployeeOS.task.list).mockReturnValueOnce(new Promise(done => { resolve = done })).mockResolvedValue([])
     render(<App />)
     await waitFor(() => expect(window.aiEmployeeOS.task.list).toHaveBeenCalledTimes(1))
     act(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('focus')) })
     expect(window.aiEmployeeOS.task.list).toHaveBeenCalledTimes(1)
     await act(async () => resolve([]))
+    await waitFor(() => expect(window.aiEmployeeOS.task.list).toHaveBeenCalledTimes(2))
+  })
+
+  it('keeps a terminal task refresh that arrives during an older projection read', async () => {
+    const running = directoryTask({ conversationId: 'local-supervisor' })
+    const completed = { ...running, state: 'succeeded' as const, assignments: [], delivery: { id: 'delivery', acceptanceResults: [{ criterion: '来源可追溯', passed: true }], artifacts: [], evidenceCount: 1, unresolvedIssues: [] } }
+    let first!: (items: TaskDetailView[]) => void, second!: (items: TaskDetailView[]) => void
+    vi.mocked(window.aiEmployeeOS.task.list)
+      .mockReturnValueOnce(new Promise(done => { first = done }))
+      .mockReturnValueOnce(new Promise(done => { second = done }))
+      .mockResolvedValue([completed])
+    render(<App />)
+    await waitFor(() => expect(window.aiEmployeeOS.task.list).toHaveBeenCalledTimes(1))
+    const receive = vi.mocked(window.aiEmployeeOS.task.onEvent).mock.calls.at(-1)![0]
+    act(() => { receive({ type: 'delivery_completed', taskId: running.id }); receive({ type: 'progress', taskId: running.id }) })
+    expect(window.aiEmployeeOS.task.list).toHaveBeenCalledTimes(1)
+    await act(async () => first([running]))
+    await waitFor(() => expect(window.aiEmployeeOS.task.list).toHaveBeenCalledTimes(2))
+    act(() => { receive({ type: 'delivery_completed', taskId: running.id }); receive({ type: 'progress', taskId: running.id }) })
+    expect(window.aiEmployeeOS.task.list).toHaveBeenCalledTimes(2)
+    await act(async () => second([running]))
+    await waitFor(() => expect(window.aiEmployeeOS.task.list).toHaveBeenCalledTimes(3))
+    expect(await screen.findByRole('button', { name: `查看事项：${running.title}` })).toHaveTextContent('已完成')
+    expect(window.aiEmployeeOS.task.retry).not.toHaveBeenCalled()
+  })
+
+  it('does not refresh a queued projection after leaving the workbench', async () => {
+    let resolve!: (items: TaskDetailView[]) => void
+    vi.mocked(window.aiEmployeeOS.task.list).mockReturnValueOnce(new Promise(done => { resolve = done }))
+    const { unmount } = render(<App />)
+    await waitFor(() => expect(window.aiEmployeeOS.task.list).toHaveBeenCalledTimes(1))
+    act(() => vi.mocked(window.aiEmployeeOS.task.onEvent).mock.calls.at(-1)![0]({ type: 'delivery_completed', taskId: 'task' }))
+    unmount()
+    await act(async () => resolve([]))
+    expect(window.aiEmployeeOS.task.list).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears the earlier failure retry when a queued task read succeeds', async () => {
+    let reject!: (error: Error) => void
+    vi.mocked(window.aiEmployeeOS.task.list).mockReturnValueOnce(new Promise((_done, fail) => { reject = fail })).mockResolvedValue([])
+    render(<App />)
+    await waitFor(() => expect(window.aiEmployeeOS.task.list).toHaveBeenCalledTimes(1))
+    act(() => vi.mocked(window.aiEmployeeOS.task.onEvent).mock.calls.at(-1)![0]({ type: 'delivery_completed', taskId: 'task' }))
+    await act(async () => reject(new Error('runtime_request_timeout')))
+    await waitFor(() => expect(window.aiEmployeeOS.task.list).toHaveBeenCalledTimes(2))
+    await act(async () => new Promise(done => setTimeout(done, 650)))
+    expect(window.aiEmployeeOS.task.list).toHaveBeenCalledTimes(2)
+    expect(screen.queryByText('任务投影读取失败')).not.toBeInTheDocument()
   })
 
 })

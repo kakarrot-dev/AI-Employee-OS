@@ -1,0 +1,1540 @@
+{
+  "experiment": {
+    "providerExecuteRequests": 123,
+    "confirmedProviderTokensIncludingCapturedReceipt": 411576,
+    "requestsWithUnknownBilledUsage": 4
+  },
+  "stage": "4C Runtime handoff and legacy compatibility",
+  "runtimeMigrationGate": "passed",
+  "clientEndToEndGate": "known_natural_route_failure_retained",
+  "packagingGate": "deferred_python_abi_and_model_assets",
+  "provider": "poe",
+  "modelId": "claude-sonnet-4.6",
+  "sdkVersion": "0.20.0",
+  "productionDatabaseUsed": false,
+  "installedClientReplaced": false,
+  "typecheck": "passed",
+  "electronViteBuild": "passed",
+  "tests": {
+    "passed": 412,
+    "failed": 0,
+    "skipped": 3,
+    "reportSha256": "12d9cfb16a243713c437aed0477a3ce4ff9f24cdac3072d47bd881169b7fb16c"
+  },
+  "comparison": {
+    "successfulNaturalCasesPerBuild": 2,
+    "beforeRequests": 19,
+    "afterSuccessfulRequests": 18,
+    "beforeTokens": 80953,
+    "afterSuccessfulTokens": 73504,
+    "afterNaturalAttempts": 3,
+    "afterNaturalFailures": 1,
+    "afterFailedRouteRequests": 1,
+    "afterFailedRouteTokens": 5487,
+    "afterTokensAllNaturalAttempts": 78991,
+    "paidDispatchBefore": 0,
+    "paidDispatchAfter": 0
+  },
+  "fixtures": {
+    "before-natural-1": {
+      "classification": "passed",
+      "rawStatus": "passed",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/before-natural-1/live-results.json",
+      "rawReportSha256": "e6b8639a4a7bc83ae99f66696c7131f32f097fcfedce712b8fda6b8227095e84",
+      "actualRequests": 18,
+      "knownEventTokens": {
+        "inputTokens": 58972,
+        "outputTokens": 3207,
+        "totalTokens": 62179
+      },
+      "requestsWithoutUsageEvents": [
+        "a829c111-a5d5-41af-b53e-d120690ec871"
+      ],
+      "capturedUsageNotInOldLedger": null,
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/baseline-build/main/runtime/index.js",
+          "sha256": "34cd101a4470ddf72dc85283ac22690a6d3636b275e4281382a341b41949e010"
+        },
+        {
+          "entry": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/baseline-build/main/runtime/index.js",
+          "sha256": "34cd101a4470ddf72dc85283ac22690a6d3636b275e4281382a341b41949e010"
+        }
+      ],
+      "providerEntry": null,
+      "cases": [
+        {
+          "name": "supervisor-route-two-employees",
+          "runId": "b460d83a-e209-4dc2-b0aa-201261e6feda",
+          "executor": "openai-agents-ts-v2",
+          "state": "succeeded",
+          "actualRequests": 9,
+          "runRequests": 8,
+          "tokensIncludingRoute": {
+            "inputTokens": 34559,
+            "outputTokens": 2295,
+            "totalTokens": 36854
+          },
+          "runTokens": {
+            "inputTokens": 29341,
+            "outputTokens": 1727,
+            "totalTokens": 31068
+          },
+          "requestsWithoutUsage": [],
+          "stages": {
+            "after_tool": {
+              "requests": 3,
+              "inputTokens": 11445,
+              "outputTokens": 491,
+              "totalTokens": 11936
+            },
+            "assignment_start": {
+              "requests": 2,
+              "inputTokens": 5814,
+              "outputTokens": 132,
+              "totalTokens": 5946
+            },
+            "manager_final": {
+              "requests": 1,
+              "inputTokens": 5171,
+              "outputTokens": 822,
+              "totalTokens": 5993
+            },
+            "tool_proposal": {
+              "requests": 2,
+              "inputTokens": 6911,
+              "outputTokens": 282,
+              "totalTokens": 7193
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/before-natural-1/fixtures/team-marker.md",
+            "sha256": "1e6f80e15a8239b53204f452906d98757dff6c8269b13fcc2af5c30712aedb7d",
+            "size": 127
+          },
+          "grantUnchanged": null,
+          "noCallsWhileWaiting": null,
+          "oldCheckpointUnchanged": null
+        },
+        {
+          "name": "approval-sigkill-resume",
+          "runId": "4c70aa9d-ce58-478f-85e8-379859aef776",
+          "executor": "openai-agents-ts-v2",
+          "state": "succeeded",
+          "actualRequests": 6,
+          "runRequests": 6,
+          "tokensIncludingRoute": {
+            "inputTokens": 19755,
+            "outputTokens": 764,
+            "totalTokens": 20519
+          },
+          "runTokens": {
+            "inputTokens": 19755,
+            "outputTokens": 764,
+            "totalTokens": 20519
+          },
+          "requestsWithoutUsage": [],
+          "stages": {
+            "after_tool": {
+              "requests": 2,
+              "inputTokens": 7576,
+              "outputTokens": 192,
+              "totalTokens": 7768
+            },
+            "assignment_start": {
+              "requests": 1,
+              "inputTokens": 1846,
+              "outputTokens": 7,
+              "totalTokens": 1853
+            },
+            "manager_final": {
+              "requests": 1,
+              "inputTokens": 4476,
+              "outputTokens": 283,
+              "totalTokens": 4759
+            },
+            "tool_proposal": {
+              "requests": 2,
+              "inputTokens": 5857,
+              "outputTokens": 282,
+              "totalTokens": 6139
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/before-natural-1/fixtures/approval-marker.md",
+            "sha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8",
+            "size": 12
+          },
+          "grantUnchanged": true,
+          "noCallsWhileWaiting": true,
+          "oldCheckpointUnchanged": null
+        },
+        {
+          "name": "approval-rejected-no-write",
+          "runId": "94a3778d-1697-4007-be21-fc7b5ebba796",
+          "executor": "openai-agents-ts-v2",
+          "state": "failed",
+          "actualRequests": 2,
+          "runRequests": 2,
+          "tokensIncludingRoute": {
+            "inputTokens": 4658,
+            "outputTokens": 148,
+            "totalTokens": 4806
+          },
+          "runTokens": {
+            "inputTokens": 4658,
+            "outputTokens": 148,
+            "totalTokens": 4806
+          },
+          "requestsWithoutUsage": [],
+          "stages": {
+            "assignment_start": {
+              "requests": 1,
+              "inputTokens": 1782,
+              "outputTokens": 7,
+              "totalTokens": 1789
+            },
+            "tool_proposal": {
+              "requests": 1,
+              "inputTokens": 2876,
+              "outputTokens": 141,
+              "totalTokens": 3017
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": null,
+          "grantUnchanged": null,
+          "noCallsWhileWaiting": null,
+          "oldCheckpointUnchanged": null
+        },
+        {
+          "name": "cancel-before-downstream",
+          "runId": "4b58c2c3-7024-486e-99d6-8092e98f0e57",
+          "executor": "openai-agents-ts-v2",
+          "state": "failed",
+          "actualRequests": 1,
+          "runRequests": 1,
+          "tokensIncludingRoute": {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "totalTokens": 0
+          },
+          "runTokens": {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "totalTokens": 0
+          },
+          "requestsWithoutUsage": [
+            "a829c111-a5d5-41af-b53e-d120690ec871"
+          ],
+          "stages": {
+            "assignment_start": {
+              "requests": 1,
+              "inputTokens": 0,
+              "outputTokens": 0,
+              "totalTokens": 0
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": null,
+          "grantUnchanged": null,
+          "noCallsWhileWaiting": null,
+          "oldCheckpointUnchanged": null
+        }
+      ]
+    },
+    "before-natural-2": {
+      "classification": "passed",
+      "rawStatus": "passed",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/before-natural-2/live-results.json",
+      "rawReportSha256": "54aa480025ad6c2b4507045bfe60285bbb57db74a17c8eb8f7bb7937db0b8a84",
+      "actualRequests": 10,
+      "knownEventTokens": {
+        "inputTokens": 40737,
+        "outputTokens": 3362,
+        "totalTokens": 44099
+      },
+      "requestsWithoutUsageEvents": [],
+      "capturedUsageNotInOldLedger": null,
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/baseline-build/main/runtime/index.js",
+          "sha256": "34cd101a4470ddf72dc85283ac22690a6d3636b275e4281382a341b41949e010"
+        }
+      ],
+      "providerEntry": null,
+      "cases": [
+        {
+          "name": "supervisor-route-two-employees",
+          "runId": "85138b0a-0968-408e-8587-3b3f3b93e76f",
+          "executor": "openai-agents-ts-v2",
+          "state": "succeeded",
+          "actualRequests": 10,
+          "runRequests": 9,
+          "tokensIncludingRoute": {
+            "inputTokens": 40737,
+            "outputTokens": 3362,
+            "totalTokens": 44099
+          },
+          "runTokens": {
+            "inputTokens": 35507,
+            "outputTokens": 2812,
+            "totalTokens": 38319
+          },
+          "requestsWithoutUsage": [],
+          "stages": {
+            "after_tool": {
+              "requests": 3,
+              "inputTokens": 11247,
+              "outputTokens": 770,
+              "totalTokens": 12017
+            },
+            "assignment_start": {
+              "requests": 2,
+              "inputTokens": 5851,
+              "outputTokens": 214,
+              "totalTokens": 6065
+            },
+            "manager_final": {
+              "requests": 1,
+              "inputTokens": 5173,
+              "outputTokens": 858,
+              "totalTokens": 6031
+            },
+            "manager_format_correction": {
+              "requests": 1,
+              "inputTokens": 6393,
+              "outputTokens": 687,
+              "totalTokens": 7080
+            },
+            "tool_proposal": {
+              "requests": 2,
+              "inputTokens": 6843,
+              "outputTokens": 283,
+              "totalTokens": 7126
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/before-natural-2/fixtures/team-marker.md",
+            "sha256": "252a7aaff59d366f720f5681ae4a683787dc3d3e351a6dd00709aeaefc03a2de",
+            "size": 185
+          },
+          "grantUnchanged": null,
+          "noCallsWhileWaiting": null,
+          "oldCheckpointUnchanged": null
+        }
+      ]
+    },
+    "after-natural-1": {
+      "classification": "known_route_failure_empty_acceptance_criteria",
+      "rawStatus": "failed",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/after-natural-1/live-results.json",
+      "rawReportSha256": "7d1fda008d01767647cdaaeb2595272e840fab1ae9fcdaa379a6027ade7c0565",
+      "actualRequests": 1,
+      "knownEventTokens": {
+        "inputTokens": 5226,
+        "outputTokens": 261,
+        "totalTokens": 5487
+      },
+      "requestsWithoutUsageEvents": [],
+      "capturedUsageNotInOldLedger": null,
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "9b642274c7739fc26d4475d6a3f10056d1f32496b3e5edab3e5b1ec7c00b8277"
+        }
+      ],
+      "providerEntry": null,
+      "cases": []
+    },
+    "after-natural-2": {
+      "classification": "passed",
+      "rawStatus": "passed",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/after-natural-2/live-results.json",
+      "rawReportSha256": "5a5d06ddfe33327988dbb9fe3483fc547bae3d1f222380500ecff25f5e877fcd",
+      "actualRequests": 9,
+      "knownEventTokens": {
+        "inputTokens": 34177,
+        "outputTokens": 2226,
+        "totalTokens": 36403
+      },
+      "requestsWithoutUsageEvents": [],
+      "capturedUsageNotInOldLedger": null,
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "9b642274c7739fc26d4475d6a3f10056d1f32496b3e5edab3e5b1ec7c00b8277"
+        }
+      ],
+      "providerEntry": null,
+      "cases": [
+        {
+          "name": "supervisor-route-two-employees",
+          "runId": "2bd10806-859e-4af2-a1be-cb707fa8c4fd",
+          "executor": "openai-agents-ts-v2",
+          "state": "succeeded",
+          "actualRequests": 9,
+          "runRequests": 8,
+          "tokensIncludingRoute": {
+            "inputTokens": 34177,
+            "outputTokens": 2226,
+            "totalTokens": 36403
+          },
+          "runTokens": {
+            "inputTokens": 28943,
+            "outputTokens": 1692,
+            "totalTokens": 30635
+          },
+          "requestsWithoutUsage": [],
+          "stages": {
+            "after_tool": {
+              "requests": 3,
+              "inputTokens": 11254,
+              "outputTokens": 391,
+              "totalTokens": 11645
+            },
+            "assignment_start": {
+              "requests": 2,
+              "inputTokens": 5659,
+              "outputTokens": 130,
+              "totalTokens": 5789
+            },
+            "manager_final": {
+              "requests": 1,
+              "inputTokens": 5113,
+              "outputTokens": 888,
+              "totalTokens": 6001
+            },
+            "tool_proposal": {
+              "requests": 2,
+              "inputTokens": 6917,
+              "outputTokens": 283,
+              "totalTokens": 7200
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/after-natural-2/fixtures/team-marker.md",
+            "sha256": "620e142cb14e55c8db975f55bdaee46345164d48b5b5f1a0e7001c737b6bb808",
+            "size": 120
+          },
+          "grantUnchanged": null,
+          "noCallsWhileWaiting": null,
+          "oldCheckpointUnchanged": null
+        }
+      ]
+    },
+    "after-natural-3": {
+      "classification": "positive_cases_passed_probe_cancel_command_not_sent",
+      "rawStatus": "failed",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/after-natural-3/live-results.json",
+      "rawReportSha256": "1ff0eb71761dcb86e0cff5e86125f0100a5b1a315204cb98a13271cd9c402cdb",
+      "actualRequests": 24,
+      "knownEventTokens": {
+        "inputTokens": 79847,
+        "outputTokens": 4136,
+        "totalTokens": 83983
+      },
+      "requestsWithoutUsageEvents": [],
+      "capturedUsageNotInOldLedger": null,
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "9b642274c7739fc26d4475d6a3f10056d1f32496b3e5edab3e5b1ec7c00b8277"
+        },
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "9b642274c7739fc26d4475d6a3f10056d1f32496b3e5edab3e5b1ec7c00b8277"
+        }
+      ],
+      "providerEntry": {
+        "path": "/Users/kakarrot/Dev/AI Employee OS/out/main/provider/index.js",
+        "sha256": "3dea58f5c199d568a14a4c9b1aa7b6aa8d818db7dc38d6de3a2a1984aaae0d4e"
+      },
+      "cases": [
+        {
+          "name": "supervisor-route-two-employees",
+          "runId": "5e7bd7ad-17e8-44ca-a669-dd74444afbee",
+          "executor": "openai-agents-ts-v2",
+          "state": "succeeded",
+          "actualRequests": 9,
+          "runRequests": 8,
+          "tokensIncludingRoute": {
+            "inputTokens": 34758,
+            "outputTokens": 2343,
+            "totalTokens": 37101
+          },
+          "runTokens": {
+            "inputTokens": 29526,
+            "outputTokens": 1778,
+            "totalTokens": 31304
+          },
+          "requestsWithoutUsage": [],
+          "stages": {
+            "after_tool": {
+              "requests": 3,
+              "inputTokens": 11432,
+              "outputTokens": 587,
+              "totalTokens": 12019
+            },
+            "assignment_start": {
+              "requests": 2,
+              "inputTokens": 5878,
+              "outputTokens": 131,
+              "totalTokens": 6009
+            },
+            "manager_final": {
+              "requests": 1,
+              "inputTokens": 5193,
+              "outputTokens": 777,
+              "totalTokens": 5970
+            },
+            "tool_proposal": {
+              "requests": 2,
+              "inputTokens": 7023,
+              "outputTokens": 283,
+              "totalTokens": 7306
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/after-natural-3/fixtures/team-marker.md",
+            "sha256": "a6d43f18b07a5b0780987b60bb5c096f7fed8977083f6187166d7fbe8c885539",
+            "size": 199
+          },
+          "grantUnchanged": null,
+          "noCallsWhileWaiting": null,
+          "oldCheckpointUnchanged": null
+        },
+        {
+          "name": "approval-sigkill-resume",
+          "runId": "1cc6ef74-b272-45a0-bfdc-e4263a9cd276",
+          "executor": "openai-agents-ts-v2",
+          "state": "succeeded",
+          "actualRequests": 5,
+          "runRequests": 5,
+          "tokensIncludingRoute": {
+            "inputTokens": 17164,
+            "outputTokens": 680,
+            "totalTokens": 17844
+          },
+          "runTokens": {
+            "inputTokens": 17164,
+            "outputTokens": 680,
+            "totalTokens": 17844
+          },
+          "requestsWithoutUsage": [],
+          "stages": {
+            "after_tool": {
+              "requests": 2,
+              "inputTokens": 7932,
+              "outputTokens": 233,
+              "totalTokens": 8165
+            },
+            "assignment_start": {
+              "requests": 1,
+              "inputTokens": 1846,
+              "outputTokens": 7,
+              "totalTokens": 1853
+            },
+            "manager_final": {
+              "requests": 1,
+              "inputTokens": 4446,
+              "outputTokens": 299,
+              "totalTokens": 4745
+            },
+            "tool_proposal": {
+              "requests": 1,
+              "inputTokens": 2940,
+              "outputTokens": 141,
+              "totalTokens": 3081
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/after-natural-3/fixtures/approval-marker.md",
+            "sha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8",
+            "size": 12
+          },
+          "grantUnchanged": true,
+          "noCallsWhileWaiting": true,
+          "oldCheckpointUnchanged": null
+        },
+        {
+          "name": "approval-rejected-no-write",
+          "runId": "c3564ee1-63f0-4bc9-8fa7-e6ea3f063dad",
+          "executor": "openai-agents-ts-v2",
+          "state": "failed",
+          "actualRequests": 2,
+          "runRequests": 2,
+          "tokensIncludingRoute": {
+            "inputTokens": 4658,
+            "outputTokens": 148,
+            "totalTokens": 4806
+          },
+          "runTokens": {
+            "inputTokens": 4658,
+            "outputTokens": 148,
+            "totalTokens": 4806
+          },
+          "requestsWithoutUsage": [],
+          "stages": {
+            "assignment_start": {
+              "requests": 1,
+              "inputTokens": 1782,
+              "outputTokens": 7,
+              "totalTokens": 1789
+            },
+            "tool_proposal": {
+              "requests": 1,
+              "inputTokens": 2876,
+              "outputTokens": 141,
+              "totalTokens": 3017
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": null,
+          "grantUnchanged": null,
+          "noCallsWhileWaiting": null,
+          "oldCheckpointUnchanged": null
+        },
+        {
+          "name": "cancel-before-downstream",
+          "runId": "3e9144ca-e58e-4ed9-9db7-6533e1d8b2ad",
+          "executor": "openai-agents-ts-v2",
+          "state": "succeeded",
+          "actualRequests": 8,
+          "runRequests": 8,
+          "tokensIncludingRoute": {
+            "inputTokens": 23267,
+            "outputTokens": 965,
+            "totalTokens": 24232
+          },
+          "runTokens": {
+            "inputTokens": 23267,
+            "outputTokens": 965,
+            "totalTokens": 24232
+          },
+          "requestsWithoutUsage": [],
+          "stages": {
+            "after_tool": {
+              "requests": 3,
+              "inputTokens": 8939,
+              "outputTokens": 283,
+              "totalTokens": 9222
+            },
+            "assignment_start": {
+              "requests": 2,
+              "inputTokens": 4080,
+              "outputTokens": 166,
+              "totalTokens": 4246
+            },
+            "manager_final": {
+              "requests": 1,
+              "inputTokens": 4589,
+              "outputTokens": 240,
+              "totalTokens": 4829
+            },
+            "tool_proposal": {
+              "requests": 2,
+              "inputTokens": 5659,
+              "outputTokens": 276,
+              "totalTokens": 5935
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": null,
+          "grantUnchanged": null,
+          "noCallsWhileWaiting": null,
+          "oldCheckpointUnchanged": null
+        }
+      ]
+    },
+    "after-controls": {
+      "classification": "passed",
+      "rawStatus": "passed",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/after-controls/live-results.json",
+      "rawReportSha256": "8b8a4aea96568c3ba4dce76e32703b5663af83da86fccdc8ec2c2762d570fc1b",
+      "actualRequests": 16,
+      "knownEventTokens": {
+        "inputTokens": 46963,
+        "outputTokens": 1993,
+        "totalTokens": 48956
+      },
+      "requestsWithoutUsageEvents": [
+        "906b5ddf-4aa5-4944-bba3-ae88cb35dfaa"
+      ],
+      "capturedUsageNotInOldLedger": null,
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "9b642274c7739fc26d4475d6a3f10056d1f32496b3e5edab3e5b1ec7c00b8277"
+        },
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "9b642274c7739fc26d4475d6a3f10056d1f32496b3e5edab3e5b1ec7c00b8277"
+        }
+      ],
+      "providerEntry": {
+        "path": "/Users/kakarrot/Dev/AI Employee OS/out/main/provider/index.js",
+        "sha256": "3dea58f5c199d568a14a4c9b1aa7b6aa8d818db7dc38d6de3a2a1984aaae0d4e"
+      },
+      "cases": [
+        {
+          "name": "fixed-contract-two-employees",
+          "runId": "57908bec-46a1-4eaa-b947-2b2b17a9d09b",
+          "executor": "openai-agents-ts-v2",
+          "state": "succeeded",
+          "actualRequests": 8,
+          "runRequests": 8,
+          "tokensIncludingRoute": {
+            "inputTokens": 25174,
+            "outputTokens": 1126,
+            "totalTokens": 26300
+          },
+          "runTokens": {
+            "inputTokens": 25174,
+            "outputTokens": 1126,
+            "totalTokens": 26300
+          },
+          "requestsWithoutUsage": [],
+          "stages": {
+            "after_tool": {
+              "requests": 3,
+              "inputTokens": 9710,
+              "outputTokens": 373,
+              "totalTokens": 10083
+            },
+            "assignment_start": {
+              "requests": 2,
+              "inputTokens": 4541,
+              "outputTokens": 180,
+              "totalTokens": 4721
+            },
+            "manager_final": {
+              "requests": 1,
+              "inputTokens": 4804,
+              "outputTokens": 294,
+              "totalTokens": 5098
+            },
+            "tool_proposal": {
+              "requests": 2,
+              "inputTokens": 6119,
+              "outputTokens": 279,
+              "totalTokens": 6398
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/after-controls/fixtures/team-marker.md",
+            "sha256": "ae819ccf8ff86f49ddb25f3bda572c99e957dde7dc39f9767ced9a7440afe4e9",
+            "size": 417
+          },
+          "grantUnchanged": null,
+          "noCallsWhileWaiting": null,
+          "oldCheckpointUnchanged": null
+        },
+        {
+          "name": "approval-sigkill-resume",
+          "runId": "53b4c5d6-49c3-4255-8563-88263c29d1c7",
+          "executor": "openai-agents-ts-v2",
+          "state": "succeeded",
+          "actualRequests": 5,
+          "runRequests": 5,
+          "tokensIncludingRoute": {
+            "inputTokens": 17145,
+            "outputTokens": 721,
+            "totalTokens": 17866
+          },
+          "runTokens": {
+            "inputTokens": 17145,
+            "outputTokens": 721,
+            "totalTokens": 17866
+          },
+          "requestsWithoutUsage": [],
+          "stages": {
+            "after_tool": {
+              "requests": 2,
+              "inputTokens": 7887,
+              "outputTokens": 272,
+              "totalTokens": 8159
+            },
+            "assignment_start": {
+              "requests": 1,
+              "inputTokens": 1838,
+              "outputTokens": 7,
+              "totalTokens": 1845
+            },
+            "manager_final": {
+              "requests": 1,
+              "inputTokens": 4486,
+              "outputTokens": 303,
+              "totalTokens": 4789
+            },
+            "tool_proposal": {
+              "requests": 1,
+              "inputTokens": 2934,
+              "outputTokens": 139,
+              "totalTokens": 3073
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/after-controls/fixtures/approval-marker.md",
+            "sha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8",
+            "size": 12
+          },
+          "grantUnchanged": true,
+          "noCallsWhileWaiting": true,
+          "oldCheckpointUnchanged": null
+        },
+        {
+          "name": "approval-rejected-no-write",
+          "runId": "4d1febed-772d-469c-be79-cdfff8b7b7f0",
+          "executor": "openai-agents-ts-v2",
+          "state": "failed",
+          "actualRequests": 2,
+          "runRequests": 2,
+          "tokensIncludingRoute": {
+            "inputTokens": 4644,
+            "outputTokens": 146,
+            "totalTokens": 4790
+          },
+          "runTokens": {
+            "inputTokens": 4644,
+            "outputTokens": 146,
+            "totalTokens": 4790
+          },
+          "requestsWithoutUsage": [],
+          "stages": {
+            "assignment_start": {
+              "requests": 1,
+              "inputTokens": 1774,
+              "outputTokens": 7,
+              "totalTokens": 1781
+            },
+            "tool_proposal": {
+              "requests": 1,
+              "inputTokens": 2870,
+              "outputTokens": 139,
+              "totalTokens": 3009
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": null,
+          "grantUnchanged": null,
+          "noCallsWhileWaiting": null,
+          "oldCheckpointUnchanged": null
+        },
+        {
+          "name": "cancel-before-downstream",
+          "runId": "bdbaea7e-415a-44c8-999c-c465901da9a6",
+          "executor": "openai-agents-ts-v2",
+          "state": "failed",
+          "actualRequests": 1,
+          "runRequests": 1,
+          "tokensIncludingRoute": {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "totalTokens": 0
+          },
+          "runTokens": {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "totalTokens": 0
+          },
+          "requestsWithoutUsage": [
+            "906b5ddf-4aa5-4944-bba3-ae88cb35dfaa"
+          ],
+          "stages": {
+            "assignment_start": {
+              "requests": 1,
+              "inputTokens": 0,
+              "outputTokens": 0,
+              "totalTokens": 0
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": null,
+          "grantUnchanged": null,
+          "noCallsWhileWaiting": null,
+          "oldCheckpointUnchanged": null
+        }
+      ]
+    },
+    "legacy-poe": {
+      "classification": "pre_fix_legacy_provider_failure",
+      "rawStatus": "failed",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/legacy-poe/live-results.json",
+      "rawReportSha256": "e727628b7211e18ce5c072f6c74e1a0b4a7488a99d173481b805a06502ec30f0",
+      "actualRequests": 1,
+      "knownEventTokens": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0
+      },
+      "requestsWithoutUsageEvents": [
+        "6aa1ca1a-1f86-4ed8-9c39-3807094f7e5f"
+      ],
+      "capturedUsageNotInOldLedger": null,
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/baseline-build/main/runtime/index.js",
+          "sha256": "34cd101a4470ddf72dc85283ac22690a6d3636b275e4281382a341b41949e010"
+        }
+      ],
+      "providerEntry": null,
+      "cases": []
+    },
+    "legacy-poe-2": {
+      "classification": "pre_fix_legacy_provider_failure",
+      "rawStatus": "failed",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/legacy-poe-2/live-results.json",
+      "rawReportSha256": "d18454498cae1e97919199491ffd9d758d1431097c38ea141482f233d0bc2b0e",
+      "actualRequests": 1,
+      "knownEventTokens": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0
+      },
+      "requestsWithoutUsageEvents": [
+        "b8b8c252-9619-48bb-a975-424ebf72e2dd"
+      ],
+      "capturedUsageNotInOldLedger": {
+        "inputTokens": 1484,
+        "outputTokens": 10,
+        "totalTokens": 1494,
+        "source": "captured_provider_terminal_not_delivered_by_old_parser"
+      },
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/baseline-build/main/runtime/index.js",
+          "sha256": "34cd101a4470ddf72dc85283ac22690a6d3636b275e4281382a341b41949e010"
+        }
+      ],
+      "providerEntry": null,
+      "cases": []
+    },
+    "legacy-poe-3": {
+      "classification": "passed",
+      "rawStatus": "passed",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/legacy-poe-3/live-results.json",
+      "rawReportSha256": "226aaa7e3e658fb1490c0b6b3fb8c551ba25a9b1b033615f2fd2a910b45fb256",
+      "actualRequests": 6,
+      "knownEventTokens": {
+        "inputTokens": 16453,
+        "outputTokens": 705,
+        "totalTokens": 17158
+      },
+      "requestsWithoutUsageEvents": [],
+      "capturedUsageNotInOldLedger": null,
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/baseline-build/main/runtime/index.js",
+          "sha256": "34cd101a4470ddf72dc85283ac22690a6d3636b275e4281382a341b41949e010"
+        },
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "9b642274c7739fc26d4475d6a3f10056d1f32496b3e5edab3e5b1ec7c00b8277"
+        }
+      ],
+      "providerEntry": {
+        "path": "/Users/kakarrot/Dev/AI Employee OS/out/main/provider/index.js",
+        "sha256": "3dea58f5c199d568a14a4c9b1aa7b6aa8d818db7dc38d6de3a2a1984aaae0d4e"
+      },
+      "cases": [
+        {
+          "name": "legacy-poe-approval-restart",
+          "runId": "8bf9bd75-8bf4-471e-97f4-828c0080d804",
+          "executor": "legacy-runtime",
+          "state": "succeeded",
+          "actualRequests": 6,
+          "runRequests": 6,
+          "tokensIncludingRoute": {
+            "inputTokens": 16453,
+            "outputTokens": 705,
+            "totalTokens": 17158
+          },
+          "runTokens": {
+            "inputTokens": 12790,
+            "outputTokens": 481,
+            "totalTokens": 13271
+          },
+          "requestsWithoutUsage": [],
+          "stages": {
+            "after_tool": {
+              "requests": 2,
+              "inputTokens": 6159,
+              "outputTokens": 183,
+              "totalTokens": 6342
+            },
+            "assignment_start": {
+              "requests": 1,
+              "inputTokens": 1484,
+              "outputTokens": 10,
+              "totalTokens": 1494
+            },
+            "manager_final": {
+              "requests": 1,
+              "inputTokens": 0,
+              "outputTokens": 0,
+              "totalTokens": 0
+            },
+            "tool_proposal": {
+              "requests": 2,
+              "inputTokens": 5147,
+              "outputTokens": 288,
+              "totalTokens": 5435
+            }
+          },
+          "observedUsageMissingFromOldLedger": {
+            "49cc209c-3790-47b4-8004-d1fa2e64c7e4": {
+              "type": "usage",
+              "requestId": "49cc209c-3790-47b4-8004-d1fa2e64c7e4",
+              "inputTokens": 3663,
+              "outputTokens": 224,
+              "totalTokens": 3887,
+              "source": "provider_actual"
+            }
+          },
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/legacy-poe-3/fixtures/legacy-approval-marker.md",
+            "sha256": "0c2008ee45cf9b3109b666713fd9d309c3020ffa7dfe4ea4eadc120316042de4",
+            "size": 31
+          },
+          "grantUnchanged": true,
+          "noCallsWhileWaiting": true,
+          "oldCheckpointUnchanged": true
+        }
+      ]
+    },
+    "legacy-sdk-state": {
+      "classification": "passed",
+      "rawStatus": "passed",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/legacy-sdk-state/live-results.json",
+      "rawReportSha256": "512922c57f9adf6190a646dc8cb74195dbc86d62af3ee49203288ef6a7757446",
+      "actualRequests": 8,
+      "knownEventTokens": {
+        "inputTokens": 23235,
+        "outputTokens": 828,
+        "totalTokens": 24063
+      },
+      "requestsWithoutUsageEvents": [],
+      "capturedUsageNotInOldLedger": null,
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/baseline-build/main/runtime/index.js",
+          "sha256": "5d7b790ff2cd812ea1afdaf201377d0b06e4f63fd7caee8b736333ca54fe15dd"
+        },
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "9b642274c7739fc26d4475d6a3f10056d1f32496b3e5edab3e5b1ec7c00b8277"
+        }
+      ],
+      "providerEntry": {
+        "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/baseline-build/main/provider/index.js",
+        "sha256": "e4729769d7f415ac391d9c66b2397509d52b34a8d01874cd40cd95d720433257"
+      },
+      "cases": [
+        {
+          "name": "approval-sigkill-resume",
+          "runId": "e51c4897-33af-416b-9fdc-9f195ec8e17f",
+          "executor": "openai-agents-ts-v2",
+          "state": "succeeded",
+          "actualRequests": 8,
+          "runRequests": 8,
+          "tokensIncludingRoute": {
+            "inputTokens": 23235,
+            "outputTokens": 828,
+            "totalTokens": 24063
+          },
+          "runTokens": {
+            "inputTokens": 23235,
+            "outputTokens": 828,
+            "totalTokens": 24063
+          },
+          "requestsWithoutUsage": [],
+          "stages": {
+            "after_tool": {
+              "requests": 2,
+              "inputTokens": 7576,
+              "outputTokens": 160,
+              "totalTokens": 7736
+            },
+            "assignment_start": {
+              "requests": 1,
+              "inputTokens": 1846,
+              "outputTokens": 7,
+              "totalTokens": 1853
+            },
+            "manager_dispatch": {
+              "requests": 2,
+              "inputTokens": 3513,
+              "outputTokens": 146,
+              "totalTokens": 3659
+            },
+            "manager_final": {
+              "requests": 1,
+              "inputTokens": 4443,
+              "outputTokens": 233,
+              "totalTokens": 4676
+            },
+            "tool_proposal": {
+              "requests": 2,
+              "inputTokens": 5857,
+              "outputTokens": 282,
+              "totalTokens": 6139
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/legacy-sdk-state/fixtures/approval-marker.md",
+            "sha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8",
+            "size": 12
+          },
+          "grantUnchanged": true,
+          "noCallsWhileWaiting": true,
+          "oldCheckpointUnchanged": null
+        }
+      ]
+    },
+    "legacy-sdk-prepared": {
+      "classification": "passed",
+      "rawStatus": "passed",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/legacy-sdk-prepared/live-results.json",
+      "rawReportSha256": "8c1f881676dd0de21e45774dbe3771671507b3920020091eb218e92aed07854f",
+      "actualRequests": 7,
+      "knownEventTokens": {
+        "inputTokens": 20692,
+        "outputTokens": 794,
+        "totalTokens": 21486
+      },
+      "requestsWithoutUsageEvents": [],
+      "capturedUsageNotInOldLedger": null,
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/baseline-build/main/runtime/index.js",
+          "sha256": "5d7b790ff2cd812ea1afdaf201377d0b06e4f63fd7caee8b736333ca54fe15dd"
+        },
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "9b642274c7739fc26d4475d6a3f10056d1f32496b3e5edab3e5b1ec7c00b8277"
+        }
+      ],
+      "providerEntry": {
+        "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4b-runtime-dispatch/baseline-build/main/provider/index.js",
+        "sha256": "e4729769d7f415ac391d9c66b2397509d52b34a8d01874cd40cd95d720433257"
+      },
+      "cases": [
+        {
+          "name": "approval-sigkill-resume",
+          "runId": "18599c66-0f73-4d02-aed1-1f48e45773c7",
+          "executor": "openai-agents-ts-v2",
+          "state": "succeeded",
+          "actualRequests": 7,
+          "runRequests": 7,
+          "tokensIncludingRoute": {
+            "inputTokens": 20692,
+            "outputTokens": 794,
+            "totalTokens": 21486
+          },
+          "runTokens": {
+            "inputTokens": 20692,
+            "outputTokens": 794,
+            "totalTokens": 21486
+          },
+          "requestsWithoutUsage": [],
+          "stages": {
+            "after_tool": {
+              "requests": 2,
+              "inputTokens": 7921,
+              "outputTokens": 245,
+              "totalTokens": 8166
+            },
+            "assignment_start": {
+              "requests": 1,
+              "inputTokens": 1846,
+              "outputTokens": 7,
+              "totalTokens": 1853
+            },
+            "manager_dispatch": {
+              "requests": 2,
+              "inputTokens": 3521,
+              "outputTokens": 148,
+              "totalTokens": 3669
+            },
+            "manager_final": {
+              "requests": 1,
+              "inputTokens": 4464,
+              "outputTokens": 253,
+              "totalTokens": 4717
+            },
+            "tool_proposal": {
+              "requests": 1,
+              "inputTokens": 2940,
+              "outputTokens": 141,
+              "totalTokens": 3081
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/legacy-sdk-prepared/fixtures/approval-marker.md",
+            "sha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8",
+            "size": 12
+          },
+          "grantUnchanged": true,
+          "noCallsWhileWaiting": true,
+          "oldCheckpointUnchanged": null
+        }
+      ]
+    },
+    "legacy-poe-4": {
+      "classification": "passed",
+      "rawStatus": "passed",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/legacy-poe-4/live-results.json",
+      "rawReportSha256": "8a61676c823b7047f2575a6f7b10966baabbb9175c7777f628aef14576610b7c",
+      "actualRequests": 6,
+      "knownEventTokens": {
+        "inputTokens": 16510,
+        "outputTokens": 784,
+        "totalTokens": 17294
+      },
+      "requestsWithoutUsageEvents": [],
+      "capturedUsageNotInOldLedger": null,
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/baseline-build/main/runtime/index.js",
+          "sha256": "34cd101a4470ddf72dc85283ac22690a6d3636b275e4281382a341b41949e010"
+        },
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "0991f7049528b4e775f792efc64f484239a086701f1f087cb6a71546426778c4"
+        }
+      ],
+      "providerEntry": {
+        "path": "/Users/kakarrot/Dev/AI Employee OS/out/main/provider/index.js",
+        "sha256": "3dea58f5c199d568a14a4c9b1aa7b6aa8d818db7dc38d6de3a2a1984aaae0d4e"
+      },
+      "cases": [
+        {
+          "name": "legacy-poe-approval-restart",
+          "runId": "db0e2974-dd7b-4ff1-8d06-6b0c6b489fb0",
+          "executor": "legacy-runtime",
+          "state": "succeeded",
+          "actualRequests": 6,
+          "runRequests": 6,
+          "tokensIncludingRoute": {
+            "inputTokens": 16510,
+            "outputTokens": 784,
+            "totalTokens": 17294
+          },
+          "runTokens": {
+            "inputTokens": 16510,
+            "outputTokens": 784,
+            "totalTokens": 17294
+          },
+          "requestsWithoutUsage": [],
+          "stages": {
+            "after_tool": {
+              "requests": 2,
+              "inputTokens": 6159,
+              "outputTokens": 207,
+              "totalTokens": 6366
+            },
+            "assignment_start": {
+              "requests": 1,
+              "inputTokens": 1484,
+              "outputTokens": 10,
+              "totalTokens": 1494
+            },
+            "manager_final": {
+              "requests": 1,
+              "inputTokens": 3720,
+              "outputTokens": 279,
+              "totalTokens": 3999
+            },
+            "tool_proposal": {
+              "requests": 2,
+              "inputTokens": 5147,
+              "outputTokens": 288,
+              "totalTokens": 5435
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/legacy-poe-4/fixtures/legacy-approval-marker.md",
+            "sha256": "0c2008ee45cf9b3109b666713fd9d309c3020ffa7dfe4ea4eadc120316042de4",
+            "size": 31
+          },
+          "grantUnchanged": true,
+          "noCallsWhileWaiting": true,
+          "oldCheckpointUnchanged": true
+        }
+      ]
+    },
+    "after-accounting-controls": {
+      "classification": "passed",
+      "rawStatus": "passed",
+      "rawReport": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/after-accounting-controls/live-results.json",
+      "rawReportSha256": "fcba7043aa169869222c1c3475b535636b6155afe6c5778a1043bce537ea2b29",
+      "actualRequests": 16,
+      "knownEventTokens": {
+        "inputTokens": 47058,
+        "outputTokens": 1916,
+        "totalTokens": 48974
+      },
+      "requestsWithoutUsageEvents": [
+        "00b4ba8b-4106-4286-94e6-28a8dd9936c8"
+      ],
+      "capturedUsageNotInOldLedger": null,
+      "runtimeLaunches": [
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "0991f7049528b4e775f792efc64f484239a086701f1f087cb6a71546426778c4"
+        },
+        {
+          "entry": "/Users/kakarrot/Dev/AI Employee OS/out/main/runtime/index.js",
+          "sha256": "0991f7049528b4e775f792efc64f484239a086701f1f087cb6a71546426778c4"
+        }
+      ],
+      "providerEntry": {
+        "path": "/Users/kakarrot/Dev/AI Employee OS/out/main/provider/index.js",
+        "sha256": "3dea58f5c199d568a14a4c9b1aa7b6aa8d818db7dc38d6de3a2a1984aaae0d4e"
+      },
+      "cases": [
+        {
+          "name": "fixed-contract-two-employees",
+          "runId": "683c366c-e485-4e9f-ac4e-7918bd022824",
+          "executor": "openai-agents-ts-v2",
+          "state": "succeeded",
+          "actualRequests": 8,
+          "runRequests": 8,
+          "tokensIncludingRoute": {
+            "inputTokens": 25195,
+            "outputTokens": 1105,
+            "totalTokens": 26300
+          },
+          "runTokens": {
+            "inputTokens": 25195,
+            "outputTokens": 1105,
+            "totalTokens": 26300
+          },
+          "requestsWithoutUsage": [],
+          "stages": {
+            "after_tool": {
+              "requests": 3,
+              "inputTokens": 9704,
+              "outputTokens": 328,
+              "totalTokens": 10032
+            },
+            "assignment_start": {
+              "requests": 2,
+              "inputTokens": 4548,
+              "outputTokens": 167,
+              "totalTokens": 4715
+            },
+            "manager_final": {
+              "requests": 1,
+              "inputTokens": 4812,
+              "outputTokens": 328,
+              "totalTokens": 5140
+            },
+            "tool_proposal": {
+              "requests": 2,
+              "inputTokens": 6131,
+              "outputTokens": 282,
+              "totalTokens": 6413
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/after-accounting-controls/fixtures/team-marker.md",
+            "sha256": "7577bbca2590b4d5e32a08dd52927339b4767fd245578b274b13a74de3716f8f",
+            "size": 242
+          },
+          "grantUnchanged": null,
+          "noCallsWhileWaiting": null,
+          "oldCheckpointUnchanged": null
+        },
+        {
+          "name": "approval-sigkill-resume",
+          "runId": "09b57a32-3509-4eb4-9066-1163b109a4da",
+          "executor": "openai-agents-ts-v2",
+          "state": "succeeded",
+          "actualRequests": 5,
+          "runRequests": 5,
+          "tokensIncludingRoute": {
+            "inputTokens": 17205,
+            "outputTokens": 663,
+            "totalTokens": 17868
+          },
+          "runTokens": {
+            "inputTokens": 17205,
+            "outputTokens": 663,
+            "totalTokens": 17868
+          },
+          "requestsWithoutUsage": [],
+          "stages": {
+            "after_tool": {
+              "requests": 2,
+              "inputTokens": 7951,
+              "outputTokens": 261,
+              "totalTokens": 8212
+            },
+            "assignment_start": {
+              "requests": 1,
+              "inputTokens": 1846,
+              "outputTokens": 7,
+              "totalTokens": 1853
+            },
+            "manager_final": {
+              "requests": 1,
+              "inputTokens": 4468,
+              "outputTokens": 254,
+              "totalTokens": 4722
+            },
+            "tool_proposal": {
+              "requests": 1,
+              "inputTokens": 2940,
+              "outputTokens": 141,
+              "totalTokens": 3081
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": {
+            "path": "/Users/kakarrot/.codex/visualizations/2026/10/15/01a13d3b-1b5a-7592-972c-dd223631304a/sdk-migration/stage-4c-legacy-boundary/after-accounting-controls/fixtures/approval-marker.md",
+            "sha256": "1582ca2cd907645b4b0806d9b0558f6fc40262c87dd660282ed6cc45135a0ae8",
+            "size": 12
+          },
+          "grantUnchanged": true,
+          "noCallsWhileWaiting": true,
+          "oldCheckpointUnchanged": null
+        },
+        {
+          "name": "approval-rejected-no-write",
+          "runId": "64b6b7dd-1a73-4219-ad68-98d8bae02081",
+          "executor": "openai-agents-ts-v2",
+          "state": "failed",
+          "actualRequests": 2,
+          "runRequests": 2,
+          "tokensIncludingRoute": {
+            "inputTokens": 4658,
+            "outputTokens": 148,
+            "totalTokens": 4806
+          },
+          "runTokens": {
+            "inputTokens": 4658,
+            "outputTokens": 148,
+            "totalTokens": 4806
+          },
+          "requestsWithoutUsage": [],
+          "stages": {
+            "assignment_start": {
+              "requests": 1,
+              "inputTokens": 1782,
+              "outputTokens": 7,
+              "totalTokens": 1789
+            },
+            "tool_proposal": {
+              "requests": 1,
+              "inputTokens": 2876,
+              "outputTokens": 141,
+              "totalTokens": 3017
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": null,
+          "grantUnchanged": null,
+          "noCallsWhileWaiting": null,
+          "oldCheckpointUnchanged": null
+        },
+        {
+          "name": "cancel-before-downstream",
+          "runId": "db140814-565b-41f5-ab12-4d064d1eda46",
+          "executor": "openai-agents-ts-v2",
+          "state": "failed",
+          "actualRequests": 1,
+          "runRequests": 1,
+          "tokensIncludingRoute": {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "totalTokens": 0
+          },
+          "runTokens": {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "totalTokens": 0
+          },
+          "requestsWithoutUsage": [
+            "00b4ba8b-4106-4286-94e6-28a8dd9936c8"
+          ],
+          "stages": {
+            "assignment_start": {
+              "requests": 1,
+              "inputTokens": 0,
+              "outputTokens": 0,
+              "totalTokens": 0
+            }
+          },
+          "observedUsageMissingFromOldLedger": {},
+          "file": null,
+          "grantUnchanged": null,
+          "noCallsWhileWaiting": null,
+          "oldCheckpointUnchanged": null
+        }
+      ]
+    }
+  },
+  "worktreeIntegrity": {
+    "entryDirtyFiles": 80,
+    "intentionallyExtended": [
+      "src/main/bundled-runtime.test.ts",
+      "src/main/bundled-runtime.ts",
+      "src/provider/poe-adapter.ts",
+      "src/runtime/handoff-validation.test.ts",
+      "src/runtime/handoff-validation.ts",
+      "src/runtime/index.ts",
+      "src/runtime/manager-review-repair.test.ts",
+      "src/runtime/task-service.test.ts",
+      "src/runtime/task-service.ts",
+      "src/runtime/team-executor.test.ts"
+    ],
+    "otherEntryFilesByteIdentical": 70,
+    "originalUserFilesByteIdentical": 27,
+    "nativeHelpersUnchanged": true,
+    "indexUnchanged": true,
+    "headUnchanged": true
+  },
+  "sourceSha256": {
+    "src/main/bundled-runtime.test.ts": "4779c3fa211145ec85dc121388fe68514206cdc1f8906ea50eece36ceb650b8e",
+    "src/main/bundled-runtime.ts": "879ecd5b9b0d70b2233a6c868a51a6c7d3c17a557492c8a05a857dbf0d0d77b8",
+    "src/provider/poe-adapter.ts": "48a6cec693d166378130799044da3a28ce83680e9705da92c966d9c84605afb7",
+    "src/runtime/handoff-validation.test.ts": "2ea5ea017e25ff702730256f8a5ba3b0a62d346cc7d5b7283c4612d0c5ae6211",
+    "src/runtime/handoff-validation.ts": "84cd6a08f8f8bc10b7c58003f726f80e355c503cf790865325c01e424078d7a0",
+    "src/runtime/index.ts": "758d417164487e4898c5f7ede18de7fed6d82ca97e10d5ec037e236227b925b4",
+    "src/runtime/manager-review-repair.test.ts": "6528220059cb9baca9053449f57a8840b5d64b38004763fe59226cd6aab9ec3c",
+    "src/runtime/task-service.test.ts": "371b6d92b5d262d25879652f670ae2b64ed35b31646eb6845d7e3f2c4c470703",
+    "src/runtime/task-service.ts": "7414154e78be2aeea8469c4cbff77836ec8138330d03ee616a1a1e084ab7af5b",
+    "src/runtime/team-executor.test.ts": "7c070793d0dd0c83c22ca140c4138c1753ae770c76fb85c7039075785ede888d",
+    "src/main/index.ts": "49b77a4e25a2968a36b9b51fa189365ac34ce44cd0f4f81da5dc296b0cac642b",
+    "src/main/runtime-supervisor.ts": "20922ec399f73e55afe89445125fc847c1c111aebeeb771233822ea7cb799340",
+    "src/provider/provider.test.ts": "332e7db6887d27e5753bba78b62315570c7e46d8ea58837985b2d1971ea437d2",
+    "src/provider/legacy-poe-response.test.ts": "0556ad163e91d1b6b1c68a16aee12e01ff929978207d91f6a9472da36457ea9c",
+    "docs/storage-and-recovery.md": "abd21ec069d38438313f94a6d43f72084b5e63e58878bba2b1b8f108b0bbf363"
+  },
+  "beforeRuntimeSha256": "34cd101a4470ddf72dc85283ac22690a6d3636b275e4281382a341b41949e010",
+  "afterRuntimeSha256": "0991f7049528b4e775f792efc64f484239a086701f1f087cb6a71546426778c4",
+  "runtimeBytes": 2686343,
+  "scopeNotes": [
+    "Runtime tasks, permissions, approvals and tool gateway remain authoritative.",
+    "Automatic legacy full_access replacement and budget revision upgrades removed.",
+    "Legacy text format validation uses deterministic fixtures; real non-SDK Poe approval recovery uses actual old Runtime and new Provider parser. Final accounting build is separately covered by legacy-poe-4 and after-accounting-controls.",
+    "Old SQLite preservation uses a synthetic SQLite sentinel, not a claim of LangGraph recovery.",
+    "One invalid natural route, two old parser failures and one probe cancellation bug retained with all observed usage; no hidden retries.",
+    "Model output varies; this phase claims no Token, RSS or install-size optimization.",
+    "DeepAgents packaging, release metadata and research material remain for the next gate."
+  ]
+}

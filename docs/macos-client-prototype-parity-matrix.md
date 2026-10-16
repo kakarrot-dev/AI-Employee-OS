@@ -2,17 +2,18 @@
 
 ## 事实源
 
-- 界面基础布局、组件层级与交互入口：`prototypes/macos-client-v2`。消息页以当前客户端为准，直接复用 `src/renderer/src/components/{client-ui,message-ui}.tsx` 与 `prototype-adapter.css`，原型只提供演示数据。
+- 2026-10-16：正式 Electron 客户端采用 Open Claude UI 的布局、基础/业务组件、字体字阶、主题、输入框、容器响应式与滚动交互，事实源为 `src/renderer/src/components/Desktop{Shell,Composer}.tsx`、`open-claude-ui/` 和 `design-system/`。不再导入 Web 原型 CSS；详见 [生产组件契约](macos-client-component-contract.md) 与 [迁移契约](audits/2026-10-16-open-claude-ui-client-contract.md)。
+- 以下矩阵保留 Web 原型和原有业务能力的兼容记录；其中 Rail、ContextPane、Toolbar 的视觉列不代表新桌面布局。Web 仍复用 `client-ui.tsx`、`message-ui.tsx` 与自己的原型样式，原型只提供演示数据。
 - 业务数据、权限、状态机和副作用：Runtime Bridge 与 `src/shared/*-contract.ts`。
-- 原型出现但 Runtime 尚未开放的能力必须明确说明边界。Web 0.1 飞书会议使用独立、全程标明演示来源的本地流程；客户端不因此获得真实会后转写或摘要能力。不得用模拟数据伪装真实成功。
+- 2026-09-17：当前 Web 前台以 [单智能体原型契约](../prototypes/macos-client-v2/SINGLE_AGENT_V01.md) 为准，事项、场景与专家团暂缓。Electron / Runtime 仍保留原有流程，两者业务入口目前存在明确差异；下表 Runtime 列不代表 Web 已接通真实执行。不得用模拟数据伪装真实成功。
 
 ## 全局布局与复用契约
 
 | 区域 | 原型契约 | 复用组件 | 状态 |
 | --- | --- | --- | --- |
-| Window Toolbar | 40px 全宽拖拽区、macOS 原生 traffic lights、当前对象标题、辅助状态、右侧动作 | `Toolbar` + `application-toolbar` 四插槽契约 | normal / loading / disconnected；非控件区域均可拖动，交互控件保持 no-drag，右侧动作距窗口边缘 24px，不得在 Renderer 重绘三色按钮 |
-| Rail | 消息、通讯录、能力、连接；底部个人资料与系统 | `Rail`、`Avatar` | default / selected / badge |
-| Context Pane | 标题、搜索、筛选、对象列表、Runtime 页脚 | `ContextPane`、`SectionHeader`、`SearchBox`、`ListRow` | loading / empty / populated / filtered |
+| Window Toolbar | Web 为 64px 页面顶栏：折叠操作、当前标题、聊天对象或页面说明、演示标识；客户端保留 40px 全宽拖拽区与原生窗口控件 | `Toolbar` + `application-toolbar` 四插槽契约；Web 使用页面标签，客户端保留默认拖拽区标签 | Web 空会话显示“新对话”，切页同步标题；客户端拖拽和 no-drag 规则不变 |
+| Rail | Web 品牌“西亚斯数字员工”、新对话、专家市场，底部头像与姓名打开用户菜单，进入个人中心或归档对话；标准 264px、紧凑 240px、折叠 72px | `Rail`、`Avatar`，可选展开内容与品牌插槽；客户端默认图标栏不变 | default / selected / collapsed；新对话为无选中态的操作入口，直接进入助理并展开；无重复新建按钮 |
+| Context Pane | Web 全局聊天记录嵌入侧栏，可从专家市场或个人中心直接返回既有会话，不挂载额外列表 | `ContextPane`、`SectionHeader`、`SearchBox`、`ListRow` | loading / empty / populated / filtered；折叠保留搜索与草稿 |
 | Workspace | 页面工具条下的稳定内容区 | `Workspace`、`DetailPage` | loading / empty / ready / error |
 | Overlay | 创建、设置、确认删除与详情 | `ClientModal` | open / busy / error / nested confirm |
 | Icon System | Iconoir 极简单线图标、1.5 线宽、14/16/18/20/24px 五种语义尺寸；官方品牌 Logo 保持原图 | `ClientIconSystem` + `--icon-size-*` | 页面不得设置像素尺寸、手绘 SVG、使用文本伪图标或引入第二套图标库 |
@@ -21,39 +22,32 @@
 
 ## 消息
 
-| 页面/组件 | 原型状态 | Runtime 映射 | 验收 |
+| 页面/组件 | 当前 Web 原型 | 客户端 / Runtime 边界 | 验收 |
 | --- | --- | --- | --- |
-| 会话列表 | 不分类展示全部会话、选中、删除 | `ConversationSummaryView`；未读为本地阅读状态 | 搜索、选中、删除、未读提示、空态均可操作 |
-| 事项边栏 | 右侧事项列表、数量、最新更新排序、空态、折叠与定位 | `TaskDetailView`；Web 使用演示事项 | 左右栏独立折叠，定位条目滚动并聚焦消息中的事项卡；不再切换对话 / 事项页签 |
-| 对话时间线 | 用户消息、总管消息、流式生成、失败 | `ConversationMessageView`、`ConversationStreamEvent` | 历史与流式内容使用同一消息组件；只有实际超过折叠阈值且尚未展开的消息显示渐变，短消息不显示渐变 |
-| 事项路由 | Web 0.1 不做意图识别、自动归类或追问；客户端保留自己的 Runtime 路由 | `TaskBridge.createDraft/requestChange` | 每个入口只触发真实 Runtime 命令；直接回答或未形成事项不在消息时间线插入横幅 |
-| 事项卡 | draft / pending / running / succeeded / failed / cancelled / needs_attention | `TaskDetailView.state` | 标签、动作与状态机一致 |
-| 审批卡 | pending / approved / rejected / result_unknown | `approvals`、`toolActions` | 审批与拒绝调用真实 Tool Action API |
-| 交付卡 | 验收结果、产物、证据、未解决问题 | `delivery` | 可查看完整证据，不伪造文件预览 |
-| Composer | 文本、发送、取消、附件、模型、麦克风 | 文本/取消已开放；附件、模型切换、语音尚无 Bridge | 永久固定；不可用能力保留原型入口并明确禁用原因 |
+| 会话列表 | 仅展示已有消息的助理与专家会话，支持搜索、选中、归档与空态 | 原 `ConversationSummaryView` 保留，真实单智能体入口尚未对齐 | 空会话不入列、历史无高亮；首次发送文字或附件后入列并选中，后续发送不重复新增 |
+| 默认页 / 新对话 | 助理欢迎页集中展示问候、输入框、四个快捷提问与“找专家聊天”入口 | 仅 Web 内存状态，无 Bridge 调用或自动分派 | 快捷提问只填入、不发送，追加已有草稿并保留附件；首次发送切回聊天布局；从专家会话新建也进入助理，草稿与消息互不继承 |
+| 对话时间线 | 用户消息与该智能体的示例回复 | 复用 `ChatMessage` 与 Markdown 组件；无模型调用或流式执行 | 回复身份正确、明确演示标记、无事项卡或协作分派 |
+| Composer | 文字、附件、模型说明和语音未开放提示 | 附件仅保留本地 File；模型读取智能体配置 | 空消息禁发；草稿、附件与已发消息按会话隔离 |
+| 已删除智能体 | 保留最后已知身份和历史，禁用继续发送 | 仅原型生命周期演示 | 不改绑其他智能体；不再提供附件添加 |
+| 事项 / 场景 | 当前无入口、不挂载 | 客户端原事项及会议能力保留 | 页面无事项边栏、详情、场景表单和流程 |
 
-### Web 0.1 飞书会议场景
+此前 Web 飞书会议流程已退出当前前台入口；组件与独立测试暂存，历史规格见 `prototypes/macos-client-v2/FEISHU_MEETING_V01.md`，不属于当前前台验收。
 
-- 默认会话、新建会话和“通讯录 → 专家团 → 会议专家团 → 选择并进入会话”进入同一组件。
-- 自动演示：提交一次会议信息 → 预约会议及邀请 → 会议开始与录制 → 结束通知 → 录制就绪 → 妙记转写等待与自动重试 → 读取内容 → 专家团整理与核对 → 交付摘要文档。时间压缩为约 30 秒，各场会议在切换页面后继续独立推进。
-- 时间线保存用户提交快照、飞书妙记来源、自动处理回执、专家团协作记录和摘要文档卡片，不展示会议原文或摘要正文。摘要文档直接复用统一附件组件和“打开方式”菜单，支持独立预览和下载，包含妙记来源、交付团队、会议信息、结论与行动项；过程状态及来源、协作记录复用统一状态和详情展开。
-- 所有回复由会议专家团统一呈现，成员身份复用专家团目录。会议策划 Agent 负责筹备和来源核对，会议纪要 Agent 负责妙记读取和内容整理，行动项跟进 Agent 负责负责人及截止时间核对；各会话独立保存来源和协作记录。
-- Web 端全程标明演示模式，不创建真实会议、不发送邀请、不读取真实飞书妙记、不调用真实专家团执行服务或模型。原型不实现意图识别、自动归类或追问。
-- 布局/字段/测试边界见 `prototypes/macos-client-v2/FEISHU_MEETING_V01.md`。
+## 归档对话
 
-## 通讯录
+从底部用户菜单进入，统一展示已归档会话并支持搜索。聊天记录只提供归档，保留消息、附件与草稿；归档当前会话后打开助理空会话。归档列表提供恢复与删除：恢复原会话并继续聊天，删除需确认后才清除该会话内存数据。使用共享 Rail 菜单、详情行、图标按钮和小型确认弹窗。仅 Web 原型本地状态，刷新重置，不代表 Runtime 归档接口已接入。
 
-| 页面/组件 | 原型状态 | Runtime 映射 | 验收 |
+## 专家市场
+
+| 页面/组件 | 当前 Web 原型 | 客户端 / Runtime 边界 | 验收 |
 | --- | --- | --- | --- |
-| 通讯录类型 | 专家 / 专家团 Tab、对应搜索、列表和详情 | 客户端使用 Employee / ExpertGroup；Web 专家团复用候选目录作为明确标注的原型示例 | 点击或方向键切换 Tab；切换清空搜索、保留各自选中对象，详情标题随类型与选择同步；支持无搜索结果 |
-| 专家团进入会话 | 会议专家团打开飞书结构化表单；其他专家团新会话保留手动输入 | Web 会话分别保存草稿、消息和会议状态 | 会议专家团固定选择飞书场景，无意图识别；切换菜单或会话后数据保留，新建会议互相隔离；刷新重置，未调用 Runtime |
-| 员工目录 | 搜索、选中、状态灯、空态 | `EmployeeSummary` | draft / pending_test / active / disabled / archived 全覆盖；活动版本存在时保持 active，草稿进度不混入可工作状态 |
-| 员工详情 | 资料、能力摘要、最近交付 | `EmployeeDetail` + Task assignments | 不复制版本事实，不隐藏正式引用 |
-| 创建 Agent | 头像 / 名称 / 职责 / 说明 / Prompt / 模型与能力 | `EmployeeBridge.create/saveDraft` | 三步字段门禁；创建时持久化头像与职责，创建后进入可编辑草稿 |
-| Agent 设置 | 基础 / Prompt / 模型能力 / 记忆 / 测试发布 | Employee lifecycle APIs | 测试确认后才能发布；依赖不可用时阻止发布 |
-| 生命周期 | 停用 / 启用 / 归档 / 恢复 / 删除草稿 | 对应 Employee API | 有正式引用时不得物理删除 |
+| 智能体目录 | 沿用原招募页卡片布局，内置学生 6 类 20 位、教职工教学备课/学生指导/科研支持/校务办公 4 类 12 位；无左侧联系人列表、专家团页签 | `campus-agent-catalog.ts` 汇总学生与教职工资料，供目录、详情与会话共用；正式客户端企业目录及 Runtime 不变 | 共 10 类 32 位；卡片与聊天身份一致 |
+| 分类筛选 | 全部、学生常用、教职工常用、我创建的；用途分类随范围变化，可叠加搜索 | 仅前台浏览筛选，不限制真实身份权限，不修改智能体配置 | 切换范围保留搜索并重置用途；详情返回保留筛选；空态可一键重置全部；“我创建的”零数据可创建 |
+| 卡片详情 → 开始对话 | 任意目录智能体均可新建独立演示会话，无需招募或配置 | Web 内存状态，不调用 Employee API | 回复对象与所选智能体一致；返回浏览保留搜索 |
+| 创建专家 | 独立四分区配置页：基础与提示词、模型配置、执行能力、输入输出，实时预览；创建后进入独立空会话，详情展示全套配置 | 参照后台 ChatAgentWorkspace 当前表单与演示目录；Web 内存保存，不调用模型和工具 | 跨页草稿保留、取消清空、跨区错误定位、模型与输入兼容、能力操作校验、开场白和推荐问题进入对话 |
+| 编辑 / 删除 / 发布 | C 端原型暂不提供这些入口 | 正式客户端管理与 Runtime 生命周期保持原实现 | 不把本地演示视为真实可调用或已发布 |
 
-## 能力
+## 能力（当前 Web 菜单隐藏，保留原客户端契约）
 
 | 页面/组件 | 原型状态 | Runtime 映射 | 验收 |
 | --- | --- | --- | --- |
@@ -62,28 +56,29 @@
 | Tool 目录 | 搜索、选中、健康状态 | `ResourceCatalogView.tools` | sideEffect/risk/origin/credential 完整显示 |
 | Tool 详情 | 调用边界、依赖、绑定 Agent、高级信息 | Tool contract + health checks | 不提供不存在的执行按钮 |
 
-## 连接
+## 连接（当前 Web 菜单隐藏，保留原客户端契约）
 
 | 页面/组件 | 原型状态 | Runtime 映射 | 验收 |
 | --- | --- | --- | --- |
 | 可连接应用 | 协作沟通：飞书、Microsoft Teams、钉钉、企业微信、微信；知识与文件：Notion、语雀、WPS Office、百度网盘；研发与云服务：GitHub、Gitee、阿里云 | 客户端为 `data-source="bridge"`；飞书映射 `ConnectionBridge`，其余应用仍为静态目录 | 复用招募员工目录组件和顶部指标；飞书按“凭证 → 文档权限与回调配置 → 用户授权”三步完成，支持安全设置入口、授权取消、重新授权、状态与断开；仅“飞书资料员”通过 RunGrant 调用搜索与只读文档 Tool；错误码 `20029` 有明确恢复路径；已连接数来自真实状态，敏感凭证不进入 Renderer 或配置文件，其余 11 项保持“未连接”且无虚假动作 |
 
-## 系统
+## 个人中心
 
-| 分区 | 原型契约 | 数据来源 / 边界 |
+| 区域 | 当前 Web 原型 | 数据来源 / 边界 |
 | --- | --- | --- |
-| 个人资料 | 头像、名称、角色、说明 | 本地客户端资料，可编辑并持久化 |
-| 通用 | 主题、启动与通知 | 主题真实生效；未开放的 OS 权限明确禁用 |
-| 总管 | 头像、名称、System Prompt、模型、全局记忆 | `SupervisorBridge` + Runtime 单例配置；平台安全与权限注入保持只读 |
-| 模型服务 | Provider、模型、Credential、验证 | `ProviderStatus`，不可回显密钥 |
-| 资源与权限 | 默认授权、资源健康、MCP | `ResourceCatalogView` 与 Runtime 策略 |
-| 记忆与存储 | 健康、队列、检索、编辑、禁用、恢复、删除 | `MemoryBridge` |
-| 用量与预算 | 聚合用量与预算 | 无聚合接口时展示明确空态，不展示模拟金额 |
-| 关于与诊断 | 版本、Runtime、重连、诊断边界 | `RuntimeStatus` 与应用版本 |
+| 入口与布局 | 左下角头像与姓名打开用户菜单，选择个人中心进入；折叠时只显示头像；显示选中态；内部菜单为基本资料、归档会话，基本资料保留资料、概览和记录；归档菜单复用搜索、恢复与确认删除 | 复用 Rail、DetailPage、SettingsBlock；不展示系统齿轮 |
+| 用户资料 | 展示头像、姓名和学号；只有头像可上传并同步到侧栏和用户消息，姓名与学号只读 | Web 头像保存在内存，刷新重置；姓名沿用当前用户示例，学号明确标记为示例；客户端原资料行为不变 |
+| 用量信息 | Token 总用量、积分余额及记录（使用内容、时间、Token、消耗积分）；每页 10 条，范围 / 总数 / 页码及前后页操作 | Token 按全部记录合计，余额为独立示例快照，切页不影响概览，重新进入回到首页；仅示例数据，不代表真实账户，不定义兑换比例 |
 
-系统右侧内容统一采用单栏布局：页面简介、分区标题、分区说明、设置内容和操作按纵向阅读顺序排列；不得恢复为“左侧说明 + 右侧控件”的双栏结构。
+当前 Web 个人中心不提供系统设置分区、预算编辑、预算余额或模型明细；创建专家页保留单专家模型配置。Electron / Runtime 原有设置与接口不随本次合并变更。
 
-## 必测状态
+个人中心宽屏使用 168px 内部菜单与独立滚动的详情区，1100px 及以下改为顶部横向菜单；头像入口及业务导航保持可访问，用户菜单的归档快捷入口直达同一归档页面。
+
+## 验收边界
+
+当前 Web 前台按 `SINGLE_AGENT_V01.md` 的验收项检查。以下为正式客户端及后续 Runtime 接入的状态覆盖要求，不能据 Web 原型测试判定已通过。
+
+### 客户端必测状态
 
 1. Runtime 连接中、已连接、断开与重连失败。
 2. 各目录 loading、empty、populated、filtered-empty、error。
@@ -97,6 +92,7 @@
 ## 样式与交互复用规则
 
 - `layout.css`、`typography.css` 和原型 `styles.css` 分别提供尺寸、排版、主题的唯一数值来源。Web 与客户端在入口全局加载同一结构适配文件 `src/renderer/src/prototype-adapter.css`；切换页面不装卸样式，适配层不得重复定义尺寸、主题或硬编码排版值。
+- Web 在共享适配样式之后加载 `campus-shell.css`，以 `.campus-shell` 限定校园侧栏与顶栏结构，继续引用统一 Token，不影响客户端原生外壳。
 - 旧 Renderer 组件样式必须使用 `legacy-*` 作用域，禁止覆盖原型的 `.composer`、`.context-pane`、`.delivery-card` 等公共契约。
 - React Aria 的 `data-focus-visible/data-focus-within/data-disabled` 状态在正式原生控件上分别映射为 `:focus-visible/:focus-within/:disabled`，视觉反馈必须等价。
 - 原型入口在 Runtime 未开放时仍可展示可点击说明、真实可用性或明确禁用原因，不允许以无反馈按钮冒充已实现能力。

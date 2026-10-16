@@ -1,0 +1,41 @@
+/* The assistant's first-message canvas; active chats and expert welcome pages keep their own layout. */
+.campus-shell .message-page--welcome .conversation-column { overflow-y: auto; padding: 40px var(--layout-page-inline-gutter) 18px; }
+.campus-shell .message-page--welcome .message-scroll { flex: 0 0 auto; overflow: visible; margin-top: auto; }
+.campus-shell .message-page--welcome .message-canvas { width: 100%; padding: 0; }
+.welcome-heading { text-align: center; margin: 0 auto 28px; }
+.welcome-greeting { display: flex; justify-content: center; align-items: center; gap: 10px; margin-bottom: 18px; }
+.welcome-mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: color-mix(in srgb, var(--accent-strong) 9%, var(--surface-content)); color: var(--accent-strong); }
+.welcome-mark svg { width: 20px; height: 20px; }
+.welcome-greeting p { margin: 0; max-width: 300px; overflow-wrap: anywhere; font-size: var(--type-form-input-size); line-height: var(--type-leading-body); color: var(--text-secondary); }
+.welcome-heading h2 { margin: 0; font-size: var(--type-welcome-title-size); font-weight: var(--type-weight-medium); letter-spacing: var(--type-tracking-tight); line-height: var(--type-leading-compact); color: var(--text-primary); }
+.welcome-intro { margin: 12px 0 0; font-size: var(--type-form-input-size); line-height: var(--type-leading-body); color: var(--text-secondary); }
+.campus-shell .message-page--welcome .composer { width: min(100%, 720px); align-self: center; margin: 0; padding: 0; background: transparent; }
+.campus-shell .message-page--welcome .composer__box { min-height: 140px; padding: 16px; border-radius: 20px; background: var(--surface-content); box-shadow: inset 0 0 0 1px var(--line), var(--shell-composer-shadow); }
+.campus-shell .message-page--welcome .composer__box:focus-within { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-strong) 38%, var(--line)), var(--shell-composer-shadow); }
+.campus-shell .message-page--welcome .composer textarea { flex: 1; padding: 4px; font-size: var(--type-form-input-size); line-height: var(--type-leading-body); }
+.campus-shell .message-page--welcome .composer__send { background: var(--accent-strong); }
+.welcome-actions { width: min(100%, 720px); align-self: center; margin: 18px 0 auto; flex-shrink: 0; }
+.welcome-starters { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.welcome-starter { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: transparent; color: var(--text-secondary); font-size: var(--type-body-size); line-height: var(--type-leading-compact); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease; }
+.welcome-starter:hover { background: var(--surface-hover); color: var(--text-primary); border-color: color-mix(in srgb, var(--accent-strong) 25%, var(--line)); }
+.welcome-starter svg { width: 16px; height: 16px; color: var(--accent-strong); }
+.welcome-experts { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 26px; color: var(--text-tertiary); font-size: var(--type-secondary-size); line-height: var(--type-leading-body); }
+.welcome-expert-link { display: inline-flex; align-items: center; gap: 3px; padding: 4px 0; border: 0; background: transparent; color: var(--accent-strong); font-size: var(--type-secondary-size); font-weight: var(--type-weight-medium); cursor: pointer; }
+.welcome-expert-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.welcome-expert-link svg { width: 14px; height: 14px; }
+.welcome-starter[data-focus-visible], .welcome-expert-link[data-focus-visible] { outline: 2px solid var(--focus); outline-offset: 4px; }
+.welcome-prototype-note { flex-shrink: 0; margin: 28px 0 0; text-align: center; color: var(--text-tertiary); font-size: var(--type-meta-size); line-height: var(--type-leading-body); }
+@media (max-width: 1000px) {
+  .welcome-heading h2 { font-size: var(--type-welcome-compact-title-size); }
+  .welcome-starters { gap: 8px; }
+  .welcome-starter { padding-inline: 12px; }
+}
+@media (max-height: 700px) {
+  .campus-shell .message-page--welcome .conversation-column { padding-top: 24px; }
+  .welcome-heading { margin-bottom: 22px; }
+  .welcome-greeting { margin-bottom: 12px; }
+  .welcome-experts { margin-top: 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .welcome-starter { transition: none; }
+}

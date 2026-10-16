@@ -1,20 +1,32 @@
 import { readFile, readdir } from 'node:fs/promises'
+import { dirname, extname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const root = fileURLToPath(new URL('..', import.meta.url))
-const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url))
+const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
+const repositoryRoot = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
 const contract = await readFile(`${root}/src/layout.css`, 'utf8')
 const styles = await readFile(`${root}/src/styles.css`, 'utf8')
 const prototypeEntry = await readFile(`${root}/src/main.tsx`, 'utf8')
 const app = await readFile(`${root}/src/App.tsx`, 'utf8')
+const campusShell = await readFile(`${root}/src/campus-shell.css`, 'utf8')
 const windowContract = await readFile(`${repositoryRoot}/src/shared/layout-contract.ts`, 'utf8')
 const rendererStyles = await readFile(`${repositoryRoot}/src/renderer/src/prototype-adapter.css`, 'utf8')
 const rendererComponents = await readFile(`${repositoryRoot}/src/renderer/src/components/client-ui.tsx`, 'utf8')
 const rendererMessageComponents = await readFile(`${repositoryRoot}/src/renderer/src/components/message-ui.tsx`, 'utf8')
+const rendererConversationComponents = await readFile(`${repositoryRoot}/src/renderer/src/open-claude-ui/conversation/CdsConversation.tsx`, 'utf8')
+const rendererMessageStructure = `${rendererMessageComponents}\n${rendererConversationComponents}`
 const rendererApp = await readFile(`${repositoryRoot}/src/renderer/src/App.tsx`, 'utf8')
 const rendererConnections = await readFile(`${repositoryRoot}/src/renderer/src/ConnectionsCatalog.tsx`, 'utf8')
 const rendererSystem = await readFile(`${repositoryRoot}/src/renderer/src/SystemModule.tsx`, 'utf8')
 const iconSystem = await readFile(`${repositoryRoot}/src/renderer/src/components/client-icon-system.tsx`, 'utf8')
+const desktopIconSystem = await readFile(`${repositoryRoot}/src/renderer/src/components/CdsIconSystem.tsx`, 'utf8')
+const desktopIconFacade = await readFile(`${repositoryRoot}/src/renderer/src/components/cds-icons.ts`, 'utf8')
+const desktopTokens = await readFile(`${repositoryRoot}/src/renderer/src/design-system/tokens.css`, 'utf8')
+const desktopStyles = await readFile(`${repositoryRoot}/src/renderer/src/design-system/desktop.css`, 'utf8')
+const desktopMessageStyles = await readFile(`${repositoryRoot}/src/renderer/src/design-system/messages.css`, 'utf8')
+const desktopBusinessStyles = await readFile(`${repositoryRoot}/src/renderer/src/design-system/business.css`, 'utf8')
+const desktopPrimitiveStyles = await readFile(`${repositoryRoot}/src/renderer/src/design-system/primitives.css`, 'utf8')
+const desktopShell = await readFile(`${repositoryRoot}/src/renderer/src/components/DesktopShell.tsx`, 'utf8')
 
 async function readTsxSources(directory) {
   const sources = []
@@ -30,6 +42,34 @@ const clientTsxSources = [
   ...await readTsxSources(`${repositoryRoot}/src/renderer/src`),
   ...await readTsxSources(`${root}/src`)
 ]
+
+// Follow the production entry so legacy files kept for Web or tests cannot
+// silently re-enter the desktop through a component or an @import.
+async function readModuleSources(entry, sources = new Map()) {
+  if (sources.has(entry)) return sources
+  const source = await readFile(entry, 'utf8')
+  sources.set(entry, source)
+  const imports = [
+    ...source.matchAll(/(?:^|\n)\s*(?:import|export)\s+(?!type\b)(?:[\w$*{},\s]*?\s+from\s*)?['"]([^'"]+)['"]/g),
+    ...source.matchAll(/\bimport\(\s*['"]([^'"]+)['"]\s*\)/g),
+    ...source.matchAll(/@import\s+(?:url\(\s*)?['"]([^'"]+)['"]/g)
+  ]
+  for (const match of imports) {
+    if (!match[1].startsWith('.')) continue
+    const target = resolve(dirname(entry), match[1].split(/[?#]/)[0])
+    const extension = extname(target)
+    if (extension && !['.ts', '.tsx', '.css'].includes(extension)) continue
+    const candidates = extension ? [target] : [`${target}.tsx`, `${target}.ts`, `${target}/index.tsx`, `${target}/index.ts`]
+    for (const candidate of candidates) {
+      try { await readModuleSources(candidate, sources); break }
+      catch (error) { if (error.code !== 'ENOENT') throw error }
+    }
+  }
+  return sources
+}
+
+const desktopSourceRoot = `${repositoryRoot}/src/renderer/src`
+const desktopSources = await readModuleSources(`${desktopSourceRoot}/main.tsx`)
 
 const requiredTokens = [
   '--layout-window-default-width',
@@ -113,9 +153,13 @@ const scrollSurfaces = [
   '.message-attachments--user.message-attachments--multiple .message-attachments__rows'
 ]
 
-function cssPixels(token) {
-  const match = contract.match(new RegExp(`${token}:\\s*(\\d+)px`))
-  return match ? Number(match[1]) : null
+function cssPixels(token, source = contract, visited = new Set()) {
+  if (visited.has(token)) return null
+  visited.add(token)
+  const value = source.match(new RegExp(`${token}:\\s*([^;]+);`))?.[1].trim()
+  if (/^\d+px$/.test(value ?? '')) return Number.parseInt(value, 10)
+  const alias = value?.match(/^var\((--[\w-]+)\)$/)?.[1]
+  return alias ? cssPixels(alias, source, visited) : null
 }
 
 function tsNumber(property) {
@@ -136,10 +180,28 @@ if (!/--line-shell:\s*rgb\([^;]+\/\s*5%\);/.test(styles) || darkShellLineDefinit
 if (styles.includes('--shell-divider:') || rendererStyles.includes('--shell-divider:')) errors.push('不得创建 --line-shell 的页面级别名，外壳必须直接复用统一语义 Token')
 
 if (!iconSystem.includes("library: 'iconoir-react'") || !iconSystem.includes('strokeWidth: 1.5')) {
-  errors.push('客户端图标系统必须由 ClientIconSystem 固定 Iconoir 与 1.5 线宽')
+  errors.push('Web 原型图标系统必须由 ClientIconSystem 固定 Iconoir 与 1.5 线宽')
 }
-if (!app.includes('<ClientIconSystem>') || !rendererApp.includes('<ClientIconSystem>')) {
-  errors.push('原型与正式客户端必须复用同一个 ClientIconSystem Provider')
+if (!app.includes('<ClientIconSystem>') || app.includes('<CdsIconSystem')) errors.push('Web 原型必须保留独立的 ClientIconSystem Provider')
+if (!rendererApp.includes('<CdsIconSystem>') || !desktopIconSystem.includes("library: 'lucide-react'") || !desktopIconSystem.includes('strokeWidth: 1.5') || !desktopIconFacade.includes("from 'lucide-react'")) {
+  errors.push('正式 CDS 桌面必须通过 CdsIconSystem 与统一 Lucide facade 使用 1.5 线宽图标')
+}
+if (!/stroke-width:\s*1\.5\s*;/.test(desktopStyles.match(/\.lucide\s*\{([^}]*)\}/s)?.[1] ?? '')) {
+  errors.push('正式 CDS 桌面必须实际应用 Lucide 1.5 线宽契约')
+}
+for (const [path, source] of desktopSources) {
+  if (path.startsWith(`${root}/`) || (path.endsWith('.css') && !path.startsWith(`${desktopSourceRoot}/design-system/`) && !path.startsWith(`${desktopSourceRoot}/open-claude-ui/`))) {
+    errors.push(`正式 CDS 桌面不得导入 Web 原型或旧样式: ${path}`)
+  }
+  if (path.startsWith(`${desktopSourceRoot}/`) && /from\s+['"]iconoir-react['"]|<ClientIconSystem\b|IconoirProvider/.test(source)) {
+    errors.push(`正式 CDS 桌面不得挂载旧 Iconoir 图标系统: ${path}`)
+  }
+  if (path !== `${desktopSourceRoot}/components/cds-icons.ts` && /from\s+['"]lucide-react['"]/.test(source)) {
+    errors.push(`正式桌面必须通过 cds-icons facade 引入 Lucide 图标: ${path}`)
+  }
+}
+for (const path of ['components/CdsIconSystem.tsx', 'components/cds-icons.ts', 'open-claude-ui/cds-theme.css', 'design-system/tokens.css', 'design-system/primitives.css', 'design-system/messages.css', 'design-system/business.css', 'design-system/desktop.css', 'open-claude-ui/conversation/CdsConversation.tsx']) {
+  if (!desktopSources.has(`${desktopSourceRoot}/${path}`)) errors.push(`正式 CDS 桌面入口未接入自己的组件或样式契约: ${path}`)
 }
 for (const { path, source } of clientTsxSources) {
   if (path.endsWith('/client-icon-system.tsx')) continue
@@ -147,12 +209,17 @@ for (const { path, source } of clientTsxSources) {
   if (/<svg(?:\s|>)/.test(source)) errors.push(`页面不得手绘 SVG 图标: ${path}`)
   if (/\bwidth=\{\d+\}\s+height=\{\d+\}/.test(source)) errors.push(`页面不得声明图标像素尺寸: ${path}`)
   if (/[✓×›]/.test(source)) errors.push(`页面不得用文本字符模拟图标: ${path}`)
-  if (/from\s+['"](?:lucide-react|react-icons|@heroicons|@mui\/icons|phosphor-react)/.test(source)) errors.push(`客户端只允许使用 Iconoir 图标库: ${path}`)
+  if (/from\s+['"](?:lucide-react|react-icons|@heroicons|@mui\/icons|phosphor-react)/.test(source)) errors.push(`页面不得绕过各端统一图标入口直接引入图标库: ${path}`)
 }
 
 function cssRule(source, selector) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return source.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`, 's'))?.[1] ?? ''
+}
+
+function cssRules(source, selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return [...source.matchAll(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`, 'gs'))].map((match) => match[1]).join('\n')
 }
 
 function selectorsUsing(source, token) {
@@ -241,16 +308,39 @@ if (!/min-height:\s*0/.test(modalMainRule) || !/flex:\s*1/.test(modalMainRule) |
   errors.push('弹窗主内容必须以 min-height: 0、flex: 1 和 overflow-y: auto 形成独立滚动区域')
 }
 
-for (const [cssToken, tsProperty] of [
-  ['--layout-window-default-width', 'defaultWidth'],
-  ['--layout-window-default-height', 'defaultHeight'],
-  ['--layout-window-min-width', 'minWidth'],
-  ['--layout-window-min-height', 'minHeight']
+const desktopAppRule = cssRule(desktopStyles, '.desktop-app')
+if (!/width:\s*100%/.test(desktopAppRule) || !/height:\s*100%/.test(desktopAppRule) || /max-(?:width|height):/.test(desktopAppRule)) {
+  errors.push('正式 CDS 桌面主壳层必须填满窗口，不得限制外壳最大宽高')
+}
+for (const [source, selector] of [[desktopStyles, '.desktop-workspace'], [desktopStyles, '.workspace-center'], [desktopStyles, '.conversation-column'], [desktopPrimitiveStyles, '.cds-detail-page']]) {
+  const rule = cssRule(source, selector)
+  if (!/min-width:\s*0/.test(rule) || !/min-height:\s*0/.test(rule)) errors.push(`正式桌面 ${selector} 必须允许内容在可用宽高内收缩`)
+}
+if (!cssRule(desktopStyles, '.message-canvas').includes('width: min(100%, var(--desktop-reading-width))') || !cssRule(desktopPrimitiveStyles, '.cds-detail-page__canvas').includes('var(--layout-detail-content-max-width)') || !cssRule(desktopPrimitiveStyles, '.cds-detail-page[data-width="wide"] > .cds-detail-page__canvas').includes('var(--layout-workspace-content-max-width)')) {
+  errors.push('正式桌面必须以自己的尺寸 Token 约束对话正文和详情内容宽度')
+}
+const desktopMessageWidth = cssPixels('--layout-message-content-max-width', desktopTokens)
+const desktopStreamWidth = cssPixels('--layout-message-stream-item-max-width', desktopTokens)
+if (desktopMessageWidth === null || desktopStreamWidth === null || desktopStreamWidth > desktopMessageWidth) errors.push('正式桌面信息流组件宽度不得超过对话正文边界')
+for (const [source, selector] of [[desktopStyles, '.message-scroll'], [desktopBusinessStyles, '.modal-content__main'], [desktopMessageStyles, '.matter-sidebar__list']]) {
+  const rule = cssRules(source, selector)
+  if (!/min-height:\s*0/.test(rule) || !/overflow-y:\s*auto/.test(rule)) errors.push(`正式桌面 ${selector} 必须保持受限高度和独立纵向滚动`)
+}
+if (!/overflow-x:\s*auto/.test(cssRule(desktopMessageStyles, '.cds-code-block__content')) || !/overflow-x:\s*auto/.test(cssRule(desktopMessageStyles, '.cds-markdown-table')) || !/overflow-x:\s*auto/.test(cssRule(desktopMessageStyles, '.message-attachments__rows'))) errors.push('正式桌面的代码块、Markdown 表格和附件列表必须保留独立横向滚动，不能撑宽消息列')
+
+for (const [cssToken, tsProperty, webPixels] of [
+  ['--layout-window-default-width', 'defaultWidth', 1280],
+  ['--layout-window-default-height', 'defaultHeight', 820],
+  ['--layout-window-min-width', 'minWidth', 960],
+  ['--layout-window-min-height', 'minHeight', 640]
 ]) {
-  if (cssPixels(cssToken) !== tsNumber(tsProperty)) {
-    errors.push(`${cssToken} 与 CLIENT_WINDOW_LAYOUT.${tsProperty} 不一致`)
+  if (cssPixels(cssToken) !== webPixels) errors.push(`Web 原型 ${cssToken} 必须保留 ${webPixels}px 尺寸契约`)
+  const desktopPixels = cssPixels(cssToken, desktopTokens)
+  if (desktopPixels === null || tsNumber(tsProperty) === null || desktopPixels !== tsNumber(tsProperty)) {
+    errors.push(`正式 CDS 桌面 ${cssToken} 与 CLIENT_WINDOW_LAYOUT.${tsProperty} 不一致`)
   }
 }
+if (cssPixels('--layout-toolbar-height', desktopTokens) !== tsNumber('toolbarHeight')) errors.push('正式 CDS 桌面顶部栏高度必须与 CLIENT_WINDOW_LAYOUT.toolbarHeight 一致')
 
 if (/\.(?:rail|context-pane)[^{]*\{[^}]*display:\s*none/s.test(styles)) {
   errors.push('图标栏或列表栏被隐藏，违反固定三栏契约')
@@ -260,9 +350,24 @@ if (!app.includes('<AppShell') || !app.includes('<ClientToolbar') || !app.includ
   errors.push('顶部栏必须复用集成式 macOS 窗口栏，保留原生窗口控制安全区、当前标题和必要操作')
 }
 
-if (!rendererComponents.includes('data-layout-contract="application-toolbar"') || !rendererComponents.includes('data-toolbar-zone="navigation"') || !rendererComponents.includes('data-toolbar-zone="actions"')) {
-  errors.push('客户端顶部栏缺少统一容器与插槽契约')
+if (!app.includes('className="campus-shell"') || !app.includes('西亚斯数字员工') || !prototypeEntry.includes("import './campus-shell.css'")) {
+  errors.push('校园 Web 必须挂载独立品牌外壳并加载其样式')
 }
+if (!cssRule(campusShell, '.prototype.campus-shell').includes('"rail toolbar" "rail workspace"') || !cssRule(campusShell, '.prototype.campus-shell.is-context-collapsed').includes('--layout-campus-sidebar-collapsed-width')) {
+  errors.push('校园 Web 必须使用一体化侧栏和可折叠的内容区布局')
+}
+for (const token of ['--layout-campus-sidebar-width', '--layout-campus-sidebar-compact-width', '--layout-campus-sidebar-collapsed-width', '--layout-campus-toolbar-height', '--layout-campus-navigation-height']) {
+  if (!contract.includes(`${token}:`) || !campusShell.includes(`var(${token})`)) errors.push(`校园外壳未复用尺寸 Token ${token}`)
+}
+
+if (!rendererComponents.includes('data-layout-contract="application-toolbar"') || !rendererComponents.includes('data-toolbar-zone="navigation"') || !rendererComponents.includes('data-toolbar-zone="actions"')) {
+  errors.push('共享 Web 顶部栏缺少统一容器与插槽契约')
+}
+for (const marker of ['data-layout-contract="application-toolbar"', 'data-toolbar-zone="navigation"', 'data-toolbar-zone="actions"', 'aria-expanded={!sidebarCollapsed}', 'aria-controls="desktop-context"', 'hidden={sidebarCollapsed}']) {
+  if (!desktopShell.includes(marker)) errors.push(`正式桌面外壳缺少布局或可访问性契约: ${marker}`)
+}
+if (!/-webkit-app-region:\s*drag/.test(cssRule(desktopStyles, '.desktop-toolbar')) || !/-webkit-app-region:\s*no-drag/.test(cssRule(desktopStyles, '.desktop-toolbar :is(button, a, input, select, textarea, [role="button"])'))) errors.push('正式桌面顶部栏必须保留拖拽区，并让交互控件退出拖拽区')
+if (!cssRule(desktopStyles, '.desktop-toolbar__navigation').includes('var(--layout-window-controls-safe-left)')) errors.push('正式桌面导航槽位必须保留 macOS 原生窗口控件安全区')
 
 for (const [selector, source] of [['.toolbar', styles], ['.window-controls-safe-area', styles], ['.toolbar__workspace', styles], ['.toolbar__content', styles], ['.toolbar__identity', styles], ['.toolbar__trailing', styles]]) {
   if (!/-webkit-app-region:\s*drag/.test(cssRule(source, selector))) errors.push(`${selector} 必须属于全宽窗口拖拽区域`)
@@ -273,7 +378,7 @@ if (!/-webkit-app-region:\s*no-drag/.test(cssRule(styles, '.toolbar :is(button, 
 }
 
 if (rendererStyles.includes('--layout-toolbar-height:')) {
-  errors.push('正式客户端不得覆盖顶部栏高度事实源')
+  errors.push('Web 共享适配不得覆盖顶部栏高度事实源')
 }
 
 if (!cssRule(rendererStyles, '.prototype.is-context-collapsed .toolbar').includes('var(--layout-toolbar-collapsed-navigation-width)')) {
@@ -309,8 +414,8 @@ if (styles.includes('.composer__box:focus-within')) {
   errors.push('Composer 输入区聚焦时不得改变外框样式')
 }
 
-if (app.includes('archive-row') || app.includes('<Archive')) {
-  errors.push('消息列表不得保留归档入口，应直接提供删除会话操作')
+if (app.includes('label={`删除会话') || !app.includes('onArchiveConversation={archiveConversation}')) {
+  errors.push('Web 聊天记录仅提供归档，删除操作必须位于归档对话页')
 }
 
 if (app.includes('aria-label="消息筛选"') || rendererApp.includes('aria-label="消息筛选"')) {
@@ -336,12 +441,15 @@ for (const marker of ['.conversation-row:hover .conversation-row__delete', '.con
   if (!styles.includes(marker)) errors.push(`缺少当前行 Hover 或键盘焦点删除操作: ${marker}`)
 }
 
-for (const label of ['删除会话']) {
+for (const label of ['归档对话', 'ArchivedConversationsPage', 'profileMenuItems']) {
   if (!app.includes(label)) errors.push(`缺少消息操作契约: ${label}`)
 }
 
-if (!['ChatMessage', 'MarkdownMessage', 'ChatContentBlock', 'MarkdownContent', 'ClientMessageAttachmentGroup'].every((name) => app.includes(`<${name}`)) || !rendererMessageComponents.includes('message-block--${source}')) {
-  errors.push('Web 原型用户与总管消息必须直接复用客户端 ChatMessage、MarkdownMessage 和 ChatContentBlock')
+if (!['ChatMessage', 'MarkdownMessage', 'MarkdownContent', 'ClientMessageAttachmentGroup'].every((name) => app.includes(`<${name}`)) || !rendererMessageStructure.includes('message-block--${source}')) {
+  errors.push('Web 原型用户与智能体消息必须直接复用客户端 ChatMessage、MarkdownMessage 和附件组件')
+}
+for (const name of ['CdsMessage', 'CdsAttachmentCard', 'CdsDecisionCard', 'CdsThinkingIndicator']) {
+  if (!rendererMessageComponents.includes(`<${name}`) || !rendererConversationComponents.includes(`function ${name}`)) errors.push(`共享消息适配必须实际接入 CDS 会话组件: ${name}`)
 }
 
 if (app.includes('name="你"') || rendererApp.includes("isUser ? '你'")) {
@@ -360,9 +468,16 @@ for (const copy of ['平台权限与安全规则始终优先。', '文本 · Res
   if (app.includes(copy) || rendererSystem.includes(copy)) errors.push(`系统设置仍包含无操作价值或面向实现者的文案: ${copy}`)
 }
 
-for (const marker of ['SettingsBlock title="身份"', 'className="employee-identity-editor"', 'aria-label="个人名称"']) {
+if (!app.includes('SettingsBlock title="个人资料"') || !rendererSystem.includes('SettingsBlock title="身份"')) {
+  errors.push('Web 个人中心与客户端设置必须保留用户资料区')
+}
+for (const marker of ['className="employee-identity-editor"']) {
   if (!app.includes(marker) || !rendererSystem.includes(marker)) errors.push(`个人资料未复用精简身份布局: ${marker}`)
 }
+if (!app.includes('className="personal-profile-facts"') || !app.includes('<dt>姓名</dt>') || !app.includes('<dt>学号</dt>') || app.includes('aria-label="个人名称"')) {
+  errors.push('Web 个人资料必须以只读文字展示姓名和学号，仅头像可上传')
+}
+if (!rendererSystem.includes('aria-label="个人名称"')) errors.push('正式客户端个人名称编辑行为不应随 Web 原型变更')
 
 for (const marker of ['aria-label="身份说明"', 'aria-label="个人简介"']) {
   if (app.includes(marker) || rendererSystem.includes(marker)) errors.push(`个人资料只保留头像和名称: ${marker}`)
@@ -380,8 +495,8 @@ if (app.includes('>任务 <')) {
   errors.push('消息页不得把顶层事项命名为任务')
 }
 
-for (const marker of ['className="matter-event message-stream-item"', 'className="matter-sidebar__item"', 'className="matter-team-avatars"']) {
-  if (!app.includes(marker)) errors.push(`缺少会话事项结构: ${marker}`)
+for (const marker of ['<MatterSidebar', '<MatterDetailModal', '<FeishuMeetingPage', '<ExpertGroupPage', 'candidateExpertGroups']) {
+  if (app.includes(marker)) errors.push(`单智能体前台不得挂载暂缓的事项、场景或专家团入口: ${marker}`)
 }
 
 for (const marker of ['<MatterSidebar tasks={conversationTasks}', '<small>{tasks.length}</small>', 'employeeAvatarSrc({ employeeId: assignment.employeeId, avatarDataUrl: assignment.avatarDataUrl })']) {
@@ -389,14 +504,14 @@ for (const marker of ['<MatterSidebar tasks={conversationTasks}', '<small>{tasks
 }
 
 if (app.includes('className="topic-bar"') || app.includes('function MatterIndexView')) {
-  errors.push('Web 消息页必须与当前客户端一致，使用右侧事项栏，不得恢复对话与事项页签')
+  errors.push('Web 单智能体消息页不得恢复对话与事项页签')
 }
 
-for (const marker of ['<ClientToolbar', 'conversation-workspace', 'conversation-column', 'matterSidebarCollapsed', '<MatterSidebar matters={hasMatters ? conversationMatters : []}', '当前会话暂无事项', 'target.focus({ preventScroll: true })']) {
-  if (!app.includes(marker)) errors.push(`Web 消息页缺少客户端样式、布局或事项定位契约: ${marker}`)
+for (const marker of ['<ClientToolbar', 'conversation-workspace is-sidebar-collapsed', 'conversation-column', 'agentId', 'agentSnapshot', '<AgentCatalogPage', '演示回复']) {
+  if (!app.includes(marker)) errors.push(`Web 消息页缺少共享布局或单智能体会话契约: ${marker}`)
 }
 
-for (const marker of ['<ReactMarkdown remarkPlugins={[remarkGfm]}>', 'className="attachment-carousel-navigation"', 'label="查看上一份附件"', 'label="查看下一份附件"']) {
+for (const marker of ['<ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>', 'className="attachment-carousel-navigation"', 'label="查看上一份附件"', 'label="查看下一份附件"']) {
   if (!rendererMessageComponents.includes(marker)) errors.push(`缺少消息折叠或附件导航复用组件: ${marker}`)
 }
 for (const marker of ['function MarkdownMessage', 'aria-expanded={expanded}']) {
@@ -408,10 +523,10 @@ for (const marker of ['variant="timeline"', '<TimelineSummary content={assignmen
 }
 
 for (const marker of ['matter-route-note message-stream-item', 'matter-event message-stream-item', 'message-block--timeline message-stream-item', 'runtime-route-note message-stream-item', 'approval-card message-action-card message-stream-item', 'boundary-note message-stream-item']) {
-  if (!rendererApp.includes(marker) && !rendererMessageComponents.includes(marker)) errors.push(`客户端信息流组件未复用最大宽度与自适应契约: ${marker}`)
+  if (!rendererApp.includes(marker) && !rendererMessageStructure.includes(marker)) errors.push(`客户端信息流组件未复用最大宽度与自适应契约: ${marker}`)
 }
 
-if (/\.(?:matter-event|approval-card|delivery-card)\s*\{[^}]*width:\s*calc\(100%\s*-\s*38px\)/s.test(styles)) {
+if (/\.(?:matter-event|approval-card|delivery-card)\s*\{[^}]*width:\s*calc\(100%\s*-\s*38px\)/s.test(`${styles}\n${desktopMessageStyles}`)) {
   errors.push('事项、审批和交付组件不得继续使用固定左缩进计算宽度')
 }
 
@@ -419,7 +534,7 @@ for (const marker of ['message-block--timeline', '--layout-message-process-colla
   if (!styles.includes(marker)) errors.push(`信息流视觉层级未复用共享样式契约: ${marker}`)
 }
 
-if (!/border:\s*0\s*;/.test(cssRule(rendererStyles, '.matter-event'))) {
+if (!/border:\s*0\s*;/.test(cssRule(rendererStyles, '.matter-event')) || !/border:\s*0\s*;/.test(cssRule(desktopMessageStyles, '.matter-event'))) {
   errors.push('时间线事项卡片采用无边框样式，必须保持 border: 0')
 }
 
@@ -447,10 +562,6 @@ if (skillCapabilityCount !== skillDocumentCount) {
 
 for (const usage of ['max-height: calc(1em * var(--type-leading-reading) * var(--layout-message-collapse-lines));', 'max-height: calc(1em * var(--type-leading-reading) * var(--layout-message-process-collapse-lines));', 'min-width: var(--layout-message-attachment-card-width);', 'width: var(--layout-attachment-carousel-control-size);', 'width: var(--layout-attachment-open-menu-width);']) {
   if (!styles.includes(usage)) errors.push(`消息折叠或附件导航未使用尺寸契约: ${usage}`)
-}
-
-for (const label of ['需要你处理', '已完成']) {
-  if (!app.includes(label)) errors.push(`缺少事项状态契约: ${label}`)
 }
 
 for (const marker of ['function DetailSummaryPanel', 'function DetailSectionHeader', 'function DetailListMark', 'function DetailState', 'function DetailNote']) {

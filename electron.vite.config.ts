@@ -1,6 +1,7 @@
 import { resolve } from 'node:path'
 import react from '@vitejs/plugin-react'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import tailwindcss from 'tailwindcss'
 
 // Put Electron Vite's CJS shim at module scope. SDK documentation contains import examples
 // that its regex-based automatic insertion otherwise mistakes for executable imports.
@@ -14,7 +15,7 @@ const require = __cjs_mod__.createRequire(import.meta.url);
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: ['@larksuiteoapi/node-sdk', 'axios', 'botbuilder'] })],
+    plugins: [externalizeDepsPlugin({ exclude: ['@larksuiteoapi/node-sdk', 'axios', 'botbuilder', '@openai/agents-core', 'zod'] })],
     define: {
       'process.env.WS_NO_BUFFER_UTIL': '"1"',
       'process.env.WS_NO_UTF_8_VALIDATE': '"1"'
@@ -45,6 +46,7 @@ export default defineConfig({
     }
   },
   renderer: {
+    css: { postcss: { plugins: [tailwindcss({ config: resolve('tailwind.desktop.config.cjs') })] } },
     resolve: {
       alias: {
         '@renderer': resolve('src/renderer'),

@@ -48,6 +48,28 @@ describe('SupervisorRouter', () => {
     store.close()
   })
 
+  it('requires nonempty task fields per mode while retaining direct-answer and ask-user empty task arrays', async () => {
+    const { router, store } = setup()
+    const input = { requestId: 'retained-empty-route', conversationId: 'conversation-empty', sourceMessageId: 'message-empty', text: '读取附件并写入回读', history: [], directories: [], attachments: [] }
+    const request = await router.createRequest(input)
+    expect(request.outputSchema!.schema.anyOf).toEqual([
+      { properties: { mode: { enum: ['create_task'] }, goal: { minLength: 1 }, acceptanceCriteria: { minItems: 1 }, employeeVersionIds: { minItems: 1 } } },
+      { properties: { mode: { enum: ['change_task'] }, targetTaskId: { minLength: 1 }, goal: { minLength: 1 }, acceptanceCriteria: { minItems: 1 }, employeeVersionIds: { minItems: 1 } } },
+      { properties: { mode: { enum: ['direct_answer', 'ask_user'] }, response: { minLength: 1 } } }
+    ])
+    const failed = { mode: 'create_task', response: '准备执行', targetTaskId: '', title: '验收文档', goal: '提取其中的英文 acceptance marker（当前内容为 ', acceptanceCriteria: [], employeeVersionIds: ['employee-version.document-writer.v2'], missingInputs: [] }
+    expect(() => router.validateDecision(failed)).toThrow('invalid_supervisor_route')
+    expect(() => router.applyDecision(input, failed)).toThrow('invalid_supervisor_route')
+    for (const type of ['TaskDraft', 'Task', 'Assignment', 'RunGrant', 'Approval', 'ToolAction'] as const) expect(store.list(type)).toHaveLength(0)
+    for (const mode of ['direct_answer', 'ask_user']) {
+      expect(router.applyDecision(input, { ...failed, mode, response: '可以说明一下吗？', goal: '', employeeVersionIds: [] })).toMatchObject({ mode, response: '可以说明一下吗？' })
+    }
+    // Shape validation never authorizes unavailable employees or creates an out-of-scope task.
+    expect(() => router.applyDecision(input, { ...failed, acceptanceCriteria: ['文件存在'], employeeVersionIds: ['unavailable-version'] })).toThrow()
+    expect(store.list('Task')).toHaveLength(0)
+    store.close()
+  })
+
   it('uses the configured supervisor model, prompt and only allowed global memory', async () => {
     const { tasks, store } = setup()
     const resources = new ResourceService(new RuntimeKernel(store))
@@ -61,10 +83,11 @@ describe('SupervisorRouter', () => {
     employees.seedRequestedSpecialists()
     const request = await router.createRequest({ requestId: 'route-config', conversationId: 'conversation-config', sourceMessageId: 'message-config', text: '处理事项', history: [], directories: [], attachments: [] })
     expect(request).toMatchObject({ provider: 'poe', modelId: 'claude-sonnet-4.6' })
-    expect(request.input).toContain('名称：任务总管')
-    expect(request.input).toContain('优先核对目标和证据')
-    expect(request.input).toContain('memory-global')
-    expect(request.input).not.toContain('memory-other')
+    expect(request.input).toMatchObject({ schemaVersion: 2, instructions: expect.stringContaining('名称：任务总管') })
+    const serialized = JSON.stringify(request.input)
+    expect(serialized).toContain('优先核对目标和证据')
+    expect(serialized).toContain('memory-global')
+    expect(serialized).not.toContain('memory-other')
     store.close()
   })
 

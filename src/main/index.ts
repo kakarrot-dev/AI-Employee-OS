@@ -5,7 +5,8 @@ import { MacOSKeychainTeamsCredentialStore } from './teams-credential-store'
 import { projectMeetingResult } from '../shared/feishu-meeting-contract'
 import { dirname, isAbsolute, join } from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
-import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, session, shell } from 'electron'
+import { clipboardText, DESKTOP_IPC } from '../shared/desktop-contract'
 import { ATTACHMENT_IPC, CONVERSATION_IPC, EMPLOYEE_IPC, EXPERT_GROUP_IPC, MEMORY_IPC, PROVIDER_IPC, RESOURCE_IPC, RUNTIME_IPC, SUPERVISOR_IPC, TASK_IPC, USAGE_IPC, type ConversationStreamEvent, type ConversationSummaryView, type EmployeeDraftInput, type EmployeeEvent, type ProviderStatus, type RuntimeStatus, type SupervisorConfigInput, type TaskDetailView, type TaskDraftInputView, type TaskEvent } from '../shared/runtime-contract'
 import type { Conversation, Message, MessageAttachmentReference } from '../runtime/domain'
 import type { MemoryCategoryView, MemoryScopeTypeView, MemoryStatusView, MemoryViewModel } from '../shared/memory-contract'
@@ -204,6 +205,11 @@ function toConversationSummary(conversation: Conversation, messages: Message[], 
 }
 
 function registerRuntimeIpc(): void {
+  ipcMain.handle(DESKTOP_IPC.copyText, (event, value: unknown) => {
+    assertTrustedSender(event.senderFrame?.url)
+    if (event.sender !== mainWindow?.webContents) throw new Error('untrusted_clipboard_sender')
+    clipboard.writeText(clipboardText(value))
+  })
   const employeeIdFrom = (value: unknown): string => {
     const employeeId = (value as { employeeId?: unknown })?.employeeId
     if (typeof employeeId !== 'string' || employeeId.length < 1 || employeeId.length > 128) throw new Error('invalid_employee_id')
@@ -592,7 +598,6 @@ app.whenReady().then(async () => {
   runtimeSupervisor = new RuntimeSupervisor(
     join(__dirname, 'runtime/index.js'),
     join(app.getPath('userData'), 'runtime', 'control.sqlite3'),
-    { pythonPath: runtimePaths.deepAgentPython, scriptPath: runtimePaths.deepAgentWorker, checkpointDirectory: join(app.getPath('userData'), 'runtime', 'checkpoints') },
     { pythonPath: runtimePaths.memoryPython, scriptPath: runtimePaths.memoryWorker, databasePath: join(app.getPath('userData'), 'memory', 'memory.sqlite'), modelCachePath: join(app.getPath('userData'), 'memory', 'model-cache'), keychainHelperPath: runtimePaths.memoryKeychainHelper },
     runtimePaths.imageTextExtractor,
     join(app.getPath('userData'), 'exports'),

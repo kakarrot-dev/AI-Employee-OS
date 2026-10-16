@@ -12,22 +12,40 @@ export interface ProposalToolDefinition {
   parameters: Record<string, unknown>
 }
 
+export type ProviderInputItem =
+  | { type: 'message'; role: 'system' | 'user' | 'assistant'; content: string }
+  | { type: 'function_call'; callId: string; name: string; arguments: string }
+  | { type: 'function_call_result'; callId: string; output: string }
+
+export interface ProviderConversationInput {
+  schemaVersion: 2
+  instructions?: string
+  items: ProviderInputItem[]
+  tools?: ProposalToolDefinition[]
+}
+
+export type ProviderToolChoice = 'auto' | 'required' | 'none' | { type: 'function'; name: string }
+
 export interface ProviderRequest {
   requestId: string
   provider: ProviderId
   modelId: AllowedModelId
-  input: string
+  input: string | ProviderConversationInput
   maxOutputTokens: number
   stream: boolean
   outputSchema?: JsonSchemaDefinition
   proposalTool?: ProposalToolDefinition
-  toolChoice?: 'auto' | 'required' | 'none'
+  toolChoice?: ProviderToolChoice
   mediaParameters?: Record<string, string | number | boolean>
   executionTimeouts?: {
     firstEventMs: number
     idleMs: number
     deadlineAt?: string
   }
+}
+
+export function serializeProviderInput(input: ProviderRequest['input']): string {
+  return typeof input === 'string' ? input : JSON.stringify(input)
 }
 
 export type ProviderEvent =

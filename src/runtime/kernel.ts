@@ -13,6 +13,8 @@ export interface RuntimeHealth {
 export class RuntimeKernel {
   constructor(readonly store: RuntimeStore) {}
 
+  transaction<T>(work: () => T): T { return this.store.transaction(work) }
+
   health(): RuntimeHealth {
     const databaseIntegrity = this.store.quickCheck()
     return {

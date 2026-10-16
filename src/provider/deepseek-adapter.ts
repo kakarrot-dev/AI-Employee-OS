@@ -2,6 +2,8 @@ import type { CredentialReader } from './keychain'
 import { normalizeProviderFailure, type ProviderEvent, type ProviderRequest } from './contract'
 import { requireModel } from './models'
 import { parseToolArguments } from './json'
+import { chatInput, isConversationInput, responsesInput, responsesToolChoice, validateProviderRequest } from './conversation-input'
+import { parseConversationResponse } from './conversation-response'
 
 type Fetch = typeof fetch
 const MAX_STRUCTURED_OUTPUT_ATTEMPTS = 3
@@ -23,17 +25,18 @@ export class DeepSeekAdapter {
     const model = requireModel('deepseek', request.modelId)
     if (model.modality !== 'text' || model.endpoint !== '/responses') throw new Error('unsupported_model_capability')
     if (request.provider !== 'deepseek') throw new Error('provider_mismatch')
-    if (!Number.isSafeInteger(request.maxOutputTokens) || request.maxOutputTokens < 1 || request.maxOutputTokens > 4096) throw new Error('invalid_output_budget')
-    if (request.input.length < 1 || request.input.length > 100_000) throw new Error('invalid_input')
+    validateProviderRequest(request)
+    signal?.throwIfAborted()
 
     const credential = await this.credentials.read('deepseek')
-    if (request.outputSchema && !request.proposalTool && !request.stream) {
+    if (request.outputSchema && !request.proposalTool && (!isConversationInput(request.input) || !request.input.tools?.length) && !request.stream) {
       yield* this.executeStructuredJson(request, credential, signal)
       return
     }
     const body: Record<string, unknown> = {
       model: request.modelId,
-      input: request.input,
+      input: isConversationInput(request.input) ? responsesInput(request.input) : request.input,
+      ...(isConversationInput(request.input) && request.input.instructions ? { instructions: request.input.instructions } : {}),
       reasoning: { effort: 'none' },
       max_output_tokens: request.maxOutputTokens,
       stream: request.stream
@@ -42,7 +45,10 @@ export class DeepSeekAdapter {
       const { strict: _strict, ...format } = request.outputSchema
       body.text = { format: { type: 'json_schema', ...format } }
     }
-    if (request.proposalTool) {
+    if (isConversationInput(request.input) && request.input.tools?.length) {
+      body.tools = request.input.tools.map((tool) => ({ type: 'function', ...tool }))
+      body.tool_choice = responsesToolChoice(request.toolChoice)
+    } else if (request.proposalTool) {
       body.tools = [{ type: 'function', name: request.proposalTool.name, description: request.proposalTool.description, parameters: request.proposalTool.parameters }]
       body.tool_choice = request.toolChoice ?? 'auto'
     } else if (request.toolChoice === 'none') {
@@ -57,7 +63,9 @@ export class DeepSeekAdapter {
     })
     if (!response.ok) throw normalizeProviderFailure(response.status, response.headers.get('retry-after'))
 
-    if (request.stream) {
+    if (isConversationInput(request.input)) {
+      yield* parseConversationResponse(response, request, signal)
+    } else if (request.stream) {
       yield* this.parseStream(response, request)
     } else {
       yield* this.parseNonStream(await response.json(), request)
@@ -77,7 +85,7 @@ export class DeepSeekAdapter {
           model: request.modelId,
           messages: [
             { role: 'system', content: attempt === 0 ? '你是 Runtime 的结构化控制面。必须调用指定函数提交唯一结果，不要输出普通文本。' : `上一响应没有提交有效函数参数。这是第 ${attempt + 1}/${MAX_STRUCTURED_OUTPUT_ATTEMPTS} 次尝试：必须调用 ${schema.name} 一次，并提交完整、可解析且符合参数 Schema 的 JSON；不要输出普通文本。` },
-            { role: 'user', content: request.input }
+            ...chatInput(request.input)
           ],
           tools: [{ type: 'function', function: { name: schema.name, description: '提交唯一的结构化 Runtime 结果', parameters: schema.schema } }],
           tool_choice: { type: 'function', function: { name: schema.name } },

@@ -1,6 +1,8 @@
 import type { ProviderEvent, ProviderRequest } from './contract'
 import type { ModelDefinition, ProviderId } from './models'
 import type { AllowedModelId } from './models'
+import { requireModel } from './models'
+import { validateProviderRequest } from './conversation-input'
 
 export const PROVIDER_PROTOCOL_VERSION = 1 as const
 
@@ -46,7 +48,9 @@ export function parseProviderCommand(value: unknown): ProviderCommand {
     const request = command.payload as Partial<ProviderRequest>
     if (request.requestId !== command.requestId) throw new Error('request_id_mismatch')
     if (!['deepseek', 'poe'].includes(String(request.provider))) throw new Error('unknown_provider')
-    if (typeof request.modelId !== 'string' || typeof request.input !== 'string' || typeof request.stream !== 'boolean') throw new Error('invalid_provider_request')
+    if (typeof request.modelId !== 'string' || typeof request.stream !== 'boolean') throw new Error('invalid_provider_request')
+    requireModel(request.provider!, request.modelId)
+    validateProviderRequest(request as ProviderRequest)
   }
   if (command.type === 'cancel' && typeof (command.payload as { providerRequestId?: unknown }).providerRequestId !== 'string') throw new Error('invalid_cancel_request')
   return command as ProviderCommand

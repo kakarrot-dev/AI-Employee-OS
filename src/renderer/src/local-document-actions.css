@@ -1,0 +1,10 @@
+.local-document-confirmation__path { overflow-wrap: anywhere; }
+.local-document-confirmation__preview {
+  min-width: 0;
+  max-height: 240px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}

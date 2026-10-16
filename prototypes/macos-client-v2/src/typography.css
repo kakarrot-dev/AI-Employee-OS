@@ -2,14 +2,16 @@
   --type-family-interface: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
   --type-family-code: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
   /* Primitive scale: product text may only use these sizes. */
-  --type-size-badge: 8px;
-  --type-size-meta: 10px;
-  --type-size-secondary: 11px;
-  --type-size-body: 12px;
-  --type-size-heading: 14px;
-  --type-size-title: 18px;
+  --type-size-badge: 10px;
+  --type-size-meta: 11px;
+  --type-size-secondary: 12px;
+  --type-size-body: 14px;
+  --type-size-heading: 16px;
+  --type-size-title: 20px;
   --type-size-avatar-large: 20px;
   --type-size-metric: 21px;
+  --type-size-welcome: 30px;
+  --type-size-welcome-compact: 26px;
 
   --type-weight-regular: 400;
   --type-weight-medium: 500;
@@ -17,17 +19,19 @@
   --type-weight-bold: 700;
 
   --type-leading-control: 1;
-  --type-leading-compact: 1.35;
+  --type-leading-compact: 1.4;
   --type-leading-body: 1.5;
-  --type-leading-reading: 1.55;
+  --type-leading-reading: 1.65;
 
   --type-tracking-default: 0;
-  --type-tracking-tight: -0.03em;
+  --type-tracking-tight: 0;
 
   /* Layout roles. */
   --type-pane-title-size: var(--type-size-title);
   --type-workspace-title-size: var(--type-size-heading);
   --type-page-title-size: var(--type-size-title);
+  --type-welcome-title-size: var(--type-size-welcome);
+  --type-welcome-compact-title-size: var(--type-size-welcome-compact);
   --type-section-title-size: var(--type-size-body);
   --type-modal-title-size: var(--type-size-title);
   --type-dialog-title-size: var(--type-size-heading);
@@ -39,9 +43,9 @@
   --type-body-size: var(--type-size-body);
   --type-secondary-size: var(--type-size-secondary);
   --type-control-size: var(--type-size-secondary);
-  --type-form-label-size: var(--type-size-heading);
-  --type-form-input-size: var(--type-size-heading);
-  --type-form-help-size: var(--type-size-body);
+  --type-form-label-size: var(--type-size-body);
+  --type-form-input-size: var(--type-size-body);
+  --type-form-help-size: var(--type-size-secondary);
   --type-input-size: var(--type-size-body);
   --type-label-size: var(--type-size-secondary);
   --type-status-size: var(--type-size-secondary);
