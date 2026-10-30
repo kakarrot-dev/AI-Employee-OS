@@ -1,5 +1,7 @@
 # macOS 客户端组件与布局契约
 
+> 2026-10-19 更新：已删除独立 Web 原型，仅保留 Electron 客户端。本文涉及 Web 原型的规格与对齐记录仅作历史参考，不作为当前客户端的实现或验收依据。当前界面入口为 `src/renderer/src/App.tsx`，开发命令为 `npm run dev`。
+
 2026-10-16 起，正式客户端按用户指定的 Open Claude UI 桌面设计系统重构。生产入口为 `src/renderer/src/main.tsx`：Tailwind 基础 → 上游主题 `open-claude-ui/cds-theme.css` → CDS 角色 `design-system/tokens.css` → 基础组件 `primitives.css` → 消息组件 `messages.css` → 业务布局 `business.css` → 桌面组合 `desktop.css`。旧 `styles.css`、`prototype-adapter.css` 和原型 CSS 均不加载。Runtime Bridge 继续定义真实数据、状态和可执行动作。
 
 `prototypes/macos-client-v2` 保留独立的 Web 演示契约与历史样式，不再作为正式桌面壳层的视觉事实源。以下旧壳层尺寸约束适用于该原型；既有消息、资料、表单与审批组件的业务语义仍保留。
@@ -118,7 +120,7 @@
 - 图标契约测试验证唯一图标库、统一 Provider、线宽、五种语义尺寸，并阻止页面级像素尺寸、手绘 SVG 与文本伪图标。
 - Renderer 测试、TypeScript 检查、生产构建通过，并在真实 Electron 窗口逐页完成视觉检查。
 - 960×640、1280×820 和 1600×1000 三档窗口下，Toolbar、Rail、ContextPane、Workspace 与 Modal 的 Token 尺寸不得漂移。
-- 外壳选择器只能使用 `--line-shell`，内容组件继续使用 `--line` / `--line-strong`；`npm run prototype:check:layout` 必须阻止语义混用。
+- 外壳选择器只能使用 `--line-shell`，内容组件继续使用 `--line` / `--line-strong`；原 Web 原型布局检查曾要求阻止语义混用（检查脚本已移除）。
 
 ### 通用表单排版
 

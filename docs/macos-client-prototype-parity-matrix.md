@@ -1,11 +1,13 @@
 # macOS 客户端原型一致性矩阵
 
+> 2026-10-19 更新：已删除独立 Web 原型，仅保留 Electron 客户端。本文涉及 Web 原型的规格与对齐记录仅作历史参考，不作为当前客户端的实现或验收依据。当前界面入口为 `src/renderer/src/App.tsx`，开发命令为 `npm run dev`。
+
 ## 事实源
 
 - 2026-10-16：正式 Electron 客户端采用 Open Claude UI 的布局、基础/业务组件、字体字阶、主题、输入框、容器响应式与滚动交互，事实源为 `src/renderer/src/components/Desktop{Shell,Composer}.tsx`、`open-claude-ui/` 和 `design-system/`。不再导入 Web 原型 CSS；详见 [生产组件契约](macos-client-component-contract.md) 与 [迁移契约](audits/2026-10-16-open-claude-ui-client-contract.md)。
 - 以下矩阵保留 Web 原型和原有业务能力的兼容记录；其中 Rail、ContextPane、Toolbar 的视觉列不代表新桌面布局。Web 仍复用 `client-ui.tsx`、`message-ui.tsx` 与自己的原型样式，原型只提供演示数据。
 - 业务数据、权限、状态机和副作用：Runtime Bridge 与 `src/shared/*-contract.ts`。
-- 2026-09-17：当前 Web 前台以 [单智能体原型契约](../prototypes/macos-client-v2/SINGLE_AGENT_V01.md) 为准，事项、场景与专家团暂缓。Electron / Runtime 仍保留原有流程，两者业务入口目前存在明确差异；下表 Runtime 列不代表 Web 已接通真实执行。不得用模拟数据伪装真实成功。
+- 2026-09-17：当前 Web 前台以 单智能体原型契约（历史文档已随 Web 原型移除） 为准，事项、场景与专家团暂缓。Electron / Runtime 仍保留原有流程，两者业务入口目前存在明确差异；下表 Runtime 列不代表 Web 已接通真实执行。不得用模拟数据伪装真实成功。
 
 ## 全局布局与复用契约
 
